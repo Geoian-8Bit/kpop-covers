@@ -24,6 +24,9 @@ export function useLoopController(): void {
         return;
       }
 
+      // While scrubbing the pointer owns the playhead; the engine may still report the old position.
+      if (state.scrubbing) return;
+
       const t = engine.getCurrentTime();
       const { loop } = state;
 
@@ -38,7 +41,9 @@ export function useLoopController(): void {
         return;
       }
 
-      if (Math.abs(t - state.time) > 0.008) usePlayer.setState({ time: t });
+      // Right after a scrub, YouTube can still report the pre-seek time for a few frames: ignore big jumps back.
+      const settling = performance.now() - state.scrubEndedAt < 600 && Math.abs(t - state.time) > 0.75;
+      if (!settling && Math.abs(t - state.time) > 0.008) usePlayer.setState({ time: t });
 
       if (!state.duration) {
         const duration = engine.getDuration();

@@ -33,6 +33,10 @@ interface PlayerState extends PlayerStatus {
   /** Seconds to wait (paused) before each loop repetition – time to get back in position. */
   gap: number;
   countdownEndsAt: number | null;
+  /** True while the user drags a timeline: the playhead follows the pointer, not the (laggy) engine clock. */
+  scrubbing: boolean;
+  /** performance.now() of the last scrub release; the engine clock is distrusted briefly after it. */
+  scrubEndedAt: number;
   activeClipId: string | null;
 
   attach(engine: PlayerEngine): void;
@@ -59,6 +63,7 @@ interface PlayerState extends PlayerStatus {
   setGap(seconds: number): void;
   applyClip(clip: ClipSettings, opts?: { autoplay?: boolean }): void;
   setActiveClip(id: string | null): void;
+  setScrubbing(scrubbing: boolean): void;
 }
 
 const MIRROR_KEY = 'coverscape.mirrored';
@@ -95,6 +100,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   gap: 0,
   countdownEndsAt: null,
   activeClipId: null,
+  scrubbing: false,
+  scrubEndedAt: 0,
 
   attach(engine) {
     engine.setRate(get().rate);
@@ -106,7 +113,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   reset() {
-    set({ ...initialStatus, engine: null, rate: 1, loop: emptyLoop, countdownEndsAt: null, activeClipId: null });
+    set({ ...initialStatus, engine: null, scrubbing: false, rate: 1, loop: emptyLoop, countdownEndsAt: null, activeClipId: null });
   },
 
   sync(patch) {
@@ -214,6 +221,10 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     set({ mirrored: clip.mirrored, loop: { ...range, enabled: true }, activeClipId: clip.id, countdownEndsAt: null });
     get().seek(range.start);
     if (autoplay) get().engine?.play();
+  },
+
+  setScrubbing(scrubbing) {
+    set(scrubbing ? { scrubbing } : { scrubbing, scrubEndedAt: performance.now() });
   },
 
   setActiveClip(id) {

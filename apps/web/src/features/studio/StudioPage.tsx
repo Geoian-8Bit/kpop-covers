@@ -661,14 +661,21 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
           if (!duration) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           dragging.current = true;
+          usePlayer.getState().setScrubbing(true);
           seekTo(e.clientX);
         }}
         onPointerMove={(e) => {
           setHover(fractionAt(e.clientX));
           if (dragging.current) seekTo(e.clientX);
         }}
-        onPointerUp={() => (dragging.current = false)}
-        onPointerCancel={() => (dragging.current = false)}
+        onPointerUp={() => {
+          dragging.current = false;
+          usePlayer.getState().setScrubbing(false);
+        }}
+        onPointerCancel={() => {
+          dragging.current = false;
+          usePlayer.getState().setScrubbing(false);
+        }}
         onPointerLeave={() => setHover(null)}
         className="group/bar relative flex h-5 cursor-pointer touch-none items-center"
       >

@@ -115,7 +115,10 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
     event.currentTarget.closest<HTMLElement>('[data-track]')?.setPointerCapture(event.pointerId);
     const t = fractionAt(event.clientX) * duration;
     const player = usePlayer.getState();
-    if (mode === 'scrub') player.seek(t);
+    if (mode === 'scrub') {
+      player.setScrubbing(true);
+      player.seek(t);
+    }
     if (mode === 'select') player.setRange(t, t + MIN_LOOP_LENGTH);
     dragRef.current = { mode, anchor: t };
     setDragMode(mode);
@@ -150,6 +153,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
     if (!dragRef.current) return;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     dragRef.current = null;
+    usePlayer.getState().setScrubbing(false);
     setDragMode(null);
   }
 
