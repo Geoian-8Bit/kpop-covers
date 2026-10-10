@@ -267,6 +267,12 @@ function MediaStage({
   const pointerType = useRef<string>('mouse');
   const lastTap = useRef<{ at: number; timer?: ReturnType<typeof setTimeout> }>({ at: 0 });
   const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; key: number } | null>(null);
+  // Plain timer, not an animation callback, so the badge can never get stranded on screen.
+  useEffect(() => {
+    if (!seekFlash) return;
+    const id = setTimeout(() => setSeekFlash(null), 650);
+    return () => clearTimeout(id);
+  }, [seekFlash]);
 
   /**
    * Mouse / desktop: click toggles playback. Touch in fullscreen (YouTube-style): one tap shows/hides the
@@ -369,19 +375,22 @@ function MediaStage({
           </AnimatePresence>
         </div>
 
-        <AnimatePresence>
-          {ready && !playing && !counting && !error && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.25, transition: { duration: 0.18 } }}
-              transition={jelly}
-              className="pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)]"
-            >
-              <Play className="ml-1 size-8 fill-sumi-900" />
-            </motion.div>
+        {/*
+          Always mounted and driven by a CSS transition: YouTube fires PAUSED/BUFFERING/PLAYING in quick
+          bursts and a mount/unmount exit animation could get stranded mid-way, leaving the icon stuck.
+          In fullscreen it also fades out together with the controls.
+        */}
+        <div
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)] transition-[opacity,scale] duration-200 ease-out',
+            ready && !playing && !counting && !error && (!fullscreen || chrome.visible)
+              ? 'scale-100 opacity-100'
+              : 'scale-125 opacity-0',
           )}
-        </AnimatePresence>
+        >
+          <Play className="ml-1 size-8 fill-sumi-900" />
+        </div>
 
         {(loading || (buffering && playing)) && (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
@@ -447,7 +456,6 @@ function MediaStage({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.18 }}
-                onAnimationComplete={() => setTimeout(() => setSeekFlash(null), 350)}
                 className={cn(
                   'pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 rounded-full bg-black/55 px-4 py-2 font-mono text-sm font-semibold text-washi',
                   seekFlash.side === 'left' ? 'left-[12%]' : 'right-[12%]',
