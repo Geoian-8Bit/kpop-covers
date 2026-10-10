@@ -2,7 +2,7 @@ import { cn } from '@/lib/cn';
 import { Seal } from './Seal';
 
 export function LogoMark({ size = 34, className }: { size?: number; className?: string }) {
-  return <Seal glyph="一" size={size} className={className} />;
+  return <Seal glyph="舞" size={size} className={className} />;
 }
 
 export function Logo({ className, compact = false }: { className?: string; compact?: boolean }) {
