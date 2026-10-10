@@ -55,7 +55,7 @@ export function LibraryPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
-        <header className="relative flex flex-wrap items-end justify-between gap-6 px-5 pb-6 pt-7 sm:px-9 sm:pb-7 sm:pt-10">
+        <header className="relative flex flex-wrap items-end justify-between gap-5 px-5 pb-5 pt-6 sm:px-9 sm:pb-6 sm:pt-7">
           <span
             aria-hidden
             className="pointer-events-none absolute right-8 top-8 hidden font-display text-[17px] font-bold leading-[1.2] tracking-[0.25em] text-shu-400 [writing-mode:vertical-rl] md:block"
@@ -68,14 +68,14 @@ export function LibraryPage() {
               variants={inkReveal}
               initial="hidden"
               animate="show"
-              className="mt-1 font-display text-[clamp(2.2rem,5vw,4rem)] font-extrabold leading-[1] tracking-[-0.02em]"
+              className="mt-0.5 font-display text-[clamp(1.6rem,3vw,2.35rem)] font-extrabold leading-[1.05] tracking-[-0.01em]"
             >
-              Cuaderno de ensayo
+              Covers One Shoot
             </motion.h1>
-            <p className="tabular mt-4 text-washi-muted">
-              <span className="font-display text-2xl font-bold text-washi">{total}</span> {total === 1 ? 'vídeo' : 'vídeos'}
+            <p className="tabular mt-2.5 text-sm text-washi-muted">
+              <span className="font-display text-lg font-bold text-washi">{total}</span> {total === 1 ? 'vídeo' : 'vídeos'}
               <span className="mx-3 text-washi-subtle">·</span>
-              <span className="font-display text-2xl font-bold text-washi">{clipTotal}</span> {clipTotal === 1 ? 'clip' : 'clips'}
+              <span className="font-display text-lg font-bold text-washi">{clipTotal}</span> {clipTotal === 1 ? 'clip' : 'clips'}
             </p>
           </div>
           {total > 0 && (
