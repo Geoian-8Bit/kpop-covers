@@ -6,7 +6,7 @@ import {
   youTubeThumbnail,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, CloudUpload, HardDrive, Info, Link2, Search, UploadCloud, X, Youtube } from 'lucide-react';
+import { AlertTriangle, CloudUpload, HardDrive, Link2, Search, UploadCloud, X, Youtube } from 'lucide-react';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/Button';
@@ -322,16 +322,6 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                 )}
               </AnimatePresence>
 
-              <details className="rounded-[12px] border border-line px-4 py-3 text-[13px] text-washi-muted">
-                <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-washi-muted">
-                  <Info className="size-4 text-ai-300" /> ¿Por qué no se descarga el MP4?
-                </summary>
-                <p className="mt-2 leading-relaxed">
-                  YouTube no permite descargas de terceros y bloquea los servidores que lo intentan. Aquí reproducimos el
-                  vídeo original con espejo, velocidad y clips, sin descargar nada. Si quieres trabajarlo offline, bájalo
-                  tú (por ejemplo con <span className="font-mono text-washi">yt-dlp</span>) y súbelo en “Subir archivo”.
-                </p>
-              </details>
             </motion.div>
           ) : (
             <motion.div key="file" {...slide(1)} transition={soft} className="space-y-4">

@@ -102,15 +102,17 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             aria-modal="true"
             aria-labelledby={titleId}
             tabIndex={-1}
+            // The frame never scrolls (its gold corner fittings stay pinned to the real corners);
+            // only the body below the title does.
             className={cn(
-              'paper-raised relative max-h-[calc(100dvh-24px)] w-full overflow-y-auto rounded-[16px] p-6 outline-none sm:p-7',
+              'paper-raised relative flex max-h-[calc(100dvh-24px)] w-full flex-col overflow-hidden rounded-[16px] outline-none',
               widths[size],
             )}
             initial={{ opacity: 0, y: 36, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: soft }}
             exit={{ opacity: 0, y: 14, scale: 0.98, transition: { duration: 0.15, ease: 'easeIn' } }}
           >
-            <div className="mb-6">
+            <div className="shrink-0 px-6 pb-5 pt-6 sm:px-7 sm:pt-7">
               <div className="flex items-center gap-3">
                 <span aria-hidden className="size-2.5 shrink-0 rotate-45 bg-shu-500" />
                 <h2 id={titleId} className="shrink-0 font-display text-[26px] font-bold leading-tight text-washi">
@@ -123,7 +125,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
               </div>
               {description && <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>}
             </div>
-            {children}
+            <div className="min-h-0 overflow-y-auto overscroll-contain px-6 pb-6 pt-1 sm:px-7 sm:pb-7">{children}</div>
           </motion.div>
         </div>
       )}
