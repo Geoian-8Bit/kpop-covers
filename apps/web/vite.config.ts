@@ -1,26 +1,52 @@
 import { fileURLToPath, URL } from 'node:url';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { GET as youtubeMeta } from './api/youtube-meta';
+import { GET as youtubeSearch } from './api/youtube-search';
 
-/** Serves the Vercel function `api/youtube-meta` during `vite dev`. */
+/** Sample results so the search UI works locally without a YouTube API key. */
+const MOCK_SEARCH = [
+  ['dQw4w9WgXcQ', 'Rick Astley - Never Gonna Give You Up (Official Video)', 'Rick Astley', 213],
+  ['WPdWvnAAurg', "aespa 에스파 'Supernova' Dance Practice", 'aespa', 180],
+  ['gdZLi9oWNZg', "BTS (방탄소년단) 'Dynamite' Official MV", 'HYBE LABELS', 223],
+].map(([id, title, channel, duration]) => ({
+  id,
+  title,
+  channel,
+  duration,
+  thumbnail: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+}));
+
+/** Serves the Vercel functions in `api/` during `vite dev`. */
 function devApi(): Plugin {
+  type Handler = (request: Request) => Promise<Response>;
+  const mount = (server: ViteDevServer, path: string, handler: Handler) =>
+    server.middlewares.use(path, async (req, res) => {
+      const response = await handler(new Request(new URL(req.originalUrl ?? req.url ?? '/', 'http://localhost')));
+      res.statusCode = response.status;
+      response.headers.forEach((value, key) => res.setHeader(key, value));
+      res.end(await response.text());
+    });
   return {
     name: 'coverscape-dev-api',
     configureServer(server) {
-      server.middlewares.use('/api/youtube-meta', async (req, res) => {
-        const response = await youtubeMeta(new Request(new URL(req.originalUrl ?? req.url ?? '/', 'http://localhost')));
-        res.statusCode = response.status;
-        response.headers.forEach((value, key) => res.setHeader(key, value));
-        res.end(await response.text());
-      });
+      mount(server, '/api/youtube-meta', youtubeMeta);
+      mount(server, '/api/youtube-search', async (request) =>
+        process.env.YOUTUBE_API_KEY
+          ? youtubeSearch(request)
+          : new Response(JSON.stringify({ items: MOCK_SEARCH }), { headers: { 'Content-Type': 'application/json' } }),
+      );
     },
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Server-only secrets (no VITE_ prefix) for the dev API, e.g. YOUTUBE_API_KEY in .env.local.
+  const ytKey = process.env.YOUTUBE_API_KEY || loadEnv(mode, process.cwd(), '').YOUTUBE_API_KEY;
+  if (ytKey) process.env.YOUTUBE_API_KEY = ytKey; // assigning undefined would store the string "undefined"
+  return {
   plugins: [
     react(),
     tailwindcss(),
@@ -86,4 +112,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });

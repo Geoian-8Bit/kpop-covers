@@ -128,6 +128,12 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
 
       <div className="px-4 pb-3">
         <InstallAppButton compact />
+        <Link
+          to="/privacidad"
+          className="mt-1 block px-3 py-1.5 text-xs text-washi-subtle transition-colors hover:text-washi-muted"
+        >
+          Privacidad y condiciones
+        </Link>
       </div>
 
       {user && (
@@ -234,7 +240,17 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       Cerrar sesión
                     </button>
                   )}
-                  <p className="px-3 py-2 text-xs text-washi-subtle">One Shoot · estudio de ensayo</p>
+                  <p className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-washi-subtle">
+                    One Shoot · estudio de ensayo
+                    <Link
+                      role="menuitem"
+                      to="/privacidad"
+                      onClick={() => setMenuOpen(false)}
+                      className="hover:text-washi-muted"
+                    >
+                      Privacidad
+                    </Link>
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>

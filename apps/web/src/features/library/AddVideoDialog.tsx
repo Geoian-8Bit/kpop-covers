@@ -6,7 +6,7 @@ import {
   youTubeThumbnail,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, CloudUpload, HardDrive, Info, Link2, UploadCloud, X } from 'lucide-react';
+import { AlertTriangle, CloudUpload, HardDrive, Info, Link2, Search, UploadCloud, X, Youtube } from 'lucide-react';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +27,24 @@ type MetaState =
   | { status: 'loading' }
   | { status: 'ok'; title: string | null; author: string | null }
   | { status: 'error'; message: string };
+
+interface SearchItem {
+  id: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+  duration: number | null;
+}
+type SearchState =
+  | { status: 'idle' }
+  | { status: 'loading'; query: string }
+  | { status: 'ok'; query: string; items: SearchItem[] }
+  | { status: 'error'; message: string };
+
+const SEARCH_ERRORS: Record<number, string> = {
+  503: 'La búsqueda todavía no está activada. Pega el enlace del vídeo.',
+  429: 'Se acabaron las búsquedas de hoy. Pega el enlace o prueba mañana.',
+};
 
 interface Probe {
   duration: number | null;
@@ -57,6 +75,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   const [tab, setTab] = useState<Tab>('youtube');
   const [link, setLink] = useState('');
   const [meta, setMeta] = useState<MetaState>({ status: 'idle' });
+  const [search, setSearch] = useState<SearchState>({ status: 'idle' });
+  const searchAbort = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
   const [title, setTitle] = useState('');
@@ -75,6 +95,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
       probeToken.current++;
       setLink('');
       setMeta({ status: 'idle' });
+      searchAbort.current?.abort();
+      setSearch({ status: 'idle' });
       setFile(null);
       setProbe(null);
       setTitle('');
@@ -117,6 +139,41 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
     return () => controller.abort();
   }, [youtubeId]);
 
+  const query = link.trim().replace(/\s+/g, ' ');
+  const wantsSearch = tab === 'youtube' && !youtubeId && query.length >= 2 && !/^https?:\/\//i.test(query);
+
+  /** One request per explicit search (Enter / button), never while typing: the API quota is 100 searches a day. */
+  async function runSearch() {
+    if (!wantsSearch) return;
+    if ((search.status === 'loading' || search.status === 'ok') && search.query === query) return;
+    searchAbort.current?.abort();
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    setSearch({ status: 'loading', query });
+    try {
+      // Lower-cased so the same search hits Vercel's edge cache instead of the quota.
+      const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.toLowerCase())}`, {
+        signal: controller.signal,
+      });
+      const body = (await res.json().catch(() => ({}))) as { items?: SearchItem[] };
+      if (!res.ok) {
+        setSearch({ status: 'error', message: SEARCH_ERRORS[res.status] ?? 'No se pudo buscar. Prueba otra vez.' });
+        return;
+      }
+      setSearch({ status: 'ok', query, items: body.items ?? [] });
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') setSearch({ status: 'error', message: 'Sin conexión. Prueba otra vez.' });
+    }
+  }
+
+  function pickResult(item: SearchItem) {
+    setLink(`https://youtu.be/${item.id}`);
+    if (!titleTouched.current) {
+      setTitle(item.title);
+      setArtist(item.channel);
+    }
+  }
+
   async function pickFile(next: File | null | undefined) {
     if (!next) return;
     if (!/^(video|audio)\//.test(next.type) && !/\.(mp4|mov|webm|m4v|mkv|mp3|m4a|wav)$/i.test(next.name)) {
@@ -151,6 +208,10 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (wantsSearch) {
+      void runSearch();
+      return;
+    }
     if (!activeCrew || !canSubmit) return;
     setError(null);
     try {
@@ -173,8 +234,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   const tooBig = file ? file.size > MAX_CLOUD_UPLOAD_BYTES : false;
 
   return (
-    <Dialog open={open} onClose={onClose} title="Añadir vídeo" description="Desde un enlace de YouTube o desde un archivo tuyo.">
-      <form onSubmit={onSubmit} className="space-y-5">
+    <Dialog open={open} onClose={onClose} title="Añadir vídeo" description="Busca en YouTube, pega un enlace o sube un archivo tuyo.">
+      <form onSubmit={onSubmit} noValidate={wantsSearch} className="space-y-5">
         <Segmented
           label="Origen"
           layoutId="add-video-tab"
@@ -184,7 +245,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
             setError(null);
           }}
           options={[
-            { value: 'youtube', label: 'Enlace de YouTube' },
+            { value: 'youtube', label: 'YouTube' },
             { value: 'file', label: 'Subir archivo' },
           ]}
           className="w-full [&>button]:flex-1"
@@ -195,21 +256,38 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
             <motion.div key="yt" {...slide(-1)} transition={soft} className="space-y-4">
               <Field
                 data-autofocus
-                label="Enlace"
-                placeholder="https://youtu.be/…"
-                inputMode="url"
+                label="Buscar o pegar enlace"
+                placeholder="Ej. ILLIT Magnetic dance practice"
+                type="search"
+                enterKeyHint={youtubeId ? 'done' : 'search'}
                 autoComplete="off"
                 value={link}
                 onChange={(e) => setLink(e.target.value)}
                 error={
-                  link && !youtubeId
+                  /^https?:\/\//i.test(link.trim()) && !youtubeId
                     ? 'No reconocemos ese enlace de YouTube.'
                     : meta.status === 'error'
                       ? meta.message
                       : null
                 }
-                trailing={<Link2 className="mr-2.5 size-4.5 text-washi-subtle" />}
+                trailing={
+                  youtubeId ? (
+                    <Link2 className="mr-2.5 size-4.5 text-washi-subtle" />
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label="Buscar en YouTube"
+                      disabled={!wantsSearch}
+                      onClick={() => void runSearch()}
+                      className="mr-1 grid size-9 place-items-center rounded-[8px] text-washi-muted transition-colors hover:bg-washi/[0.07] hover:text-washi disabled:opacity-40"
+                    >
+                      <Search className="size-4.5" />
+                    </button>
+                  )
+                }
               />
+
+              {!youtubeId && search.status !== 'idle' && <SearchResults state={search} onPick={pickResult} />}
 
               <AnimatePresence>
                 {youtubeId && meta.status !== 'error' && (
@@ -376,11 +454,76 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={!canSubmit} loading={createVideo.isPending}>
-            {createVideo.isPending && tab === 'file' ? 'Guardando…' : 'Añadir y abrir'}
-          </Button>
+          {wantsSearch ? (
+            <Button type="submit" loading={search.status === 'loading'}>
+              <Search className="size-4" /> Buscar
+            </Button>
+          ) : (
+            <Button type="submit" disabled={!canSubmit} loading={createVideo.isPending}>
+              {createVideo.isPending && tab === 'file' ? 'Guardando…' : 'Añadir y abrir'}
+            </Button>
+          )}
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** Search hits, credited to YouTube as its API policies ask. */
+function SearchResults({ state, onPick }: { state: SearchState; onPick: (item: SearchItem) => void }) {
+  return (
+    <div className="rounded-[12px] border border-line bg-sumi-950/50">
+      <p className="flex items-center gap-1.5 border-b border-line px-3 py-2 text-xs text-washi-subtle">
+        <Youtube className="size-4 text-shu-400" /> Resultados de YouTube
+      </p>
+      {state.status === 'loading' && (
+        <ul className="space-y-1 p-1.5" aria-busy>
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="flex items-center gap-3 p-1.5">
+              <div className="skeleton aspect-video w-28 shrink-0 rounded-[8px]" />
+              <div className="flex-1 space-y-2">
+                <div className="skeleton h-3.5 w-4/5 rounded-full" />
+                <div className="skeleton h-3 w-1/2 rounded-full" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {state.status === 'error' && <p className="px-3 py-4 text-sm text-washi-muted">{state.message}</p>}
+      {state.status === 'ok' && state.items.length === 0 && (
+        <p className="px-3 py-4 text-sm text-washi-muted">Sin resultados. Prueba con otras palabras.</p>
+      )}
+      {state.status === 'ok' && state.items.length > 0 && (
+        <ul className="max-h-[min(46dvh,360px)] space-y-0.5 overflow-y-auto overscroll-contain p-1.5">
+          {state.items.map((item, i) => (
+            <motion.li
+              key={item.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...soft, delay: Math.min(i, 8) * 0.03 }}
+            >
+              <button
+                type="button"
+                onClick={() => onPick(item)}
+                className="flex w-full items-center gap-3 rounded-[10px] p-1.5 text-left transition-colors hover:bg-washi/[0.06]"
+              >
+                <span className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-[8px] bg-sumi-800">
+                  <img src={item.thumbnail} alt="" loading="lazy" className="size-full object-cover" />
+                  {item.duration != null && (
+                    <span className="tabular absolute bottom-1 right-1 rounded-[4px] bg-black/80 px-1 font-mono text-[10px] text-washi">
+                      {formatDuration(item.duration)}
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 text-sm font-medium text-washi">{item.title}</span>
+                  <span className="mt-0.5 block truncate text-xs text-washi-muted">{item.channel}</span>
+                </span>
+              </button>
+            </motion.li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

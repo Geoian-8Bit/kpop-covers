@@ -23,6 +23,7 @@ import {
   Repeat1,
   RotateCcw,
   RotateCw,
+  Youtube,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
@@ -359,6 +360,24 @@ function MediaStage({
         />
 
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
+          {/* Source credit for YouTube videos (API policies); opens the original at the current second. */}
+          {video.source === 'youtube' && video.youtube_id && (
+            <a
+              href={youTubeWatchUrl(video.youtube_id)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Ver en YouTube"
+              onClick={(e) => {
+                e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
+              }}
+              className={cn(
+                'pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/75 transition-[opacity,color] duration-200 hover:text-washi',
+                fullscreen && !chrome.visible && 'pointer-events-none opacity-0',
+              )}
+            >
+              <Youtube className="size-3.5" /> YouTube
+            </a>
+          )}
           <AnimatePresence>
             {rate !== 1 && (
               <motion.span

@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell';
 import { Backdrop } from '@/components/Backdrop';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
+import { PrivacyPage } from '@/features/legal/PrivacyPage';
 import { LibraryPage } from '@/features/library/LibraryPage';
 import { StudioPage } from '@/features/studio/StudioPage';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -91,6 +92,7 @@ export function App() {
                       <Route index element={<LibraryPage />} />
                       <Route path="/v/:videoId" element={<StudioPage />} />
                     </Route>
+                    <Route path="/privacidad" element={<PrivacyPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </BrowserRouter>

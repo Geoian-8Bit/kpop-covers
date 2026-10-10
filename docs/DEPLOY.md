@@ -16,8 +16,11 @@ Proyecto `kpop-covers` (https://kpop-covers.vercel.app) con **Root Directory = `
 - Variables de entorno (Production + Preview):
   - `VITE_SUPABASE_URL=https://pevbjaowyctqqldvzovz.supabase.co`
   - `VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…`
+  - `YOUTUBE_API_KEY=…` (solo servidor, **sin** prefijo `VITE_`): clave de YouTube Data API v3 para la búsqueda.
+    Sin ella la búsqueda responde 503 y la app pide pegar el enlace. En `pnpm dev` sin clave salen resultados de prueba.
 - `apps/web/vercel.json` añade el fallback SPA (excepto `/api/*`) y cabeceras de caché/seguridad.
-- `apps/web/api/youtube-meta.ts` se despliega como función Node.
+- `apps/web/api/youtube-meta.ts` (oEmbed) y `apps/web/api/youtube-search.ts` (búsqueda, caché de 1 día en el edge;
+  cupo por defecto 100 búsquedas/día) se despliegan como funciones Node.
 
 CLI:
 
@@ -26,6 +29,7 @@ vercel login
 cd apps/web && vercel link        # elegir "kpop-covers", root apps/web
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_PUBLISHABLE_KEY
+vercel env add YOUTUBE_API_KEY
 vercel --prod
 ```
 
