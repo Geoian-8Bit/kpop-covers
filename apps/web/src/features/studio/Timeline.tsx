@@ -57,7 +57,7 @@ function buildPaths(levels: number[]) {
  * Packs clips into lanes so overlapping ones never stack on the same row.
  * A small gap (1.5% of the song) also separates clips that would touch visually.
  */
-function assignLanes(clips: Clip[], duration: number) {
+export function assignLanes(clips: Clip[], duration: number) {
   const pad = duration * 0.015;
   const sorted = [...clips].sort(
     (a, b) => a.start_seconds - b.start_seconds || a.end_seconds - b.end_seconds,

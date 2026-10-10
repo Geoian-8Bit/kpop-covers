@@ -1,4 +1,12 @@
-import { formatSpeed, formatTime, round3, youTubeWatchUrl, type Clip, type Video } from '@coverscape/shared';
+import {
+  formatSpeed,
+  formatTime,
+  round3,
+  SPEED_PRESETS,
+  youTubeWatchUrl,
+  type Clip,
+  type Video,
+} from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -11,10 +19,11 @@ import {
   Minimize2,
   Pause,
   Play,
+  Repeat,
   RotateCcw,
   RotateCw,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
@@ -34,7 +43,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { ClipList } from './ClipList';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
-import { Timeline } from './Timeline';
+import { assignLanes, Timeline } from './Timeline';
 import { LoopTile, MirrorTile, PlaybackTile, SpeedTile } from './Transport';
 import { useShortcuts } from './useShortcuts';
 
@@ -257,6 +266,43 @@ function MediaStage({
   const missing = video.source === 'upload' && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
+  const chrome = useAutoHideChrome(fullscreen, playing);
+  const pointerType = useRef<string>('mouse');
+  const lastTap = useRef<{ at: number; timer?: ReturnType<typeof setTimeout> }>({ at: 0 });
+  const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; key: number } | null>(null);
+
+  /**
+   * Mouse / desktop: click toggles playback. Touch in fullscreen (YouTube-style): one tap shows/hides the
+   * controls, a double tap on the left or right side jumps 5 s, in the middle it plays/pauses.
+   */
+  function onStageClick(event: React.MouseEvent<HTMLButtonElement>) {
+    const player = usePlayer.getState();
+    if (!fullscreen || pointerType.current !== 'touch') {
+      player.togglePlay();
+      chrome.wake();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const now = performance.now();
+    const tap = lastTap.current;
+    if (now - tap.at < 300) {
+      clearTimeout(tap.timer);
+      tap.at = 0;
+      if (x < 0.4) {
+        player.nudge(-5);
+        setSeekFlash({ side: 'left', key: now });
+      } else if (x > 0.6) {
+        player.nudge(5);
+        setSeekFlash({ side: 'right', key: now });
+      } else {
+        player.togglePlay();
+      }
+      return;
+    }
+    tap.at = now;
+    tap.timer = setTimeout(() => chrome.toggle(), 280);
+  }
 
   async function onPick(picked: File | undefined) {
     if (!picked) return;
@@ -270,7 +316,13 @@ function MediaStage({
   }
 
   return (
-    <div ref={stageRef} className={cn(fullscreen && 'fixed inset-0 z-[70] grid place-items-center bg-black')}>
+    <div
+      ref={stageRef}
+      className={cn(
+        fullscreen && 'fixed inset-0 z-[70] grid place-items-center bg-black',
+        fullscreen && !chrome.visible && 'cursor-none',
+      )}
+    >
       <div
         className={cn(
           'relative aspect-video w-full overflow-hidden bg-black',
@@ -297,7 +349,8 @@ function MediaStage({
           type="button"
           data-stage
           aria-label={playing ? 'Pausar' : 'Reproducir'}
-          onClick={() => usePlayer.getState().togglePlay()}
+          onPointerDown={(e) => (pointerType.current = e.pointerType)}
+          onClick={onStageClick}
           disabled={!ready}
           className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
         />
@@ -391,12 +444,32 @@ function MediaStage({
         )}
       </div>
       {fullscreen && (
-        <FullscreenBar
-          seed={video.id}
-          clips={clips}
-          onClipSelect={onClipSelect}
-          onExit={() => void toggleFullscreen()}
-        />
+        <>
+          <AnimatePresence>
+            {seekFlash && (
+              <motion.span
+                key={seekFlash.key}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                onAnimationComplete={() => setTimeout(() => setSeekFlash(null), 350)}
+                className={cn(
+                  'pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 rounded-full bg-black/55 px-4 py-2 font-mono text-sm font-semibold text-washi',
+                  seekFlash.side === 'left' ? 'left-[12%]' : 'right-[12%]',
+                )}
+              >
+                {seekFlash.side === 'left' ? '−5 s' : '+5 s'}
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <FullscreenBar
+            visible={chrome.visible}
+            clips={clips}
+            onClipSelect={onClipSelect}
+            onExit={() => void toggleFullscreen()}
+          />
+        </>
       )}
     </div>
   );
@@ -466,118 +539,309 @@ function useFullscreen() {
 }
 
 /** Touch-friendly transport shown only in fullscreen; fades out while playing and nobody touches the screen. */
-interface FullscreenBarProps {
-  seed: string;
+/**
+ * Controls visibility in fullscreen, YouTube-style: shown on any activity, hidden after 2.5 s of
+ * playback without input; always shown while paused.
+ */
+function useAutoHideChrome(active: boolean, playing: boolean) {
+  const [visible, setVisible] = useState(true);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+
+  const schedule = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      if (playingRef.current) setVisible(false);
+    }, 2500);
+  }, []);
+
+  const wake = useCallback(() => {
+    setVisible(true);
+    schedule();
+  }, [schedule]);
+
+  const toggle = useCallback(() => {
+    setVisible((v) => {
+      if (!v) schedule();
+      return !v;
+    });
+  }, [schedule]);
+
+  useEffect(() => {
+    if (!active) return;
+    wake();
+    const onMouse = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') wake();
+    };
+    window.addEventListener('pointermove', onMouse);
+    window.addEventListener('keydown', wake);
+    return () => {
+      clearTimeout(timer.current);
+      window.removeEventListener('pointermove', onMouse);
+      window.removeEventListener('keydown', wake);
+    };
+  }, [active, wake]);
+
+  useEffect(() => {
+    if (!playing) {
+      clearTimeout(timer.current);
+      setVisible(true);
+    } else if (active) {
+      schedule();
+    }
+  }, [playing, active, schedule]);
+
+  return { visible: visible || !playing, wake, toggle };
+}
+
+/** Thin YouTube-like progress line: scrub anywhere, A–B band in vermilion, saved clips as thin lines above. */
+function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (clip: Clip) => void }) {
+  const time = usePlayer((s) => s.time);
+  const duration = usePlayer((s) => s.duration);
+  const loop = usePlayer((s) => s.loop);
+  const activeClipId = usePlayer((s) => s.activeClipId);
+  const barRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const [hover, setHover] = useState<number | null>(null);
+  const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
+
+  const pct = (t: number) => (duration > 0 ? Math.min(100, Math.max(0, (t / duration) * 100)) : 0);
+  const fractionAt = (clientX: number) => {
+    const rect = barRef.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  };
+  const seekTo = (clientX: number) => usePlayer.getState().seek(fractionAt(clientX) * duration);
+
+  return (
+    <div className="relative">
+      {/* clip lines */}
+      <div
+        className="relative mb-1"
+        style={{ height: Math.max(1, layout.count) * 7 }}
+        aria-label="Clips guardados"
+      >
+        {duration > 0 &&
+          clips.map((clip) => (
+            <button
+              key={clip.id}
+              type="button"
+              title={`${clip.name} · ${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`}
+              aria-label={`Reproducir clip ${clip.name}`}
+              onClick={() => onClipSelect(clip)}
+              className="group/clip absolute flex items-center"
+              style={{
+                left: `${pct(clip.start_seconds)}%`,
+                width: `${Math.max(0.6, pct(clip.end_seconds) - pct(clip.start_seconds))}%`,
+                top: (layout.lanes.get(clip.id) ?? 0) * 7,
+                height: 7,
+              }}
+            >
+              <span
+                className={cn(
+                  'block h-[3px] w-full rounded-full transition-[height,opacity] group-hover/clip:h-[5px]',
+                  CLIP_SWATCH[clip.color].dot,
+                  clip.id === activeClipId ? 'opacity-100' : 'opacity-70',
+                )}
+              />
+            </button>
+          ))}
+      </div>
+
+      <div
+        ref={barRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="Progreso"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(time)}
+        aria-valuetext={formatTime(time)}
+        onPointerDown={(e) => {
+          if (!duration) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          dragging.current = true;
+          seekTo(e.clientX);
+        }}
+        onPointerMove={(e) => {
+          setHover(fractionAt(e.clientX));
+          if (dragging.current) seekTo(e.clientX);
+        }}
+        onPointerUp={() => (dragging.current = false)}
+        onPointerCancel={() => (dragging.current = false)}
+        onPointerLeave={() => setHover(null)}
+        className="group/bar relative flex h-5 cursor-pointer touch-none items-center"
+      >
+        <div className="relative h-[3px] w-full rounded-full bg-washi/25 transition-[height] duration-150 group-hover/bar:h-[5px]">
+          {hover != null && (
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-washi/25"
+              style={{ width: `${hover * 100}%` }}
+            />
+          )}
+          {hasRange(loop) && (
+            <div
+              className={cn('absolute inset-y-0', loop.enabled ? 'bg-shu-400/55' : 'bg-washi/20')}
+              style={{ left: `${pct(loop.start)}%`, width: `${pct(loop.end) - pct(loop.start)}%` }}
+            />
+          )}
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-shu-500"
+            style={{ width: `${pct(time)}%` }}
+          />
+        </div>
+        <span
+          className="pointer-events-none absolute size-3.5 -translate-x-1/2 scale-0 rounded-full bg-shu-500 shadow transition-transform duration-150 group-hover/bar:scale-100"
+          style={{ left: `${pct(time)}%` }}
+        />
+        {hover != null && duration > 0 && (
+          <span
+            className="tabular pointer-events-none absolute -top-8 -translate-x-1/2 rounded-[6px] bg-sumi-950/90 px-2 py-1 font-mono text-xs text-washi"
+            style={{ left: `${hover * 100}%` }}
+          >
+            {formatTime(hover * duration, { tenths: true })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Compact fullscreen transport: progress line + one small row of controls. */
+function FullscreenBar({
+  visible,
+  clips,
+  onClipSelect,
+  onExit,
+}: {
+  visible: boolean;
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
   onExit: () => void;
-}
-
-function FullscreenBar({ seed, clips, onClipSelect, onExit }: FullscreenBarProps) {
-  const activeClipId = usePlayer((s) => s.activeClipId);
+}) {
   const playing = usePlayer((s) => s.playing);
   const time = usePlayer((s) => s.time);
   const duration = usePlayer((s) => s.duration);
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
-  const [visible, setVisible] = useState(true);
+  const loop = usePlayer((s) => s.loop);
+  const [speedOpen, setSpeedOpen] = useState(false);
+  const p = usePlayer.getState();
+  const btn = 'grid size-10 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15';
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const wake = () => {
-      setVisible(true);
-      clearTimeout(timer);
-      timer = setTimeout(() => setVisible(false), 2800);
-    };
-    wake();
-    window.addEventListener('pointermove', wake);
-    window.addEventListener('pointerdown', wake);
-    window.addEventListener('keydown', wake);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('pointermove', wake);
-      window.removeEventListener('pointerdown', wake);
-      window.removeEventListener('keydown', wake);
-    };
-  }, []);
-
-  const shown = visible || !playing;
-  const p = usePlayer.getState();
-  const btn = 'grid size-12 place-items-center rounded-[10px] text-washi transition-colors hover:bg-washi/10';
+    if (!visible) setSpeedOpen(false);
+  }, [visible]);
 
   return (
-    <motion.div
-      initial={false}
-      animate={{ opacity: shown ? 1 : 0, y: shown ? 0 : 12 }}
-      transition={{ duration: 0.25 }}
-      style={{ pointerEvents: shown ? 'auto' : 'none' }}
-      className="absolute inset-x-0 bottom-0 z-30 bg-[linear-gradient(to_top,rgb(0_0_0/0.92)_55%,transparent)] px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-16 sm:px-6"
-    >
-      {clips.length > 0 && (
-        <div className="scrollbar-none mb-2 flex gap-2 overflow-x-auto" aria-label="Clips">
-          {clips.map((clip) => (
-            <button
-              key={clip.id}
-              type="button"
-              onClick={() => onClipSelect(clip)}
-              className={cn(
-                'flex h-10 shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-medium transition-colors',
-                clip.id === activeClipId
-                  ? 'bg-washi text-sumi-900'
-                  : 'bg-washi/10 text-washi hover:bg-washi/20',
-              )}
-            >
-              <span className={cn('size-3 rotate-[-4deg] rounded-[3px]', CLIP_SWATCH[clip.color].dot)} />
-              {clip.name}
-              <span
-                className={cn(
-                  'tabular font-mono text-xs',
-                  clip.id === activeClipId ? 'text-sumi-600' : 'text-washi-subtle',
-                )}
-              >
-                {formatSpeed(clip.speed)}
-              </span>
-            </button>
-          ))}
-        </div>
+    <div
+      className={cn(
+        'absolute inset-x-0 bottom-0 z-30 transition-opacity duration-200',
+        visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
-      <Timeline seed={seed} clips={clips} onClipSelect={onClipSelect} compact />
-      <div className="mt-1 flex items-center gap-1 sm:gap-2">
-        <button type="button" aria-label="Retroceder 5 segundos" className={btn} onClick={() => p.nudge(-5)}>
-          <RotateCcw className="size-5" />
-        </button>
-        <button
-          type="button"
-          aria-label={playing ? 'Pausar' : 'Reproducir'}
-          onClick={() => p.togglePlay()}
-          className="grid size-14 place-items-center rounded-[12px] bg-shu-500 text-washi"
-        >
-          {playing ? <Pause className="size-6 fill-washi" /> : <Play className="ml-0.5 size-6 fill-washi" />}
-        </button>
-        <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
-          <RotateCw className="size-5" />
-        </button>
-        <span className="tabular ml-2 font-mono text-sm text-washi sm:text-base">
-          {formatTime(time, { tenths: true })}
-          <span className="text-washi-subtle"> / {formatTime(duration)}</span>
-        </span>
-        <span className="tabular ml-auto mr-1 rounded-[8px] bg-washi/10 px-2.5 py-1.5 font-mono text-sm text-washi">
-          {formatSpeed(rate)}
-        </span>
-        <button
-          type="button"
-          aria-label="Espejo"
-          aria-pressed={mirrored}
-          onClick={() => p.toggleMirror()}
-          className={cn(btn, mirrored && 'bg-ai-600 hover:bg-ai-500')}
-        >
-          <FlipHorizontal2 className="size-5" />
-        </button>
-        <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
-          <Minimize2 className="size-5" />
-        </button>
+    >
+      <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)]" />
+      <div className="px-3 pb-[max(6px,env(safe-area-inset-bottom))] pt-10 sm:px-5">
+        <FsProgress clips={clips} onClipSelect={onClipSelect} />
+        <div className="flex items-center gap-0.5 sm:gap-1">
+          <button
+            type="button"
+            aria-label={playing ? 'Pausar' : 'Reproducir'}
+            className={btn}
+            onClick={() => p.togglePlay()}
+          >
+            {playing ? (
+              <Pause className="size-5 fill-washi" />
+            ) : (
+              <Play className="ml-0.5 size-5 fill-washi" />
+            )}
+          </button>
+          <button
+            type="button"
+            aria-label="Retroceder 5 segundos"
+            className={btn}
+            onClick={() => p.nudge(-5)}
+          >
+            <RotateCcw className="size-[18px]" />
+          </button>
+          <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
+            <RotateCw className="size-[18px]" />
+          </button>
+          <span className="tabular ml-1.5 font-mono text-[13px] text-washi">
+            {formatTime(time)}
+            <span className="text-washi-subtle"> / {formatTime(duration)}</span>
+          </span>
+
+          <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Velocidad"
+                aria-haspopup="menu"
+                aria-expanded={speedOpen}
+                onClick={() => setSpeedOpen((v) => !v)}
+                className="tabular h-10 rounded-full px-3 font-mono text-[13px] font-semibold text-washi transition-colors hover:bg-washi/15"
+              >
+                {formatSpeed(rate)}
+              </button>
+              <AnimatePresence>
+                {speedOpen && (
+                  <motion.div
+                    role="menu"
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, transition: { duration: 0.1 } }}
+                    transition={jelly}
+                    className="absolute bottom-12 right-0 w-28 rounded-[12px] bg-sumi-950/95 p-1.5 shadow-xl ring-1 ring-washi/15"
+                  >
+                    {SPEED_PRESETS.map((s) => (
+                      <button
+                        key={s}
+                        role="menuitemradio"
+                        aria-checked={s === rate}
+                        type="button"
+                        onClick={() => {
+                          p.setRate(s);
+                          setSpeedOpen(false);
+                        }}
+                        className={cn(
+                          'tabular flex h-9 w-full items-center justify-between rounded-[8px] px-3 font-mono text-[13px]',
+                          s === rate ? 'bg-washi text-sumi-900' : 'text-washi hover:bg-washi/10',
+                        )}
+                      >
+                        {formatSpeed(s)}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            <button
+              type="button"
+              aria-label="Repetir tramo"
+              aria-pressed={loop.enabled && hasRange(loop)}
+              disabled={!hasRange(loop)}
+              onClick={() => p.toggleLoop()}
+              className={cn(btn, 'disabled:opacity-35', loop.enabled && hasRange(loop) && 'text-shu-400')}
+            >
+              <Repeat className="size-[18px]" />
+            </button>
+            <button
+              type="button"
+              aria-label="Espejo"
+              aria-pressed={mirrored}
+              onClick={() => p.toggleMirror()}
+              className={cn(btn, mirrored && 'text-ai-300')}
+            >
+              <FlipHorizontal2 className="size-[18px]" />
+            </button>
+            <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
+              <Minimize2 className="size-[18px]" />
+            </button>
+          </div>
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
