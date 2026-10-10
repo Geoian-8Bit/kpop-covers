@@ -1,6 +1,6 @@
 import { formatSpeed, formatTime, SPEED_PRESETS, stepSpeed } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { BookmarkPlus, Minus, Pause, Play, Plus, RotateCcw, RotateCw, X } from 'lucide-react';
+import { BookmarkPlus, Minus, Pause, Play, Plus, Repeat1, RotateCcw, RotateCw, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
@@ -12,14 +12,28 @@ import { jelly } from '@/lib/motion';
 import { hasRange, usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 
-const speedOptions = SPEED_PRESETS.map((value) => ({ value, label: `${value}`, ariaLabel: `Velocidad ${value}×` }));
+const speedOptions = SPEED_PRESETS.map((value) => ({
+  value,
+  label: `${value}`,
+  ariaLabel: `Velocidad ${value}×`,
+}));
 const gapOptions = [0, 1, 2, 3].map((value) => ({
   value,
   label: value === 0 ? 'No' : `${value} s`,
   ariaLabel: value === 0 ? 'Sin pausa' : `Pausa de ${value} segundos`,
 }));
 
-function Tile({ title, glyph, children, className }: { title: string; glyph: string; children: ReactNode; className?: string }) {
+function Tile({
+  title,
+  glyph,
+  children,
+  className,
+}: {
+  title: string;
+  glyph: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <section className={cn('flex min-w-0 flex-col gap-4 p-5 sm:p-6', className)}>
       <SectionTitle glyph={glyph}>{title}</SectionTitle>
@@ -36,20 +50,61 @@ export function PlaybackTile() {
 
   return (
     <Tile title="Reproducción" glyph="再生">
-      <p className="well tabular whitespace-nowrap rounded-[10px] px-3.5 py-2.5 font-mono text-[24px] font-semibold leading-none text-washi" aria-label="Tiempo">
+      <p
+        className="well tabular whitespace-nowrap rounded-[10px] px-3.5 py-2.5 font-mono text-[24px] font-semibold leading-none text-washi"
+        aria-label="Tiempo"
+      >
         {formatTime(time, { tenths: true })}
         <span className="text-base text-washi-subtle"> / {formatTime(duration)}</span>
       </p>
       <div className="mt-auto flex items-center gap-2.5">
-        <Button variant="secondary" size="icon" aria-label="Retroceder 5 segundos" onClick={() => nudge(-5)} disabled={!ready}>
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Retroceder 5 segundos"
+          onClick={() => nudge(-5)}
+          disabled={!ready}
+        >
           <RotateCcw className="size-5" />
         </Button>
         <PlayButton />
-        <Button variant="secondary" size="icon" aria-label="Avanzar 5 segundos" onClick={() => nudge(5)} disabled={!ready}>
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Avanzar 5 segundos"
+          onClick={() => nudge(5)}
+          disabled={!ready}
+        >
           <RotateCw className="size-5" />
         </Button>
+        <LoopAllButton />
       </div>
     </Tile>
+  );
+}
+
+/** Repeat the whole song (no clip needed). */
+function LoopAllButton() {
+  const loopAll = usePlayer((s) => s.loopAll);
+  return (
+    <motion.button
+      type="button"
+      aria-label="Repetir la canción entera"
+      title="Repetir la canción entera (R)"
+      aria-pressed={loopAll}
+      onClick={() => usePlayer.getState().toggleLoopAll()}
+      whileTap={{ scale: 0.88 }}
+      transition={jelly}
+      className={cn(
+        'ml-auto flex h-11 items-center gap-2 rounded-[10px] border px-3 text-sm font-bold transition-colors',
+        loopAll
+          ? 'border-ai-400/70 bg-ai-600 text-washi'
+          : 'border-line-strong bg-sumi-800 text-washi-muted hover:text-washi',
+      )}
+    >
+      <Repeat1 className="size-[18px]" />
+      <span className="max-sm:sr-only">Bucle</span>
+    </motion.button>
   );
 }
 
@@ -61,7 +116,12 @@ export function SpeedTile({ className }: { className?: string }) {
   return (
     <Tile title="Velocidad" glyph="速" className={className}>
       <div className="flex items-center justify-between gap-3">
-        <Button variant="secondary" size="icon" aria-label="Más lento" onClick={() => setRate(stepSpeed(rate, -1))}>
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Más lento"
+          onClick={() => setRate(stepSpeed(rate, -1))}
+        >
           <Minus className="size-5" />
         </Button>
         <span className="well relative grid h-11 flex-1 place-items-center overflow-hidden rounded-[10px]">
@@ -72,14 +132,22 @@ export function SpeedTile({ className }: { className?: string }) {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -18, opacity: 0 }}
               transition={jelly}
-              className={cn('tabular font-mono text-[28px] font-semibold', isPreset ? 'text-washi' : 'text-kin-300')}
+              className={cn(
+                'tabular font-mono text-[28px] font-semibold',
+                isPreset ? 'text-washi' : 'text-kin-300',
+              )}
               aria-live="polite"
             >
               {formatSpeed(rate)}
             </motion.span>
           </AnimatePresence>
         </span>
-        <Button variant="secondary" size="icon" aria-label="Más rápido" onClick={() => setRate(stepSpeed(rate, 1))}>
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Más rápido"
+          onClick={() => setRate(stepSpeed(rate, 1))}
+        >
           <Plus className="size-5" />
         </Button>
       </div>
@@ -108,7 +176,11 @@ export function MirrorTile({ className }: { className?: string }) {
           {mirrored ? 'Ves la coreo como frente al espejo de la sala.' : 'Ves la coreo tal como se grabó.'}
         </p>
         <div className="flex items-center gap-4 2xl:mt-auto 2xl:justify-between">
-          <ElasticToggle checked={mirrored} onChange={setMirrored} label={mirrored ? 'Activado' : 'Desactivado'} />
+          <ElasticToggle
+            checked={mirrored}
+            onChange={setMirrored}
+            label={mirrored ? 'Activado' : 'Desactivado'}
+          />
           <span className="grid size-[38px] place-items-center">
             <AnimatePresence>{mirrored && <Seal key="seal" glyph="鏡" size={38} stamp />}</AnimatePresence>
           </span>
@@ -130,11 +202,28 @@ export function LoopTile({ onSaveClip, className }: { onSaveClip: () => void; cl
     <Tile title="Tramo A–B" glyph="反復" className={className}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-2">
-          <MarkButton letter="A" value={loop.start} onClick={() => markStart()} disabled={!ready} label="Marcar inicio" />
-          <MarkButton letter="B" value={loop.end} onClick={() => markEnd()} disabled={!ready} label="Marcar final" />
+          <MarkButton
+            letter="A"
+            value={loop.start}
+            onClick={() => markStart()}
+            disabled={!ready}
+            label="Marcar inicio"
+          />
+          <MarkButton
+            letter="B"
+            value={loop.end}
+            onClick={() => markEnd()}
+            disabled={!ready}
+            label="Marcar final"
+          />
           <AnimatePresence>
             {range && (
-              <motion.span initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.6 }} transition={jelly}>
+              <motion.span
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={jelly}
+              >
                 <Button variant="ghost" size="icon-sm" aria-label="Quitar tramo" onClick={clearLoop}>
                   <X className="size-4" />
                 </Button>
@@ -151,7 +240,14 @@ export function LoopTile({ onSaveClip, className }: { onSaveClip: () => void; cl
         />
         <div className="flex items-center gap-2">
           <span className="text-sm text-washi-muted">Pausa entre vueltas</span>
-          <Segmented label="Pausa entre repeticiones" layoutId="gap-tab" size="sm" options={gapOptions} value={gap} onChange={setGap} />
+          <Segmented
+            label="Pausa entre repeticiones"
+            layoutId="gap-tab"
+            size="sm"
+            options={gapOptions}
+            value={gap}
+            onChange={setGap}
+          />
         </div>
         <Button className="ml-auto max-sm:w-full" onClick={onSaveClip} disabled={!range}>
           <BookmarkPlus className="size-4.5" /> Guardar clip

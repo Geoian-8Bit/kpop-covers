@@ -26,6 +26,9 @@ export function FileStage({ src }: { src: string }) {
         engine.seek(loop.start);
         if (gap > 0) usePlayer.setState({ countdownEndsAt: performance.now() + gap * 1000, playing: false });
         else engine.play();
+      } else if (usePlayer.getState().loopAll) {
+        engine.seek(0);
+        engine.play();
       } else {
         sync({ playing: false });
       }

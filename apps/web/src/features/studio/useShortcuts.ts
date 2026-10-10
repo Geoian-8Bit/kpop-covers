@@ -54,6 +54,9 @@ export function useShortcuts({ onSave, onHelp, enabled }: { onSave: () => void; 
         case 'm':
           p.toggleMirror();
           break;
+        case 'r':
+          p.toggleLoopAll();
+          break;
         case 'f':
           window.dispatchEvent(new Event('oneshoot:fullscreen'));
           break;

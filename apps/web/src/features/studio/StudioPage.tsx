@@ -20,13 +20,13 @@ import {
   Pause,
   Play,
   Repeat,
+  Repeat1,
   RotateCcw,
   RotateCw,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
-import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
@@ -356,9 +356,6 @@ function MediaStage({
         />
 
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
-          <AnimatePresence>
-            {mirrored && <Seal key="mirror-seal" glyph="鏡" size={44} stamp title="Modo espejo" />}
-          </AnimatePresence>
           <AnimatePresence>
             {rate !== 1 && (
               <motion.span
@@ -732,6 +729,7 @@ function FullscreenBar({
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
   const loop = usePlayer((s) => s.loop);
+  const loopAll = usePlayer((s) => s.loopAll);
   const [speedOpen, setSpeedOpen] = useState(false);
   const p = usePlayer.getState();
   const btn = 'grid size-10 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15';
@@ -823,6 +821,15 @@ function FullscreenBar({
                 )}
               </AnimatePresence>
             </div>
+            <button
+              type="button"
+              aria-label="Repetir la canción entera"
+              aria-pressed={loopAll}
+              onClick={() => p.toggleLoopAll()}
+              className={cn(btn, loopAll && 'text-ai-300')}
+            >
+              <Repeat1 className="size-[18px]" />
+            </button>
             <button
               type="button"
               aria-label="Repetir tramo"

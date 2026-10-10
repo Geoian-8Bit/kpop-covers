@@ -41,6 +41,13 @@ export function useLoopController(): void {
         return;
       }
 
+      // Whole-song loop: jump back just before the end so YouTube never shows its end screen.
+      if (state.playing && state.loopAll && !(loop.enabled && hasRange(loop)) && state.duration > 1 && t >= state.duration - 0.3) {
+        engine.seek(0);
+        usePlayer.setState({ time: 0 });
+        return;
+      }
+
       // Right after a scrub, YouTube can still report the pre-seek time for a few frames: ignore big jumps back.
       const settling = performance.now() - state.scrubEndedAt < 600 && Math.abs(t - state.time) > 0.75;
       if (!settling && Math.abs(t - state.time) > 0.008) usePlayer.setState({ time: t });

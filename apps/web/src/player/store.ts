@@ -53,6 +53,9 @@ interface PlayerState extends PlayerStatus {
   setRate(rate: number): void;
   setMirrored(mirrored: boolean): void;
   toggleMirror(): void;
+  /** Repeat the whole song when it ends (A–B loop wins while enabled). Remembered per device. */
+  loopAll: boolean;
+  toggleLoopAll(): void;
 
   markStart(at?: number): void;
   markEnd(at?: number): void;
@@ -67,6 +70,15 @@ interface PlayerState extends PlayerStatus {
 }
 
 const MIRROR_KEY = 'coverscape.mirrored';
+const LOOP_ALL_KEY = 'coverscape.loopAll';
+
+function readLoopAllPreference(): boolean {
+  try {
+    return localStorage.getItem(LOOP_ALL_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 function readMirrorPreference(): boolean {
   try {
@@ -96,6 +108,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   engine: null,
   rate: 1,
   mirrored: readMirrorPreference(),
+  loopAll: readLoopAllPreference(),
   loop: emptyLoop,
   gap: 0,
   countdownEndsAt: null,
@@ -170,6 +183,16 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       /* ignore */
     }
     set({ mirrored });
+  },
+
+  toggleLoopAll() {
+    const next = !get().loopAll;
+    try {
+      localStorage.setItem(LOOP_ALL_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+    set({ loopAll: next });
   },
 
   toggleMirror() {
