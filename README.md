@@ -1,4 +1,4 @@
-# Coverscape
+# One Shoot
 
 Estudio de práctica para un grupo de **covers de K-pop**. Pega un enlace de YouTube o sube el vídeo del dance practice y:
 

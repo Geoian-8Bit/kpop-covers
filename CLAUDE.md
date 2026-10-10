@@ -1,4 +1,4 @@
-# Coverscape — notas para agentes
+# One Shoot — notas para agentes
 
 - Monorepo pnpm: `apps/web` (React 19 + Vite 7 + Tailwind v4 + motion), `packages/shared` (TS puro + vitest), `supabase/`.
 - Comandos: `pnpm dev` · `pnpm typecheck` · `pnpm test` · `pnpm build`.

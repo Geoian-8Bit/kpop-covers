@@ -40,7 +40,7 @@ or on uploaded files, shared per crew with invite codes.
 
 ## Brand Commitments
 
-- Name: Coverscape.
+- Name: One Shoot (the group's own name). Logo seal glyph 一 ("one"). Repo/package names keep the old "coverscape" id.
 - Binding visual direction from the user: no neon/glow/"AI slop"; modern but rooted in old Japanese/Korean art
   (ukiyo-e, the Great Wave off Kanagawa, old Asian drawings), bento layouts; dark sumi-ink base. Wine/burgundy
   accents were requested originally. Fluid, elastic micro-interactions are wanted.

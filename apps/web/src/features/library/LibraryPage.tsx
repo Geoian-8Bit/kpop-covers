@@ -54,7 +54,7 @@ export function LibraryPage() {
 
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-[16px] sm:rounded-[20px]">
+      <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
         <header className="relative flex flex-wrap items-end justify-between gap-6 px-5 pb-6 pt-7 sm:px-9 sm:pb-7 sm:pt-10">
           <span
             aria-hidden
@@ -92,7 +92,7 @@ export function LibraryPage() {
           )}
         </header>
 
-        <section aria-labelledby="quick-title" className="border-t border-rule px-5 py-6 sm:px-9">
+        <section aria-labelledby="quick-title" className="sep-t px-5 py-7 sm:px-9">
           <SectionTitle id="quick-title" glyph="札">
             Acceso rápido
           </SectionTitle>
@@ -108,7 +108,7 @@ export function LibraryPage() {
           )}
         </section>
 
-        <section aria-labelledby="library-title" className="border-t border-rule px-5 pb-9 pt-6 sm:px-9">
+        <section aria-labelledby="library-title" className="sep-t px-5 pb-9 pt-7 sm:px-9">
           <SectionTitle id="library-title" glyph="書庫" className="mb-5">
             Biblioteca
           </SectionTitle>

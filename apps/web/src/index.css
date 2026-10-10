@@ -43,7 +43,7 @@
 
   --color-line: rgb(243 236 223 / 0.14);
   --color-line-strong: rgb(243 236 223 / 0.28);
-  --color-rule: rgb(228 200 143 / 0.16);
+  --color-rule: rgb(228 200 143 / 0.24);
 
   --font-display: 'Shippori Mincho B1', 'Hiragino Mincho ProN', serif;
   --font-sans: 'Zen Kaku Gothic New', ui-sans-serif, system-ui, sans-serif;
@@ -75,13 +75,22 @@
     0 1px 2px rgb(0 0 0 / 0.5),
     0 10px 20px -8px rgb(0 0 0 / 0.55),
     0 30px 60px -30px rgb(0 0 0 / 0.75);
+  /* Tansu-style corner fittings instead of a continuous inner rule. */
   &::before {
     content: '';
     position: absolute;
-    inset: 4px;
-    border: 1px solid var(--color-rule);
-    border-radius: inherit;
+    inset: 7px;
     pointer-events: none;
+    --f: rgb(228 200 143 / 0.55);
+    background:
+      linear-gradient(var(--f), var(--f)) top left / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) top left / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) top right / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) top right / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom left / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom left / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom right / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom right / 1.5px 22px no-repeat;
   }
 }
 
@@ -96,13 +105,96 @@
     0 2px 4px rgb(0 0 0 / 0.5),
     0 18px 36px -12px rgb(0 0 0 / 0.65),
     0 40px 80px -36px rgb(0 0 0 / 0.8);
+  /* Tansu-style corner fittings instead of a continuous inner rule. */
   &::before {
     content: '';
     position: absolute;
-    inset: 4px;
-    border: 1px solid var(--color-rule);
-    border-radius: inherit;
+    inset: 7px;
     pointer-events: none;
+    --f: rgb(228 200 143 / 0.55);
+    background:
+      linear-gradient(var(--f), var(--f)) top left / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) top left / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) top right / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) top right / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom left / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom left / 1.5px 22px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom right / 22px 1.5px no-repeat,
+      linear-gradient(var(--f), var(--f)) bottom right / 1.5px 22px no-repeat;
+  }
+}
+
+/*
+ * Section separators that never touch the frame: an inset hairline fading at both ends,
+ * with a small gold hishi (菱) diamond at the centre of horizontal ones.
+ */
+@utility sep-t {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: auto;
+    left: 24px;
+    right: 24px;
+    width: auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-rule) 14%, var(--color-rule) 86%, transparent);
+    pointer-events: none;
+  }
+  &::after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: -3.5px;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    transform: translateX(-50%) rotate(45deg);
+    background: var(--color-sumi-850);
+    border: 1px solid rgb(228 200 143 / 0.5);
+    pointer-events: none;
+  }
+}
+
+@utility sep-b {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 24px;
+    right: 24px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-rule) 14%, var(--color-rule) 86%, transparent);
+    pointer-events: none;
+  }
+}
+
+/* Vertical variant; overrides sep-t geometry when combined at a breakpoint (e.g. 'sep-t sm:sep-l'). */
+@utility sep-l {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: 24px;
+    bottom: 24px;
+    left: 0;
+    right: auto;
+    width: 1px;
+    height: auto;
+    background: linear-gradient(180deg, transparent, var(--color-rule) 14%, var(--color-rule) 86%, transparent);
+    pointer-events: none;
+  }
+  &::after {
+    display: none;
+  }
+}
+
+@utility sep-none {
+  &::before,
+  &::after {
+    display: none;
   }
 }
 

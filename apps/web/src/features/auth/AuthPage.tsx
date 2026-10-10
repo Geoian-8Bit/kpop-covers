@@ -45,8 +45,8 @@ export function AuthPage() {
     <div className="mx-auto grid min-h-dvh max-w-[1180px] items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_440px] lg:gap-16">
       <motion.section variants={stagger(0.07, 0.1)} initial="hidden" animate="show">
         <motion.div variants={fadeUp} className="flex items-center gap-4">
-          <Seal glyph="舞" size={64} stamp />
-          <span className="font-display text-[28px] font-bold">Coverscape</span>
+          <Seal glyph="一" size={64} stamp />
+          <span className="font-display text-[28px] font-bold">One Shoot</span>
         </motion.div>
         <motion.h1
           variants={inkReveal}

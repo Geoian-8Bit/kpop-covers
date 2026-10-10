@@ -99,9 +99,9 @@ export function StudioPage() {
 
   return (
     <Page className="px-2.5 pb-16 pt-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-[16px] sm:rounded-[20px]">
+      <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
         {/* Title bar */}
-        <div className="flex items-center gap-3 border-b border-rule px-4 py-3.5 sm:px-6">
+        <div className="sep-b flex items-center gap-3 px-4 py-4 sm:px-6">
           <Link
             to="/"
             aria-label="Volver a la biblioteca"
@@ -135,20 +135,20 @@ export function StudioPage() {
           {/* Work area */}
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
-            <div className="sticky top-16 z-20 rounded-t-[15px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
+            <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
               <MediaStage video={current} />
             </div>
             <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
-            <div className="grid border-t border-rule sm:grid-cols-2 2xl:grid-cols-[1fr_1.35fr_1fr]">
+            <div className="sep-t grid sm:grid-cols-2 2xl:grid-cols-[1fr_1.35fr_1fr]">
               <PlaybackTile />
-              <SpeedTile className="border-t border-rule sm:border-l sm:border-t-0" />
-              <MirrorTile className="border-t border-rule sm:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0" />
+              <SpeedTile className="sep-t sm:sep-l" />
+              <MirrorTile className="sep-t sm:col-span-2 2xl:col-span-1 2xl:sep-l" />
             </div>
-            <LoopTile onSaveClip={openSave} className="border-t border-rule" />
+            <LoopTile onSaveClip={openSave} className="sep-t" />
           </div>
 
           {/* Clips column */}
-          <div className="border-t border-rule lg:border-l lg:border-t-0">
+          <div className="sep-t lg:sep-l">
             <ClipList clips={clips.data ?? []} loading={clips.isPending} onApply={applyClip} onNew={openSave} />
           </div>
         </div>
