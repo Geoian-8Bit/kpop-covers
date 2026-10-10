@@ -288,7 +288,11 @@ function Handle({
   return (
     <div
       onPointerDown={onPointerDown}
-      className={cn('absolute -inset-y-3 z-10 flex w-7 cursor-ew-resize touch-none justify-center', side === 'start' ? '-left-[15px]' : '-right-[15px]')}
+      className={cn(
+        'absolute -inset-y-3.5 z-10 flex w-7 cursor-ew-resize touch-none justify-center',
+        // A sits above the band, B below it, so short loops never stack the two seals.
+        side === 'start' ? '-left-[15px] items-start' : '-right-[15px] items-end',
+      )}
     >
       <motion.span
         animate={{ y: active ? -2 : 0, scale: active ? 1.15 : 1, rotate: active ? 0 : -4 }}

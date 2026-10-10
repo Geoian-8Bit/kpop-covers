@@ -131,10 +131,10 @@ export function StudioPage() {
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.35fr_1fr]">
-          <div className="sm:col-span-2 xl:col-span-3">
+          <div className="min-w-0 sm:col-span-2 xl:col-span-3">
             <MediaStage video={current} />
           </div>
-          <div className="sm:col-span-2 xl:col-span-3">
+          <div className="min-w-0 sm:col-span-2 xl:col-span-3">
             <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
           </div>
           <PlaybackTile />

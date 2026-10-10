@@ -29,7 +29,7 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
         className="paper flex h-full flex-col overflow-hidden rounded-[16px] transition-colors duration-300 group-hover:border-line-strong"
         aria-label={`Abrir ${video.title}`}
       >
-        <div className={cn('relative overflow-hidden bg-sumi-950', featured ? 'aspect-video lg:aspect-auto lg:flex-1' : 'aspect-video')}>
+        <div className="relative aspect-video overflow-hidden bg-sumi-950">
           {video.thumbnail_url ? (
             <motion.img
               src={video.thumbnail_url}

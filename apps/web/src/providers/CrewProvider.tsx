@@ -1,7 +1,7 @@
 import type { Crew, Profile } from '@coverscape/shared';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { supabase } from '@/lib/supabase';
+import { backend } from '@/lib/backend';
 import { useAuth } from './AuthProvider';
 
 /**
@@ -26,21 +26,13 @@ export function CrewProvider({ children }: { children: ReactNode }) {
     queryKey: ['group', user?.id],
     enabled: Boolean(user),
     staleTime: Infinity,
-    queryFn: async (): Promise<Crew> => {
-      const { data, error } = await supabase.rpc('join_group');
-      if (error) throw error;
-      return data;
-    },
+    queryFn: (): Promise<Crew> => backend.joinGroup(),
   });
 
   const profileQuery = useQuery({
     queryKey: ['profile', user?.id],
     enabled: Boolean(user),
-    queryFn: async () => {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', user!.id).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => backend.getProfile(user!.id),
   });
 
   const { refetch } = groupQuery;

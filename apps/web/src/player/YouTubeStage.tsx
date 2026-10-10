@@ -92,5 +92,12 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
     };
   }, [videoId]);
 
-  return <div ref={hostRef} className="absolute inset-0 [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:size-full" />;
+  // The iframe is 24% taller than the 16:9 stage: the video still fits the width, while YouTube's
+  // title bar and bottom "more videos" strip land in the letterbox that the stage crops away.
+  return (
+    <div
+      ref={hostRef}
+      className="absolute inset-0 overflow-hidden [&_iframe]:absolute [&_iframe]:left-0 [&_iframe]:top-[-12%] [&_iframe]:h-[124%] [&_iframe]:w-full"
+    />
+  );
 }

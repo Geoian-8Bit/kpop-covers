@@ -20,14 +20,15 @@ No hay servidor propio: Supabase es el backend (datos, auth, ficheros) y la úni
 | Tabla          | Qué guarda                                                                    |
 | -------------- | ----------------------------------------------------------------------------- |
 | `profiles`     | nombre visible y color de avatar (se crea por trigger al registrarse)        |
-| `crews`        | grupo de baile + `invite_code` de 8 caracteres                               |
+| `crews`        | el grupo (la app usa uno solo; `join_group()` une a cada usuario al más antiguo) |
 | `crew_members` | pertenencia (`owner` / `member`)                                             |
 | `videos`       | `source = youtube` (`youtube_id`) o `upload` (`file_name`, `storage_path?`)  |
 | `clips`        | tramo `start_seconds`–`end_seconds`, `speed`, `mirrored`, `color`, `is_pinned` |
 
 - **RLS**: todo se filtra con `private.is_crew_member(crew_id)` (security definer, fuera del esquema expuesto).
 - `clips.crew_id` lo rellena un trigger a partir del vídeo, así la política es una sola comprobación.
-- Crear/unirse a una crew solo vía RPC (`create_crew`, `join_crew`); no hay `insert` directo sobre `crews`.
+- Grupo único: al entrar, el cliente llama a la RPC `join_group()` (crea el grupo si no existe y añade al usuario).
+  Los registros se cierran en Supabase cuando están todos dentro; nuevos usuarios los da de alta el admin.
 - Storage: la primera carpeta de la ruta es el `crew_id`, y las políticas reutilizan el mismo helper.
 
 Migraciones en `supabase/migrations/`. Tipos generados en `packages/shared/src/database.types.ts`.
@@ -61,3 +62,9 @@ React Query (`src/data`) con claves `['videos', crewId]`, `['video', id]`, `['cl
 
 `Espacio` play · `←/→` ±5 s (Shift ±1 s) · `,`/`.` ±0.1 s · `↑/↓` velocidad · `1–8` presets · `M` espejo ·
 `A`/`B` marcar · `L` bucle · `Esc` quitar tramo · `S` guardar clip · `?` ayuda.
+
+## Backend intercambiable y modo demo
+
+`src/lib/backend.ts` define la interfaz de datos con dos implementaciones: Supabase (normal) y almacenamiento del
+navegador (demo). El modo demo solo se activa con `import.meta.env.DEV && VITE_DEMO=true`: sesión fija sin login y
+datos en `localStorage` (`coverscape.demo.v1`). El minificador lo elimina de la build de producción.

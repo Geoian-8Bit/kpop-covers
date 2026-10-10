@@ -3,14 +3,14 @@
 ## Supabase (proyecto `kpop-covers`, ref `pevbjaowyctqqldvzovz`, eu-central-1)
 
 1. Migraciones aplicadas: `supabase/migrations/*.sql` (en orden).
-2. **Auth → Providers → Email → desactivar "Confirm email"**. El SMTP por defecto de Supabase solo envía a los
-   miembros del equipo del proyecto, así que con la confirmación activa el resto de la crew no podría registrarse.
-   (Alternativa: configurar un SMTP propio en Auth → SMTP.)
-3. Auth → URL Configuration → *Site URL* = URL de producción de Vercel, y añadirla a *Redirect URLs*.
+2. Auth → Providers → Email → "Confirm email" **desactivado** (hecho).
+3. Cuando todo el grupo tenga cuenta: Auth → Sign In / Providers → desactivar **"Allow new users to sign up"**.
+   Las altas posteriores las hace el admin desde Authentication → Users → Add user.
+4. Auth → URL Configuration → *Site URL* = URL de producción de Vercel, y añadirla a *Redirect URLs*.
 
 ## Vercel
 
-Proyecto con **Root Directory = `apps/web`** (framework Vite detectado; pnpm instala el workspace completo).
+Proyecto `kpop-covers` (https://kpop-covers.vercel.app) con **Root Directory = `apps/web`** (framework Vite detectado; pnpm instala el workspace completo).
 
 - Build command: `pnpm build` (por defecto) · Output: `dist`
 - Variables de entorno (Production + Preview):
@@ -31,6 +31,7 @@ vercel --prod
 
 ## Argus (retirado)
 
-El proyecto Supabase **Argus** está **pausado** (no borrado): los datos se conservan. En el plan gratuito un
+El proyecto Supabase **Argus** está **pausado** (no borrado) y su proyecto de Vercel también (Settings → Resume para
+reactivarlo). El código sigue en GitHub (`Geoian-8Bit/Argus`): los datos se conservan. En el plan gratuito un
 proyecto pausado se puede restaurar desde el dashboard durante 90 días; pasado ese plazo sigue siendo posible
 descargar la copia de seguridad. Para reactivarlo: Dashboard → Argus → *Restore project*.

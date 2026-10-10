@@ -1,9 +1,9 @@
 import { MAX_CLOUD_UPLOAD_BYTES, round3, youTubeThumbnail, type TablesUpdate, type Video } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { backend, type VideoWithClipCount } from '@/lib/backend';
 import { deleteLocalVideo, saveLocalVideo } from '@/lib/localVideos';
-import { supabase, VIDEO_BUCKET } from '@/lib/supabase';
 
-export type VideoWithClipCount = Video & { clips: { count: number }[] };
+export type { VideoWithClipCount };
 
 export const videoKeys = {
   list: (crewId: string | undefined) => ['videos', crewId] as const,
@@ -14,15 +14,7 @@ export function useVideos(crewId: string | undefined) {
   return useQuery({
     queryKey: videoKeys.list(crewId),
     enabled: Boolean(crewId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('videos')
-        .select('*, clips(count)')
-        .eq('crew_id', crewId!)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as unknown as VideoWithClipCount[];
-    },
+    queryFn: () => backend.listVideos(crewId!),
   });
 }
 
@@ -30,11 +22,7 @@ export function useVideo(id: string | undefined) {
   return useQuery({
     queryKey: videoKeys.detail(id),
     enabled: Boolean(id),
-    queryFn: async () => {
-      const { data, error } = await supabase.from('videos').select('*').eq('id', id!).maybeSingle();
-      if (error) throw error;
-      return data as Video | null;
-    },
+    queryFn: () => backend.getVideo(id!),
   });
 }
 
@@ -43,13 +31,9 @@ function fileExtension(name: string): string {
   return ext || 'mp4';
 }
 
-async function uploadToCrew(crewId: string, videoId: string, file: File): Promise<string | null> {
-  if (file.size > MAX_CLOUD_UPLOAD_BYTES) return null;
-  const path = `${crewId}/${videoId}.${fileExtension(file.name)}`;
-  const { error } = await supabase.storage
-    .from(VIDEO_BUCKET)
-    .upload(path, file, { contentType: file.type || 'video/mp4', upsert: true });
-  return error ? null : path;
+function uploadToGroup(crewId: string, videoId: string, file: File): Promise<string | null> {
+  if (file.size > MAX_CLOUD_UPLOAD_BYTES) return Promise.resolve(null);
+  return backend.uploadFile(`${crewId}/${videoId}.${fileExtension(file.name)}`, file);
 }
 
 export interface CreateVideoInput {
@@ -83,40 +67,32 @@ export function useCreateVideo() {
 
       if (input.file) {
         await saveLocalVideo(id, input.file);
-        const storagePath = await uploadToCrew(input.crewId, id, input.file);
-        const { data, error } = await supabase
-          .from('videos')
-          .insert({
+        const storagePath = await uploadToGroup(input.crewId, id, input.file);
+        try {
+          const video = await backend.insertVideo({
             ...base,
             source: 'upload',
             file_name: input.file.name,
             file_size: input.file.size,
             storage_path: storagePath,
             thumbnail_url: input.poster ?? null,
-          })
-          .select()
-          .single();
-        if (error) {
+          });
+          return { video, synced: Boolean(storagePath) };
+        } catch (error) {
           await deleteLocalVideo(id);
-          if (storagePath) await supabase.storage.from(VIDEO_BUCKET).remove([storagePath]);
+          if (storagePath) await backend.removeFile(storagePath);
           throw error;
         }
-        return { video: data as Video, synced: Boolean(storagePath) };
       }
 
       if (!input.youtubeId) throw new Error('Falta el enlace de YouTube.');
-      const { data, error } = await supabase
-        .from('videos')
-        .insert({
-          ...base,
-          source: 'youtube',
-          youtube_id: input.youtubeId,
-          thumbnail_url: youTubeThumbnail(input.youtubeId),
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      return { video: data as Video, synced: true };
+      const video = await backend.insertVideo({
+        ...base,
+        source: 'youtube',
+        youtube_id: input.youtubeId,
+        thumbnail_url: youTubeThumbnail(input.youtubeId),
+      });
+      return { video, synced: true };
     },
     onSuccess: ({ video }) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
@@ -128,11 +104,7 @@ export function useCreateVideo() {
 export function useUpdateVideo() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: TablesUpdate<'videos'> }) => {
-      const { data, error } = await supabase.from('videos').update(patch).eq('id', id).select().single();
-      if (error) throw error;
-      return data as Video;
-    },
+    mutationFn: ({ id, patch }: { id: string; patch: TablesUpdate<'videos'> }) => backend.updateVideo(id, patch),
     onSuccess: (video) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
       return queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
@@ -144,9 +116,8 @@ export function useDeleteVideo() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (video: Video) => {
-      const { error } = await supabase.from('videos').delete().eq('id', video.id);
-      if (error) throw error;
-      if (video.storage_path) await supabase.storage.from(VIDEO_BUCKET).remove([video.storage_path]);
+      await backend.deleteVideo(video);
+      if (video.storage_path) await backend.removeFile(video.storage_path);
       await deleteLocalVideo(video.id).catch(() => undefined);
       return video;
     },
@@ -158,21 +129,20 @@ export function useDeleteVideo() {
   });
 }
 
-/** Attaches a local copy of an uploaded video on this device (and syncs it if the crew has none). */
+/** Attaches a local copy of an uploaded video on this device (and syncs it if the group has none). */
 export function useLinkLocalFile() {
   const update = useUpdateVideo();
   return useMutation({
     mutationFn: async ({ video, file }: { video: Video; file: File }) => {
       await saveLocalVideo(video.id, file);
       if (!video.storage_path) {
-        const storagePath = await uploadToCrew(video.crew_id, video.id, file);
+        const storagePath = await uploadToGroup(video.crew_id, video.id, file);
         if (storagePath) await update.mutateAsync({ id: video.id, patch: { storage_path: storagePath } });
       }
     },
   });
 }
 
-export async function signedVideoUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(VIDEO_BUCKET).createSignedUrl(path, 6 * 60 * 60);
-  return error ? null : data.signedUrl;
+export function signedVideoUrl(path: string): Promise<string | null> {
+  return backend.signedUrl(path);
 }

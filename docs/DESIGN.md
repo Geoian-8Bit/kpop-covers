@@ -11,14 +11,14 @@ controles web estándar.
 
 | Token        | Valor     | Uso                                                        |
 | ------------ | --------- | ---------------------------------------------------------- |
-| `sumi-900`   | `#15120f` | fondo (tinta cálida, nunca negro puro)                     |
-| `sumi-850/800` | `#1b1713` / `#221d18` | superficies `paper` / `paper-raised`        |
-| `washi`      | `#efe6d4` | texto principal, botón de reproducir, pestaña activa       |
-| `washi-muted/subtle` | `#c2b6a1` / `#978c7a` | texto secundario / metadatos            |
+| `sumi-900`   | `#2b2621` | fondo (carbón cálido, más claro que negro tinta)           |
+| `sumi-850/800` | `#352f29` / `#3e3730` | superficies `paper` / `paper-raised`        |
+| `washi`      | `#f3ecdf` | texto principal, botón de reproducir, pestaña activa       |
+| `washi-muted/subtle` | `#d3c8b5` / `#b0a491` | texto secundario / metadatos            |
 | `ai-*`       | `#2f5584`… | índigo Hokusai: ola de la línea de tiempo, espejo activo  |
 | `enji-500`   | `#b23a48` | granate: acción principal (guardar, añadir, entrar)        |
 | `shu-500`    | `#d0452d` | bermellón: solo sellos hanko y marcas A/B                  |
-| `kin-300`    | `#e4c88f` | oro viejo: cabezal de reproducción, foco, código de crew   |
+| `kin-300`    | `#e4c88f` | oro viejo: cabezal de reproducción, foco                   |
 
 Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, rokushō.
 
@@ -31,8 +31,7 @@ Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, ro
 ## Superficies y textura
 
 - `paper` / `paper-raised`: borde de 1 px washi al 10 %, sombra desplazada suave. Radios pequeños (8–18 px).
-- `seigaiha` (青海波): única textura; marea animada muy lenta al pie de la pantalla y fondo de estados vacíos.
-- `WaveArt`: grabado original inspirado en la gran ola (pantalla de acceso, biblioteca vacía).
+- `seigaiha` (青海波): única textura, cubre toda la app de forma uniforme (sin degradado ni movimiento).
 - `Seal`: sello hanko con borde de tinta irregular (filtro SVG `#ink-rough`).
 
 ## Gesto propio

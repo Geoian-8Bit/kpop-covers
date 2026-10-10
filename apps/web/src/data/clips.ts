@@ -1,9 +1,8 @@
-import type { Clip, ClipColor, TablesUpdate, Video } from '@coverscape/shared';
+import type { Clip, ClipColor, TablesUpdate } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { backend, type ClipWithVideo } from '@/lib/backend';
 
-export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id' | 'thumbnail_url'>;
-export type ClipWithVideo = Clip & { video: ClipVideo | null };
+export type { ClipVideo, ClipWithVideo } from '@/lib/backend';
 
 export const clipKeys = {
   forVideo: (videoId: string | undefined) => ['clips', videoId] as const,
@@ -27,15 +26,7 @@ export function useClips(videoId: string | undefined) {
   return useQuery({
     queryKey: clipKeys.forVideo(videoId),
     enabled: Boolean(videoId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clips')
-        .select('*')
-        .eq('video_id', videoId!)
-        .order('start_seconds', { ascending: true });
-      if (error) throw error;
-      return data as Clip[];
-    },
+    queryFn: () => backend.listClips(videoId!),
   });
 }
 
@@ -44,17 +35,7 @@ export function useQuickClips(crewId: string | undefined) {
   return useQuery({
     queryKey: clipKeys.quick(crewId),
     enabled: Boolean(crewId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clips')
-        .select('*, video:videos(id, title, artist, source, youtube_id, thumbnail_url)')
-        .eq('crew_id', crewId!)
-        .order('is_pinned', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(14);
-      if (error) throw error;
-      return data as unknown as ClipWithVideo[];
-    },
+    queryFn: (): Promise<ClipWithVideo[]> => backend.listQuickClips(crewId!),
   });
 }
 
@@ -73,11 +54,7 @@ export interface NewClip {
 export function useCreateClip() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (clip: NewClip) => {
-      const { data, error } = await supabase.from('clips').insert(clip).select().single();
-      if (error) throw error;
-      return data as Clip;
-    },
+    mutationFn: (clip: NewClip) => backend.insertClip(clip),
     onSuccess: (clip) => {
       queryClient.setQueryData<Clip[]>(clipKeys.forVideo(clip.video_id), (current = []) =>
         [...current, clip].sort((a, b) => a.start_seconds - b.start_seconds),
@@ -91,11 +68,7 @@ export function useCreateClip() {
 export function useUpdateClip() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) => {
-      const { data, error } = await supabase.from('clips').update(patch).eq('id', clip.id).select().single();
-      if (error) throw error;
-      return data as Clip;
-    },
+    mutationFn: ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) => backend.updateClip(clip.id, patch),
     onMutate: async ({ clip, patch }) => {
       const key = clipKeys.forVideo(clip.video_id);
       await queryClient.cancelQueries({ queryKey: key });
@@ -119,8 +92,7 @@ export function useDeleteClip() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (clip: Clip) => {
-      const { error } = await supabase.from('clips').delete().eq('id', clip.id);
-      if (error) throw error;
+      await backend.deleteClip(clip.id);
       return clip;
     },
     onMutate: async (clip) => {

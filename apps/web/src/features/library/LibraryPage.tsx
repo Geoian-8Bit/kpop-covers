@@ -74,7 +74,7 @@ export function LibraryPage() {
             <p className="tabular text-washi-muted">
               <span className="font-display text-2xl font-bold text-washi">{total}</span> {total === 1 ? 'vídeo' : 'vídeos'}
               <span className="mx-3 text-washi-subtle">·</span>
-              <span className="font-display text-2xl font-bold text-washi">{clipTotal}</span> clips
+              <span className="font-display text-2xl font-bold text-washi">{clipTotal}</span> {clipTotal === 1 ? 'clip' : 'clips'}
             </p>
             <Button size="lg" onClick={() => setAdding(true)}>
               <Plus className="size-5" /> Añadir vídeo

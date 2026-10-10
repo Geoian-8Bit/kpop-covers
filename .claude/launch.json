@@ -4,9 +4,28 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
-      "env": { "NODE_OPTIONS": "--use-system-ca" },
+      "runtimeArgs": [
+        "dev"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--use-system-ca"
+      },
       "port": 5173
+    },
+    {
+      "name": "web-demo",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "env": {
+        "NODE_OPTIONS": "--use-system-ca",
+        "VITE_DEMO": "true"
+      },
+      "port": 5174
     }
   ]
 }

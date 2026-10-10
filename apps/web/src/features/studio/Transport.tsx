@@ -20,7 +20,7 @@ const gapOptions = [0, 1, 2, 3].map((value) => ({
 
 function Tile({ title, glyph, children, className }: { title: string; glyph: string; children: ReactNode; className?: string }) {
   return (
-    <section className={cn('paper flex flex-col gap-4 rounded-[18px] p-4 sm:p-5', className)}>
+    <section className={cn('paper flex min-w-0 flex-col gap-4 rounded-[18px] p-4 sm:p-5', className)}>
       <h2 className="flex items-baseline justify-between font-display text-[17px] font-bold">
         {title}
         <span aria-hidden className="text-[15px] font-medium text-washi-subtle">
@@ -126,7 +126,7 @@ export function LoopTile({ onSaveClip }: { onSaveClip: () => void }) {
   const range = hasRange(loop);
 
   return (
-    <Tile title="Tramo A–B" glyph="反復">
+    <Tile title="Tramo A–B" glyph="反復" className="sm:col-span-2 xl:col-span-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-2">
           <MarkButton letter="A" value={loop.start} onClick={() => markStart()} disabled={!ready} label="Marcar inicio" />
