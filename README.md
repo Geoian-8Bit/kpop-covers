@@ -47,7 +47,7 @@ Supabase; nunca se incluye en la build de producción.
 - **iPhone / iPad:** Safari → Compartir → *Añadir a pantalla de inicio* (la app lo explica al tocar *Instalar app*).
 
 El service worker precachea la interfaz (abre al instante y sin conexión) y se actualiza solo en cada despliegue.
-Iconos: [ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT] None of the selected packages has a "pwa-assets" script los regenera desde .
+Iconos: `pnpm --filter @coverscape/web pwa-assets` los regenera desde `apps/web/public/favicon.svg`.
 
 ## Sobre descargar de YouTube
 
