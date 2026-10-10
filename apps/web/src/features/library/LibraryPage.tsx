@@ -8,6 +8,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useQuickClips } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
+import { byRecentlyOpened, readRecent } from '@/lib/recent';
 import { fadeUp, inkReveal } from '@/lib/motion';
 import { prefetchStudio } from '@/lib/prefetch';
 import { friendlyError } from '@/lib/supabase';
@@ -35,12 +36,14 @@ export function LibraryPage() {
   // Opening a video is the next step: warm the studio chunk and the YouTube API while the phone is idle.
   useEffect(() => prefetchStudio(), []);
 
+  // Read once per visit: the video you opened last leads the library (it becomes the big card).
+  const [recent] = useState(readRecent);
   const filtered = useMemo(() => {
-    const list = videos.data ?? [];
+    const list = byRecentlyOpened(videos.data ?? [], recent);
     const q = deferredQuery.trim().toLowerCase();
     if (!q) return list;
     return list.filter((v) => `${v.title} ${v.artist ?? ''}`.toLowerCase().includes(q));
-  }, [videos.data, deferredQuery]);
+  }, [videos.data, deferredQuery, recent]);
 
   const total = videos.data?.length ?? 0;
   const clipTotal = (videos.data ?? []).reduce((sum, v) => sum + (v.clips[0]?.count ?? 0), 0);

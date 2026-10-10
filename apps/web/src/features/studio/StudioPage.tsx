@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
+import { markOpened } from '@/lib/recent';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -67,6 +68,10 @@ export function StudioPage() {
   // Reset only on cleanup: child stages attach their engine in effects that run *before* this
   // parent effect, so resetting on mount could wipe a freshly attached engine.
   useEffect(() => () => usePlayer.getState().reset(), [videoId]);
+  // Remember this video as the last one opened on this device (the library leads with it).
+  useEffect(() => {
+    if (videoId) markOpened(videoId);
+  }, [videoId]);
 
   const openSave = useCallback(() => {
     if (!hasRange(usePlayer.getState().loop)) {
