@@ -1,12 +1,31 @@
 import { formatSpeed, formatTime, type ClipColor } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, FlipHorizontal2 } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from 'react';
 import { Link } from 'react-router';
 import { Segmented } from '@/components/ui/Segmented';
 import type { ClipWithVideo } from '@/data/clips';
 import { cn } from '@/lib/cn';
-import { nudgeAll, Rope, stepPendulum, subscribeTick, type Pendulum, type PendulumConfig } from '@/lib/hanging';
+import {
+  fibreTexture,
+  nudgeAll,
+  Rope,
+  setBreeze,
+  stepPendulum,
+  subscribeTick,
+  wake,
+  type Pendulum,
+  type PendulumConfig,
+} from '@/lib/hanging';
 import { fadeUp, jelly, stagger } from '@/lib/motion';
 
 export type QuickStyle = 'ema' | 'norigae' | 'noren' | 'hanko';
@@ -77,7 +96,10 @@ export function sealLetters(name: string): string {
 
 /* ───────────────────────────── Shared bits ───────────────────────────── */
 
-/** Shared SVG filters: wood grain, rough seal ink, washi / silk fibres. Rendered once per list. */
+/**
+ * Shared SVG filters: wood grain, rough seal ink, washi fibres. Only used on surfaces that never
+ * change shape (they move as whole composited layers), so each is rasterised once.
+ */
 function TextureDefs() {
   return (
     <svg width="0" height="0" className="absolute" aria-hidden focusable="false">
@@ -125,13 +147,49 @@ function clipLabel(clip: ClipWithVideo) {
   return `${clip.name}${clip.video?.title ? ` · ${clip.video.title}` : ''}${clip.is_pinned ? ' · fijado' : ''}`;
 }
 
-/** A length of wooden rail behind each hanging item; neighbours overlap so a row reads as one beam. */
+/** Slides the row by a pixel delta; provided by the list so any rail segment can drag it. */
+const RailDrag = createContext<((dx: number) => void) | null>(null);
+
+/**
+ * The wooden rail behind each hanging item. It is also the handle that slides the whole row:
+ * grab the rail to scroll, grab the item to play with it.
+ */
 function RailSegment() {
+  const slide = useContext(RailDrag);
+  const s = useRef({ down: false, x: 0 });
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute -inset-x-2 top-0 h-2 rounded-full bg-kiji-700 shadow-[0_3px_6px_-2px_rgb(0_0_0/0.7)]"
-    />
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.button > 0) return;
+        s.current = { down: true, x: e.clientX };
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+      }}
+      onPointerMove={(e) => {
+        e.stopPropagation();
+        if (!s.current.down) return;
+        const dx = e.clientX - s.current.x;
+        s.current.x = e.clientX;
+        slide?.(dx);
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation();
+        s.current.down = false;
+      }}
+      onPointerCancel={() => {
+        s.current.down = false;
+      }}
+      // The rail never opens the clip.
+      onClick={(e) => e.preventDefault()}
+      className="absolute -inset-x-2 -top-3 z-10 h-8 cursor-grab touch-none active:cursor-grabbing"
+    >
+      <span className="absolute inset-x-0 top-3 h-2 rounded-full bg-kiji-700 shadow-[0_3px_6px_-2px_rgb(0_0_0/0.7)]" />
+    </span>
   );
 }
 
@@ -146,46 +204,17 @@ interface GrabHandlers {
 
 /**
  * Drag-to-swing on top of a link: a press that moves more than a few pixels becomes a grab and the
- * following click is swallowed; a plain tap still opens the clip. On touch screens a finger first
- * scrolls the page or the row, so a grab needs a short hold before dragging.
+ * following click is swallowed; a plain tap still opens the clip. Items use `touch-action: pan-y`,
+ * so on phones a sideways drag grabs the item at once while an up/down drag still scrolls the page.
  */
-function useGrab(target: RefObject<HTMLElement | null>, h: GrabHandlers) {
+function useGrab(h: GrabHandlers) {
   const handlers = useRef(h);
   handlers.current = h;
-  const s = useRef({ down: false, moved: false, armed: false, touch: false, sx: 0, sy: 0 });
-  const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // Once a touch grab is armed, keep the browser from turning the drag into a scroll.
-  useEffect(() => {
-    const el = target.current;
-    if (!el) return;
-    const block = (e: TouchEvent) => {
-      if (s.current.armed) e.preventDefault();
-    };
-    el.addEventListener('touchmove', block, { passive: false });
-    return () => el.removeEventListener('touchmove', block);
-  }, [target]);
-  useEffect(() => () => clearTimeout(hold.current), []);
-
-  const reset = () => {
-    clearTimeout(hold.current);
-    s.current.down = false;
-    s.current.armed = false;
-  };
-
+  const s = useRef({ down: false, moved: false, sx: 0, sy: 0 });
   return {
     onPointerDown(e: ReactPointerEvent<HTMLElement>) {
       if (e.button > 0) return;
-      const touch = e.pointerType !== 'mouse';
-      s.current = { down: true, moved: false, armed: !touch, touch, sx: e.clientX, sy: e.clientY };
-      clearTimeout(hold.current);
-      if (touch) {
-        hold.current = setTimeout(() => {
-          if (!s.current.down || s.current.moved) return;
-          s.current.armed = true;
-          navigator.vibrate?.(8);
-        }, 220);
-      }
+      s.current = { down: true, moved: false, sx: e.clientX, sy: e.clientY };
     },
     onPointerMove(e: ReactPointerEvent<HTMLElement>) {
       const st = s.current;
@@ -195,11 +224,6 @@ function useGrab(target: RefObject<HTMLElement | null>, h: GrabHandlers) {
       }
       if (!st.moved) {
         if (Math.hypot(e.clientX - st.sx, e.clientY - st.sy) < 6) return;
-        if (!st.armed) {
-          // A finger moving before the hold: let the browser scroll instead.
-          reset();
-          return;
-        }
         st.moved = true;
         handlers.current.onGrab(st.sx, st.sy);
         try {
@@ -211,15 +235,15 @@ function useGrab(target: RefObject<HTMLElement | null>, h: GrabHandlers) {
       handlers.current.onDrag(e.clientX, e.clientY);
     },
     onPointerUp(e: ReactPointerEvent<HTMLElement>) {
+      s.current.down = false;
       if (s.current.moved) {
         handlers.current.onRelease();
         if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
       }
-      reset();
     },
     onPointerCancel() {
       if (s.current.moved) handlers.current.onRelease();
-      reset();
+      s.current.down = false;
       s.current.moved = false;
     },
     onClickCapture(e: React.MouseEvent) {
@@ -229,57 +253,66 @@ function useGrab(target: RefObject<HTMLElement | null>, h: GrabHandlers) {
         s.current.moved = false;
       }
     },
-    // A long press on a link would open the system preview / context menu instead of grabbing.
+    // A long press on a link would open the system preview / context menu.
     onContextMenu(e: React.MouseEvent) {
-      if (s.current.touch) e.preventDefault();
+      if (s.current.down) e.preventDefault();
     },
   };
 }
 
+const HANGING = 'relative touch-pan-y select-none [-webkit-touch-callout:none]';
+
 /**
  * A rigid body hanging from `pivot` (px inside `wrap`): the pointer pulls it towards its angle and
- * releasing lets it swing back under gravity. `onFrame` runs after each step for attached effects.
+ * releasing lets it swing back under gravity. `onFrame` runs after each step for attached effects and
+ * returns whether they are still moving.
  */
 function usePendulum(
   wrap: RefObject<HTMLDivElement | null>,
   body: RefObject<HTMLDivElement | null>,
   pivot: { x: number; y: number },
   cfg: PendulumConfig,
-  onFrame?: (p: Pendulum, dt: number) => void,
+  onFrame?: (p: Pendulum, dt: number) => boolean,
 ) {
   const p = useRef<Pendulum>({ theta: 0, omega: 0, target: null });
   const frameCb = useRef(onFrame);
   frameCb.current = onFrame;
 
-  useEffect(
-    () =>
-      subscribeTick(
-        (dt) => {
-          const st = p.current;
-          stepPendulum(st, cfg, dt);
-          if (body.current) body.current.style.transform = `rotate(${(-st.theta).toFixed(4)}rad)`;
-          frameCb.current?.(st, dt);
-        },
-        (impulse) => {
-          p.current.omega += impulse;
-        },
-      ),
-    [body, cfg],
-  );
+  useEffect(() => {
+    let shown = Number.NaN;
+    return subscribeTick(
+      (dt) => {
+        const st = p.current;
+        const moving = stepPendulum(st, cfg, dt);
+        if (body.current && st.theta !== shown) {
+          shown = st.theta;
+          body.current.style.transform = `rotate(${(-st.theta).toFixed(4)}rad)`;
+        }
+        const attached = frameCb.current?.(st, dt) ?? false;
+        return moving || attached;
+      },
+      (impulse) => {
+        p.current.omega += impulse;
+      },
+    );
+  }, [body, cfg]);
 
   const aim = (x: number, y: number) => {
     const r = wrap.current!.getBoundingClientRect();
     const ang = Math.atan2(x - (r.left + pivot.x), Math.max(y - (r.top + pivot.y), 24));
     p.current.target = Math.max(-cfg.maxAngle, Math.min(cfg.maxAngle, ang));
+    wake();
   };
-  return useGrab(wrap, {
+  return useGrab({
     onGrab: aim,
     onDrag: aim,
     onRelease: () => {
       p.current.target = null;
+      wake();
     },
     onBrush: (dx) => {
       p.current.omega += dx * 0.012;
+      wake();
     },
   });
 }
@@ -293,7 +326,7 @@ function Ema({ clip }: { clip: ClipWithVideo }) {
   const body = useRef<HTMLDivElement>(null);
   const grab = usePendulum(wrap, body, { x: 66, y: 3 }, EMA_SWING);
   return (
-    <div ref={wrap} {...grab} className="relative h-[184px] w-[132px] select-none [-webkit-touch-callout:none]">
+    <div ref={wrap} {...grab} className={cn(HANGING, 'h-[184px] w-[132px]')}>
       <RailSegment />
       <div ref={body} className="absolute inset-0 will-change-transform" style={{ transformOrigin: '66px 3px' }}>
         <svg viewBox="0 0 132 184" className="absolute inset-0 size-full" aria-hidden>
@@ -347,18 +380,20 @@ function Norigae({ clip }: { clip: ClipWithVideo }) {
     const sin = Math.sin(p.theta);
     const cos = Math.cos(p.theta);
     const dy = TASSEL_TOP - NORI_PIVOT.y;
+    let speed = 0;
     ropes.current.forEach((rope, i) => {
       const ox = STRANDS[i]!;
       // The threads hang from the swinging cap: rotate (ox, dy) about the pivot.
-      rope.step(dt, NORI_PIVOT.x + ox * cos + dy * sin, NORI_PIVOT.y - ox * sin + dy * cos);
+      speed = Math.max(speed, rope.step(dt, NORI_PIVOT.x + ox * cos + dy * sin, NORI_PIVOT.y - ox * sin + dy * cos));
       strandEls.current[i]?.setAttribute('d', rope.path());
     });
+    return speed > 0.02;
   });
 
   const jade = dyed(clip.color, 62);
   const knot = clip.is_pinned ? 'var(--color-kin-400)' : 'var(--color-shu-500)';
   return (
-    <div ref={wrap} {...grab} className="relative h-[236px] w-[132px] select-none [-webkit-touch-callout:none]">
+    <div ref={wrap} {...grab} className={cn(HANGING, 'h-[236px] w-[132px]')}>
       <RailSegment />
       <svg viewBox="0 0 132 236" className="absolute inset-0 size-full overflow-visible" aria-hidden>
         {STRANDS.map((_, i) => (
@@ -420,28 +455,39 @@ const HALVES = [
   { x: SEAM, w: SEAM - 4 },
 ] as const;
 
-/** Splits a clip name into at most two balanced lines for SVG text. */
-export function nameLines(name: string, max = 15): string[] {
-  const clean = name.trim().replace(/\s+/g, ' ');
-  if (clean.length <= max) return [clean];
-  const words = clean.split(' ');
-  let best: string[] | null = null;
-  for (let i = 1; i < words.length; i++) {
-    const a = words.slice(0, i).join(' ');
-    const b = words.slice(i).join(' ');
-    if (a.length <= max && b.length <= max && (!best || Math.max(a.length, b.length) < Math.max(best[0]!.length, best[1]!.length))) {
-      best = [a, b];
-    }
-  }
-  if (best) return best;
-  const rest = clean.slice(max).trim();
-  return [clean.slice(0, max), rest.length > max ? `${rest.slice(0, max - 1)}…` : rest];
+/** The dye: laid out over the whole curtain and shown once in each half, so the halves meet at the seam. */
+function NorenDye({ clip, offset }: { clip: ClipWithVideo; offset: number }) {
+  return (
+    <div className="absolute top-[-9px]" style={{ left: -offset, width: NOREN_W, height: NOREN_H }}>
+      <span
+        className={cn(
+          'absolute left-[61px] top-[30px] size-7 rounded-full',
+          clip.is_pinned ? 'bg-washi' : 'border-2 border-washi',
+        )}
+      />
+      <div className="absolute inset-x-3 top-[66px] flex flex-col items-center text-center text-washi">
+        <span className="line-clamp-2 font-display text-[16px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.5)]">
+          {clip.name}
+        </span>
+        <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] text-washi/70">{clip.video?.title}</span>
+        <ClipMeta clip={clip} className="mt-1.5 text-washi/85" chip="bg-sumi-950/60 text-washi" />
+      </div>
+      <svg viewBox="0 0 150 8" className="absolute inset-x-0 bottom-[14px] h-2 w-full" aria-hidden>
+        <path
+          d="M4 6 q12 -6 23.7 0 q12 -6 23.7 0 q12 -6 23.7 0 q12 -6 23.6 0 q12 -6 23.7 0 q12 -6 23.6 0"
+          fill="none"
+          stroke="var(--color-washi)"
+          strokeOpacity="0.3"
+          strokeWidth="1.5"
+        />
+      </svg>
+    </div>
+  );
 }
 
 function Noren({ clip }: { clip: ClipWithVideo }) {
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const svg = useRef<SVGSVGElement>(null);
-  const halves = useRef<(SVGGElement | null)[]>([]);
+  const box = useRef<HTMLDivElement>(null);
+  const halves = useRef<(HTMLDivElement | null)[]>([]);
   const pend = useRef<Pendulum[]>([
     { theta: 0, omega: 0, target: null },
     { theta: 0, omega: 0, target: null },
@@ -457,12 +503,14 @@ function Noren({ clip }: { clip: ClipWithVideo }) {
           const pull = (b.theta - a.theta) * 4 * dt;
           a.omega += pull;
           b.omega -= pull;
+          let moving = false;
           pend.current.forEach((p, i) => {
-            stepPendulum(p, NOREN_HALF, dt);
-            // Hinged on the rod: skew about the top edge, so the hem moves and the rod stays put.
-            const deg = ((p.theta * 180) / Math.PI).toFixed(3);
-            halves.current[i]?.setAttribute('transform', `translate(0 ${NOREN_TOP}) skewX(${deg}) translate(0 ${-NOREN_TOP})`);
+            if (stepPendulum(p, NOREN_HALF, dt)) moving = true;
+            // Hinged on the rod: a GPU-composited skew about the top edge, no repaint per frame.
+            const el = halves.current[i];
+            if (el) el.style.transform = `skewX(${p.theta.toFixed(4)}rad)`;
           });
+          return moving;
         },
         (impulse) => {
           pend.current.forEach((p, i) => {
@@ -474,13 +522,10 @@ function Noren({ clip }: { clip: ClipWithVideo }) {
   );
 
   const toLocal = (x: number, y: number) => {
-    const m = svg.current?.getScreenCTM();
-    if (!m) return { x: 0, y: 0 };
-    const pt = new DOMPoint(x, y).matrixTransform(m.inverse());
-    return { x: pt.x, y: pt.y };
+    const r = box.current!.getBoundingClientRect();
+    return { x: ((x - r.left) * NOREN_W) / r.width, y: ((y - r.top) * NOREN_H) / r.height };
   };
-  const box = useRef<HTMLDivElement>(null);
-  const grab = useGrab(box, {
+  const grab = useGrab({
     onGrab: (x, y) => {
       const local = toLocal(x, y);
       held.current = { i: local.x < SEAM ? 0 : 1, x0: local.x, depth: Math.max(local.y - NOREN_TOP, 40) };
@@ -491,110 +536,48 @@ function Noren({ clip }: { clip: ClipWithVideo }) {
       const local = toLocal(x, y);
       const angle = Math.atan2(local.x - h.x0, h.depth);
       pend.current[h.i]!.target = Math.max(-NOREN_HALF.maxAngle, Math.min(NOREN_HALF.maxAngle, angle));
+      wake();
     },
     onRelease: () => {
       if (held.current) pend.current[held.current.i]!.target = null;
       held.current = null;
+      wake();
     },
     onBrush: (dx) => {
       pend.current.forEach((p) => {
         p.omega += dx * 0.01;
       });
+      wake();
     },
   });
 
-  const cloth = dyed(clip.color);
-  const lines = nameLines(clip.name);
-  const title = clip.video?.title ?? '';
-  const speed = formatSpeed(clip.speed);
-  const chipW = speed.length * 6.4 + (clip.mirrored ? 14 : 0) + 10;
-  const nameY = lines.length === 1 ? 90 : 82;
+  const texture = fibreTexture();
   return (
-    <div ref={box} {...grab} className="relative select-none [-webkit-touch-callout:none]" style={{ width: NOREN_W, height: NOREN_H }}>
-      <svg ref={svg} viewBox={`0 0 ${NOREN_W} ${NOREN_H}`} className="absolute inset-0 size-full overflow-visible" aria-hidden>
-        {HALVES.map((h, i) => (
-          <g
-            key={i}
-            ref={(el) => {
-              halves.current[i] = el;
-            }}
-          >
-            <clipPath id={`${uid}-h${i}`}>
-              <rect x={h.x} y={NOREN_TOP} width={h.w} height={NOREN_H - NOREN_TOP - 4} rx="3" />
-            </clipPath>
-            {/* Everything below is dyed into this half of the cloth, so it moves with it. */}
-            <g clipPath={`url(#${uid}-h${i})`}>
-              <rect x={h.x} y={NOREN_TOP} width={h.w} height={NOREN_H - NOREN_TOP} style={{ fill: cloth }} filter="url(#os-paper)" />
-              <line
-                x1={i === 0 ? h.x + h.w - 0.5 : h.x + 0.5}
-                x2={i === 0 ? h.x + h.w - 0.5 : h.x + 0.5}
-                y1={NOREN_TOP}
-                y2={NOREN_H}
-                stroke="var(--color-sumi-950)"
-                strokeOpacity="0.45"
-              />
-              <g filter="url(#os-ink)">
-                {clip.is_pinned ? (
-                  <circle cx={SEAM} cy="44" r="14" fill="var(--color-washi)" />
-                ) : (
-                  <circle cx={SEAM} cy="44" r="14" fill="none" stroke="var(--color-washi)" strokeWidth="2" />
-                )}
-              </g>
-              <text
-                x={SEAM}
-                y={nameY}
-                textAnchor="middle"
-                fill="var(--color-washi)"
-                fontSize="16"
-                fontWeight="800"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                {lines.map((line, k) => (
-                  <tspan key={k} x={SEAM} dy={k ? 18 : 0}>
-                    {line}
-                  </tspan>
-                ))}
-              </text>
-              <text x={SEAM} y="118" textAnchor="middle" fill="var(--color-washi)" fillOpacity="0.7" fontSize="10">
-                {title.length > 24 ? `${title.slice(0, 23)}…` : title}
-              </text>
-              <text
-                x={SEAM}
-                y="134"
-                textAnchor="middle"
-                fill="var(--color-washi)"
-                fillOpacity="0.85"
-                fontSize="10.5"
-                style={{ fontFamily: 'var(--font-mono)' }}
-              >
-                {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
-              </text>
-              <rect x={SEAM - chipW / 2} y="141" width={chipW} height="16" rx="4" fill="var(--color-sumi-950)" fillOpacity="0.6" />
-              <text
-                x={SEAM - (clip.mirrored ? 7 : 0)}
-                y="153"
-                textAnchor="middle"
-                fill="var(--color-washi)"
-                fontSize="10.5"
-                style={{ fontFamily: 'var(--font-mono)' }}
-              >
-                {speed}
-              </text>
-              {clip.mirrored && (
-                <FlipHorizontal2 x={SEAM + chipW / 2 - 16} y="144" width="10" height="10" color="var(--color-washi)" />
-              )}
-              <path
-                d={`M${h.x} ${NOREN_H - 14} q${h.w / 6} -6 ${h.w / 3} 0 q${h.w / 6} -6 ${h.w / 3} 0 q${h.w / 6} -6 ${h.w / 3} 0`}
-                fill="none"
-                stroke="var(--color-washi)"
-                strokeOpacity="0.3"
-                strokeWidth="1.5"
-              />
-            </g>
-          </g>
-        ))}
-        <rect x="0" y="2" width={NOREN_W} height="8" rx="4" fill="var(--color-kiji-700)" />
-      </svg>
+    <div ref={box} {...grab} className={HANGING} style={{ width: NOREN_W, height: NOREN_H }}>
+      {HALVES.map((h, i) => (
+        <div
+          key={i}
+          ref={(el) => {
+            halves.current[i] = el;
+          }}
+          className={cn(
+            'absolute overflow-hidden rounded-b-[3px] will-change-transform',
+            i === 0 ? 'shadow-[inset_-1px_0_0_rgb(0_0_0/0.45)]' : 'shadow-[inset_1px_0_0_rgb(0_0_0/0.45)]',
+          )}
+          style={{
+            left: h.x,
+            top: NOREN_TOP,
+            width: h.w,
+            height: NOREN_H - NOREN_TOP - 4,
+            transformOrigin: '50% 0',
+            backgroundColor: dyed(clip.color),
+            backgroundImage: texture ? `url(${texture})` : undefined,
+          }}
+        >
+          <NorenDye clip={clip} offset={h.x} />
+        </div>
+      ))}
+      <RailSegment />
     </div>
   );
 }
@@ -661,8 +644,9 @@ function Item({ clip, style }: { clip: ClipWithVideo; style: QuickStyle }) {
   }
 }
 
+/* ───────────────────────────── The row ───────────────────────────── */
+
 const ITEM_W: Record<QuickStyle, number> = { ema: 132, norigae: 132, noren: 150, hanko: 132 };
-const GAP_X = 16;
 
 function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () => void }) {
   const Icon = side === 'start' ? ChevronLeft : ChevronRight;
@@ -677,8 +661,8 @@ function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () =>
       whileTap={{ scale: 0.88 }}
       transition={jelly}
       className={cn(
-        'absolute top-1/2 z-10 grid size-10 -translate-y-1/2 place-items-center rounded-full bg-sumi-950/90 text-washi shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)] ring-1 ring-washi/15 transition-colors hover:bg-sumi-800 max-sm:hidden',
-        side === 'start' ? '-left-3' : '-right-3',
+        'absolute top-0 z-20 grid size-9 place-items-center rounded-full bg-sumi-950/90 text-washi shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)] ring-1 ring-washi/15 transition-colors hover:bg-sumi-800 sm:size-10',
+        side === 'start' ? '-left-2 sm:-left-3' : '-right-2 sm:-right-3',
       )}
     >
       <Icon className="size-5" />
@@ -687,33 +671,43 @@ function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () =>
 }
 
 /**
- * Quick access: pinned clips first, then recent ones. One tap opens the studio already looping the clip.
- * At most two rows; more clips slide in from the side instead of filling the page. Hanging styles are
- * little toys: drag them (on touch, hold then drag) and they swing within limits; sliding the row
- * moves the rail they hang from, so they lag behind and sway.
+ * Quick access: pinned clips first, then recent ones, in one row that slides sideways. One tap opens
+ * the studio already looping the clip. Hanging styles are little toys: drag an item sideways to play
+ * with it; drag the wooden rail (or use the arrows) to slide the row, and everything on it sways.
  */
 export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: QuickStyle }) {
   const scroller = useRef<HTMLUListElement>(null);
   const lastLeft = useRef(0);
-  const [cols, setCols] = useState(Number.POSITIVE_INFINITY);
   const [edges, setEdges] = useState({ start: false, end: false });
-  const rows = clips.length > cols ? 2 : 1;
 
   const measure = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
-    setCols(Math.max(1, Math.floor((el.clientWidth + GAP_X) / (ITEM_W[style] + GAP_X))));
-    setEdges({ start: el.scrollLeft > 4, end: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
-  }, [style]);
+    setEdges((prev) => {
+      const next = { start: el.scrollLeft > 4, end: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 };
+      return prev.start === next.start && prev.end === next.end ? prev : next;
+    });
+  }, []);
 
   useEffect(() => {
-    measure();
     const el = scroller.current;
     if (!el) return;
+    measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [measure, rows, clips.length]);
+    // No breeze while the row is off screen.
+    const io = new IntersectionObserver(([entry]) => setBreeze(Boolean(entry?.isIntersecting)));
+    io.observe(el);
+    return () => {
+      ro.disconnect();
+      io.disconnect();
+      setBreeze(true);
+    };
+  }, [measure, style, clips.length]);
+
+  const slide = useCallback((dx: number) => {
+    scroller.current?.scrollBy({ left: -dx });
+  }, []);
 
   if (clips.length === 0) {
     return (
@@ -728,50 +722,46 @@ export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: Q
     const el = scroller.current;
     el?.scrollBy({ left: dir * Math.max(el.clientWidth * 0.8, ITEM_W[style]), behavior: 'smooth' });
   };
-  const fade = 28;
-  const mask = `linear-gradient(to right, transparent 0, #000 ${edges.start ? fade : 0}px, #000 calc(100% - ${edges.end ? fade : 0}px), transparent 100%)`;
 
   return (
-    <div className="relative">
-      <TextureDefs />
-      <motion.ul
-        ref={scroller}
-        key={style}
-        variants={stagger(0.04)}
-        initial="hidden"
-        animate="show"
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          const dx = el.scrollLeft - lastLeft.current;
-          lastLeft.current = el.scrollLeft;
-          // The rail slides with the row; whatever hangs from it lags behind and swings.
-          nudgeAll(Math.max(-1.2, Math.min(1.2, dx * 0.02)));
-          setEdges({ start: el.scrollLeft > 4, end: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
-        }}
-        className={cn(
-          'scrollbar-none -mx-2 grid snap-x snap-proximity auto-cols-max grid-flow-col gap-x-4 overflow-x-auto overscroll-x-contain px-2 pb-3 pt-0.5 [justify-content:safe_center] sm:justify-start',
-          style === 'hanko' ? 'gap-y-4' : 'gap-y-6',
-        )}
-        style={{ gridTemplateRows: `repeat(${rows}, auto)`, maskImage: mask, WebkitMaskImage: mask }}
-      >
-        {clips.map((clip) => (
-          <motion.li key={clip.id} variants={fadeUp} className="snap-start">
-            <Link
-              to={`/v/${clip.video_id}?clip=${clip.id}`}
-              aria-label={clipLabel(clip)}
-              title={clipLabel(clip)}
-              draggable={false}
-              className="block rounded-[10px] [-webkit-touch-callout:none]"
-            >
-              <Item clip={clip} style={style} />
-            </Link>
-          </motion.li>
-        ))}
-      </motion.ul>
-      <AnimatePresence>
-        {edges.start && <ScrollButton key="start" side="start" onClick={() => page(-1)} />}
-        {edges.end && <ScrollButton key="end" side="end" onClick={() => page(1)} />}
-      </AnimatePresence>
-    </div>
+    <RailDrag.Provider value={slide}>
+      <div className="relative">
+        <TextureDefs />
+        <motion.ul
+          ref={scroller}
+          key={style}
+          variants={stagger(0.04)}
+          initial="hidden"
+          animate="show"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const dx = el.scrollLeft - lastLeft.current;
+            lastLeft.current = el.scrollLeft;
+            // The rail slides with the row; whatever hangs from it lags behind and swings.
+            if (style !== 'hanko') nudgeAll(Math.max(-1.2, Math.min(1.2, dx * 0.02)));
+            measure();
+          }}
+          className="scrollbar-none -mx-2 flex snap-x snap-proximity gap-x-4 overflow-x-auto overscroll-x-contain px-2 pb-3 pt-3"
+        >
+          {clips.map((clip) => (
+            <motion.li key={clip.id} variants={fadeUp} className="shrink-0 snap-start">
+              <Link
+                to={`/v/${clip.video_id}?clip=${clip.id}`}
+                aria-label={clipLabel(clip)}
+                title={clipLabel(clip)}
+                draggable={false}
+                className="block rounded-[10px] [-webkit-touch-callout:none]"
+              >
+                <Item clip={clip} style={style} />
+              </Link>
+            </motion.li>
+          ))}
+        </motion.ul>
+        <AnimatePresence>
+          {edges.start && <ScrollButton key="start" side="start" onClick={() => page(-1)} />}
+          {edges.end && <ScrollButton key="end" side="end" onClick={() => page(1)} />}
+        </AnimatePresence>
+      </div>
+    </RailDrag.Provider>
   );
 }
