@@ -1,20 +1,22 @@
 import { formatSpeed, formatTime, type ClipColor } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { FlipHorizontal2 } from 'lucide-react';
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Segmented } from '@/components/ui/Segmented';
 import type { ClipWithVideo } from '@/data/clips';
 import { cn } from '@/lib/cn';
+import { Cloth, Rope, stepPendulum, subscribeTick, type Pendulum, type PendulumConfig } from '@/lib/hanging';
 import { fadeUp, jelly, stagger } from '@/lib/motion';
 
-export type QuickStyle = 'ema' | 'hanko' | 'noren';
+export type QuickStyle = 'ema' | 'norigae' | 'noren' | 'hanko';
 
 const STYLE_KEY = 'coverscape.quickStyle';
 const STYLES: { value: QuickStyle; label: string }[] = [
   { value: 'ema', label: 'Ema' },
-  { value: 'hanko', label: 'Hanko' },
+  { value: 'norigae', label: 'Norigae' },
   { value: 'noren', label: 'Noren' },
+  { value: 'hanko', label: 'Hanko' },
 ];
 
 /** Clip colour as a CSS custom property, usable in SVG fills. */
@@ -26,11 +28,13 @@ const TINT: Record<ClipColor, string> = {
   gold: 'var(--color-kin-400)',
   teal: 'var(--color-rokusho)',
 };
+/** Clip colour deepened towards ink, so washi text stays readable on light hues. */
+const dyed = (c: ClipColor, amount = 58) => `color-mix(in oklab, ${TINT[c]} ${amount}%, var(--color-sumi-950))`;
 
 function readStyle(): QuickStyle {
   try {
     const saved = localStorage.getItem(STYLE_KEY);
-    if (saved === 'ema' || saved === 'hanko' || saved === 'noren') return saved;
+    if (STYLES.some((s) => s.value === saved)) return saved as QuickStyle;
   } catch {
     /* storage blocked: fall back to the default */
   }
@@ -71,7 +75,9 @@ export function sealLetters(name: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 
-/** Shared SVG filters: wood grain, rough seal ink, washi fibres. Rendered once per list. */
+/* ───────────────────────────── Shared bits ───────────────────────────── */
+
+/** Shared SVG filters: wood grain, rough seal ink, washi / silk fibres. Rendered once per list. */
 function TextureDefs() {
   return (
     <svg width="0" height="0" className="absolute" aria-hidden focusable="false">
@@ -119,21 +125,138 @@ function clipLabel(clip: ClipWithVideo) {
   return `${clip.name}${clip.video?.title ? ` · ${clip.video.title}` : ''}${clip.is_pinned ? ' · fijado' : ''}`;
 }
 
-/* ───────────── 1 · Ema: wooden votive plaques hanging from a rail ───────────── */
-
-function Ema({ clip, index }: { clip: ClipWithVideo; index: number }) {
+/** A length of wooden rail behind each hanging item; neighbours overlap so a row reads as one beam. */
+function RailSegment() {
   return (
-    <motion.div
-      whileHover={{ rotate: [0, -3, 2, 0], transition: { duration: 0.7 } }}
-      whileTap={{ scale: 0.94 }}
-      transition={jelly}
-      style={{ transformOrigin: '66px 0px' }}
-      className="relative h-[184px] w-[132px]"
-    >
-      <div
-        className="absolute inset-0 origin-top motion-safe:animate-sway"
-        style={{ animationDelay: `${-index * 0.9}s` }}
-      >
+    <span
+      aria-hidden
+      className="pointer-events-none absolute -inset-x-2 top-0 h-2 rounded-full bg-kiji-700 shadow-[0_3px_6px_-2px_rgb(0_0_0/0.7)]"
+    />
+  );
+}
+
+interface GrabHandlers {
+  /** Pointer pressed and moved past the tap threshold (client coordinates of the press). */
+  onGrab: (x: number, y: number) => void;
+  onDrag: (x: number, y: number) => void;
+  onRelease: () => void;
+  /** A mouse brushing past without pressing; `dx` is the horizontal movement. */
+  onBrush?: (dx: number) => void;
+}
+
+/**
+ * Drag-to-swing on top of a link: a press that moves more than a few pixels becomes a grab and the
+ * following click is swallowed; a plain tap still opens the clip.
+ */
+function useGrab(h: GrabHandlers) {
+  const handlers = useRef(h);
+  handlers.current = h;
+  const s = useRef({ down: false, moved: false, sx: 0, sy: 0 });
+  return {
+    onPointerDown(e: ReactPointerEvent<HTMLElement>) {
+      if (e.button > 0) return;
+      s.current = { down: true, moved: false, sx: e.clientX, sy: e.clientY };
+    },
+    onPointerMove(e: ReactPointerEvent<HTMLElement>) {
+      const st = s.current;
+      if (!st.down) {
+        if (e.pointerType === 'mouse') handlers.current.onBrush?.(e.movementX);
+        return;
+      }
+      if (!st.moved) {
+        if (Math.hypot(e.clientX - st.sx, e.clientY - st.sy) < 6) return;
+        st.moved = true;
+        handlers.current.onGrab(st.sx, st.sy);
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone; the drag still works while it stays over the item */
+        }
+      }
+      handlers.current.onDrag(e.clientX, e.clientY);
+    },
+    onPointerUp(e: ReactPointerEvent<HTMLElement>) {
+      s.current.down = false;
+      if (s.current.moved) {
+        handlers.current.onRelease();
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    onPointerCancel() {
+      if (s.current.moved) handlers.current.onRelease();
+      s.current.down = false;
+      s.current.moved = false;
+    },
+    onClickCapture(e: React.MouseEvent) {
+      if (s.current.moved) {
+        e.preventDefault();
+        e.stopPropagation();
+        s.current.moved = false;
+      }
+    },
+  };
+}
+
+/**
+ * A rigid body hanging from `pivot` (px inside `wrap`): the pointer pulls it towards its angle and
+ * releasing lets it swing back under gravity. `onFrame` runs after each step for attached effects.
+ */
+function usePendulum(
+  wrap: RefObject<HTMLDivElement | null>,
+  body: RefObject<HTMLDivElement | null>,
+  pivot: { x: number; y: number },
+  cfg: PendulumConfig,
+  onFrame?: (p: Pendulum, dt: number) => void,
+) {
+  const p = useRef<Pendulum>({ theta: 0, omega: 0, target: null });
+  const frameCb = useRef(onFrame);
+  frameCb.current = onFrame;
+
+  useEffect(
+    () =>
+      subscribeTick(
+        (dt) => {
+          const st = p.current;
+          stepPendulum(st, cfg, dt);
+          if (body.current) body.current.style.transform = `rotate(${(-st.theta).toFixed(4)}rad)`;
+          frameCb.current?.(st, dt);
+        },
+        (strength) => {
+          p.current.omega += (Math.random() < 0.5 ? -1 : 1) * strength;
+        },
+      ),
+    [body, cfg],
+  );
+
+  const aim = (x: number, y: number) => {
+    const r = wrap.current!.getBoundingClientRect();
+    const ang = Math.atan2(x - (r.left + pivot.x), Math.max(y - (r.top + pivot.y), 24));
+    p.current.target = Math.max(-cfg.maxAngle, Math.min(cfg.maxAngle, ang));
+  };
+  return useGrab({
+    onGrab: aim,
+    onDrag: aim,
+    onRelease: () => {
+      p.current.target = null;
+    },
+    onBrush: (dx) => {
+      p.current.omega += dx * 0.012;
+    },
+  });
+}
+
+/* ───────────── Ema: wooden votive plaques hanging from a rail ───────────── */
+
+const EMA_SWING: PendulumConfig = { period: 1.25, damping: 0.9, maxAngle: 1.1 };
+
+function Ema({ clip }: { clip: ClipWithVideo }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const grab = usePendulum(wrap, body, { x: 66, y: 3 }, EMA_SWING);
+  return (
+    <div ref={wrap} {...grab} className="relative h-[184px] w-[132px] touch-pan-y select-none">
+      <RailSegment />
+      <div ref={body} className="absolute inset-0 will-change-transform" style={{ transformOrigin: '66px 3px' }}>
         <svg viewBox="0 0 132 184" className="absolute inset-0 size-full" aria-hidden>
           <path d="M66 2 L46 38 M66 2 L86 38" stroke={TINT[clip.color]} strokeWidth="2.2" fill="none" />
           <circle cx="66" cy="3" r="3.2" style={{ fill: `color-mix(in oklab, ${TINT[clip.color]} 55%, black)` }} />
@@ -158,17 +281,218 @@ function Ema({ clip, index }: { clip: ClipWithVideo; index: number }) {
             </g>
           )}
         </svg>
-        <div className="absolute inset-x-3 top-[58px] flex flex-col items-center text-center text-kiji-900">
+        <div className="absolute inset-x-3 top-[60px] flex flex-col items-center text-center text-kiji-900">
           <span className="line-clamp-2 font-display text-[17px] font-extrabold leading-[1.15]">{clip.name}</span>
           <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] font-medium opacity-70">{clip.video?.title}</span>
           <ClipMeta clip={clip} className="mt-2 text-kiji-900/80" chip="bg-sumi-800 text-washi" />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-/* ───────────── 3 · Hanko: vermilion seal impressions on washi ───────────── */
+/* ───────────── Norigae: hanbok pendant — knot, jade medallion, silk tassel ───────────── */
+
+const NORIGAE_SWING: PendulumConfig = { period: 1.45, damping: 0.75, maxAngle: 1.15 };
+const NORI_PIVOT = { x: 66, y: 3 };
+const TASSEL_TOP = 155;
+const STRANDS = [-9, -5.5, -2, 2, 5.5, 9];
+
+function Norigae({ clip }: { clip: ClipWithVideo }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const strandEls = useRef<(SVGPathElement | null)[]>([]);
+  const ropes = useRef(STRANDS.map((ox, i) => new Rope(7, 10.5 + (i % 3) * 0.8, NORI_PIVOT.x + ox, TASSEL_TOP)));
+
+  const grab = usePendulum(wrap, body, NORI_PIVOT, NORIGAE_SWING, (p, dt) => {
+    const sin = Math.sin(p.theta);
+    const cos = Math.cos(p.theta);
+    const dy = TASSEL_TOP - NORI_PIVOT.y;
+    ropes.current.forEach((rope, i) => {
+      const ox = STRANDS[i]!;
+      // The threads hang from the swinging cap: rotate (ox, dy) about the pivot.
+      rope.step(dt, NORI_PIVOT.x + ox * cos + dy * sin, NORI_PIVOT.y - ox * sin + dy * cos);
+      strandEls.current[i]?.setAttribute('d', rope.path());
+    });
+  });
+
+  const jade = dyed(clip.color, 62);
+  const knot = clip.is_pinned ? 'var(--color-kin-400)' : 'var(--color-shu-500)';
+  return (
+    <div ref={wrap} {...grab} className="relative h-[236px] w-[132px] touch-pan-y select-none">
+      <RailSegment />
+      <svg viewBox="0 0 132 236" className="absolute inset-0 size-full overflow-visible" aria-hidden>
+        {STRANDS.map((_, i) => (
+          <path
+            key={i}
+            ref={(el) => {
+              strandEls.current[i] = el;
+            }}
+            fill="none"
+            style={{ stroke: i % 2 ? `color-mix(in oklab, ${TINT[clip.color]} 75%, white)` : jade }}
+            strokeWidth={i % 2 ? 1.4 : 2.4}
+            strokeLinecap="round"
+          />
+        ))}
+      </svg>
+      <div
+        ref={body}
+        className="absolute inset-0 will-change-transform"
+        style={{ transformOrigin: `${NORI_PIVOT.x}px ${NORI_PIVOT.y}px` }}
+      >
+        <svg viewBox="0 0 132 236" className="absolute inset-0 size-full" aria-hidden>
+          <path d="M66 3 V16 M66 36 V46" stroke="var(--color-kin-400)" strokeWidth="2" />
+          <g transform="translate(66 26)">
+            <path d="M0 -11 L11 0 L0 11 L-11 0 Z" fill="none" stroke={knot} strokeWidth="4" strokeLinejoin="round" />
+            <path d="M-5.5 -5.5 L5.5 5.5 M5.5 -5.5 L-5.5 5.5" stroke={knot} strokeWidth="3" />
+          </g>
+          <ellipse cx="66" cy="94" rx="60" ry="48" style={{ fill: jade }} filter="url(#os-paper)" />
+          <ellipse cx="66" cy="94" rx="54" ry="42" fill="none" stroke="var(--color-kin-400)" strokeWidth="1.5" />
+          <ellipse cx="48" cy="70" rx="22" ry="7" fill="var(--color-washi)" opacity="0.13" transform="rotate(-18 48 70)" />
+        </svg>
+        <div className="absolute inset-x-[16px] top-[62px] flex h-[64px] flex-col items-center justify-center text-center text-washi">
+          <span className="line-clamp-2 font-display text-[15px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.45)]">
+            {clip.name}
+          </span>
+          <span className="tabular mt-1 whitespace-nowrap font-mono text-[10.5px] text-washi/80">
+            {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
+          </span>
+        </div>
+        {/* Gold cap where the tassel is tied; it carries the speed. */}
+        <span className="tabular absolute left-1/2 top-[141px] flex h-[15px] -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded-[3px] bg-kin-400 px-1.5 font-mono text-[9.5px] font-semibold text-sumi-900">
+          {formatSpeed(clip.speed)}
+          {clip.mirrored && <FlipHorizontal2 className="size-2.5" aria-label="espejo" />}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── Noren: dyed split curtains, simulated as cloth ───────────── */
+
+const NOREN_W = 150;
+const NOREN_H = 184;
+
+function Noren({ clip }: { clip: ClipWithVideo }) {
+  const svg = useRef<SVGSVGElement>(null);
+  const label = useRef<HTMLDivElement>(null);
+  const fills = useRef<(SVGPathElement | null)[]>([]);
+  const hems = useRef<(SVGPathElement | null)[]>([]);
+  const cloths = useRef([new Cloth(5, 7, 4, 9, 70, 164), new Cloth(5, 7, 76, 9, 70, 164)]);
+  const held = useRef<Cloth | null>(null);
+
+  useEffect(
+    () =>
+      subscribeTick(
+        (dt) => {
+          cloths.current.forEach((cloth, i) => {
+            cloth.step(dt);
+            fills.current[i]?.setAttribute('d', cloth.outline());
+            hems.current[i]?.setAttribute('d', cloth.rowPath(cloth.rows - 1, 7));
+          });
+          const [a, b] = cloths.current.map((c) => c.pose());
+          if (label.current && a && b) {
+            const dx = (a.dx + b.dx) / 2;
+            const dy = (a.dy + b.dy) / 2;
+            const ang = (a.angle + b.angle) / 2;
+            label.current.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) rotate(${(-ang).toFixed(4)}rad)`;
+          }
+        },
+        (strength) => {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          cloths.current.forEach((c, i) => c.push(dir * strength * (2.2 + i * 0.6)));
+        },
+      ),
+    [],
+  );
+
+  const toLocal = (x: number, y: number) => {
+    const m = svg.current?.getScreenCTM();
+    if (!m) return { x: 0, y: 0 };
+    const pt = new DOMPoint(x, y).matrixTransform(m.inverse());
+    return { x: pt.x, y: Math.max(pt.y, 14) };
+  };
+  const grab = useGrab({
+    onGrab: (x, y) => {
+      const local = toLocal(x, y);
+      const cloth = cloths.current[local.x < NOREN_W / 2 ? 0 : 1]!;
+      cloth.grabbed = cloth.nearest(local.x, local.y);
+      cloth.grabX = local.x;
+      cloth.grabY = local.y;
+      held.current = cloth;
+    },
+    onDrag: (x, y) => {
+      const cloth = held.current;
+      if (!cloth) return;
+      const local = toLocal(x, y);
+      cloth.grabX = local.x;
+      cloth.grabY = local.y;
+    },
+    onRelease: () => {
+      if (held.current) held.current.grabbed = -1;
+      held.current = null;
+    },
+    onBrush: (dx) => {
+      cloths.current.forEach((c) => c.push(dx * 0.12));
+    },
+  });
+
+  const cloth = dyed(clip.color);
+  return (
+    <div {...grab} className="relative touch-pan-y select-none" style={{ width: NOREN_W, height: NOREN_H }}>
+      <svg
+        ref={svg}
+        viewBox={`0 0 ${NOREN_W} ${NOREN_H}`}
+        className="absolute inset-0 size-full overflow-visible"
+        aria-hidden
+      >
+        {[0, 1].map((i) => (
+          <g key={i}>
+            <path
+              ref={(el) => {
+                fills.current[i] = el;
+              }}
+              style={{ fill: cloth }}
+              filter="url(#os-paper)"
+            />
+            <path
+              ref={(el) => {
+                hems.current[i] = el;
+              }}
+              fill="none"
+              stroke="var(--color-washi)"
+              strokeOpacity="0.3"
+              strokeWidth="1.5"
+            />
+          </g>
+        ))}
+        <rect x="0" y="2" width={NOREN_W} height="8" rx="4" fill="var(--color-kiji-700)" />
+      </svg>
+      <div
+        ref={label}
+        className="pointer-events-none absolute inset-x-3 top-[30px] flex flex-col items-center text-center text-washi will-change-transform"
+        style={{ transformOrigin: '50% 0' }}
+      >
+        <svg viewBox="-16 -16 32 32" className="size-8" aria-hidden>
+          <g filter="url(#os-ink)">
+            {clip.is_pinned ? (
+              <circle r="14" fill="var(--color-washi)" />
+            ) : (
+              <circle r="14" fill="none" stroke="var(--color-washi)" strokeWidth="2" />
+            )}
+          </g>
+        </svg>
+        <span className="mt-3 line-clamp-2 font-display text-[16px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.5)]">
+          {clip.name}
+        </span>
+        <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] text-washi/70">{clip.video?.title}</span>
+        <ClipMeta clip={clip} className="mt-1.5 text-washi/85" chip="bg-sumi-950/60 text-washi" />
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── Hanko: vermilion seal impressions on washi ───────────── */
 
 function Hanko({ clip }: { clip: ClipWithVideo }) {
   const letters = sealLetters(clip.name);
@@ -217,66 +541,22 @@ function Hanko({ clip }: { clip: ClipWithVideo }) {
   );
 }
 
-/* ───────────── 6 · Noren: dyed split curtains on a rod ───────────── */
-
-function Noren({ clip, index }: { clip: ClipWithVideo; index: number }) {
-  const cloth: CSSProperties = { fill: `color-mix(in oklab, ${TINT[clip.color]} 58%, var(--color-sumi-950))` };
-  const half = (side: -1 | 1) => ({
-    rest: { x: 0, rotate: 0 },
-    open: { x: side * 5, rotate: side * 2.5 },
-  });
-  return (
-    <motion.div initial="rest" whileHover="open" whileTap={{ scale: 0.95 }} className="relative h-[184px] w-[150px]">
-      <div
-        className="absolute inset-0 origin-top motion-safe:animate-sway"
-        style={{ animationDelay: `${-index * 1.1}s`, animationDuration: '4.4s' }}
-      >
-        <svg viewBox="0 0 150 184" className="absolute inset-0 size-full overflow-visible" aria-hidden>
-          <motion.g variants={half(-1)} transition={jelly} style={{ transformOrigin: '38px 8px' }}>
-            <path d="M4 8 H74 V170 Q39 180 4 170 Z" style={cloth} filter="url(#os-paper)" />
-            <path d="M4 163 q11 -8 23 0 q11 -8 23 0 q11 -8 24 0" stroke="var(--color-washi)" strokeOpacity="0.3" strokeWidth="1.5" fill="none" />
-          </motion.g>
-          <motion.g variants={half(1)} transition={jelly} style={{ transformOrigin: '112px 8px' }}>
-            <path d="M76 8 H146 V170 Q111 180 76 170 Z" style={cloth} filter="url(#os-paper)" />
-            <path d="M76 163 q11 -8 23 0 q11 -8 23 0 q11 -8 24 0" stroke="var(--color-washi)" strokeOpacity="0.3" strokeWidth="1.5" fill="none" />
-          </motion.g>
-          <rect x="0" y="2" width="150" height="8" rx="4" fill="var(--color-kiji-700)" />
-          <g transform="translate(75 46)" filter="url(#os-ink)">
-            {clip.is_pinned ? (
-              <circle r="14" fill="var(--color-washi)" />
-            ) : (
-              <circle r="14" fill="none" stroke="var(--color-washi)" strokeWidth="2" />
-            )}
-          </g>
-        </svg>
-        <div className="absolute inset-x-3 top-[68px] flex flex-col items-center text-center text-washi">
-          <span className="line-clamp-2 font-display text-[16px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.5)]">
-            {clip.name}
-          </span>
-          <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] text-washi/70">{clip.video?.title}</span>
-          <ClipMeta clip={clip} className="mt-1.5 text-washi/85" chip="bg-sumi-950/60 text-washi" />
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function Rail({ style, children }: { style: QuickStyle; children: ReactNode }) {
-  if (style !== 'ema') return <>{children}</>;
-  return (
-    <div className="relative">
-      <span
-        aria-hidden
-        className="absolute inset-x-0 top-0 h-2 rounded-full bg-kiji-700 shadow-[0_3px_6px_-2px_rgb(0_0_0/0.7)]"
-      />
-      {children}
-    </div>
-  );
+function Item({ clip, style }: { clip: ClipWithVideo; style: QuickStyle }) {
+  switch (style) {
+    case 'ema':
+      return <Ema clip={clip} />;
+    case 'norigae':
+      return <Norigae clip={clip} />;
+    case 'noren':
+      return <Noren clip={clip} />;
+    default:
+      return <Hanko clip={clip} />;
+  }
 }
 
 /**
  * Quick access: pinned clips first, then recent ones. One tap opens the studio already looping the clip.
- * Drawn as ema plaques, hanko seals or noren curtains depending on the chosen style.
+ * Hanging styles are little toys: drag them (or brush past with the mouse) and they swing for real.
  */
 export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: QuickStyle }) {
   if (clips.length === 0) {
@@ -289,37 +569,30 @@ export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: Q
   }
 
   return (
-    <Rail style={style}>
+    <>
       <TextureDefs />
       <motion.ul
         key={style}
         variants={stagger(0.04)}
         initial="hidden"
         animate="show"
-        className={cn(
-          'scrollbar-none -mx-1 flex snap-x overflow-x-auto px-1 pb-2',
-          style === 'ema' ? 'gap-4 pt-0.5' : style === 'noren' ? 'gap-2.5 pt-1' : 'gap-3 pt-1',
-        )}
+        // Wrapping rows instead of a horizontal scroller, so dragging a hanging item never fights a scroll.
+        className={cn('flex flex-wrap gap-x-4 pt-0.5 max-sm:justify-center', style === 'hanko' ? 'gap-y-4' : 'gap-y-6')}
       >
-        {clips.map((clip, i) => (
-          <motion.li key={clip.id} variants={fadeUp} className="shrink-0 snap-start">
+        {clips.map((clip) => (
+          <motion.li key={clip.id} variants={fadeUp}>
             <Link
               to={`/v/${clip.video_id}?clip=${clip.id}`}
               aria-label={clipLabel(clip)}
               title={clipLabel(clip)}
+              draggable={false}
               className="block rounded-[10px]"
             >
-              {style === 'ema' ? (
-                <Ema clip={clip} index={i} />
-              ) : style === 'hanko' ? (
-                <Hanko clip={clip} />
-              ) : (
-                <Noren clip={clip} index={i} />
-              )}
+              <Item clip={clip} style={style} />
             </Link>
           </motion.li>
         ))}
       </motion.ul>
-    </Rail>
+    </>
   );
 }

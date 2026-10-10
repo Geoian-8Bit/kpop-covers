@@ -58,13 +58,6 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   --animate-shimmer: shimmer 2.4s linear infinite;
-  --animate-sway: sway 3.6s ease-in-out infinite;
-}
-
-/* Hanging plaques and curtains drift a little, like in a temple breeze. */
-@keyframes sway {
-  0%, 100% { transform: rotate(-1.6deg); }
-  50% { transform: rotate(1.6deg); }
 }
 
 @keyframes shimmer {
