@@ -32,6 +32,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
 import { loadLocalVideo } from '@/lib/localVideos';
+import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
@@ -44,7 +45,7 @@ import { ClipList } from './ClipList';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline } from './Timeline';
-import { LoopTile, MirrorTile, PlaybackTile, SpeedTile } from './Transport';
+import { GapPicker, LoopTile, MirrorTile, PlaybackTile, SpeedTile, useLongPress } from './Transport';
 import { useShortcuts } from './useShortcuts';
 
 export function StudioPage() {
@@ -730,7 +731,18 @@ function FullscreenBar({
   const rate = usePlayer((s) => s.rate);
   const loop = usePlayer((s) => s.loop);
   const loopAll = usePlayer((s) => s.loopAll);
+  const gap = usePlayer((s) => s.gap);
+  const gapAll = usePlayer((s) => s.gapAll);
   const [speedOpen, setSpeedOpen] = useState(false);
+  const [gapMenu, setGapMenu] = useState<'all' | 'clip' | null>(null);
+  const allPress = useLongPress(
+    () => setGapMenu('all'),
+    () => usePlayer.getState().toggleLoopAll(),
+  );
+  const clipPress = useLongPress(
+    () => setGapMenu('clip'),
+    () => usePlayer.getState().toggleLoop(),
+  );
   const p = usePlayer.getState();
   const btn = 'grid size-10 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15';
 
@@ -821,25 +833,57 @@ function FullscreenBar({
                 )}
               </AnimatePresence>
             </div>
-            <button
-              type="button"
-              aria-label="Repetir la canción entera"
-              aria-pressed={loopAll}
-              onClick={() => p.toggleLoopAll()}
-              className={cn(btn, loopAll && 'text-ai-300')}
-            >
-              <Repeat1 className="size-[18px]" />
-            </button>
-            <button
-              type="button"
-              aria-label="Repetir tramo"
-              aria-pressed={loop.enabled && hasRange(loop)}
-              disabled={!hasRange(loop)}
-              onClick={() => p.toggleLoop()}
-              className={cn(btn, 'disabled:opacity-35', loop.enabled && hasRange(loop) && 'text-shu-400')}
-            >
-              <Repeat className="size-[18px]" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Repetir la canción entera (mantén pulsado para la pausa)"
+                aria-pressed={loopAll}
+                {...allPress}
+                className={cn(btn, 'relative', loopAll && 'text-ai-300')}
+              >
+                <Repeat1 className="size-[18px]" />
+                {gapAll > 0 && <GapBadge seconds={gapAll} />}
+              </button>
+              <AnimatePresence>
+                {gapMenu === 'all' && (
+                  <GapPicker
+                    title="Pausa entre vueltas de la canción"
+                    value={gapAll}
+                    onChange={(s) => p.setGapAll(s)}
+                    onClose={() => setGapMenu(null)}
+                    className="absolute bottom-12 right-0"
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Repetir tramo (mantén pulsado para la pausa)"
+                aria-pressed={loop.enabled && hasRange(loop)}
+                {...clipPress}
+                className={cn(
+                  btn,
+                  'relative',
+                  !hasRange(loop) && 'opacity-50',
+                  loop.enabled && hasRange(loop) && 'text-shu-400',
+                )}
+              >
+                <Repeat className="size-[18px]" />
+                {gap > 0 && <GapBadge seconds={gap} />}
+              </button>
+              <AnimatePresence>
+                {gapMenu === 'clip' && (
+                  <GapPicker
+                    title="Pausa entre vueltas del clip"
+                    value={gap}
+                    onChange={(s) => p.setGap(s)}
+                    onClose={() => setGapMenu(null)}
+                    className="absolute bottom-12 right-0"
+                  />
+                )}
+              </AnimatePresence>
+            </div>
             <button
               type="button"
               aria-label="Espejo"
@@ -859,9 +903,27 @@ function FullscreenBar({
   );
 }
 
+function GapBadge({ seconds }: { seconds: number }) {
+  return (
+    <span className="tabular pointer-events-none absolute -right-0.5 -top-0.5 rounded-full bg-shu-500 px-1 font-mono text-[9px] font-bold leading-[14px] text-washi">
+      {seconds}s
+    </span>
+  );
+}
+
 function Countdown() {
   const endsAt = usePlayer((s) => s.countdownEndsAt);
   const [now, setNow] = useState(() => performance.now());
+
+  // Metronome: one tick per second of the pause, accented tick when the loop starts again.
+  useEffect(() => {
+    if (endsAt == null || !usePlayer.getState().countSound) return;
+    const cancel = scheduleCountIn(Math.round((endsAt - performance.now()) / 1000));
+    // Only silence the ticks if the pause was interrupted; a natural end must keep the accented "go" tick.
+    return () => {
+      if (performance.now() < endsAt - 80) cancel();
+    };
+  }, [endsAt]);
 
   useEffect(() => {
     if (endsAt == null) return;

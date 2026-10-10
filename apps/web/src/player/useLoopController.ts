@@ -44,7 +44,12 @@ export function useLoopController(): void {
       // Whole-song loop: jump back just before the end so YouTube never shows its end screen.
       if (state.playing && state.loopAll && !(loop.enabled && hasRange(loop)) && state.duration > 1 && t >= state.duration - 0.3) {
         engine.seek(0);
-        usePlayer.setState({ time: 0 });
+        if (state.gapAll > 0) {
+          engine.pause();
+          usePlayer.setState({ time: 0, countdownEndsAt: performance.now() + state.gapAll * 1000 });
+        } else {
+          usePlayer.setState({ time: 0 });
+        }
         return;
       }
 

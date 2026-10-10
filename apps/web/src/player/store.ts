@@ -56,6 +56,9 @@ interface PlayerState extends PlayerStatus {
   /** Repeat the whole song when it ends (A–B loop wins while enabled). Remembered per device. */
   loopAll: boolean;
   toggleLoopAll(): void;
+  /** Metronome ticks during the pause between repetitions. Remembered per device. */
+  countSound: boolean;
+  toggleCountSound(): void;
 
   markStart(at?: number): void;
   markEnd(at?: number): void;
@@ -64,6 +67,9 @@ interface PlayerState extends PlayerStatus {
   /** Returns false when there is no A–B range to loop. */
   toggleLoop(): boolean;
   setGap(seconds: number): void;
+  /** Pause between whole-song repetitions (independent of the A–B pause). */
+  gapAll: number;
+  setGapAll(seconds: number): void;
   applyClip(clip: ClipSettings, opts?: { autoplay?: boolean }): void;
   setActiveClip(id: string | null): void;
   setScrubbing(scrubbing: boolean): void;
@@ -71,6 +77,15 @@ interface PlayerState extends PlayerStatus {
 
 const MIRROR_KEY = 'coverscape.mirrored';
 const LOOP_ALL_KEY = 'coverscape.loopAll';
+const COUNT_SOUND_KEY = 'coverscape.countSound';
+
+function readCountSoundPreference(): boolean {
+  try {
+    return localStorage.getItem(COUNT_SOUND_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function readLoopAllPreference(): boolean {
   try {
@@ -109,8 +124,10 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   rate: 1,
   mirrored: readMirrorPreference(),
   loopAll: readLoopAllPreference(),
+  countSound: readCountSoundPreference(),
   loop: emptyLoop,
   gap: 0,
+  gapAll: 0,
   countdownEndsAt: null,
   activeClipId: null,
   scrubbing: false,
@@ -126,7 +143,15 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   reset() {
-    set({ ...initialStatus, engine: null, scrubbing: false, rate: 1, loop: emptyLoop, countdownEndsAt: null, activeClipId: null });
+    set({
+      ...initialStatus,
+      engine: null,
+      scrubbing: false,
+      rate: 1,
+      loop: emptyLoop,
+      countdownEndsAt: null,
+      activeClipId: null,
+    });
   },
 
   sync(patch) {
@@ -185,6 +210,16 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     set({ mirrored });
   },
 
+  toggleCountSound() {
+    const next = !get().countSound;
+    try {
+      localStorage.setItem(COUNT_SOUND_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+    set({ countSound: next });
+  },
+
   toggleLoopAll() {
     const next = !get().loopAll;
     try {
@@ -235,13 +270,22 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     set({ gap: clamp(seconds, 0, 10) });
   },
 
+  setGapAll(seconds) {
+    set({ gapAll: clamp(seconds, 0, 10) });
+  },
+
   applyClip(clip, opts = {}) {
     const { autoplay = true } = opts;
     const range = normalizeRange(clip.start_seconds, clip.end_seconds, get().duration || clip.end_seconds);
     if (!range) return;
     get().setRate(clip.speed);
     // Session-only: opening a teammate's clip must not overwrite the saved mirror preference.
-    set({ mirrored: clip.mirrored, loop: { ...range, enabled: true }, activeClipId: clip.id, countdownEndsAt: null });
+    set({
+      mirrored: clip.mirrored,
+      loop: { ...range, enabled: true },
+      activeClipId: clip.id,
+      countdownEndsAt: null,
+    });
     get().seek(range.start);
     if (autoplay) get().engine?.play();
   },
