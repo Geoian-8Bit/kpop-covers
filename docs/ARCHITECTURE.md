@@ -40,7 +40,7 @@ StudioPage
  ├─ MediaStage ── motion.div scaleX(±1)  ← espejo como transform (funciona igual en YouTube y <video>)
  │    ├─ YouTubeStage → createYouTubeEngine(player)
  │    └─ FileStage    → createMediaEngine(<video>)
- ├─ Timeline   (scrub, Shift+arrastre para seleccionar, tiradores A/B, carril de clips)
+ ├─ Timeline   (scrub, arrastre en el carril de clips o Shift+arrastre para seleccionar, tiradores A/B)
  ├─ Transport  (play, ±5 s, espejo, velocidad, A/B, bucle, pausa entre repeticiones, guardar)
  └─ ClipList
 ```

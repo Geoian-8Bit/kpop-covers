@@ -79,6 +79,8 @@ export function assignLanes(clips: Clip[], duration: number) {
 
 const LANE_H = 10;
 const LANE_GAP = 5;
+const LANE_PAD = 7;
+const LANE_MIN = 30;
 
 interface TimelineProps {
   seed: string;
@@ -94,7 +96,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
   const loop = usePlayer((s) => s.loop);
   const activeClipId = usePlayer((s) => s.activeClipId);
   const railRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ mode: DragMode; anchor: number } | null>(null);
+  const dragRef = useRef<{ mode: DragMode; anchor: number; x: number; moved: boolean } | null>(null);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const clipId = `tide-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -112,15 +114,15 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
     if (!duration || event.button > 0) return;
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.closest<HTMLElement>('[data-track]')?.setPointerCapture(event.pointerId);
+    event.currentTarget.closest<HTMLElement>('[data-track],[data-lane]')?.setPointerCapture(event.pointerId);
     const t = fractionAt(event.clientX) * duration;
     const player = usePlayer.getState();
     if (mode === 'scrub') {
       player.setScrubbing(true);
       player.seek(t);
     }
-    if (mode === 'select') player.setRange(t, t + MIN_LOOP_LENGTH);
-    dragRef.current = { mode, anchor: t };
+    // A range only appears once the pointer actually travels; a plain tap on the lane just seeks.
+    dragRef.current = { mode, anchor: t, x: event.clientX, moved: false };
     setDragMode(mode);
   }
 
@@ -137,6 +139,8 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
         player.seek(t);
         break;
       case 'select':
+        if (!drag.moved && Math.abs(event.clientX - drag.x) < 6) break;
+        drag.moved = true;
         player.setRange(Math.min(drag.anchor, t), Math.max(drag.anchor, t));
         break;
       case 'start':
@@ -150,7 +154,9 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
   }
 
   function end(event: ReactPointerEvent) {
-    if (!dragRef.current) return;
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (drag.mode === 'select' && !drag.moved) usePlayer.getState().seek(drag.anchor);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     dragRef.current = null;
     usePlayer.getState().setScrubbing(false);
@@ -162,11 +168,31 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
   return (
     <div className={cn('select-none', compact ? 'px-0 py-1' : 'px-3 pb-4 pt-4 sm:px-5')}>
       {/* saved clips lane */}
+      {/* Saved clips lane. Dragging on its empty space marks a new range — the quick way to cut a clip. */}
       <div
-        className="relative mx-3 mb-3"
-        style={{ height: Math.max(1, layout.count) * (LANE_H + LANE_GAP) - LANE_GAP }}
-        aria-label="Clips guardados"
+        data-lane
+        aria-label="Clips guardados · arrastra en el hueco para marcar un tramo"
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          begin('select', e);
+        }}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={end}
+        onPointerLeave={() => setHover(null)}
+        className={cn(
+          'group/lane relative mb-2 touch-none rounded-[8px] border border-dashed border-washi/15 px-3 transition-colors',
+          duration ? 'cursor-crosshair hover:border-shu-400/50 hover:bg-shu-500/[0.05]' : 'cursor-wait',
+          dragMode === 'select' && 'border-shu-400/70 bg-shu-500/[0.08]',
+        )}
+        style={{ height: Math.max(LANE_MIN, layout.count * (LANE_H + LANE_GAP) - LANE_GAP + LANE_PAD * 2) }}
       >
+        {clips.length === 0 && !compact && (
+          <span className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-washi-subtle group-hover/lane:text-shu-400">
+            Arrastra aquí para marcar un clip
+          </span>
+        )}
+        <div className="relative size-full">
         {duration > 0 &&
           clips.map((clip) => (
             <motion.button
@@ -188,11 +214,12 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
               style={{
                 left: `${pct(clip.start_seconds)}%`,
                 width: `${pct(clip.end_seconds) - pct(clip.start_seconds)}%`,
-                top: (layout.lanes.get(clip.id) ?? 0) * (LANE_H + LANE_GAP),
+                top: LANE_PAD + (layout.lanes.get(clip.id) ?? 0) * (LANE_H + LANE_GAP),
                 height: LANE_H,
               }}
             />
           ))}
+        </div>
       </div>
 
       <div
@@ -357,9 +384,9 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className={cn('hidden font-sans', !compact && 'sm:inline')}
+              className={cn('hidden truncate px-2 font-sans', !compact && 'sm:inline')}
             >
-              Shift + arrastrar para marcar un tramo
+              Toca para saltar · arrastra en la franja de clips para marcar un tramo
             </motion.span>
           )}
         </AnimatePresence>

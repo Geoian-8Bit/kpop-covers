@@ -45,7 +45,7 @@ import { ClipList } from './ClipList';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline } from './Timeline';
-import { GapPicker, LoopTile, MirrorTile, PlaybackTile, SpeedTile, useLongPress } from './Transport';
+import { GapPicker, PlayerBar, useLongPress } from './Transport';
 import { useShortcuts } from './useShortcuts';
 
 export function StudioPage() {
@@ -172,12 +172,7 @@ export function StudioPage() {
               <MediaStage video={current} clips={clips.data ?? []} onClipSelect={applyClip} />
             </div>
             <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
-            <div className="sep-t grid sm:grid-cols-2 2xl:grid-cols-[1fr_1.35fr_1fr]">
-              <PlaybackTile />
-              <SpeedTile className="sep-t sm:sep-l" />
-              <MirrorTile className="sep-t sm:col-span-2 2xl:col-span-1 2xl:sep-l" />
-            </div>
-            <LoopTile onSaveClip={openSave} className="sep-t" />
+            <PlayerBar onSaveClip={openSave} />
           </div>
 
           {/* Clips column */}
