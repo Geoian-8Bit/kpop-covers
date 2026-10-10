@@ -5,8 +5,8 @@ import { backend } from '@/lib/backend';
 import { useAuth } from './AuthProvider';
 
 /**
- * The app has a single shared group. Every signed-in user is joined to it automatically
- * (`join_group` RPC); the group still scopes all data through RLS.
+ * The app has a single shared group and no login: everyone reads and writes inside it
+ * (RLS scopes anonymous access to `private.default_group()`).
  */
 interface GroupContextValue {
   activeCrew: Crew | null;
@@ -23,8 +23,7 @@ export function CrewProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
   const groupQuery = useQuery({
-    queryKey: ['group', user?.id],
-    enabled: Boolean(user),
+    queryKey: ['group'],
     staleTime: Infinity,
     queryFn: (): Promise<Crew> => backend.joinGroup(),
   });
@@ -40,7 +39,7 @@ export function CrewProvider({ children }: { children: ReactNode }) {
     () => ({
       activeCrew: groupQuery.data ?? null,
       profile: profileQuery.data ?? null,
-      loading: groupQuery.isPending && Boolean(user),
+      loading: groupQuery.isPending,
       error: groupQuery.isError,
       retry: () => void refetch(),
     }),

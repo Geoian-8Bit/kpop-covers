@@ -27,8 +27,8 @@ No hay servidor propio: Supabase es el backend (datos, auth, ficheros) y la úni
 
 - **RLS**: todo se filtra con `private.is_crew_member(crew_id)` (security definer, fuera del esquema expuesto).
 - `clips.crew_id` lo rellena un trigger a partir del vídeo, así la política es una sola comprobación.
-- Grupo único: al entrar, el cliente llama a la RPC `join_group()` (crea el grupo si no existe y añade al usuario).
-  Los registros se cierran en Supabase cuando están todos dentro; nuevos usuarios los da de alta el admin.
+- Grupo único y acceso abierto: no hay login. El cliente lee el grupo más antiguo y las políticas `*_open_*` dejan al rol
+  `anon` trabajar solo dentro de `private.default_group()`. Miembros y perfiles siguen privados.
 - Storage: la primera carpeta de la ruta es el `crew_id`, y las políticas reutilizan el mismo helper.
 
 Migraciones en `supabase/migrations/`. Tipos generados en `packages/shared/src/database.types.ts`.

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { Library, LogOut, Plus } from 'lucide-react';
+import { Library, LogOut, MoreVertical, Plus } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useOutletContext } from 'react-router';
 import { CLIP_SWATCH, useQuickClips } from '@/data/clips';
@@ -69,14 +69,20 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
           className={({ isActive }) =>
             cn(
               'relative flex h-11 items-center gap-3 rounded-[10px] px-3 text-[15px] font-bold transition-colors',
-              isActive ? 'bg-washi/[0.07] text-washi' : 'text-washi-muted hover:bg-washi/[0.04] hover:text-washi',
+              isActive
+                ? 'bg-washi/[0.07] text-washi'
+                : 'text-washi-muted hover:bg-washi/[0.04] hover:text-washi',
             )
           }
         >
           {({ isActive }) => (
             <>
               {isActive && (
-                <motion.span layoutId="rail-active" transition={jelly} className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-shu-500" />
+                <motion.span
+                  layoutId="rail-active"
+                  transition={jelly}
+                  className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-shu-500"
+                />
               )}
               <Library className="size-4.5" /> Biblioteca
             </>
@@ -88,7 +94,9 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
         <div className="flex items-center gap-2 px-6 pb-2">
           <span className="font-display text-[15px] font-bold text-washi">Clips fijados</span>
           <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-washi/20 to-transparent" />
-          <span aria-hidden className="font-display text-[13px] font-bold text-shu-400">札</span>
+          <span aria-hidden className="font-display text-[13px] font-bold text-shu-400">
+            札
+          </span>
         </div>
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
           {pinned.map((clip) => (
@@ -97,7 +105,12 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
                 to={`/v/${clip.video_id}?clip=${clip.id}`}
                 className="group flex items-center gap-3 rounded-[10px] px-3 py-2 transition-colors hover:bg-washi/[0.05]"
               >
-                <span className={cn('size-3.5 shrink-0 rotate-[-4deg] rounded-[3px] transition-transform group-hover:rotate-0', CLIP_SWATCH[clip.color].dot)} />
+                <span
+                  className={cn(
+                    'size-3.5 shrink-0 rotate-[-4deg] rounded-[3px] transition-transform group-hover:rotate-0',
+                    CLIP_SWATCH[clip.color].dot,
+                  )}
+                />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-washi">{clip.name}</span>
                   <span className="block truncate text-xs text-washi-subtle">{clip.video?.title}</span>
@@ -117,16 +130,18 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
         <InstallAppButton compact />
       </div>
 
-      <div className="flex items-center gap-3 border-t border-line px-4 py-3">
-        <Avatar name={name} hue={profile?.avatar_hue} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-washi">{name}</p>
-          <p className="truncate text-xs text-washi-subtle">{user?.email}</p>
+      {user && (
+        <div className="flex items-center gap-3 border-t border-line px-4 py-3">
+          <Avatar name={name} hue={profile?.avatar_hue} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-washi">{name}</p>
+            <p className="truncate text-xs text-washi-subtle">{user?.email}</p>
+          </div>
+          <Button variant="ghost" size="icon-sm" aria-label="Cerrar sesión" onClick={() => void signOut()}>
+            <LogOut className="size-4" />
+          </Button>
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Cerrar sesión" onClick={() => void signOut()}>
-          <LogOut className="size-4" />
-        </Button>
-      </div>
+      )}
     </aside>
   );
 }
@@ -141,7 +156,11 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !menuRef.current?.contains(event.target as Node)) {
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === 'Escape'
+          : !menuRef.current?.contains(event.target as Node)
+      ) {
         setMenuOpen(false);
       }
     };
@@ -166,7 +185,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
           <div ref={menuRef} className="relative">
             <motion.button
               type="button"
-              aria-label="Cuenta"
+              aria-label={user ? 'Cuenta' : 'Más opciones'}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((v) => !v)}
@@ -174,7 +193,11 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
               transition={jelly}
               className="grid size-11 place-items-center rounded-full"
             >
-              <Avatar name={name} hue={profile?.avatar_hue} />
+              {user ? (
+                <Avatar name={name} hue={profile?.avatar_hue} />
+              ) : (
+                <MoreVertical className="size-5 text-washi-muted" />
+              )}
             </motion.button>
             <AnimatePresence>
               {menuOpen && (
@@ -187,24 +210,31 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                   style={{ transformOrigin: 'top right' }}
                   className="paper-raised absolute right-0 top-[calc(100%+8px)] w-64 rounded-[14px] p-2"
                 >
-                  <div className="flex items-center gap-3 px-2.5 py-2.5">
-                    <Avatar name={name} hue={profile?.avatar_hue} size="lg" />
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-washi">{name}</p>
-                      <p className="truncate text-xs text-washi-subtle">{user?.email}</p>
-                    </div>
-                  </div>
-                  <div className="my-1 h-px bg-line" />
+                  {user && (
+                    <>
+                      <div className="flex items-center gap-3 px-2.5 py-2.5">
+                        <Avatar name={name} hue={profile?.avatar_hue} size="lg" />
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-washi">{name}</p>
+                          <p className="truncate text-xs text-washi-subtle">{user.email}</p>
+                        </div>
+                      </div>
+                      <div className="my-1 h-px bg-line" />
+                    </>
+                  )}
                   <InstallAppButton compact className="mb-1" />
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => void signOut()}
-                    className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
-                  >
-                    <LogOut className="size-4" />
-                    Cerrar sesión
-                  </button>
+                  {user && (
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => void signOut()}
+                      className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
+                    >
+                      <LogOut className="size-4" />
+                      Cerrar sesión
+                    </button>
+                  )}
+                  <p className="px-3 py-2 text-xs text-washi-subtle">One Shoot · estudio de ensayo</p>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -1,16 +1,15 @@
 import { motion, MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AppShell } from '@/components/AppShell';
 import { Backdrop } from '@/components/Backdrop';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
-import { AuthPage } from '@/features/auth/AuthPage';
 import { LibraryPage } from '@/features/library/LibraryPage';
 import { StudioPage } from '@/features/studio/StudioPage';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { AuthProvider, useAuth } from '@/providers/AuthProvider';
+import { AuthProvider } from '@/providers/AuthProvider';
 import { CrewProvider, useCrew } from '@/providers/CrewProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
 
@@ -31,20 +30,6 @@ function Splash() {
       </motion.div>
     </div>
   );
-}
-
-function RequireAuth() {
-  const { user, loading } = useAuth();
-  if (loading) return <Splash />;
-  if (!user) return <Navigate to="/auth" replace />;
-  return <Outlet />;
-}
-
-function GuestOnly({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) return <Splash />;
-  if (user) return <Navigate to="/" replace />;
-  return children;
 }
 
 function RequireCrew({ children }: { children: ReactNode }) {
@@ -95,25 +80,16 @@ export function App() {
               <CrewProvider>
                 <BrowserRouter>
                   <Routes>
+                    {/* Open access: no login screen, everyone lands in the shared library. */}
                     <Route
-                      path="/auth"
                       element={
-                        <GuestOnly>
-                          <AuthPage />
-                        </GuestOnly>
+                        <RequireCrew>
+                          <AppShell />
+                        </RequireCrew>
                       }
-                    />
-                    <Route element={<RequireAuth />}>
-                      <Route
-                        element={
-                          <RequireCrew>
-                            <AppShell />
-                          </RequireCrew>
-                        }
-                      >
-                        <Route index element={<LibraryPage />} />
-                        <Route path="/v/:videoId" element={<StudioPage />} />
-                      </Route>
+                    >
+                      <Route index element={<LibraryPage />} />
+                      <Route path="/v/:videoId" element={<StudioPage />} />
                     </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

@@ -35,7 +35,8 @@ export interface Backend {
 
 const supabaseBackend: Backend = {
   async joinGroup() {
-    const { data, error } = await supabase.rpc('join_group');
+    // Open access: the shared group is the oldest crew; readable without a session.
+    const { data, error } = await supabase.from('crews').select('*').order('created_at').limit(1).single();
     if (error) throw error;
     return data;
   },

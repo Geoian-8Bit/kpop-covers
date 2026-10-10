@@ -8,6 +8,7 @@ const SHORTCUTS: Array<[keys: string[], action: string]> = [
   [['↑', '↓'], 'Velocidad ±0,05×'],
   [['1', '…', '8'], 'Velocidades rápidas (0,5× … 2×)'],
   [['M'], 'Activar / quitar espejo'],
+  [['F'], 'Pantalla completa'],
   [['A'], 'Marcar inicio del tramo'],
   [['B'], 'Marcar final del tramo'],
   [['L'], 'Activar / quitar bucle'],

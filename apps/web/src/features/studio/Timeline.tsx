@@ -53,6 +53,31 @@ function buildPaths(levels: number[]) {
   return { line, area: `${line} L${W},${H} L0,${H} Z`, crests };
 }
 
+/**
+ * Packs clips into lanes so overlapping ones never stack on the same row.
+ * A small gap (1.5% of the song) also separates clips that would touch visually.
+ */
+function assignLanes(clips: Clip[], duration: number) {
+  const pad = duration * 0.015;
+  const sorted = [...clips].sort((a, b) => a.start_seconds - b.start_seconds || a.end_seconds - b.end_seconds);
+  const laneEnds: number[] = [];
+  const lanes = new Map<string, number>();
+  for (const clip of sorted) {
+    let lane = laneEnds.findIndex((end) => end + pad <= clip.start_seconds);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(clip.end_seconds);
+    } else {
+      laneEnds[lane] = clip.end_seconds;
+    }
+    lanes.set(clip.id, lane);
+  }
+  return { lanes, count: laneEnds.length };
+}
+
+const LANE_H = 10;
+const LANE_GAP = 5;
+
 interface TimelineProps {
   seed: string;
   clips: Clip[];
@@ -70,6 +95,7 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
   const [hover, setHover] = useState<number | null>(null);
   const clipId = `tide-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const wave = useMemo(() => buildPaths(seededSwell(seed)), [seed]);
+  const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
 
   const pct = (t: number) => (duration > 0 ? clamp(t / duration, 0, 1) * 100 : 0);
   const played = pct(time);
@@ -127,7 +153,11 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
   return (
     <div className="select-none px-3 pb-4 pt-4 sm:px-5">
       {/* saved clips lane */}
-      <div className="relative mb-3 h-2.5" aria-label="Clips guardados">
+      <div
+        className="relative mx-3 mb-3"
+        style={{ height: Math.max(1, layout.count) * (LANE_H + LANE_GAP) - LANE_GAP }}
+        aria-label="Clips guardados"
+      >
         {duration > 0 &&
           clips.map((clip) => (
             <motion.button
@@ -136,15 +166,20 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
               title={`${clip.name} · ${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`}
               aria-label={`Reproducir clip ${clip.name}`}
               onClick={() => onClipSelect(clip)}
-              whileHover={{ scaleY: 1.8 }}
-              whileTap={{ scaleY: 1.1 }}
+              whileHover={{ scaleY: 1.35 }}
+              whileTap={{ scaleY: 0.9 }}
               transition={jelly}
               className={cn(
-                'absolute top-0.5 h-1.5 min-w-1.5 rounded-[2px] transition-opacity',
+                'absolute min-w-2.5 rounded-[3px] transition-opacity',
                 CLIP_SWATCH[clip.color].dot,
-                activeClipId === clip.id ? 'opacity-100' : 'opacity-50 hover:opacity-100',
+                activeClipId === clip.id ? 'opacity-100 ring-1 ring-washi/70' : 'opacity-60 hover:opacity-100',
               )}
-              style={{ left: `${pct(clip.start_seconds)}%`, width: `${pct(clip.end_seconds) - pct(clip.start_seconds)}%` }}
+              style={{
+                left: `${pct(clip.start_seconds)}%`,
+                width: `${pct(clip.end_seconds) - pct(clip.start_seconds)}%`,
+                top: (layout.lanes.get(clip.id) ?? 0) * (LANE_H + LANE_GAP),
+                height: LANE_H,
+              }}
             />
           ))}
       </div>

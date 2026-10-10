@@ -3,9 +3,9 @@
 ## Supabase (proyecto `kpop-covers`, ref `pevbjaowyctqqldvzovz`, eu-central-1)
 
 1. Migraciones aplicadas: `supabase/migrations/*.sql` (en orden).
-2. Auth → Providers → Email → "Confirm email" **desactivado** (hecho).
-3. Cuando todo el grupo tenga cuenta: Auth → Sign In / Providers → desactivar **"Allow new users to sign up"**.
-   Las altas posteriores las hace el admin desde Authentication → Users → Add user.
+2. **Acceso abierto, sin login** (migración `open_access_single_group`): el rol `anon` puede leer y escribir vídeos, clips y
+   ficheros, pero solo del grupo único (`private.default_group()`). Quien tenga la URL puede usar la app. Las cuentas
+   existentes siguen funcionando, pero la interfaz ya no muestra login.
 4. Auth → URL Configuration → *Site URL* = URL de producción de Vercel, y añadirla a *Redirect URLs*.
 
 ## Vercel

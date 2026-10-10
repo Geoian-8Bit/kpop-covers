@@ -1,6 +1,19 @@
-import { formatSpeed, round3, youTubeWatchUrl, type Clip, type Video } from '@coverscape/shared';
+import { formatSpeed, formatTime, round3, youTubeWatchUrl, type Clip, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, ArrowLeft, ExternalLink, FileVideo, Keyboard, Play } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ExternalLink,
+  FileVideo,
+  FlipHorizontal2,
+  Keyboard,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
@@ -10,6 +23,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useClips } from '@/data/clips';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
 import { loadLocalVideo } from '@/lib/localVideos';
+import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { FileStage } from '@/player/FileStage';
@@ -215,6 +229,7 @@ function MediaStage({ video }: { video: Video }) {
 
   const missing = video.source === 'upload' && file.status === 'missing';
   const loading = !ready && !error && !missing;
+  const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
 
   async function onPick(picked: File | undefined) {
     if (!picked) return;
@@ -228,8 +243,15 @@ function MediaStage({ video }: { video: Video }) {
   }
 
   return (
-    <div>
-    <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-black shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]">
+    <div ref={stageRef} className={cn(fullscreen && 'fixed inset-0 z-[70] grid place-items-center bg-black')}>
+    <div
+      className={cn(
+        'relative aspect-video w-full overflow-hidden bg-black',
+        fullscreen
+          ? 'max-h-dvh max-w-[calc(100dvh*16/9)]'
+          : 'rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
+      )}
+    >
       <motion.div
         className="absolute inset-0"
         initial={false}
@@ -325,8 +347,161 @@ function MediaStage({ video }: { video: Video }) {
           </div>
         </div>
       )}
+
+      {!fullscreen && (
+        <button
+          type="button"
+          aria-label="Pantalla completa"
+          title="Pantalla completa (F)"
+          onClick={() => void toggleFullscreen()}
+          className="absolute bottom-3 right-3 z-20 grid size-10 place-items-center rounded-[8px] bg-sumi-950/80 text-washi transition-colors hover:bg-sumi-950"
+        >
+          <Maximize2 className="size-4.5" />
+        </button>
+      )}
     </div>
+      {fullscreen && <FullscreenBar onExit={() => void toggleFullscreen()} />}
     </div>
+  );
+}
+
+/**
+ * Fullscreen for the whole stage (video + mirror + overlays). Uses the Fullscreen API where it exists;
+ * iPhone Safari only allows it on a bare <video>, so there we fall back to a fixed full-viewport layer.
+ * `F` (useShortcuts) toggles it through a window event.
+ */
+function useFullscreen() {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<'none' | 'native' | 'css'>('none');
+
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (mode === 'css') {
+      setMode('none');
+      return;
+    }
+    const el = stageRef.current;
+    if (el && document.fullscreenEnabled && el.requestFullscreen) {
+      try {
+        await el.requestFullscreen({ navigationUI: 'hide' });
+        setMode('native');
+        const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+        void orientation.lock?.('landscape').catch(() => undefined);
+        return;
+      } catch {
+        /* fall through to the CSS layer */
+      }
+    }
+    setMode('css');
+  }, [mode]);
+
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setMode((m) => (m === 'native' ? 'none' : m));
+    };
+    const onToggle = () => void toggleFullscreen();
+    document.addEventListener('fullscreenchange', onChange);
+    window.addEventListener('oneshoot:fullscreen', onToggle);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      window.removeEventListener('oneshoot:fullscreen', onToggle);
+    };
+  }, [toggleFullscreen]);
+
+  useEffect(() => {
+    if (mode !== 'css') return;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMode('none');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = overflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mode]);
+
+  return { stageRef, fullscreen: mode !== 'none', toggleFullscreen };
+}
+
+/** Touch-friendly transport shown only in fullscreen; fades out while playing and nobody touches the screen. */
+function FullscreenBar({ onExit }: { onExit: () => void }) {
+  const playing = usePlayer((s) => s.playing);
+  const time = usePlayer((s) => s.time);
+  const duration = usePlayer((s) => s.duration);
+  const mirrored = usePlayer((s) => s.mirrored);
+  const rate = usePlayer((s) => s.rate);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wake = () => {
+      setVisible(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setVisible(false), 2800);
+    };
+    wake();
+    window.addEventListener('pointermove', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+    };
+  }, []);
+
+  const shown = visible || !playing;
+  const p = usePlayer.getState();
+  const btn = 'grid size-12 place-items-center rounded-[10px] text-washi transition-colors hover:bg-washi/10';
+
+  return (
+    <motion.div
+      initial={false}
+      animate={{ opacity: shown ? 1 : 0, y: shown ? 0 : 12 }}
+      transition={{ duration: 0.25 }}
+      style={{ pointerEvents: shown ? 'auto' : 'none' }}
+      className="absolute inset-x-0 bottom-0 z-30 flex items-center gap-1 bg-[linear-gradient(to_top,rgb(0_0_0/0.85),transparent)] px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-12 sm:gap-2 sm:px-6"
+    >
+      <button type="button" aria-label="Retroceder 5 segundos" className={btn} onClick={() => p.nudge(-5)}>
+        <RotateCcw className="size-5" />
+      </button>
+      <button
+        type="button"
+        aria-label={playing ? 'Pausar' : 'Reproducir'}
+        onClick={() => p.togglePlay()}
+        className="grid size-14 place-items-center rounded-[12px] bg-shu-500 text-washi"
+      >
+        {playing ? <Pause className="size-6 fill-washi" /> : <Play className="ml-0.5 size-6 fill-washi" />}
+      </button>
+      <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
+        <RotateCw className="size-5" />
+      </button>
+      <span className="tabular ml-2 font-mono text-sm text-washi sm:text-base">
+        {formatTime(time, { tenths: true })}
+        <span className="text-washi-subtle"> / {formatTime(duration)}</span>
+      </span>
+      <span className="tabular ml-auto mr-1 rounded-[8px] bg-washi/10 px-2.5 py-1.5 font-mono text-sm text-washi">
+        {formatSpeed(rate)}
+      </span>
+      <button
+        type="button"
+        aria-label="Espejo"
+        aria-pressed={mirrored}
+        onClick={() => p.toggleMirror()}
+        className={cn(btn, mirrored && 'bg-ai-600 hover:bg-ai-500')}
+      >
+        <FlipHorizontal2 className="size-5" />
+      </button>
+      <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
+        <Minimize2 className="size-5" />
+      </button>
+    </motion.div>
   );
 }
 
