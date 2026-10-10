@@ -89,7 +89,7 @@ export function StudioPage() {
     return (
       <Page className="mx-auto max-w-lg px-5 py-24 text-center">
         <h1 className="font-display text-3xl font-bold">Vídeo no encontrado</h1>
-        <p className="mt-2 text-washi-muted">Puede que lo hayan borrado o que pertenezca a otra crew.</p>
+        <p className="mt-2 text-washi-muted">Puede que alguien del grupo lo haya borrado.</p>
         <Link to="/" className="mt-6 inline-block font-medium text-kin-300 hover:underline">
           Volver a la biblioteca
         </Link>
@@ -290,7 +290,7 @@ function MediaStage({ video }: { video: Video }) {
             <p className="mt-3 font-display text-lg font-bold">Este archivo está en otro dispositivo</p>
             <p className="mt-1.5 text-sm text-washi-muted">
               Pesaba demasiado para la nube. Elige tu copia de <span className="font-medium text-washi">{video.file_name}</span> para
-              usarla aquí; los clips de la crew se aplican igual.
+              usarla aquí; los clips del grupo se aplican igual.
             </p>
             <input
               ref={input}

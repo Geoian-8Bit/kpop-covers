@@ -7,7 +7,6 @@ import { Backdrop } from '@/components/Backdrop';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
 import { AuthPage } from '@/features/auth/AuthPage';
-import { OnboardingPage } from '@/features/crew/OnboardingPage';
 import { LibraryPage } from '@/features/library/LibraryPage';
 import { StudioPage } from '@/features/studio/StudioPage';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -55,7 +54,7 @@ function RequireCrew({ children }: { children: ReactNode }) {
     return (
       <div className="grid min-h-dvh place-items-center p-6 text-center">
         <div className="paper max-w-sm rounded-[16px] p-8">
-          <h1 className="font-display text-2xl font-bold">No pudimos cargar tu crew</h1>
+          <h1 className="font-display text-2xl font-bold">No pudimos cargar el estudio</h1>
           <p className="mt-2 text-washi-muted">Revisa la conexión e inténtalo de nuevo.</p>
           <Button className="mt-6" onClick={retry}>
             Reintentar
@@ -64,7 +63,7 @@ function RequireCrew({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (!activeCrew) return <Navigate to="/onboarding" replace />;
+  if (!activeCrew) return <Splash />;
   return children;
 }
 
@@ -105,7 +104,6 @@ export function App() {
                       }
                     />
                     <Route element={<RequireAuth />}>
-                      <Route path="/onboarding" element={<OnboardingPage />} />
                       <Route
                         element={
                           <RequireCrew>

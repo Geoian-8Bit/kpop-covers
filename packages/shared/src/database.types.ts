@@ -207,6 +207,22 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      join_group: {
+        Args: never;
+        Returns: {
+          created_at: string;
+          created_by: string;
+          id: string;
+          invite_code: string;
+          name: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'crews';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_crew: {
         Args: { p_name: string };
         Returns: {

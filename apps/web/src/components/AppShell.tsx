@@ -1,8 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, LogOut, Users } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet } from 'react-router';
-import { CrewDialog } from '@/features/crew/CrewDialog';
 import { easeOutExpo, jelly } from '@/lib/motion';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
@@ -10,9 +9,8 @@ import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 
 export function AppShell() {
-  const { activeCrew, profile } = useCrew();
+  const { profile } = useCrew();
   const { user, signOut } = useAuth();
-  const [crewOpen, setCrewOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const name = profile?.display_name ?? user?.email ?? 'Tú';
@@ -41,18 +39,6 @@ export function AppShell() {
           </Link>
 
           <div className="flex items-center gap-2">
-            <motion.button
-              type="button"
-              onClick={() => setCrewOpen(true)}
-              whileTap={{ scale: 0.95 }}
-              transition={jelly}
-              className="flex h-11 max-w-[48vw] items-center gap-2 rounded-[10px] border border-line px-3.5 text-sm font-medium text-washi transition-colors hover:border-line-strong hover:bg-sumi-800"
-            >
-              <Users className="size-4 shrink-0 text-ai-300" />
-              <span className="truncate">{activeCrew?.name}</span>
-              <ChevronDown className="size-4 shrink-0 text-washi-subtle" />
-            </motion.button>
-
             <div ref={menuRef} className="relative">
               <motion.button
                 type="button"
@@ -105,8 +91,6 @@ export function AppShell() {
       <main>
         <Outlet />
       </main>
-
-      <CrewDialog open={crewOpen} onClose={() => setCrewOpen(false)} />
     </div>
   );
 }

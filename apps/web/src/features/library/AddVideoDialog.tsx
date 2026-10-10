@@ -326,8 +326,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                 >
                   {tooBig ? <HardDrive className="mt-0.5 size-4 shrink-0" /> : <CloudUpload className="mt-0.5 size-4 shrink-0" />}
                   {tooBig
-                    ? 'Pesa más de 50 MB: se guarda solo en este dispositivo. El resto de la crew podrá vincular su propia copia del archivo.'
-                    : 'Se sube a la nube de tu crew y también queda guardado en este dispositivo.'}
+                    ? 'Pesa más de 50 MB: se guarda solo en este dispositivo. El resto del grupo podrá vincular su propia copia del archivo.'
+                    : 'Se sube a la nube del grupo y también queda guardado en este dispositivo.'}
                 </p>
               )}
             </motion.div>

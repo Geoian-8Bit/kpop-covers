@@ -2,16 +2,16 @@
 
 /* ───────────────────── Tokens · sumi ink, washi paper, Hokusai indigo ───────────────────── */
 @theme {
-  --color-sumi-950: #0e0c0a;
-  --color-sumi-900: #15120f;
-  --color-sumi-850: #1b1713;
-  --color-sumi-800: #221d18;
-  --color-sumi-700: #2e2721;
-  --color-sumi-600: #3d342c;
+  --color-sumi-950: #1f1b17;
+  --color-sumi-900: #2b2621;
+  --color-sumi-850: #352f29;
+  --color-sumi-800: #3e3730;
+  --color-sumi-700: #4a4239;
+  --color-sumi-600: #5b5148;
 
-  --color-washi: #efe6d4;
-  --color-washi-muted: #c2b6a1;
-  --color-washi-subtle: #978c7a;
+  --color-washi: #f3ecdf;
+  --color-washi-muted: #d3c8b5;
+  --color-washi-subtle: #b0a491;
 
   --color-ai-200: #c9d8ea;
   --color-ai-300: #a9c2de;
@@ -41,8 +41,8 @@
   --color-sakura: #e4a7b0;
   --color-rokusho: #5a9e8f;
 
-  --color-line: rgb(239 230 212 / 0.1);
-  --color-line-strong: rgb(239 230 212 / 0.2);
+  --color-line: rgb(243 236 223 / 0.12);
+  --color-line-strong: rgb(243 236 223 / 0.24);
 
   --font-display: 'Shippori Mincho B1', 'Hiragino Mincho ProN', serif;
   --font-sans: 'Zen Kaku Gothic New', ui-sans-serif, system-ui, sans-serif;
@@ -51,16 +51,11 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   --animate-shimmer: shimmer 2.4s linear infinite;
-  --animate-tide: tide 18s ease-in-out infinite alternate;
 }
 
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-@keyframes tide {
-  0% { transform: translate3d(0, 0, 0); }
-  100% { transform: translate3d(-40px, 6px, 0); }
 }
 
 /* ───────────────────── Surfaces ───────────────────── */
@@ -69,7 +64,7 @@
   border: 1px solid var(--color-line);
   box-shadow:
     inset 0 1px 0 rgb(239 230 212 / 0.035),
-    0 18px 36px -26px rgb(0 0 0 / 0.85);
+    0 18px 36px -24px rgb(20 16 12 / 0.75);
 }
 
 @utility paper-raised {
@@ -77,13 +72,13 @@
   border: 1px solid var(--color-line);
   box-shadow:
     inset 0 1px 0 rgb(239 230 212 / 0.05),
-    0 24px 48px -28px rgb(0 0 0 / 0.9);
+    0 24px 48px -26px rgb(20 16 12 / 0.8);
 }
 
 /* Seigaiha (青海波) — the classic wave-scale pattern, drawn on sumi. */
 @utility seigaiha {
   background-color: var(--color-sumi-900);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='19.5' fill='%2315120f'/%3E%3Ccircle r='19.5' fill='none' stroke='%232f5584' stroke-opacity='.55'/%3E%3Ccircle r='14.5' fill='none' stroke='%232f5584' stroke-opacity='.45'/%3E%3Ccircle r='9.5' fill='none' stroke='%232f5584' stroke-opacity='.35'/%3E%3Ccircle r='4.5' fill='none' stroke='%232f5584' stroke-opacity='.25'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s' x='0' y='0'/%3E%3Cuse href='%23s' x='40' y='0'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' x='0' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='19.5' fill='%232b2621'/%3E%3Ccircle r='19.5' fill='none' stroke='%237896bd' stroke-opacity='.34'/%3E%3Ccircle r='14.5' fill='none' stroke='%237896bd' stroke-opacity='.26'/%3E%3Ccircle r='9.5' fill='none' stroke='%237896bd' stroke-opacity='.18'/%3E%3Ccircle r='4.5' fill='none' stroke='%237896bd' stroke-opacity='.11'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s' x='0' y='0'/%3E%3Cuse href='%23s' x='40' y='0'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' x='0' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/svg%3E");
   background-size: 40px 20px;
 }
 
