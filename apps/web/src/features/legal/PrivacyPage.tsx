@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Logo } from '@/components/Logo';
+import { ButtonSkin, useButtonStyle } from '@/components/ui/ButtonSkin';
 
 const YT_TERMS = 'https://www.youtube.com/t/terms';
 const GOOGLE_PRIVACY = 'https://policies.google.com/privacy';
@@ -25,6 +26,7 @@ function Ext({ href, children }: { href: string; children: ReactNode }) {
 
 /** Privacy policy and terms, required by the YouTube API Services policies. Readable without loading the group. */
 export function PrivacyPage() {
+  const skin = useButtonStyle((s) => s.style);
   return (
     <main className="px-2.5 py-4 sm:px-5 sm:py-8">
       <article className="paper mx-auto max-w-2xl rounded-[10px] sm:rounded-[12px]">
@@ -32,9 +34,13 @@ export function PrivacyPage() {
           <Link
             to="/"
             aria-label="Volver al estudio"
-            className="grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi"
+            className={
+              skin === 'actual'
+                ? 'grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi'
+                : 'size-11 shrink-0 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] transition-transform hover:scale-105 active:scale-95'
+            }
           >
-            <ArrowLeft className="size-5" />
+            {skin === 'actual' ? <ArrowLeft className="size-5" /> : <ButtonSkin kind="back" style={skin} />}
           </Link>
           <Logo />
         </header>

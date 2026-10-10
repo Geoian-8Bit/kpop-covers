@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ButtonSkin, useButtonStyle } from '@/components/ui/ButtonSkin';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, usePlayer } from '@/player/store';
@@ -228,6 +229,24 @@ function PlayButton() {
   const ready = usePlayer((s) => s.ready);
   const counting = usePlayer((s) => s.countdownEndsAt != null);
   const active = playing || counting;
+  const skin = useButtonStyle((s) => s.style);
+
+  if (skin !== 'actual') {
+    return (
+      <motion.button
+        type="button"
+        aria-label={active ? 'Pausar' : 'Reproducir'}
+        onClick={() => usePlayer.getState().togglePlay()}
+        disabled={!ready}
+        whileHover={{ scale: 1.06 }}
+        whileTap={{ scale: 0.88, rotate: -6 }}
+        transition={jelly}
+        className="relative size-12 drop-shadow-[0_8px_12px_rgb(0_0_0/0.55)] disabled:opacity-40"
+      >
+        <ButtonSkin kind={active ? 'pause' : 'play'} style={skin} />
+      </motion.button>
+    );
+  }
 
   return (
     <motion.button
