@@ -153,7 +153,7 @@ const trayIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
 const trayOn = 'bg-ai-600/50 text-ai-200 shadow-[inset_0_0_0_1px_rgb(124_156_196/0.35)]';
 
 function TrayDivider() {
-  return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line-strong" />;
+  return <span aria-hidden className="skin-divider mx-1 h-5 w-px shrink-0 bg-line-strong" />;
 }
 
 /**
@@ -180,7 +180,7 @@ export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
           <div
             role="group"
             aria-label="Ajustes de reproducción"
-            className="skin-track relative flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+            className="skin-track skin-tray relative flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
           >
             <SpeedButton />
             <TrayDivider />
@@ -415,7 +415,7 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
         tool,
         'skin-btn h-12 justify-center px-4 max-sm:flex-1',
         step === 'save'
-          ? '[--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)]'
+          ? 'skin-primary [--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)]'
           : '[--skin-fill:var(--color-sumi-800)]',
         step === 'start' && toolIdle,
         step === 'end' && 'animate-pulse border-shu-400 bg-sumi-800 text-shu-400',

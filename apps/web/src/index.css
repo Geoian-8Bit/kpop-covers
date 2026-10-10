@@ -340,43 +340,99 @@
  */
 :root {
   --skin-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --enso-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Cpath d='M9 31C2 25 3 10 15 6S62 2 84 4s15 10 13 20-14 13-40 13S13 37 9 31' fill='none' stroke='%23f3ecdf' stroke-opacity='.6' stroke-width='2.4' stroke-linecap='round' vector-effect='non-scaling-stroke' filter='url(%23r)'/%3E%3C/svg%3E");
-  --enso-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Cpath d='M9 31C2 25 3 10 15 6S62 2 84 4s15 10 13 20-14 13-40 13S13 37 9 31' fill='none' stroke='%231b1916' stroke-opacity='.55' stroke-width='2.2' stroke-linecap='round' vector-effect='non-scaling-stroke' filter='url(%23r)'/%3E%3C/svg%3E");
 }
 
-/* Ensō: brush and paper — everything round, ringed by a single loose brush stroke. */
-[data-skin='enso'] :is(.skin-btn, .skin-track, .skin-thumb, .skin-pill) {
-  border-radius: 9999px;
+/* Ensō: round brush seals. A button is its icon inside a small ensō on washi, with the label beside
+ * it and no box (the principal action gets a vermilion ensō, the rest ink). Tray options are ensō
+ * discs that turn indigo when on. Selectors and switches keep a clean pill with a paper finish. */
+:root {
+  --enso-disc-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cfilter id='p' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .42 0 0 0 .25 0'/%3E%3CfeComposite in2='SourceGraphic' operator='in'/%3E%3CfeBlend in2='SourceGraphic' mode='multiply'/%3E%3C/filter%3E%3Cfilter id='i'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Ccircle cx='24' cy='24' r='22' fill='%23efe6d4' filter='url(%23p)'/%3E%3Cpath d='M40 16A18 18 0 1 0 41 27' fill='none' stroke='%231b1916' stroke-width='3.6' stroke-linecap='round' filter='url(%23i)'/%3E%3C/svg%3E");
+  --enso-disc-shu: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cfilter id='p' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .42 0 0 0 .25 0'/%3E%3CfeComposite in2='SourceGraphic' operator='in'/%3E%3CfeBlend in2='SourceGraphic' mode='multiply'/%3E%3C/filter%3E%3Cfilter id='i'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Ccircle cx='24' cy='24' r='22' fill='%23efe6d4' filter='url(%23p)'/%3E%3Cpath d='M40 16A18 18 0 1 0 41 27' fill='none' stroke='%23d0452d' stroke-width='3.6' stroke-linecap='round' filter='url(%23i)'/%3E%3C/svg%3E");
+  --enso-disc-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cfilter id='p' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .42 0 0 0 0 0'/%3E%3CfeComposite in2='SourceGraphic' operator='in'/%3E%3CfeBlend in2='SourceGraphic' mode='multiply'/%3E%3C/filter%3E%3Cfilter id='i'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Ccircle cx='24' cy='24' r='22' fill='%2326406a' filter='url(%23p)'/%3E%3Cpath d='M40 16A18 18 0 1 0 41 27' fill='none' stroke='%23cfe0f5' stroke-width='3.6' stroke-linecap='round' filter='url(%23i)'/%3E%3C/svg%3E");
 }
 [data-skin='enso'] .skin-btn {
-  border-color: transparent;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: var(--color-washi);
+  padding-left: 0;
+  gap: 10px;
 }
-[data-skin='enso'] .skin-btn::before {
+[data-skin='enso'] .skin-btn::before,
+[data-skin='enso'] .skin-btn::after {
+  display: none;
+}
+[data-skin='enso'] .skin-btn > svg:first-child,
+[data-skin='enso'] .skin-pill > svg:first-child {
+  box-sizing: content-box;
+  width: 18px;
+  height: 18px;
+  padding: 9px;
+  border-radius: 9999px;
+  background: var(--enso-disc-ink) center / 100% 100% no-repeat;
+  color: var(--color-sumi-900);
+  flex: none;
+}
+[data-skin='enso'] .skin-btn.skin-primary > svg:first-child {
+  background-image: var(--enso-disc-shu);
+  color: var(--color-shu-500);
+}
+/* Text-only buttons still get their seal: an empty ensō before the label. */
+[data-skin='enso'] .skin-btn:not(:has(> svg))::before {
+  display: block;
   content: '';
-  position: absolute;
-  inset: 0;
+  position: static;
+  width: 34px;
+  height: 34px;
+  flex: none;
   border: 0;
   border-radius: 9999px;
-  background: var(--skin-paper);
-  pointer-events: none;
+  background: var(--enso-disc-ink) center / 100% 100% no-repeat;
 }
-[data-skin='enso'] :is(.skin-btn, .skin-track)::after {
-  content: '';
-  position: absolute;
-  inset: -3px -5px;
-  background: var(--enso-light) center / 100% 100% no-repeat;
-  pointer-events: none;
+[data-skin='enso'] .skin-btn.skin-primary:not(:has(> svg))::before {
+  background-image: var(--enso-disc-shu);
 }
-[data-skin='enso'] .skin-btn.skin-on-light::after,
-[data-skin='enso'] .skin-thumb::after {
-  content: '';
-  position: absolute;
-  inset: -2px -4px;
-  background: var(--enso-ink) center / 100% 100% no-repeat;
-  pointer-events: none;
+[data-skin='enso'] .skin-track:not(.skin-tray) {
+  border-radius: 9999px;
 }
-[data-skin='enso'] .skin-track {
-  border-color: transparent;
+[data-skin='enso'] .skin-thumb {
+  border-radius: 9999px;
+  background-image: var(--skin-paper);
+}
+[data-skin='enso'] .skin-tray {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  gap: 6px;
+  padding: 0;
+}
+[data-skin='enso'] .skin-divider {
+  display: none;
+}
+[data-skin='enso'] .skin-pill {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--color-washi-muted);
+  padding: 0 4px 0 0;
+  gap: 8px;
+}
+[data-skin='enso'] .skin-pill[aria-pressed='true'] {
+  color: var(--color-washi);
+}
+[data-skin='enso'] .skin-pill[aria-pressed='true'] > svg:first-child {
+  background-image: var(--enso-disc-on);
+  color: var(--color-ai-200);
+}
+/* Text-only tray option (the speed): the label sits inside its ensō. */
+[data-skin='enso'] .skin-pill:not(:has(svg)) {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--enso-disc-ink) center / 100% 100% no-repeat !important;
+  color: var(--color-sumi-900);
+  font-size: 11px;
 }
 
 /* Kamon: family-crest geometry — hexagonal ends and a fine gold rim inside. */
