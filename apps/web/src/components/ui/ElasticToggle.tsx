@@ -40,14 +40,14 @@ export function ElasticToggle({ checked, onChange, label, showLabel = true, icon
           aria-hidden
           className="absolute inset-0 rounded-full border"
           variants={{
-            off: { backgroundColor: '#2e2721', borderColor: 'rgba(239,230,212,0.14)' },
-            on: { backgroundColor: '#2f5584', borderColor: 'rgba(169,194,222,0.45)' },
+            off: { backgroundColor: '#121110', borderColor: 'rgba(243,236,223,0.2)' },
+            on: { backgroundColor: '#4d73a3', borderColor: 'rgba(169,194,222,0.7)' },
           }}
           transition={{ duration: 0.25 }}
         />
         <motion.span
           aria-hidden
-          className="relative block h-6 rounded-full bg-washi shadow-[0_2px_6px_rgb(0_0_0/0.45)]"
+          className="relative block h-6 rounded-full bg-washi shadow-[inset_0_-2px_0_rgb(0_0_0/0.12),0_2px_6px_rgb(0_0_0/0.55)]"
           variants={{
             off: { x: 0, width: THUMB },
             on: { x: travel, width: THUMB },

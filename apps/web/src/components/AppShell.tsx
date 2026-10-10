@@ -32,7 +32,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-40 border-b border-line bg-sumi-900/92 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 border-b border-line-strong bg-sumi-950/95 shadow-[0_4px_0_-3px_rgb(228_200_143/0.18),0_12px_24px_-12px_rgb(0_0_0/0.7)] backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6">
           <Link to="/" aria-label="Biblioteca" className="rounded-[10px]">
             <Logo />

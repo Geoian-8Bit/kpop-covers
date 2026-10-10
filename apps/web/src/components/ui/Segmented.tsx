@@ -34,7 +34,7 @@ export function Segmented<T extends string | number>({
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn('relative inline-flex items-center gap-0.5 rounded-[12px] border border-line bg-sumi-950/60 p-1', className)}
+      className={cn('well relative inline-flex items-center gap-0.5 rounded-[12px] p-1', className)}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -51,14 +51,14 @@ export function Segmented<T extends string | number>({
             className={cn(
               'relative isolate shrink-0 rounded-[8px] font-medium transition-colors duration-200',
               size === 'sm' ? 'h-8 px-2.5 text-[13px]' : 'h-9 px-4 text-sm',
-              active ? 'text-sumi-900' : 'text-washi-muted hover:text-washi',
+              active ? 'font-bold text-sumi-900' : 'text-washi-muted hover:text-washi',
             )}
           >
             {active && (
               <motion.span
                 layoutId={layoutId}
                 transition={jelly}
-                className="absolute inset-0 -z-10 rounded-[8px] bg-washi shadow-[0_4px_10px_-4px_rgb(0_0_0/0.7)]"
+                className="absolute inset-0 -z-10 rounded-[8px] bg-washi shadow-[inset_0_0_0_2px_var(--color-washi),inset_0_0_0_3px_rgb(27_25_22/0.2),0_4px_10px_-4px_rgb(0_0_0/0.8)]"
               />
             )}
             <span className="tabular relative">{option.label}</span>

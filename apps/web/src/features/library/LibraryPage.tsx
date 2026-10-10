@@ -5,6 +5,7 @@ import { Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useQuickClips } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
 import { fadeUp, inkReveal, stagger } from '@/lib/motion';
@@ -57,7 +58,7 @@ export function LibraryPage() {
         >
           <span
             aria-hidden
-            className="pointer-events-none absolute right-7 top-7 hidden font-display text-[15px] font-bold leading-[1.2] tracking-[0.2em] text-washi-subtle [writing-mode:vertical-rl] sm:block"
+            className="pointer-events-none absolute right-7 top-7 hidden font-display text-[17px] font-bold leading-[1.2] tracking-[0.25em] text-shu-400 [writing-mode:vertical-rl] sm:block"
           >
             稽古帳
           </span>
@@ -83,12 +84,10 @@ export function LibraryPage() {
         </motion.section>
 
         <motion.section variants={fadeUp} aria-labelledby="quick-title" className="paper rounded-[18px] p-5 sm:p-6 lg:col-span-12">
-          <div className="mb-4 flex items-baseline justify-between gap-4">
-            <h2 id="quick-title" className="font-display text-xl font-bold">
-              Acceso rápido
-            </h2>
-            <p className="hidden text-[13px] text-washi-subtle sm:block">Fijados primero · toca uno y empieza a repetir</p>
-          </div>
+          <SectionTitle id="quick-title" glyph="札" className="mb-1">
+            Acceso rápido
+          </SectionTitle>
+          <p className="mb-4 text-[13px] text-washi-subtle">Fijados primero · toca uno y empieza a repetir</p>
           {quick.isPending ? (
             <div className="flex gap-3">
               {Array.from({ length: 5 }, (_, i) => (
@@ -103,9 +102,9 @@ export function LibraryPage() {
 
       <section aria-labelledby="library-title" className="mt-4">
         <div className="paper mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] px-5 py-4 sm:px-6">
-          <h2 id="library-title" className="font-display text-xl font-bold">
+          <SectionTitle id="library-title" glyph="書庫" className="min-w-48 flex-1">
             Biblioteca
-          </h2>
+          </SectionTitle>
           {total > 4 && (
             <label className="flex h-11 w-full items-center gap-2 rounded-[10px] border border-line bg-sumi-950/50 px-3.5 focus-within:border-kin-300/60 sm:w-72">
               <Search className="size-4 text-washi-subtle" />

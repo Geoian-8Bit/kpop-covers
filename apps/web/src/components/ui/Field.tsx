@@ -25,8 +25,8 @@ export function Field({ label, hint, error, trailing, className, id, ...input }:
           aria-invalid={error ? true : undefined}
           aria-describedby={hint || error ? hintId : undefined}
           className={cn(
-            'h-12 w-full rounded-[10px] border border-line bg-sumi-950/55 px-4 text-[15px] text-washi outline-none transition-[border-color,background-color,box-shadow] duration-200',
-            'focus:border-kin-300/60 focus:bg-sumi-950/80 focus:shadow-[0_0_0_3px_rgb(228_200_143/0.14)]',
+            'well h-12 w-full rounded-[10px] px-4 text-[15px] text-washi outline-none transition-[border-color,background-color,box-shadow] duration-200',
+            'focus:border-kin-300/70 focus:shadow-[0_0_0_3px_rgb(228_200_143/0.14)]',
             error && 'border-enji-400/80',
             trailing && 'pr-12',
           )}

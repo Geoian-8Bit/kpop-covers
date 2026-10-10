@@ -17,9 +17,9 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "dev",
-        "--",
         "--port",
-        "5174"
+        "5174",
+        "--strictPort"
       ],
       "env": {
         "NODE_OPTIONS": "--use-system-ca",

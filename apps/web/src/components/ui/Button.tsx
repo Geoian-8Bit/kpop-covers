@@ -14,13 +14,15 @@ export interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'>
   children?: ReactNode;
 }
 
+// Every filled button carries an inner hairline frame (::before), like the carved border of a hanko seal.
+const FRAME = 'before:pointer-events-none before:absolute before:inset-[3px] before:rounded-[7px] before:border';
+
 const variants: Record<Variant, string> = {
-  primary:
-    'bg-enji-500 text-washi shadow-[0_10px_20px_-12px_rgb(110_29_43/0.95)] hover:bg-enji-400 active:bg-enji-600',
-  washi: 'bg-washi text-sumi-900 shadow-[0_10px_20px_-14px_rgb(0_0_0/0.9)] hover:bg-kin-200',
-  secondary: 'border border-line bg-sumi-800 text-washi hover:border-line-strong hover:bg-sumi-700',
-  ghost: 'text-washi-muted hover:bg-washi/[0.06] hover:text-washi',
-  danger: 'border border-enji-500/60 text-enji-300 hover:bg-enji-600/25',
+  primary: `${FRAME} bg-shu-500 bg-[linear-gradient(180deg,rgb(255_255_255/0.14),rgb(0_0_0/0.08))] text-washi before:border-washi/45 shadow-[0_10px_22px_-12px_rgb(120_28_12/0.95)] hover:bg-shu-400`,
+  washi: `${FRAME} bg-washi text-sumi-900 before:border-sumi-900/25 shadow-[0_10px_20px_-14px_rgb(0_0_0/0.9)] hover:bg-kin-200`,
+  secondary: `${FRAME} border border-line-strong bg-sumi-800 bg-[linear-gradient(180deg,rgb(255_246_230/0.08),rgb(0_0_0/0.1))] text-washi shadow-[0_2px_6px_-2px_rgb(0_0_0/0.6)] before:border-washi/10 hover:border-washi/40 hover:bg-sumi-700`,
+  ghost: 'text-washi-muted hover:bg-washi/[0.08] hover:text-washi',
+  danger: `${FRAME} border border-shu-400/70 text-shu-400 before:border-shu-400/25 hover:bg-shu-500/15`,
 };
 
 const sizes: Record<Size, string> = {
@@ -52,7 +54,7 @@ export function Button({
       disabled={inert}
       aria-busy={loading || undefined}
       className={cn(
-        'relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-medium tracking-[0.01em] transition-[background-color,border-color,color,opacity] duration-200 disabled:opacity-40',
+        'relative inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-bold tracking-[0.02em] transition-[background-color,border-color,color,opacity] duration-200 disabled:opacity-40',
         variants[variant],
         sizes[size],
         className,

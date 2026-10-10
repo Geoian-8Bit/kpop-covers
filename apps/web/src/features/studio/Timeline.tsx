@@ -171,7 +171,7 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
         onPointerCancel={end}
         onPointerLeave={() => setHover(null)}
         className={cn(
-          'relative h-[92px] touch-none rounded-[12px] border border-line bg-sumi-950/60',
+          'well relative h-[96px] touch-none rounded-[12px]',
           duration ? (dragMode ? 'cursor-grabbing' : 'cursor-pointer') : 'cursor-wait',
         )}
       >
@@ -183,10 +183,10 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
                 <rect x="0" y="0" width={`${played}%`} height="100%" />
               </clipPath>
             </defs>
-            <path d={wave.area} fill="#101e33" />
-            <path d={wave.line} fill="none" stroke="#2f5584" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            <path d={wave.area} fill="#1f3b60" fillOpacity="0.85" />
+            <path d={wave.line} fill="none" stroke="#7c9cc4" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             <g clipPath={`url(#${clipId})`}>
-              <path d={wave.area} fill="#1f3b60" />
+              <path d={wave.area} fill="#4d73a3" />
               <path d={wave.line} fill="none" stroke="#efe6d4" strokeWidth="2" vectorEffect="non-scaling-stroke" />
             </g>
           </svg>
@@ -197,7 +197,7 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
               aria-hidden
               className={cn(
                 'absolute size-[5px] -translate-x-1/2 -translate-y-[140%] rounded-full transition-colors duration-500',
-                c.x * 100 <= played ? 'bg-washi' : 'bg-ai-600',
+                c.x * 100 <= played ? 'bg-washi' : 'bg-ai-400',
               )}
               style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
             />

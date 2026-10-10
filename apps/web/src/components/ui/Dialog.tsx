@@ -110,16 +110,18 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             animate={{ opacity: 1, y: 0, scale: 1, transition: soft }}
             exit={{ opacity: 0, y: 14, scale: 0.98, transition: { duration: 0.15, ease: 'easeIn' } }}
           >
-            <div className="mb-5 flex items-start justify-between gap-4 border-b border-line pb-4">
-              <div>
-                <h2 id={titleId} className="font-display text-[26px] font-bold leading-tight text-washi">
+            <div className="mb-6">
+              <div className="flex items-center gap-3">
+                <span aria-hidden className="size-2.5 shrink-0 rotate-45 bg-shu-500" />
+                <h2 id={titleId} className="shrink-0 font-display text-[26px] font-bold leading-tight text-washi">
                   {title}
                 </h2>
-                {description && <p className="mt-1.5 text-sm leading-relaxed text-washi-muted">{description}</p>}
+                <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-washi/25 to-washi/5" />
+                <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={onClose} className="-mr-2">
+                  <X className="size-5" />
+                </Button>
               </div>
-              <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={onClose} className="-mr-2 -mt-1">
-                <X className="size-5" />
-              </Button>
+              {description && <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>}
             </div>
             {children}
           </motion.div>

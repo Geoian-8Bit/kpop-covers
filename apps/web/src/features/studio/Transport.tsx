@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { ElasticToggle } from '@/components/ui/ElasticToggle';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -20,13 +21,8 @@ const gapOptions = [0, 1, 2, 3].map((value) => ({
 
 function Tile({ title, glyph, children, className }: { title: string; glyph: string; children: ReactNode; className?: string }) {
   return (
-    <section className={cn('paper flex min-w-0 flex-col gap-4 rounded-[18px] p-4 sm:p-5', className)}>
-      <h2 className="flex items-baseline justify-between font-display text-[17px] font-bold">
-        {title}
-        <span aria-hidden className="text-[15px] font-medium text-washi-subtle">
-          {glyph}
-        </span>
-      </h2>
+    <section className={cn('paper flex min-w-0 flex-col gap-4 rounded-[18px] p-5', className)}>
+      <SectionTitle glyph={glyph}>{title}</SectionTitle>
       {children}
     </section>
   );
@@ -40,7 +36,7 @@ export function PlaybackTile() {
 
   return (
     <Tile title="Reproducción" glyph="再生">
-      <p className="tabular font-mono text-[26px] font-semibold leading-none text-washi" aria-label="Tiempo">
+      <p className="well tabular rounded-[10px] px-3.5 py-2.5 font-mono text-[26px] font-semibold leading-none text-washi" aria-label="Tiempo">
         {formatTime(time, { tenths: true })}
         <span className="text-base text-washi-subtle"> / {formatTime(duration)}</span>
       </p>
@@ -68,7 +64,7 @@ export function SpeedTile() {
         <Button variant="secondary" size="icon" aria-label="Más lento" onClick={() => setRate(stepSpeed(rate, -1))}>
           <Minus className="size-5" />
         </Button>
-        <span className="relative grid h-10 flex-1 place-items-center overflow-hidden">
+        <span className="well relative grid h-11 flex-1 place-items-center overflow-hidden rounded-[10px]">
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.span
               key={rate}
@@ -175,7 +171,7 @@ function PlayButton() {
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.86 }}
       transition={jelly}
-      className="grid size-16 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_12px_24px_-14px_rgb(0_0_0/0.95)] disabled:opacity-40"
+      className="relative grid size-16 place-items-center rounded-[14px] bg-shu-500 bg-[linear-gradient(180deg,rgb(255_255_255/0.16),rgb(0_0_0/0.1))] text-washi shadow-[0_12px_24px_-12px_rgb(120_28_12/0.95)] before:pointer-events-none before:absolute before:inset-[4px] before:rounded-[10px] before:border before:border-washi/45 hover:bg-shu-400 disabled:opacity-40"
     >
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.span
@@ -185,7 +181,7 @@ function PlayButton() {
           exit={{ scale: 0.3, opacity: 0, rotate: 60 }}
           transition={jelly}
         >
-          {active ? <Pause className="size-7 fill-sumi-900" /> : <Play className="ml-1 size-7 fill-sumi-900" />}
+          {active ? <Pause className="size-7 fill-washi" /> : <Play className="ml-1 size-7 fill-washi" />}
         </motion.span>
       </AnimatePresence>
     </motion.button>
@@ -214,7 +210,7 @@ function MarkButton({
       aria-label={`${label} (${letter}) en la posición actual`}
       whileTap={{ scale: 0.92 }}
       transition={jelly}
-      className="flex h-11 items-center gap-2 rounded-[10px] border border-line bg-sumi-800 pl-1.5 pr-3.5 text-sm transition-colors hover:border-line-strong disabled:opacity-40"
+      className="well flex h-11 items-center gap-2 rounded-[10px] pl-1.5 pr-3.5 text-sm transition-colors hover:border-line-strong disabled:opacity-40"
     >
       <motion.span
         animate={{ rotate: set ? -4 : 0, scale: set ? 1 : 0.92 }}

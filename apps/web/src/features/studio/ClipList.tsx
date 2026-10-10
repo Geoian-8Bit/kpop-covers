@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { FlipHorizontal2, Pin, Plus, Repeat, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
+import { SectionTitle } from '@/components/ui/SectionTitle';
 import { CLIP_SWATCH, useDeleteClip, useUpdateClip } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -52,11 +53,14 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
 
   return (
     <aside className="paper flex flex-col rounded-[18px] p-4 sm:p-5 lg:sticky lg:top-[84px] lg:max-h-[calc(100dvh-100px)]">
-      <div className="flex items-center justify-between gap-3 border-b border-line pb-4">
-        <h2 className="flex items-baseline gap-2 font-display text-xl font-bold">
+      <div className="flex items-center gap-3">
+        <SectionTitle
+          className="flex-1"
+          glyph="帖"
+          aside={<span className="tabular text-sm font-medium text-washi-subtle">{clips.length}</span>}
+        >
           Clips
-          <span className="tabular font-sans text-sm font-medium text-washi-subtle">{clips.length}</span>
-        </h2>
+        </SectionTitle>
         <Button size="sm" variant="secondary" onClick={onNew}>
           <Plus className="size-4" /> Nuevo
         </Button>
@@ -96,7 +100,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                     <motion.span
                       layoutId="clip-active"
                       transition={jelly}
-                      className="absolute inset-0 rounded-[12px] border border-ai-500/50 bg-ai-800/70"
+                      className="absolute inset-0 rounded-[12px] border border-ai-400/60 bg-ai-700/45"
                     />
                   )}
                   <div className={cn('relative flex items-center gap-2 rounded-[12px] p-2', !active && 'hover:bg-washi/[0.04]')}>
@@ -106,7 +110,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left"
                       aria-current={active || undefined}
                     >
-                      <span className={cn('grid size-10 shrink-0 place-items-center rounded-[6px]', CLIP_SWATCH[clip.color].dot)}>
+                      <span className={cn('grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]', CLIP_SWATCH[clip.color].dot)}>
                         {active ? <Repeat className="size-4 text-sumi-900" /> : null}
                       </span>
                       <span className="min-w-0">

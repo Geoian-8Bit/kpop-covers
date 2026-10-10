@@ -11,13 +11,12 @@ controles web estándar.
 
 | Token        | Valor     | Uso                                                        |
 | ------------ | --------- | ---------------------------------------------------------- |
-| `sumi-900`   | `#2b2621` | fondo (carbón cálido, más claro que negro tinta)           |
-| `sumi-850/800` | `#352f29` / `#3e3730` | superficies `paper` / `paper-raised`        |
+| `sumi-900`   | `#1b1916` | fondo negro tinta bajo el seigaiha índigo                  |
+| `sumi-850/800` | `#252220` / `#2e2a27` | paneles laca urushi (brillo arriba, sombra en capas) |
 | `washi`      | `#f3ecdf` | texto principal, botón de reproducir, pestaña activa       |
 | `washi-muted/subtle` | `#d3c8b5` / `#b0a491` | texto secundario / metadatos            |
-| `ai-*`       | `#2f5584`… | índigo Hokusai: ola de la línea de tiempo, espejo activo  |
-| `enji-500`   | `#b23a48` | granate: acción principal (guardar, añadir, entrar)        |
-| `shu-500`    | `#d0452d` | bermellón: solo sellos hanko y marcas A/B                  |
+| `ai-*`       | `#4d73a3`… | índigo: líneas del seigaiha, ola, interruptores activos, clip activo |
+| `shu-500`    | `#d0452d` | bermellón: botón principal (sello con filete), play, sellos, marcas A/B |
 | `kin-300`    | `#e4c88f` | oro viejo: cabezal de reproducción, foco                   |
 
 Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, rokushō.
@@ -30,7 +29,10 @@ Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, ro
 
 ## Superficies y textura
 
-- `paper` / `paper-raised`: borde de 1 px washi al 10 %, sombra desplazada suave. Radios pequeños (8–18 px).
+- `paper` / `paper-raised`: laca urushi — brillo suave arriba, filete dorado (maki-e) 4 px dentro del borde y sombras en
+  capas para que cada panel flote sobre el fondo. `well`: hueco tallado para inputs, pistas y grupos de opciones.
+- Botones rellenos llevan un filete interior como el borde tallado de un hanko; títulos de sección = mincho + regla + kanji
+  en bermellón (`SectionTitle`).
 - `seigaiha` (青海波): única textura, cubre toda la app de forma uniforme (sin degradado ni movimiento).
 - `Seal`: sello hanko con borde de tinta irregular (filtro SVG `#ink-rough`).
 

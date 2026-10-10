@@ -103,7 +103,7 @@ export function StudioPage() {
         <Link
           to="/"
           aria-label="Volver a la biblioteca"
-          className="grid size-11 shrink-0 place-items-center rounded-[10px] border border-line text-washi-muted transition-colors hover:border-line-strong hover:text-washi"
+          className="grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi"
         >
           <ArrowLeft className="size-5" />
         </Link>
@@ -119,7 +119,7 @@ export function StudioPage() {
             target="_blank"
             rel="noreferrer"
             aria-label="Abrir en YouTube"
-            className="hidden size-11 place-items-center rounded-[10px] border border-line text-washi-muted hover:text-washi sm:grid"
+            className="hidden size-11 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted hover:text-washi sm:grid"
           >
             <ExternalLink className="size-4.5" />
           </a>
@@ -219,7 +219,8 @@ function MediaStage({ video }: { video: Video }) {
   }
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-[18px] border border-line bg-black shadow-[0_30px_60px_-36px_rgb(0_0_0/0.95)]">
+    <div className="paper rounded-[20px] p-2.5">
+    <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-black ring-1 ring-washi/15">
       <motion.div
         className="absolute inset-0"
         initial={false}
@@ -240,7 +241,7 @@ function MediaStage({ video }: { video: Video }) {
         aria-label={playing ? 'Pausar' : 'Reproducir'}
         onClick={() => usePlayer.getState().togglePlay()}
         disabled={!ready}
-        className="absolute inset-0 z-10 cursor-pointer rounded-[18px] disabled:cursor-default"
+        className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
       />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
@@ -315,6 +316,7 @@ function MediaStage({ video }: { video: Video }) {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
