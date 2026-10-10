@@ -41,6 +41,12 @@
   --color-sakura: #e4a7b0;
   --color-rokusho: #5a9e8f;
 
+  /* Kiji: raw hinoki wood for the ema plaques and their rail. */
+  --color-kiji-300: #c69a6a;
+  --color-kiji-400: #b88c5e;
+  --color-kiji-700: #4a3424;
+  --color-kiji-900: #2a1d14;
+
   --color-line: rgb(243 236 223 / 0.14);
   --color-line-strong: rgb(243 236 223 / 0.28);
   --color-rule: rgb(228 200 143 / 0.24);
@@ -52,6 +58,13 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-sway: sway 3.6s ease-in-out infinite;
+}
+
+/* Hanging plaques and curtains drift a little, like in a temple breeze. */
+@keyframes sway {
+  0%, 100% { transform: rotate(-1.6deg); }
+  50% { transform: rotate(1.6deg); }
 }
 
 @keyframes shimmer {
