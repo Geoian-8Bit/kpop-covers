@@ -1,12 +1,12 @@
 import { formatSpeed, formatTime, type ClipColor } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { FlipHorizontal2 } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Segmented } from '@/components/ui/Segmented';
 import type { ClipWithVideo } from '@/data/clips';
 import { cn } from '@/lib/cn';
-import { Cloth, Rope, stepPendulum, subscribeTick, type Pendulum, type PendulumConfig } from '@/lib/hanging';
+import { Rope, stepPendulum, subscribeTick, type Pendulum, type PendulumConfig } from '@/lib/hanging';
 import { fadeUp, jelly, stagger } from '@/lib/motion';
 
 export type QuickStyle = 'ema' | 'norigae' | 'noren' | 'hanko';
@@ -368,39 +368,68 @@ function Norigae({ clip }: { clip: ClipWithVideo }) {
   );
 }
 
-/* ───────────── Noren: dyed split curtains, simulated as cloth ───────────── */
+/* ───────────── Noren: split curtain, each half a damped panel hinged on the rod ───────────── */
 
 const NOREN_W = 150;
 const NOREN_H = 184;
+const NOREN_TOP = 9;
+const SEAM = NOREN_W / 2;
+/** Stiff, well damped and capped at ~17°: it sways and settles but never folds into odd shapes. */
+const NOREN_HALF: PendulumConfig = { period: 1.7, damping: 2.4, maxAngle: 0.3 };
+const HALVES = [
+  { x: 4, w: SEAM - 4 },
+  { x: SEAM, w: SEAM - 4 },
+] as const;
+
+/** Splits a clip name into at most two balanced lines for SVG text. */
+export function nameLines(name: string, max = 15): string[] {
+  const clean = name.trim().replace(/\s+/g, ' ');
+  if (clean.length <= max) return [clean];
+  const words = clean.split(' ');
+  let best: string[] | null = null;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(' ');
+    const b = words.slice(i).join(' ');
+    if (a.length <= max && b.length <= max && (!best || Math.max(a.length, b.length) < Math.max(best[0]!.length, best[1]!.length))) {
+      best = [a, b];
+    }
+  }
+  if (best) return best;
+  const rest = clean.slice(max).trim();
+  return [clean.slice(0, max), rest.length > max ? `${rest.slice(0, max - 1)}…` : rest];
+}
 
 function Noren({ clip }: { clip: ClipWithVideo }) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const svg = useRef<SVGSVGElement>(null);
-  const label = useRef<HTMLDivElement>(null);
-  const fills = useRef<(SVGPathElement | null)[]>([]);
-  const hems = useRef<(SVGPathElement | null)[]>([]);
-  const cloths = useRef([new Cloth(5, 7, 4, 9, 70, 164), new Cloth(5, 7, 76, 9, 70, 164)]);
-  const held = useRef<Cloth | null>(null);
+  const halves = useRef<(SVGGElement | null)[]>([]);
+  const pend = useRef<Pendulum[]>([
+    { theta: 0, omega: 0, target: null },
+    { theta: 0, omega: 0, target: null },
+  ]);
+  const held = useRef<{ i: number; x0: number; depth: number } | null>(null);
 
   useEffect(
     () =>
       subscribeTick(
         (dt) => {
-          cloths.current.forEach((cloth, i) => {
-            cloth.step(dt);
-            fills.current[i]?.setAttribute('d', cloth.outline());
-            hems.current[i]?.setAttribute('d', cloth.rowPath(cloth.rows - 1, 7));
+          const [a, b] = pend.current as [Pendulum, Pendulum];
+          // The halves share the rod and hem, so each tugs gently on the other.
+          const pull = (b.theta - a.theta) * 4 * dt;
+          a.omega += pull;
+          b.omega -= pull;
+          pend.current.forEach((p, i) => {
+            stepPendulum(p, NOREN_HALF, dt);
+            // Hinged on the rod: skew about the top edge, so the hem moves and the rod stays put.
+            const deg = ((p.theta * 180) / Math.PI).toFixed(3);
+            halves.current[i]?.setAttribute('transform', `translate(0 ${NOREN_TOP}) skewX(${deg}) translate(0 ${-NOREN_TOP})`);
           });
-          const [a, b] = cloths.current.map((c) => c.pose());
-          if (label.current && a && b) {
-            const dx = (a.dx + b.dx) / 2;
-            const dy = (a.dy + b.dy) / 2;
-            const ang = (a.angle + b.angle) / 2;
-            label.current.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) rotate(${(-ang).toFixed(4)}rad)`;
-          }
         },
         (strength) => {
           const dir = Math.random() < 0.5 ? -1 : 1;
-          cloths.current.forEach((c, i) => c.push(dir * strength * (2.2 + i * 0.6)));
+          pend.current.forEach((p, i) => {
+            p.omega += dir * strength * (0.45 + i * 0.15);
+          });
         },
       ),
     [],
@@ -410,84 +439,123 @@ function Noren({ clip }: { clip: ClipWithVideo }) {
     const m = svg.current?.getScreenCTM();
     if (!m) return { x: 0, y: 0 };
     const pt = new DOMPoint(x, y).matrixTransform(m.inverse());
-    return { x: pt.x, y: Math.max(pt.y, 14) };
+    return { x: pt.x, y: pt.y };
   };
   const grab = useGrab({
     onGrab: (x, y) => {
       const local = toLocal(x, y);
-      const cloth = cloths.current[local.x < NOREN_W / 2 ? 0 : 1]!;
-      cloth.grabbed = cloth.nearest(local.x, local.y);
-      cloth.grabX = local.x;
-      cloth.grabY = local.y;
-      held.current = cloth;
+      held.current = { i: local.x < SEAM ? 0 : 1, x0: local.x, depth: Math.max(local.y - NOREN_TOP, 40) };
     },
     onDrag: (x, y) => {
-      const cloth = held.current;
-      if (!cloth) return;
+      const h = held.current;
+      if (!h) return;
       const local = toLocal(x, y);
-      cloth.grabX = local.x;
-      cloth.grabY = local.y;
+      const angle = Math.atan2(local.x - h.x0, h.depth);
+      pend.current[h.i]!.target = Math.max(-NOREN_HALF.maxAngle, Math.min(NOREN_HALF.maxAngle, angle));
     },
     onRelease: () => {
-      if (held.current) held.current.grabbed = -1;
+      if (held.current) pend.current[held.current.i]!.target = null;
       held.current = null;
     },
     onBrush: (dx) => {
-      cloths.current.forEach((c) => c.push(dx * 0.12));
+      pend.current.forEach((p) => {
+        p.omega += dx * 0.01;
+      });
     },
   });
 
   const cloth = dyed(clip.color);
+  const lines = nameLines(clip.name);
+  const title = clip.video?.title ?? '';
+  const speed = formatSpeed(clip.speed);
+  const chipW = speed.length * 6.4 + (clip.mirrored ? 14 : 0) + 10;
+  const nameY = lines.length === 1 ? 90 : 82;
   return (
     <div {...grab} className="relative touch-pan-y select-none" style={{ width: NOREN_W, height: NOREN_H }}>
-      <svg
-        ref={svg}
-        viewBox={`0 0 ${NOREN_W} ${NOREN_H}`}
-        className="absolute inset-0 size-full overflow-visible"
-        aria-hidden
-      >
-        {[0, 1].map((i) => (
-          <g key={i}>
-            <path
-              ref={(el) => {
-                fills.current[i] = el;
-              }}
-              style={{ fill: cloth }}
-              filter="url(#os-paper)"
-            />
-            <path
-              ref={(el) => {
-                hems.current[i] = el;
-              }}
-              fill="none"
-              stroke="var(--color-washi)"
-              strokeOpacity="0.3"
-              strokeWidth="1.5"
-            />
+      <svg ref={svg} viewBox={`0 0 ${NOREN_W} ${NOREN_H}`} className="absolute inset-0 size-full overflow-visible" aria-hidden>
+        {HALVES.map((h, i) => (
+          <g
+            key={i}
+            ref={(el) => {
+              halves.current[i] = el;
+            }}
+          >
+            <clipPath id={`${uid}-h${i}`}>
+              <rect x={h.x} y={NOREN_TOP} width={h.w} height={NOREN_H - NOREN_TOP - 4} rx="3" />
+            </clipPath>
+            {/* Everything below is dyed into this half of the cloth, so it moves with it. */}
+            <g clipPath={`url(#${uid}-h${i})`}>
+              <rect x={h.x} y={NOREN_TOP} width={h.w} height={NOREN_H - NOREN_TOP} style={{ fill: cloth }} filter="url(#os-paper)" />
+              <line
+                x1={i === 0 ? h.x + h.w - 0.5 : h.x + 0.5}
+                x2={i === 0 ? h.x + h.w - 0.5 : h.x + 0.5}
+                y1={NOREN_TOP}
+                y2={NOREN_H}
+                stroke="var(--color-sumi-950)"
+                strokeOpacity="0.45"
+              />
+              <g filter="url(#os-ink)">
+                {clip.is_pinned ? (
+                  <circle cx={SEAM} cy="44" r="14" fill="var(--color-washi)" />
+                ) : (
+                  <circle cx={SEAM} cy="44" r="14" fill="none" stroke="var(--color-washi)" strokeWidth="2" />
+                )}
+              </g>
+              <text
+                x={SEAM}
+                y={nameY}
+                textAnchor="middle"
+                fill="var(--color-washi)"
+                fontSize="16"
+                fontWeight="800"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                {lines.map((line, k) => (
+                  <tspan key={k} x={SEAM} dy={k ? 18 : 0}>
+                    {line}
+                  </tspan>
+                ))}
+              </text>
+              <text x={SEAM} y="118" textAnchor="middle" fill="var(--color-washi)" fillOpacity="0.7" fontSize="10">
+                {title.length > 24 ? `${title.slice(0, 23)}…` : title}
+              </text>
+              <text
+                x={SEAM}
+                y="134"
+                textAnchor="middle"
+                fill="var(--color-washi)"
+                fillOpacity="0.85"
+                fontSize="10.5"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
+              </text>
+              <rect x={SEAM - chipW / 2} y="141" width={chipW} height="16" rx="4" fill="var(--color-sumi-950)" fillOpacity="0.6" />
+              <text
+                x={SEAM - (clip.mirrored ? 7 : 0)}
+                y="153"
+                textAnchor="middle"
+                fill="var(--color-washi)"
+                fontSize="10.5"
+                style={{ fontFamily: 'var(--font-mono)' }}
+              >
+                {speed}
+              </text>
+              {clip.mirrored && (
+                <FlipHorizontal2 x={SEAM + chipW / 2 - 16} y="144" width="10" height="10" color="var(--color-washi)" />
+              )}
+              <path
+                d={`M${h.x} ${NOREN_H - 14} q${h.w / 6} -6 ${h.w / 3} 0 q${h.w / 6} -6 ${h.w / 3} 0 q${h.w / 6} -6 ${h.w / 3} 0`}
+                fill="none"
+                stroke="var(--color-washi)"
+                strokeOpacity="0.3"
+                strokeWidth="1.5"
+              />
+            </g>
           </g>
         ))}
         <rect x="0" y="2" width={NOREN_W} height="8" rx="4" fill="var(--color-kiji-700)" />
       </svg>
-      <div
-        ref={label}
-        className="pointer-events-none absolute inset-x-3 top-[30px] flex flex-col items-center text-center text-washi will-change-transform"
-        style={{ transformOrigin: '50% 0' }}
-      >
-        <svg viewBox="-16 -16 32 32" className="size-8" aria-hidden>
-          <g filter="url(#os-ink)">
-            {clip.is_pinned ? (
-              <circle r="14" fill="var(--color-washi)" />
-            ) : (
-              <circle r="14" fill="none" stroke="var(--color-washi)" strokeWidth="2" />
-            )}
-          </g>
-        </svg>
-        <span className="mt-3 line-clamp-2 font-display text-[16px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.5)]">
-          {clip.name}
-        </span>
-        <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] text-washi/70">{clip.video?.title}</span>
-        <ClipMeta clip={clip} className="mt-1.5 text-washi/85" chip="bg-sumi-950/60 text-washi" />
-      </div>
     </div>
   );
 }
@@ -556,7 +624,7 @@ function Item({ clip, style }: { clip: ClipWithVideo; style: QuickStyle }) {
 
 /**
  * Quick access: pinned clips first, then recent ones. One tap opens the studio already looping the clip.
- * Hanging styles are little toys: drag them (or brush past with the mouse) and they swing for real.
+ * Hanging styles are little toys: drag them (or brush past with the mouse) and they swing within limits.
  */
 export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: QuickStyle }) {
   if (clips.length === 0) {
