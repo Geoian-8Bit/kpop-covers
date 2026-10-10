@@ -1,13 +1,16 @@
 /**
  * Tiny physics for things that hang in the library: damped pendulums (ema, norigae, noren halves)
  * and Verlet ropes (tassel threads). One shared rAF ticker drives every body and a soft
- * "breeze" nudges a random one now and then, unless the user prefers reduced motion.
+ * "breeze" nudges a random one now and then, unless the user prefers reduced motion. Nudges are
+ * signed angular impulses (positive pushes the bottom to the right).
  */
 
 type Tick = (dt: number) => void;
 
 const ticks = new Set<Tick>();
-const breezeTargets = new Set<(strength: number) => void>();
+type Nudge = (impulse: number) => void;
+
+const nudgeTargets = new Set<Nudge>();
 let frame = 0;
 let last = 0;
 let nextBreeze = 0;
@@ -20,9 +23,10 @@ function loop(now: number) {
   last = now;
   if (now > nextBreeze) {
     nextBreeze = now + 2500 + Math.random() * 4000;
-    if (!reducedMotion() && breezeTargets.size > 0) {
-      const targets = [...breezeTargets];
-      targets[Math.floor(Math.random() * targets.length)]!(0.35 + Math.random() * 0.4);
+    if (!reducedMotion() && nudgeTargets.size > 0) {
+      const targets = [...nudgeTargets];
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      targets[Math.floor(Math.random() * targets.length)]!(sign * (0.35 + Math.random() * 0.4));
     }
   }
   for (const tick of ticks) tick(dt);
@@ -30,17 +34,22 @@ function loop(now: number) {
 }
 
 /** Runs `tick` every animation frame until the returned function is called. */
-export function subscribeTick(tick: Tick, breeze?: (strength: number) => void): () => void {
+export function subscribeTick(tick: Tick, nudge?: Nudge): () => void {
   ticks.add(tick);
-  if (breeze) breezeTargets.add(breeze);
+  if (nudge) nudgeTargets.add(nudge);
   if (!frame) {
     last = 0;
     frame = requestAnimationFrame(loop);
   }
   return () => {
     ticks.delete(tick);
-    if (breeze) breezeTargets.delete(breeze);
+    if (nudge) nudgeTargets.delete(nudge);
   };
+}
+
+/** Pushes every hanging body at once, e.g. when the rail they hang from slides sideways. */
+export function nudgeAll(impulse: number) {
+  for (const nudge of nudgeTargets) nudge(impulse);
 }
 
 /* ───────────────────────────── Rigid pendulum ───────────────────────────── */
