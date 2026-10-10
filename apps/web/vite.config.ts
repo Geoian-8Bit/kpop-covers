@@ -28,7 +28,7 @@ export default defineConfig({
     // Installable app: manifest + service worker that precaches the shell so it opens instantly and offline.
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: null, // registered from main.tsx so updates reload the page automatically
       includeAssets: ['favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         id: '/',
