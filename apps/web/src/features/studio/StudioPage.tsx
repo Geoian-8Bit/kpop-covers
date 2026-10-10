@@ -267,7 +267,8 @@ function MediaStage({
   const missing = video.source === 'upload' && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
-  const chrome = useAutoHideChrome(fullscreen, playing);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const chrome = useAutoHideChrome(fullscreen, playing, menuOpen);
   const pointerType = useRef<string>('mouse');
   const lastTap = useRef<{ at: number; timer?: ReturnType<typeof setTimeout> }>({ at: 0 });
   const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; key: number } | null>(null);
@@ -463,6 +464,7 @@ function MediaStage({
           </AnimatePresence>
           <FullscreenBar
             visible={chrome.visible}
+            onMenuChange={setMenuOpen}
             clips={clips}
             onClipSelect={onClipSelect}
             onExit={() => void toggleFullscreen()}
@@ -541,7 +543,8 @@ function useFullscreen() {
  * Controls visibility in fullscreen, YouTube-style: shown on any activity, hidden after 2.5 s of
  * playback without input; always shown while paused.
  */
-function useAutoHideChrome(active: boolean, playing: boolean) {
+/** `hold` keeps the controls up (e.g. while a speed or pause menu is open). */
+function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
   const [visible, setVisible] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const playingRef = useRef(playing);
@@ -590,7 +593,12 @@ function useAutoHideChrome(active: boolean, playing: boolean) {
     }
   }, [playing, active, schedule]);
 
-  return { visible: visible || !playing, wake, toggle };
+  // When a menu closes, start the hide countdown again from that moment.
+  useEffect(() => {
+    if (!hold && active) wake();
+  }, [hold, active, wake]);
+
+  return { visible: visible || !playing || hold, wake, toggle };
 }
 
 /** Thin YouTube-like progress line: scrub anywhere, A–B band in vermilion, saved clips as thin lines above. */
@@ -718,11 +726,14 @@ function FullscreenBar({
   clips,
   onClipSelect,
   onExit,
+  onMenuChange,
 }: {
   visible: boolean;
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
   onExit: () => void;
+  /** Reports whether a menu is open so the controls never auto-hide underneath it. */
+  onMenuChange: (open: boolean) => void;
 }) {
   const playing = usePlayer((s) => s.playing);
   const time = usePlayer((s) => s.time);
@@ -735,6 +746,8 @@ function FullscreenBar({
   const gapAll = usePlayer((s) => s.gapAll);
   const [speedOpen, setSpeedOpen] = useState(false);
   const [gapMenu, setGapMenu] = useState<'all' | 'clip' | null>(null);
+  const menuOpen = speedOpen || gapMenu != null;
+  useEffect(() => onMenuChange(menuOpen), [menuOpen, onMenuChange]);
   const allPress = useLongPress(
     () => setGapMenu('all'),
     () => usePlayer.getState().toggleLoopAll(),
