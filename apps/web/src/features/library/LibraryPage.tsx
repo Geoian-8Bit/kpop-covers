@@ -17,7 +17,7 @@ import { VideoCard, VideoCardSkeleton } from './VideoCard';
 
 /**
  * One framed sheet: title block → quick-access slips → library grid, divided by gold rules.
- * Desktop: the sheet floats inside the page margin. Phone: it runs edge to edge.
+ * The sheet always sits inside a page margin (smaller on phones) so its frame never touches the screen edge.
  */
 export function LibraryPage() {
   const { activeCrew, profile } = useCrew();
@@ -53,8 +53,8 @@ export function LibraryPage() {
   }
 
   return (
-    <Page className="sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-none border-x-0 sm:rounded-[20px] sm:border-x">
+    <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+      <div className="paper mx-auto max-w-[1500px] rounded-[16px] sm:rounded-[20px]">
         <header className="relative flex flex-wrap items-end justify-between gap-6 px-5 pb-6 pt-7 sm:px-9 sm:pb-7 sm:pt-10">
           <span
             aria-hidden

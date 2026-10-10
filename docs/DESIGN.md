@@ -31,7 +31,7 @@ Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, ro
 
 - Estructura: barra lateral (escritorio) o barra superior (móvil); cada página es **una sola lámina** dividida por reglas
   doradas, no tarjetas sueltas. Estudio = editor: escenario · ola · controles en columnas · tramo | columna de clips.
-  En móvil la lámina va a sangre, el vídeo queda fijo arriba y los vídeos se listan en filas compactas.
+  En móvil la lámina mantiene un margen (10 px) y esquinas, el vídeo queda fijo arriba y los vídeos van en filas compactas.
 - `paper` / `paper-raised`: laca urushi — brillo suave arriba, filete dorado (maki-e) 4 px dentro del borde y sombras en
   capas para que cada panel flote sobre el fondo. `well`: hueco tallado para inputs, pistas y grupos de opciones.
 - Botones rellenos llevan un filete interior como el borde tallado de un hanko; títulos de sección = mincho + regla + kanji

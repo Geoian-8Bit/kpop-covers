@@ -98,8 +98,8 @@ export function StudioPage() {
   }
 
   return (
-    <Page className="pb-16 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-none border-x-0 sm:rounded-[20px] sm:border-x">
+    <Page className="px-2.5 pb-16 pt-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+      <div className="paper mx-auto max-w-[1500px] rounded-[16px] sm:rounded-[20px]">
         {/* Title bar */}
         <div className="flex items-center gap-3 border-b border-rule px-4 py-3.5 sm:px-6">
           <Link
@@ -135,7 +135,7 @@ export function StudioPage() {
           {/* Work area */}
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
-            <div className="sticky top-16 z-20 bg-sumi-850 px-2.5 pb-1 pt-2.5 sm:static sm:bg-transparent sm:px-5 sm:pt-5">
+            <div className="sticky top-16 z-20 rounded-t-[15px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
               <MediaStage video={current} />
             </div>
             <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
