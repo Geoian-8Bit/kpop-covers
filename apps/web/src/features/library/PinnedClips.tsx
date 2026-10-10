@@ -1,6 +1,6 @@
 import { formatSpeed, formatTime, type ClipColor } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeft, ChevronRight, FlipHorizontal2 } from 'lucide-react';
+import { FlipHorizontal2 } from 'lucide-react';
 import {
   createContext,
   useCallback,
@@ -648,24 +648,44 @@ function Item({ clip, style }: { clip: ClipWithVideo; style: QuickStyle }) {
 
 const ITEM_W: Record<QuickStyle, number> = { ema: 132, norigae: 132, noren: 150, hanko: 132 };
 
+/** A brush-stroke chevron: thick where the brush lands, tapering into the tip. Points right. */
+const BRUSH_ARROW =
+  'M8.2 4.6C10.9 6.9 14 9.6 16.9 11.6c.4.3.4.6 0 .9-2.7 2.1-5.6 4.7-8.2 7.1-.5.4-1.1-.1-.7-.6 2-2.4 4.2-4.7 6.2-6.9-2.1-2.1-4.3-4.5-6.6-6.8-.4-.5.1-1.1.6-.7Z';
+
+/**
+ * Slide arrows as the lacquered end caps of the wooden rail: a dark urushi disc with a gold rim and a
+ * gold brush-stroke arrow. They sit at rail height so they never cover a clip's name.
+ */
 function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () => void }) {
-  const Icon = side === 'start' ? ChevronLeft : ChevronRight;
+  const dir = side === 'start' ? -1 : 1;
   return (
     <motion.button
       type="button"
       aria-label={side === 'start' ? 'Ver clips anteriores' : 'Ver más clips'}
       onClick={onClick}
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      whileTap={{ scale: 0.88 }}
+      initial={{ opacity: 0, scale: 0.6, rotate: -30 * dir }}
+      animate={{ opacity: 1, scale: 1, rotate: 0 }}
+      exit={{ opacity: 0, scale: 0.6, rotate: 30 * dir }}
+      whileHover={{ scale: 1.08, rotate: 10 * dir }}
+      whileTap={{ scale: 0.86, rotate: 22 * dir }}
       transition={jelly}
       className={cn(
-        'absolute top-0 z-20 grid size-9 place-items-center rounded-full bg-sumi-950/90 text-washi shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)] ring-1 ring-washi/15 transition-colors hover:bg-sumi-800 sm:size-10',
+        'absolute top-[-6px] z-20 size-10 rounded-full drop-shadow-[0_6px_8px_rgb(0_0_0/0.7)] sm:size-11',
         side === 'start' ? '-left-2 sm:-left-3' : '-right-2 sm:-right-3',
       )}
     >
-      <Icon className="size-5" />
+      <svg viewBox="0 0 44 44" className="size-full" aria-hidden>
+        <circle cx="22" cy="22" r="21" fill="var(--color-kin-400)" />
+        <circle cx="22" cy="22" r="19.2" fill="var(--color-sumi-950)" />
+        <circle cx="22" cy="22" r="19.2" fill="var(--color-enji-500)" fillOpacity="0.28" />
+        <circle cx="22" cy="22" r="16" fill="none" stroke="var(--color-kin-300)" strokeOpacity="0.35" strokeWidth="0.8" />
+        {/* lacquer sheen */}
+        <ellipse cx="16" cy="13" rx="9" ry="4.5" fill="var(--color-washi)" fillOpacity="0.1" transform="rotate(-28 16 13)" />
+        <g transform={`translate(10 10)${side === 'start' ? ' translate(24 0) scale(-1 1)' : ''}`}>
+          <path d={BRUSH_ARROW} fill="var(--color-kin-300)" />
+          <circle cx="7.9" cy="5" r="1.15" fill="var(--color-kin-300)" />
+        </g>
+      </svg>
     </motion.button>
   );
 }
