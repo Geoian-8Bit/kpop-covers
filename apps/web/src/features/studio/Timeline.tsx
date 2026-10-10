@@ -59,7 +59,9 @@ function buildPaths(levels: number[]) {
  */
 function assignLanes(clips: Clip[], duration: number) {
   const pad = duration * 0.015;
-  const sorted = [...clips].sort((a, b) => a.start_seconds - b.start_seconds || a.end_seconds - b.end_seconds);
+  const sorted = [...clips].sort(
+    (a, b) => a.start_seconds - b.start_seconds || a.end_seconds - b.end_seconds,
+  );
   const laneEnds: number[] = [];
   const lanes = new Map<string, number>();
   for (const clip of sorted) {
@@ -82,9 +84,11 @@ interface TimelineProps {
   seed: string;
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
+  /** Slimmer track for the fullscreen overlay. */
+  compact?: boolean;
 }
 
-export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
+export function Timeline({ seed, clips, onClipSelect, compact = false }: TimelineProps) {
   const duration = usePlayer((s) => s.duration);
   const time = usePlayer((s) => s.time);
   const loop = usePlayer((s) => s.loop);
@@ -136,7 +140,8 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
         if (current.end != null) player.setRange(Math.min(t, current.end - MIN_LOOP_LENGTH), current.end);
         break;
       case 'end':
-        if (current.start != null) player.setRange(current.start, Math.max(t, current.start + MIN_LOOP_LENGTH));
+        if (current.start != null)
+          player.setRange(current.start, Math.max(t, current.start + MIN_LOOP_LENGTH));
         break;
     }
   }
@@ -151,7 +156,7 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
   const range = hasRange(loop) ? loop : null;
 
   return (
-    <div className="select-none px-3 pb-4 pt-4 sm:px-5">
+    <div className={cn('select-none', compact ? 'px-0 py-1' : 'px-3 pb-4 pt-4 sm:px-5')}>
       {/* saved clips lane */}
       <div
         className="relative mx-3 mb-3"
@@ -172,7 +177,9 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
               className={cn(
                 'absolute min-w-2.5 rounded-[3px] transition-opacity',
                 CLIP_SWATCH[clip.color].dot,
-                activeClipId === clip.id ? 'opacity-100 ring-1 ring-washi/70' : 'opacity-60 hover:opacity-100',
+                activeClipId === clip.id
+                  ? 'opacity-100 ring-1 ring-washi/70'
+                  : 'opacity-60 hover:opacity-100',
               )}
               style={{
                 left: `${pct(clip.start_seconds)}%`,
@@ -206,23 +213,41 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
         onPointerCancel={end}
         onPointerLeave={() => setHover(null)}
         className={cn(
-          'well relative h-[96px] touch-none rounded-[12px]',
+          'well relative touch-none rounded-[12px]',
+          compact ? 'h-[60px]' : 'h-[96px]',
           duration ? (dragMode ? 'cursor-grabbing' : 'cursor-pointer') : 'cursor-wait',
         )}
       >
         <div ref={railRef} className="absolute inset-x-3 inset-y-0">
           {/* the swell */}
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 size-full" aria-hidden>
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            className="absolute inset-0 size-full"
+            aria-hidden
+          >
             <defs>
               <clipPath id={clipId}>
                 <rect x="0" y="0" width={`${played}%`} height="100%" />
               </clipPath>
             </defs>
             <path d={wave.area} fill="#1f3b60" fillOpacity="0.85" />
-            <path d={wave.line} fill="none" stroke="#7c9cc4" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            <path
+              d={wave.line}
+              fill="none"
+              stroke="#7c9cc4"
+              strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke"
+            />
             <g clipPath={`url(#${clipId})`}>
               <path d={wave.area} fill="#4d73a3" />
-              <path d={wave.line} fill="none" stroke="#efe6d4" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              <path
+                d={wave.line}
+                fill="none"
+                stroke="#efe6d4"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
             </g>
           </svg>
           {/* foam on the crests turns white once the song has passed it */}
@@ -249,12 +274,24 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
                 transition={jelly}
                 className={cn(
                   'absolute inset-y-0 border-x-2 transition-colors duration-300',
-                  loop.enabled ? 'border-shu-500 bg-shu-500/[0.14]' : 'border-dashed border-washi-subtle bg-washi/[0.04]',
+                  loop.enabled
+                    ? 'border-shu-500 bg-shu-500/[0.14]'
+                    : 'border-dashed border-washi-subtle bg-washi/[0.04]',
                 )}
                 style={{ left: `${pct(range.start)}%`, width: `${pct(range.end) - pct(range.start)}%` }}
               >
-                <Handle label="A" side="start" onPointerDown={(e) => begin('start', e)} active={dragMode === 'start'} />
-                <Handle label="B" side="end" onPointerDown={(e) => begin('end', e)} active={dragMode === 'end'} />
+                <Handle
+                  label="A"
+                  side="start"
+                  onPointerDown={(e) => begin('start', e)}
+                  active={dragMode === 'start'}
+                />
+                <Handle
+                  label="B"
+                  side="end"
+                  onPointerDown={(e) => begin('end', e)}
+                  active={dragMode === 'end'}
+                />
               </motion.div>
             )}
             {!range && loop.start != null && (
@@ -276,7 +313,10 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
 
           {/* hover guide */}
           {hover != null && duration > 0 && !dragMode && (
-            <div className="pointer-events-none absolute inset-y-1 w-px bg-washi/35" style={{ left: `${hover * 100}%` }}>
+            <div
+              className="pointer-events-none absolute inset-y-1 w-px bg-washi/35"
+              style={{ left: `${hover * 100}%` }}
+            >
               <span className="tabular absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-sumi-950 px-2 py-1 font-mono text-[11px] text-washi">
                 {formatTime(hover * duration, { tenths: true })}
               </span>
@@ -284,7 +324,11 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
           )}
 
           {/* playhead */}
-          <div aria-hidden className="pointer-events-none absolute -inset-y-1 w-[2px] -translate-x-1/2 bg-kin-300" style={{ left: `${played}%` }}>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-y-1 w-[2px] -translate-x-1/2 bg-kin-300"
+            style={{ left: `${played}%` }}
+          >
             <span className="absolute -top-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-kin-300" />
           </div>
         </div>
@@ -294,11 +338,23 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
         <span>0:00</span>
         <AnimatePresence mode="wait">
           {range ? (
-            <motion.span key="len" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="text-shu-400">
+            <motion.span
+              key="len"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="text-shu-400"
+            >
               A–B · {formatTime(range.end - range.start, { tenths: true })}
             </motion.span>
           ) : (
-            <motion.span key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="hidden font-sans sm:inline">
+            <motion.span
+              key="hint"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={cn('hidden font-sans', !compact && 'sm:inline')}
+            >
               Shift + arrastrar para marcar un tramo
             </motion.span>
           )}

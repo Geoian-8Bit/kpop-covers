@@ -20,7 +20,7 @@ import { Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
-import { useClips } from '@/data/clips';
+import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { cn } from '@/lib/cn';
@@ -124,9 +124,12 @@ export function StudioPage() {
             <ArrowLeft className="size-5" />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">{current.title}</h1>
+            <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">
+              {current.title}
+            </h1>
             <p className="truncate text-sm text-washi-muted">
-              {current.artist || 'Artista sin especificar'} · {current.source === 'youtube' ? 'YouTube' : current.file_name}
+              {current.artist || 'Artista sin especificar'} ·{' '}
+              {current.source === 'youtube' ? 'YouTube' : current.file_name}
             </p>
           </div>
           {current.source === 'youtube' && current.youtube_id && (
@@ -140,7 +143,13 @@ export function StudioPage() {
               <ExternalLink className="size-4.5" />
             </a>
           )}
-          <Button variant="secondary" size="icon" aria-label="Atajos de teclado" onClick={openHelp} className="max-sm:hidden">
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label="Atajos de teclado"
+            onClick={openHelp}
+            className="max-sm:hidden"
+          >
             <Keyboard className="size-5" />
           </Button>
         </div>
@@ -150,7 +159,7 @@ export function StudioPage() {
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
-              <MediaStage video={current} />
+              <MediaStage video={current} clips={clips.data ?? []} onClipSelect={applyClip} />
             </div>
             <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
             <div className="sep-t grid sm:grid-cols-2 2xl:grid-cols-[1fr_1.35fr_1fr]">
@@ -163,12 +172,22 @@ export function StudioPage() {
 
           {/* Clips column */}
           <div className="sep-t lg:sep-l">
-            <ClipList clips={clips.data ?? []} loading={clips.isPending} onApply={applyClip} onNew={openSave} />
+            <ClipList
+              clips={clips.data ?? []}
+              loading={clips.isPending}
+              onApply={applyClip}
+              onNew={openSave}
+            />
           </div>
         </div>
       </div>
 
-      <SaveClipDialog open={saving} onClose={() => setSaving(false)} video={current} clipCount={clips.data?.length ?? 0} />
+      <SaveClipDialog
+        open={saving}
+        onClose={() => setSaving(false)}
+        video={current}
+        clipCount={clips.data?.length ?? 0}
+      />
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
     </Page>
   );
@@ -213,7 +232,15 @@ function useFileSource(video: Video, reloadKey: number): FileSource {
   return state;
 }
 
-function MediaStage({ video }: { video: Video }) {
+function MediaStage({
+  video,
+  clips,
+  onClipSelect,
+}: {
+  video: Video;
+  clips: Clip[];
+  onClipSelect: (clip: Clip) => void;
+}) {
   const mirrored = usePlayer((s) => s.mirrored);
   const playing = usePlayer((s) => s.playing);
   const ready = usePlayer((s) => s.ready);
@@ -244,123 +271,133 @@ function MediaStage({ video }: { video: Video }) {
 
   return (
     <div ref={stageRef} className={cn(fullscreen && 'fixed inset-0 z-[70] grid place-items-center bg-black')}>
-    <div
-      className={cn(
-        'relative aspect-video w-full overflow-hidden bg-black',
-        fullscreen
-          ? 'max-h-dvh max-w-[calc(100dvh*16/9)]'
-          : 'rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
-      )}
-    >
-      <motion.div
-        className="absolute inset-0"
-        initial={false}
-        animate={{ scaleX: mirrored ? -1 : 1 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
-      >
-        {video.source === 'youtube' && video.youtube_id ? (
-          <YouTubeStage videoId={video.youtube_id} />
-        ) : file.status === 'ready' ? (
-          <FileStage src={file.url} />
-        ) : null}
-      </motion.div>
-
-      {/* Click-catcher keeps YouTube's own UI from intercepting and toggles playback. */}
-      <button
-        type="button"
-        data-stage
-        aria-label={playing ? 'Pausar' : 'Reproducir'}
-        onClick={() => usePlayer.getState().togglePlay()}
-        disabled={!ready}
-        className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
-      />
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
-        <AnimatePresence>{mirrored && <Seal key="mirror-seal" glyph="鏡" size={44} stamp title="Modo espejo" />}</AnimatePresence>
-        <AnimatePresence>
-          {rate !== 1 && (
-            <motion.span
-              key="rate"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={jelly}
-              className="tabular ml-auto rounded-[8px] bg-sumi-950/85 px-2.5 py-1.5 font-mono text-sm font-semibold text-washi"
-            >
-              {formatSpeed(rate)}
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <AnimatePresence>
-        {ready && !playing && !counting && !error && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.25, transition: { duration: 0.18 } }}
-            transition={jelly}
-            className="pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)]"
-          >
-            <Play className="ml-1 size-8 fill-sumi-900" />
-          </motion.div>
+      <div
+        className={cn(
+          'relative aspect-video w-full overflow-hidden bg-black',
+          fullscreen
+            ? 'max-h-dvh max-w-[calc(100dvh*16/9)]'
+            : 'rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
         )}
-      </AnimatePresence>
+      >
+        <motion.div
+          className="absolute inset-0"
+          initial={false}
+          animate={{ scaleX: mirrored ? -1 : 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
+        >
+          {video.source === 'youtube' && video.youtube_id ? (
+            <YouTubeStage videoId={video.youtube_id} />
+          ) : file.status === 'ready' ? (
+            <FileStage src={file.url} />
+          ) : null}
+        </motion.div>
 
-      {(loading || (buffering && playing)) && (
-        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
-          <Spinner className="size-10 text-washi" label="Cargando vídeo" />
-        </div>
-      )}
-
-      <Countdown />
-
-      {missing && (
-        <div className="seigaiha absolute inset-0 z-30 grid place-items-center p-6 text-center">
-          <div className="paper-raised max-w-sm rounded-[16px] p-6">
-            <FileVideo className="mx-auto size-8 text-kin-300" />
-            <p className="mt-3 font-display text-lg font-bold">Este archivo está en otro dispositivo</p>
-            <p className="mt-1.5 text-sm text-washi-muted">
-              Pesaba demasiado para la nube. Elige tu copia de <span className="font-medium text-washi">{video.file_name}</span> para
-              usarla aquí; los clips del grupo se aplican igual.
-            </p>
-            <input
-              ref={input}
-              type="file"
-              accept="video/*,audio/*"
-              className="sr-only"
-              tabIndex={-1}
-              onChange={(e) => void onPick(e.target.files?.[0])}
-            />
-            <Button className="mt-5" loading={link.isPending} onClick={() => input.current?.click()}>
-              Vincular archivo
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="absolute inset-0 z-30 grid place-items-center bg-sumi-900/95 p-6 text-center">
-          <div className="max-w-sm">
-            <AlertTriangle className="mx-auto size-8 text-enji-300" />
-            <p className="mt-3 font-medium">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {!fullscreen && (
+        {/* Click-catcher keeps YouTube's own UI from intercepting and toggles playback. */}
         <button
           type="button"
-          aria-label="Pantalla completa"
-          title="Pantalla completa (F)"
-          onClick={() => void toggleFullscreen()}
-          className="absolute bottom-3 right-3 z-20 grid size-10 place-items-center rounded-[8px] bg-sumi-950/80 text-washi transition-colors hover:bg-sumi-950"
-        >
-          <Maximize2 className="size-4.5" />
-        </button>
+          data-stage
+          aria-label={playing ? 'Pausar' : 'Reproducir'}
+          onClick={() => usePlayer.getState().togglePlay()}
+          disabled={!ready}
+          className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
+          <AnimatePresence>
+            {mirrored && <Seal key="mirror-seal" glyph="鏡" size={44} stamp title="Modo espejo" />}
+          </AnimatePresence>
+          <AnimatePresence>
+            {rate !== 1 && (
+              <motion.span
+                key="rate"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={jelly}
+                className="tabular ml-auto rounded-[8px] bg-sumi-950/85 px-2.5 py-1.5 font-mono text-sm font-semibold text-washi"
+              >
+                {formatSpeed(rate)}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <AnimatePresence>
+          {ready && !playing && !counting && !error && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.25, transition: { duration: 0.18 } }}
+              transition={jelly}
+              className="pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)]"
+            >
+              <Play className="ml-1 size-8 fill-sumi-900" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {(loading || (buffering && playing)) && (
+          <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
+            <Spinner className="size-10 text-washi" label="Cargando vídeo" />
+          </div>
+        )}
+
+        <Countdown />
+
+        {missing && (
+          <div className="seigaiha absolute inset-0 z-30 grid place-items-center p-6 text-center">
+            <div className="paper-raised max-w-sm rounded-[16px] p-6">
+              <FileVideo className="mx-auto size-8 text-kin-300" />
+              <p className="mt-3 font-display text-lg font-bold">Este archivo está en otro dispositivo</p>
+              <p className="mt-1.5 text-sm text-washi-muted">
+                Pesaba demasiado para la nube. Elige tu copia de{' '}
+                <span className="font-medium text-washi">{video.file_name}</span> para usarla aquí; los clips
+                del grupo se aplican igual.
+              </p>
+              <input
+                ref={input}
+                type="file"
+                accept="video/*,audio/*"
+                className="sr-only"
+                tabIndex={-1}
+                onChange={(e) => void onPick(e.target.files?.[0])}
+              />
+              <Button className="mt-5" loading={link.isPending} onClick={() => input.current?.click()}>
+                Vincular archivo
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="absolute inset-0 z-30 grid place-items-center bg-sumi-900/95 p-6 text-center">
+            <div className="max-w-sm">
+              <AlertTriangle className="mx-auto size-8 text-enji-300" />
+              <p className="mt-3 font-medium">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {!fullscreen && (
+          <button
+            type="button"
+            aria-label="Pantalla completa"
+            title="Pantalla completa (F)"
+            onClick={() => void toggleFullscreen()}
+            className="absolute bottom-3 right-3 z-20 grid size-10 place-items-center rounded-[8px] bg-sumi-950/80 text-washi transition-colors hover:bg-sumi-950"
+          >
+            <Maximize2 className="size-4.5" />
+          </button>
+        )}
+      </div>
+      {fullscreen && (
+        <FullscreenBar
+          seed={video.id}
+          clips={clips}
+          onClipSelect={onClipSelect}
+          onExit={() => void toggleFullscreen()}
+        />
       )}
-    </div>
-      {fullscreen && <FullscreenBar onExit={() => void toggleFullscreen()} />}
     </div>
   );
 }
@@ -429,7 +466,15 @@ function useFullscreen() {
 }
 
 /** Touch-friendly transport shown only in fullscreen; fades out while playing and nobody touches the screen. */
-function FullscreenBar({ onExit }: { onExit: () => void }) {
+interface FullscreenBarProps {
+  seed: string;
+  clips: Clip[];
+  onClipSelect: (clip: Clip) => void;
+  onExit: () => void;
+}
+
+function FullscreenBar({ seed, clips, onClipSelect, onExit }: FullscreenBarProps) {
+  const activeClipId = usePlayer((s) => s.activeClipId);
   const playing = usePlayer((s) => s.playing);
   const time = usePlayer((s) => s.time);
   const duration = usePlayer((s) => s.duration);
@@ -466,41 +511,72 @@ function FullscreenBar({ onExit }: { onExit: () => void }) {
       animate={{ opacity: shown ? 1 : 0, y: shown ? 0 : 12 }}
       transition={{ duration: 0.25 }}
       style={{ pointerEvents: shown ? 'auto' : 'none' }}
-      className="absolute inset-x-0 bottom-0 z-30 flex items-center gap-1 bg-[linear-gradient(to_top,rgb(0_0_0/0.85),transparent)] px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-12 sm:gap-2 sm:px-6"
+      className="absolute inset-x-0 bottom-0 z-30 bg-[linear-gradient(to_top,rgb(0_0_0/0.92)_55%,transparent)] px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-16 sm:px-6"
     >
-      <button type="button" aria-label="Retroceder 5 segundos" className={btn} onClick={() => p.nudge(-5)}>
-        <RotateCcw className="size-5" />
-      </button>
-      <button
-        type="button"
-        aria-label={playing ? 'Pausar' : 'Reproducir'}
-        onClick={() => p.togglePlay()}
-        className="grid size-14 place-items-center rounded-[12px] bg-shu-500 text-washi"
-      >
-        {playing ? <Pause className="size-6 fill-washi" /> : <Play className="ml-0.5 size-6 fill-washi" />}
-      </button>
-      <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
-        <RotateCw className="size-5" />
-      </button>
-      <span className="tabular ml-2 font-mono text-sm text-washi sm:text-base">
-        {formatTime(time, { tenths: true })}
-        <span className="text-washi-subtle"> / {formatTime(duration)}</span>
-      </span>
-      <span className="tabular ml-auto mr-1 rounded-[8px] bg-washi/10 px-2.5 py-1.5 font-mono text-sm text-washi">
-        {formatSpeed(rate)}
-      </span>
-      <button
-        type="button"
-        aria-label="Espejo"
-        aria-pressed={mirrored}
-        onClick={() => p.toggleMirror()}
-        className={cn(btn, mirrored && 'bg-ai-600 hover:bg-ai-500')}
-      >
-        <FlipHorizontal2 className="size-5" />
-      </button>
-      <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
-        <Minimize2 className="size-5" />
-      </button>
+      {clips.length > 0 && (
+        <div className="scrollbar-none mb-2 flex gap-2 overflow-x-auto" aria-label="Clips">
+          {clips.map((clip) => (
+            <button
+              key={clip.id}
+              type="button"
+              onClick={() => onClipSelect(clip)}
+              className={cn(
+                'flex h-10 shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-medium transition-colors',
+                clip.id === activeClipId
+                  ? 'bg-washi text-sumi-900'
+                  : 'bg-washi/10 text-washi hover:bg-washi/20',
+              )}
+            >
+              <span className={cn('size-3 rotate-[-4deg] rounded-[3px]', CLIP_SWATCH[clip.color].dot)} />
+              {clip.name}
+              <span
+                className={cn(
+                  'tabular font-mono text-xs',
+                  clip.id === activeClipId ? 'text-sumi-600' : 'text-washi-subtle',
+                )}
+              >
+                {formatSpeed(clip.speed)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <Timeline seed={seed} clips={clips} onClipSelect={onClipSelect} compact />
+      <div className="mt-1 flex items-center gap-1 sm:gap-2">
+        <button type="button" aria-label="Retroceder 5 segundos" className={btn} onClick={() => p.nudge(-5)}>
+          <RotateCcw className="size-5" />
+        </button>
+        <button
+          type="button"
+          aria-label={playing ? 'Pausar' : 'Reproducir'}
+          onClick={() => p.togglePlay()}
+          className="grid size-14 place-items-center rounded-[12px] bg-shu-500 text-washi"
+        >
+          {playing ? <Pause className="size-6 fill-washi" /> : <Play className="ml-0.5 size-6 fill-washi" />}
+        </button>
+        <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
+          <RotateCw className="size-5" />
+        </button>
+        <span className="tabular ml-2 font-mono text-sm text-washi sm:text-base">
+          {formatTime(time, { tenths: true })}
+          <span className="text-washi-subtle"> / {formatTime(duration)}</span>
+        </span>
+        <span className="tabular ml-auto mr-1 rounded-[8px] bg-washi/10 px-2.5 py-1.5 font-mono text-sm text-washi">
+          {formatSpeed(rate)}
+        </span>
+        <button
+          type="button"
+          aria-label="Espejo"
+          aria-pressed={mirrored}
+          onClick={() => p.toggleMirror()}
+          className={cn(btn, mirrored && 'bg-ai-600 hover:bg-ai-500')}
+        >
+          <FlipHorizontal2 className="size-5" />
+        </button>
+        <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
+          <Minimize2 className="size-5" />
+        </button>
+      </div>
     </motion.div>
   );
 }
