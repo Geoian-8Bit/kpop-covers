@@ -1,0 +1,24 @@
+# Supabase CLI config (local dev). Remote project ref: pevbjaowyctqqldvzovz
+project_id = "kpop-covers"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+
+[db]
+port = 54322
+major_version = 17
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false

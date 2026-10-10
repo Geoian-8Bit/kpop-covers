@@ -1,0 +1,187 @@
+@import 'tailwindcss';
+
+/* ───────────────────── Tokens · sumi ink, washi paper, Hokusai indigo ───────────────────── */
+@theme {
+  --color-sumi-950: #0e0c0a;
+  --color-sumi-900: #15120f;
+  --color-sumi-850: #1b1713;
+  --color-sumi-800: #221d18;
+  --color-sumi-700: #2e2721;
+  --color-sumi-600: #3d342c;
+
+  --color-washi: #efe6d4;
+  --color-washi-muted: #c2b6a1;
+  --color-washi-subtle: #978c7a;
+
+  --color-ai-200: #c9d8ea;
+  --color-ai-300: #a9c2de;
+  --color-ai-400: #7c9cc4;
+  --color-ai-500: #4d73a3;
+  --color-ai-600: #2f5584;
+  --color-ai-700: #1f3b60;
+  --color-ai-800: #172c48;
+  --color-ai-900: #101e33;
+
+  --color-enji-200: #f0c9cb;
+  --color-enji-300: #e7a9ad;
+  --color-enji-400: #cf6a72;
+  --color-enji-500: #b23a48;
+  --color-enji-600: #92283a;
+  --color-enji-700: #6e1d2b;
+
+  --color-shu-400: #e2674d;
+  --color-shu-500: #d0452d;
+
+  --color-kin-200: #f0dfb8;
+  --color-kin-300: #e4c88f;
+  --color-kin-400: #c9a45c;
+
+  --color-murasaki: #8a66a3;
+  --color-fuji: #a690c9;
+  --color-sakura: #e4a7b0;
+  --color-rokusho: #5a9e8f;
+
+  --color-line: rgb(239 230 212 / 0.1);
+  --color-line-strong: rgb(239 230 212 / 0.2);
+
+  --font-display: 'Shippori Mincho B1', 'Hiragino Mincho ProN', serif;
+  --font-sans: 'Zen Kaku Gothic New', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-tide: tide 18s ease-in-out infinite alternate;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes tide {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-40px, 6px, 0); }
+}
+
+/* ───────────────────── Surfaces ───────────────────── */
+@utility paper {
+  background-color: var(--color-sumi-850);
+  border: 1px solid var(--color-line);
+  box-shadow:
+    inset 0 1px 0 rgb(239 230 212 / 0.035),
+    0 18px 36px -26px rgb(0 0 0 / 0.85);
+}
+
+@utility paper-raised {
+  background-color: var(--color-sumi-800);
+  border: 1px solid var(--color-line);
+  box-shadow:
+    inset 0 1px 0 rgb(239 230 212 / 0.05),
+    0 24px 48px -28px rgb(0 0 0 / 0.9);
+}
+
+/* Seigaiha (青海波) — the classic wave-scale pattern, drawn on sumi. */
+@utility seigaiha {
+  background-color: var(--color-sumi-900);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cdefs%3E%3Cg id='s'%3E%3Ccircle r='19.5' fill='%2315120f'/%3E%3Ccircle r='19.5' fill='none' stroke='%232f5584' stroke-opacity='.55'/%3E%3Ccircle r='14.5' fill='none' stroke='%232f5584' stroke-opacity='.45'/%3E%3Ccircle r='9.5' fill='none' stroke='%232f5584' stroke-opacity='.35'/%3E%3Ccircle r='4.5' fill='none' stroke='%232f5584' stroke-opacity='.25'/%3E%3C/g%3E%3C/defs%3E%3Cuse href='%23s' x='20' y='-10'/%3E%3Cuse href='%23s' x='0' y='0'/%3E%3Cuse href='%23s' x='40' y='0'/%3E%3Cuse href='%23s' x='20' y='10'/%3E%3Cuse href='%23s' x='0' y='20'/%3E%3Cuse href='%23s' x='40' y='20'/%3E%3Cuse href='%23s' x='20' y='30'/%3E%3C/svg%3E");
+  background-size: 40px 20px;
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, rgb(239 230 212 / 0.04) 0%, rgb(239 230 212 / 0.09) 50%, rgb(239 230 212 / 0.04) 100%);
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────────────── Base ───────────────────── */
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-sumi-900);
+    color: var(--color-washi);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    caret-color: var(--color-kin-300);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--color-enji-600);
+    color: var(--color-washi);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-kin-300);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  ::placeholder {
+    color: var(--color-washi-subtle);
+    opacity: 1;
+  }
+
+  a {
+    text-underline-offset: 4px;
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-sumi-600) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-sumi-600);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

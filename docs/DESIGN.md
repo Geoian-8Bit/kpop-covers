@@ -1,0 +1,55 @@
+# Diseño
+
+Mundo: **taller de grabado ukiyo-e de noche**. Tinta sumi, papel washi, el índigo de Prusia de *La gran ola de
+Kanagawa*, sellos hanko en bermellón y composición **bento**. Moderno y sobrio: sin neón, sin brillos, sin
+glassmorphism, sin degradados decorativos.
+
+El mundo aporta solo cuatro cosas (modo Operate): tipografía, paleta, densidad y un gesto propio. Los controles son
+controles web estándar.
+
+## Paleta (`apps/web/src/index.css`)
+
+| Token        | Valor     | Uso                                                        |
+| ------------ | --------- | ---------------------------------------------------------- |
+| `sumi-900`   | `#15120f` | fondo (tinta cálida, nunca negro puro)                     |
+| `sumi-850/800` | `#1b1713` / `#221d18` | superficies `paper` / `paper-raised`        |
+| `washi`      | `#efe6d4` | texto principal, botón de reproducir, pestaña activa       |
+| `washi-muted/subtle` | `#c2b6a1` / `#978c7a` | texto secundario / metadatos            |
+| `ai-*`       | `#2f5584`… | índigo Hokusai: ola de la línea de tiempo, espejo activo  |
+| `enji-500`   | `#b23a48` | granate: acción principal (guardar, añadir, entrar)        |
+| `shu-500`    | `#d0452d` | bermellón: solo sellos hanko y marcas A/B                  |
+| `kin-300`    | `#e4c88f` | oro viejo: cabezal de reproducción, foco, código de crew   |
+
+Colores de clip = tintes tradicionales: enji, murasaki, fuji, sakura, kincha, rokushō.
+
+## Tipografía
+
+- **Shippori Mincho B1** (700–800): titulares y kanji decorativos (稽古帳, 鏡, 速, 反復).
+- **Zen Kaku Gothic New**: interfaz.
+- **JetBrains Mono** con cifras tabulares: tiempos y velocidades (son medidas).
+
+## Superficies y textura
+
+- `paper` / `paper-raised`: borde de 1 px washi al 10 %, sombra desplazada suave. Radios pequeños (8–18 px).
+- `seigaiha` (青海波): única textura; marea animada muy lenta al pie de la pantalla y fondo de estados vacíos.
+- `WaveArt`: grabado original inspirado en la gran ola (pantalla de acceso, biblioteca vacía).
+- `Seal`: sello hanko con borde de tinta irregular (filtro SVG `#ink-rough`).
+
+## Gesto propio
+
+La **línea de tiempo es una ola**: la cresta se rellena de índigo y su espuma se vuelve blanca a medida que suena la
+canción; el tramo A–B es una banda bermellón con sellos A/B arrastrables. Al activar el espejo se estampa un sello
+鏡 sobre el vídeo.
+
+## Movimiento (`apps/web/src/lib/motion.ts`)
+
+- `jelly` (muelle con rebote tipo mochi): interruptores, pestañas, pulsaciones, sellos.
+- `soft`: diálogos y tiles. `snappy`: cambios de posición.
+- `inkReveal`: un único momento autoral, los titulares se descubren como un trazo de pincel.
+- El espejo voltea el vídeo con un muelle en `scaleX`.
+- `MotionConfig reducedMotion="user"` + CSS `prefers-reduced-motion`.
+
+## Accesibilidad
+
+Foco visible oro viejo, diálogos con trampa de foco y `Esc`, objetivos ≥ 44 px, `role="switch"`, `radiogroup` y
+`slider` donde toca, contraste ≥ 4.5:1 en texto.

@@ -1,0 +1,21 @@
+{
+  "name": "coverscape",
+  "private": true,
+  "description": "Practice studio for K-pop dance cover crews: mirror, speed and A–B loop clips.",
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @coverscape/web dev",
+    "build": "pnpm --filter @coverscape/web build",
+    "preview": "pnpm --filter @coverscape/web preview",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  }
+}
