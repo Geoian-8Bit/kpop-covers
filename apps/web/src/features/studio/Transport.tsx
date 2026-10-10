@@ -148,7 +148,7 @@ const tool =
 const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
 /** Buttons inside the settings tray: borderless, the tray itself is the frame. */
 const trayBtn =
-  'relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors';
+  'skin-pill relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors';
 const trayIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
 const trayOn = 'bg-ai-600/50 text-ai-200 shadow-[inset_0_0_0_1px_rgb(124_156_196/0.35)]';
 
@@ -180,7 +180,7 @@ export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
           <div
             role="group"
             aria-label="Ajustes de reproducción"
-            className="flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+            className="skin-track relative flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
           >
             <SpeedButton />
             <TrayDivider />
@@ -413,7 +413,10 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
       transition={jelly}
       className={cn(
         tool,
-        'h-12 justify-center px-4 max-sm:flex-1',
+        'skin-btn h-12 justify-center px-4 max-sm:flex-1',
+        step === 'save'
+          ? '[--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)]'
+          : '[--skin-fill:var(--color-sumi-800)]',
         step === 'start' && toolIdle,
         step === 'end' && 'animate-pulse border-shu-400 bg-sumi-800 text-shu-400',
         step === 'save' && 'border-shu-500 bg-shu-500 text-washi hover:bg-shu-400',

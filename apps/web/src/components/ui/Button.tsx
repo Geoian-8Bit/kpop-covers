@@ -18,11 +18,11 @@ export interface ButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'>
 const FRAME = 'before:pointer-events-none before:absolute before:inset-[3px] before:rounded-[7px] before:border';
 
 const variants: Record<Variant, string> = {
-  primary: `${FRAME} bg-shu-500 bg-[linear-gradient(180deg,rgb(255_255_255/0.14),rgb(0_0_0/0.08))] text-washi before:border-washi/45 shadow-[0_10px_22px_-12px_rgb(120_28_12/0.95)] hover:bg-shu-400`,
-  washi: `${FRAME} bg-washi text-sumi-900 before:border-sumi-900/25 shadow-[0_10px_20px_-14px_rgb(0_0_0/0.9)] hover:bg-kin-200`,
-  secondary: `${FRAME} border border-line-strong bg-sumi-800 bg-[linear-gradient(180deg,rgb(255_246_230/0.08),rgb(0_0_0/0.1))] text-washi shadow-[0_2px_6px_-2px_rgb(0_0_0/0.6)] before:border-washi/10 hover:border-washi/40 hover:bg-sumi-700`,
+  primary: `${FRAME} skin-btn [--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)] bg-shu-500 bg-[linear-gradient(180deg,rgb(255_255_255/0.14),rgb(0_0_0/0.08))] text-washi before:border-washi/45 shadow-[0_10px_22px_-12px_rgb(120_28_12/0.95)] hover:bg-shu-400`,
+  washi: `${FRAME} skin-btn skin-on-light [--skin-fill:var(--color-washi)] hover:[--skin-fill:var(--color-kin-200)] bg-washi text-sumi-900 before:border-sumi-900/25 shadow-[0_10px_20px_-14px_rgb(0_0_0/0.9)] hover:bg-kin-200`,
+  secondary: `${FRAME} skin-btn [--skin-fill:var(--color-sumi-800)] hover:[--skin-fill:var(--color-sumi-700)] border border-line-strong bg-sumi-800 bg-[linear-gradient(180deg,rgb(255_246_230/0.08),rgb(0_0_0/0.1))] text-washi shadow-[0_2px_6px_-2px_rgb(0_0_0/0.6)] before:border-washi/10 hover:border-washi/40 hover:bg-sumi-700`,
   ghost: 'text-washi-muted hover:bg-washi/[0.08] hover:text-washi',
-  danger: `${FRAME} border border-shu-400/70 text-shu-400 before:border-shu-400/25 hover:bg-shu-500/15`,
+  danger: `${FRAME} skin-btn [--skin-fill:var(--color-sumi-850)] border border-shu-400/70 text-shu-400 before:border-shu-400/25 hover:bg-shu-500/15`,
 };
 
 const sizes: Record<Size, string> = {

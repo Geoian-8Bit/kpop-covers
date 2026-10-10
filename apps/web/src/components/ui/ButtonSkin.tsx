@@ -12,6 +12,11 @@ export type SkinKind = 'back' | 'play' | 'pause' | 'add';
 
 const KEY = 'coverscape.buttonStyle';
 
+/** The skin is a document-level attribute so plain CSS can reshape every component at once. */
+function apply(style: ButtonStyle) {
+  if (typeof document !== 'undefined') document.documentElement.dataset.skin = style;
+}
+
 function read(): ButtonStyle {
   try {
     const v = localStorage.getItem(KEY);
@@ -22,9 +27,13 @@ function read(): ButtonStyle {
   return 'actual';
 }
 
+const initial = read();
+apply(initial);
+
 export const useButtonStyle = create<{ style: ButtonStyle; setStyle: (s: ButtonStyle) => void }>((set) => ({
-  style: read(),
+  style: initial,
   setStyle(style) {
+    apply(style);
     set({ style });
     try {
       localStorage.setItem(KEY, style);
@@ -39,9 +48,9 @@ export function ButtonStylePicker({ className }: { className?: string }) {
   const setStyle = useButtonStyle((s) => s.setStyle);
   return (
     <div className={className}>
-      <p className="mb-1.5 px-1 text-[11px] font-medium text-washi-subtle">Estilo de botones (prueba)</p>
+      <p className="mb-1.5 px-1 text-[11px] font-medium text-washi-subtle">Estilo de la interfaz (prueba)</p>
       <Segmented
-        label="Estilo de botones"
+        label="Estilo de la interfaz"
         layoutId="button-style"
         size="sm"
         value={style}

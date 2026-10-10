@@ -329,3 +329,90 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ───────────────────── Interface skins (trial) ─────────────────────
+ * <html data-skin="actual|enso|kamon">, chosen in "Estilo de la interfaz (prueba)". Colours never
+ * change; only shape and finish. Components opt in with hook classes:
+ *   .skin-btn    filled buttons            .skin-track  wells / trays / switch tracks
+ *   .skin-thumb  the sliding washi tab      .skin-pill   small buttons inside a tray
+ *   --skin-fill  the button's fill colour (Kamon redraws it inside its gold rim)
+ * Plain (unlayered) CSS on purpose: it must win over the Tailwind utilities it reshapes.
+ */
+:root {
+  --skin-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .16 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --enso-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Cpath d='M9 31C2 25 3 10 15 6S62 2 84 4s15 10 13 20-14 13-40 13S13 37 9 31' fill='none' stroke='%23f3ecdf' stroke-opacity='.6' stroke-width='2.4' stroke-linecap='round' vector-effect='non-scaling-stroke' filter='url(%23r)'/%3E%3C/svg%3E");
+  --enso-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='2.2'/%3E%3C/filter%3E%3Cpath d='M9 31C2 25 3 10 15 6S62 2 84 4s15 10 13 20-14 13-40 13S13 37 9 31' fill='none' stroke='%231b1916' stroke-opacity='.55' stroke-width='2.2' stroke-linecap='round' vector-effect='non-scaling-stroke' filter='url(%23r)'/%3E%3C/svg%3E");
+}
+
+/* Ensō: brush and paper — everything round, ringed by a single loose brush stroke. */
+[data-skin='enso'] :is(.skin-btn, .skin-track, .skin-thumb, .skin-pill) {
+  border-radius: 9999px;
+}
+[data-skin='enso'] .skin-btn {
+  border-color: transparent;
+}
+[data-skin='enso'] .skin-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--skin-paper);
+  pointer-events: none;
+}
+[data-skin='enso'] :is(.skin-btn, .skin-track)::after {
+  content: '';
+  position: absolute;
+  inset: -3px -5px;
+  background: var(--enso-light) center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+[data-skin='enso'] .skin-btn.skin-on-light::after,
+[data-skin='enso'] .skin-thumb::after {
+  content: '';
+  position: absolute;
+  inset: -2px -4px;
+  background: var(--enso-ink) center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+[data-skin='enso'] .skin-track {
+  border-color: transparent;
+}
+
+/* Kamon: family-crest geometry — hexagonal ends and a fine gold rim inside. */
+[data-skin='kamon'] :is(.skin-btn, .skin-track, .skin-thumb, .skin-pill) {
+  --k: 10px;
+  border-radius: 0;
+  clip-path: polygon(var(--k) 0, calc(100% - var(--k)) 0, 100% 50%, calc(100% - var(--k)) 100%, var(--k) 100%, 0 50%);
+}
+[data-skin='kamon'] :is(.skin-pill, .skin-thumb) {
+  --k: 8px;
+}
+[data-skin='kamon'] :is(.skin-btn, .skin-thumb) {
+  border-color: transparent;
+  isolation: isolate;
+}
+[data-skin='kamon'] :is(.skin-btn, .skin-thumb)::before {
+  content: '';
+  position: absolute;
+  inset: 2.5px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-kin-400);
+  opacity: 0.8;
+  clip-path: polygon(calc(var(--k) - 1px) 0, calc(100% - var(--k) + 1px) 0, 100% 50%, calc(100% - var(--k) + 1px) 100%, calc(var(--k) - 1px) 100%, 0 50%);
+  z-index: -2;
+  pointer-events: none;
+}
+[data-skin='kamon'] :is(.skin-btn, .skin-thumb)::after {
+  content: '';
+  position: absolute;
+  inset: 3.8px;
+  background: var(--skin-fill, var(--color-sumi-800));
+  clip-path: polygon(calc(var(--k) - 1.6px) 0, calc(100% - var(--k) + 1.6px) 0, 100% 50%, calc(100% - var(--k) + 1.6px) 100%, calc(var(--k) - 1.6px) 100%, 0 50%);
+  z-index: -1;
+  pointer-events: none;
+}
+[data-skin='kamon'] .skin-track {
+  border-color: transparent;
+}
