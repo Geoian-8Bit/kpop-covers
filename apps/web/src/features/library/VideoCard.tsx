@@ -26,10 +26,14 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
     >
       <Link
         to={`/v/${video.id}`}
-        className="paper flex h-full flex-col overflow-hidden rounded-[16px] transition-colors duration-300 group-hover:border-line-strong"
+        className={cn(
+          '-m-2 flex h-full rounded-[14px] p-2 transition-colors duration-300 hover:bg-washi/[0.04]',
+          // Phones: compact rows (thumb + caption) for everything but the featured video.
+          featured ? 'flex-col' : 'flex-row items-center gap-3 sm:flex-col sm:items-stretch sm:gap-0',
+        )}
         aria-label={`Abrir ${video.title}`}
       >
-        <div className="relative m-2.5 mb-0 aspect-video overflow-hidden rounded-[10px] bg-sumi-950 ring-1 ring-washi/15">
+        <div className={cn('relative aspect-video overflow-hidden rounded-[10px] bg-sumi-950 shadow-[0_0_0_1px_rgb(243_236_223/0.14),0_0_0_4px_var(--color-sumi-850),0_0_0_5px_var(--color-rule),0_14px_28px_-16px_rgb(0_0_0/0.9)]', !featured && 'w-36 shrink-0 sm:w-auto')}>
           {video.thumbnail_url ? (
             <motion.img
               src={video.thumbnail_url}
@@ -59,12 +63,12 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
             {formatDuration(video.duration_seconds)}
           </span>
         </div>
-        <div className={cn('flex items-end justify-between gap-3', featured ? 'p-5' : 'p-4')}>
+        <div className={cn('flex min-w-0 flex-1 items-end justify-between gap-3 px-1', featured ? 'pt-5' : 'sm:pt-4')}>
           <div className="min-w-0">
             <h3
               className={cn(
                 'line-clamp-2 font-display font-bold leading-snug text-washi',
-                featured ? 'text-[26px]' : 'text-[17px]',
+                featured ? 'text-[21px] sm:text-[26px]' : 'text-[16px] sm:text-[17px]',
               )}
             >
               {video.title}
@@ -93,7 +97,7 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
         whileFocus={{ opacity: 1, scale: 1 }}
         whileTap={{ scale: 0.85 }}
         transition={jelly}
-        className="absolute right-2.5 top-2.5 grid size-9 place-items-center rounded-[8px] bg-sumi-950/85 text-washi-muted hover:text-enji-300 max-sm:opacity-100"
+        className="absolute right-3 top-3 grid size-9 place-items-center rounded-[8px] bg-sumi-950/85 text-washi-muted hover:text-enji-300 max-sm:opacity-100"
       >
         <Trash2 className="size-4" />
       </motion.button>
@@ -103,9 +107,9 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
 
 export function VideoCardSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn('paper overflow-hidden rounded-[16px]', className)}>
-      <div className="skeleton aspect-video" />
-      <div className="space-y-2 p-4">
+    <div className={cn('overflow-hidden', className)}>
+      <div className="skeleton aspect-video rounded-[10px]" />
+      <div className="space-y-2 px-1 pt-4">
         <div className="skeleton h-4 w-3/4 rounded-full" />
         <div className="skeleton h-3 w-1/2 rounded-full" />
       </div>

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus, Search } from 'lucide-react';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Page } from '@/components/AppShell';
+import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -12,17 +12,20 @@ import { fadeUp, inkReveal, stagger } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
-import { AddVideoDialog } from './AddVideoDialog';
 import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
 
+/**
+ * One framed sheet: title block → quick-access slips → library grid, divided by gold rules.
+ * Desktop: the sheet floats inside the page margin. Phone: it runs edge to edge.
+ */
 export function LibraryPage() {
   const { activeCrew, profile } = useCrew();
+  const { openAddVideo } = useShell();
   const videos = useVideos(activeCrew?.id);
   const quick = useQuickClips(activeCrew?.id);
   const deleteVideo = useDeleteVideo();
   const toast = useToast();
-  const [adding, setAdding] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<VideoWithClipCount | null>(null);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
@@ -50,44 +53,50 @@ export function LibraryPage() {
   }
 
   return (
-    <Page className="mx-auto max-w-[1440px] px-4 pb-24 pt-5 sm:px-6">
-      <motion.div variants={stagger(0.06)} initial="hidden" animate="show" className="grid gap-4 lg:grid-cols-12">
-        <motion.section
-          variants={fadeUp}
-          className="paper relative flex flex-col justify-between gap-8 overflow-hidden rounded-[18px] p-6 sm:p-8 lg:col-span-12"
-        >
+    <Page className="sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+      <div className="paper mx-auto max-w-[1500px] rounded-none border-x-0 sm:rounded-[20px] sm:border-x">
+        <header className="relative flex flex-wrap items-end justify-between gap-6 px-5 pb-6 pt-7 sm:px-9 sm:pb-7 sm:pt-10">
           <span
             aria-hidden
-            className="pointer-events-none absolute right-7 top-7 hidden font-display text-[17px] font-bold leading-[1.2] tracking-[0.25em] text-shu-400 [writing-mode:vertical-rl] sm:block"
+            className="pointer-events-none absolute right-8 top-8 hidden font-display text-[17px] font-bold leading-[1.2] tracking-[0.25em] text-shu-400 [writing-mode:vertical-rl] md:block"
           >
             稽古帳
           </span>
-          <div className="pr-10">
+          <div className="min-w-0">
             <p className="text-[15px] text-washi-muted">{profile ? `Hola, ${profile.display_name}.` : 'Hola.'}</p>
             <motion.h1
               variants={inkReveal}
-              className="mt-1 font-display text-[clamp(2.4rem,5.6vw,4.2rem)] font-extrabold leading-[1] tracking-[-0.02em]"
+              initial="hidden"
+              animate="show"
+              className="mt-1 font-display text-[clamp(2.2rem,5vw,4rem)] font-extrabold leading-[1] tracking-[-0.02em]"
             >
               Cuaderno de ensayo
             </motion.h1>
-          </div>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <p className="tabular text-washi-muted">
+            <p className="tabular mt-4 text-washi-muted">
               <span className="font-display text-2xl font-bold text-washi">{total}</span> {total === 1 ? 'vídeo' : 'vídeos'}
               <span className="mx-3 text-washi-subtle">·</span>
               <span className="font-display text-2xl font-bold text-washi">{clipTotal}</span> {clipTotal === 1 ? 'clip' : 'clips'}
             </p>
-            <Button size="lg" onClick={() => setAdding(true)}>
-              <Plus className="size-5" /> Añadir vídeo
-            </Button>
           </div>
-        </motion.section>
+          {total > 0 && (
+            <label className="well flex h-11 w-full items-center gap-2 rounded-[10px] px-3.5 focus-within:border-kin-300/70 md:mr-12 md:w-72">
+              <Search className="size-4 text-washi-subtle" />
+              <span className="sr-only">Buscar</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar canción o artista"
+                className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
+              />
+            </label>
+          )}
+        </header>
 
-        <motion.section variants={fadeUp} aria-labelledby="quick-title" className="paper rounded-[18px] p-5 sm:p-6 lg:col-span-12">
-          <SectionTitle id="quick-title" glyph="札" className="mb-1">
+        <section aria-labelledby="quick-title" className="border-t border-rule px-5 py-6 sm:px-9">
+          <SectionTitle id="quick-title" glyph="札">
             Acceso rápido
           </SectionTitle>
-          <p className="mb-4 text-[13px] text-washi-subtle">Fijados primero · toca uno y empieza a repetir</p>
+          <p className="mb-4 mt-1 text-[13px] text-washi-subtle">Fijados primero · toca uno y empieza a repetir</p>
           {quick.isPending ? (
             <div className="flex gap-3">
               {Array.from({ length: 5 }, (_, i) => (
@@ -97,63 +106,47 @@ export function LibraryPage() {
           ) : (
             <PinnedClips clips={quick.data ?? []} />
           )}
-        </motion.section>
-      </motion.div>
+        </section>
 
-      <section aria-labelledby="library-title" className="mt-4">
-        <div className="paper mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] px-5 py-4 sm:px-6">
-          <SectionTitle id="library-title" glyph="書庫" className="min-w-48 flex-1">
+        <section aria-labelledby="library-title" className="border-t border-rule px-5 pb-9 pt-6 sm:px-9">
+          <SectionTitle id="library-title" glyph="書庫" className="mb-5">
             Biblioteca
           </SectionTitle>
-          {total > 4 && (
-            <label className="flex h-11 w-full items-center gap-2 rounded-[10px] border border-line bg-sumi-950/50 px-3.5 focus-within:border-kin-300/60 sm:w-72">
-              <Search className="size-4 text-washi-subtle" />
-              <span className="sr-only">Buscar</span>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar canción o artista"
-                className="h-full flex-1 bg-transparent text-sm outline-none"
-              />
-            </label>
-          )}
-        </div>
 
-        {videos.isPending ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <VideoCardSkeleton className="sm:col-span-2 lg:row-span-2" />
-            {Array.from({ length: 4 }, (_, i) => (
-              <VideoCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : total === 0 ? (
-          <EmptyLibrary onAdd={() => setAdding(true)} />
-        ) : (
-          <motion.div
-            variants={stagger(0.04)}
-            initial="hidden"
-            animate="show"
-            className="grid grid-flow-dense gap-4 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <AnimatePresence mode="popLayout">
-              {filtered.map((video, index) => (
-                <VideoCard
-                  key={video.id}
-                  video={video}
-                  onDelete={setPendingDelete}
-                  featured={index === 0 && !deferredQuery}
-                  className={index === 0 && !deferredQuery ? 'sm:col-span-2 lg:row-span-2' : undefined}
-                />
+          {videos.isPending ? (
+            <div className="grid gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4">
+              <VideoCardSkeleton className="sm:col-span-2 xl:row-span-2" />
+              {Array.from({ length: 4 }, (_, i) => (
+                <VideoCardSkeleton key={i} />
               ))}
-            </AnimatePresence>
-            {filtered.length === 0 && (
-              <p className="paper col-span-full rounded-[18px] py-10 text-center text-washi-muted">Nada coincide con “{query}”.</p>
-            )}
-          </motion.div>
-        )}
-      </section>
-
-      <AddVideoDialog open={adding} onClose={() => setAdding(false)} />
+            </div>
+          ) : total === 0 ? (
+            <EmptyLibrary onAdd={openAddVideo} />
+          ) : (
+            <motion.div
+              variants={stagger(0.04)}
+              initial="hidden"
+              animate="show"
+              className="grid grid-flow-dense gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4"
+            >
+              <AnimatePresence mode="popLayout">
+                {filtered.map((video, index) => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    onDelete={setPendingDelete}
+                    featured={index === 0 && !deferredQuery}
+                    className={index === 0 && !deferredQuery ? 'sm:col-span-2 xl:row-span-2' : undefined}
+                  />
+                ))}
+              </AnimatePresence>
+              {filtered.length === 0 && (
+                <p className="col-span-full py-10 text-center text-washi-muted">Nada coincide con “{query}”.</p>
+              )}
+            </motion.div>
+          )}
+        </section>
+      </div>
 
       <Dialog
         open={pendingDelete != null}
@@ -182,7 +175,7 @@ export function LibraryPage() {
 
 function EmptyLibrary({ onAdd }: { onAdd: () => void }) {
   return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show" className="paper flex flex-col items-center rounded-[18px] px-6 py-16 text-center">
+    <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex flex-col items-center px-6 py-14 text-center">
       <Seal glyph="舞" size={72} stamp />
       <h3 className="mt-6 font-display text-[28px] font-bold leading-tight">Empieza con vuestra próxima cover</h3>
       <p className="mt-3 max-w-[46ch] text-washi-muted">

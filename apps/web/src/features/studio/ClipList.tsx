@@ -52,7 +52,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
   }
 
   return (
-    <aside className="paper flex flex-col rounded-[18px] p-4 sm:p-5 lg:sticky lg:top-[84px] lg:max-h-[calc(100dvh-100px)]">
+    <aside className="flex flex-col p-5 sm:p-6 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-48px)]">
       <div className="flex items-center gap-3">
         <SectionTitle
           className="flex-1"
@@ -115,7 +115,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{clip.name}</span>
-                        <span className="tabular mt-0.5 flex items-center gap-1.5 font-mono text-xs text-washi-muted">
+                        <span className="tabular mt-0.5 flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-washi-muted">
                           {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
                           <span className="text-washi-subtle">·</span>
                           {formatSpeed(clip.speed)}

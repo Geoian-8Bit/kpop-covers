@@ -21,7 +21,7 @@ const gapOptions = [0, 1, 2, 3].map((value) => ({
 
 function Tile({ title, glyph, children, className }: { title: string; glyph: string; children: ReactNode; className?: string }) {
   return (
-    <section className={cn('paper flex min-w-0 flex-col gap-4 rounded-[18px] p-5', className)}>
+    <section className={cn('flex min-w-0 flex-col gap-4 p-5 sm:p-6', className)}>
       <SectionTitle glyph={glyph}>{title}</SectionTitle>
       {children}
     </section>
@@ -36,7 +36,7 @@ export function PlaybackTile() {
 
   return (
     <Tile title="Reproducción" glyph="再生">
-      <p className="well tabular rounded-[10px] px-3.5 py-2.5 font-mono text-[26px] font-semibold leading-none text-washi" aria-label="Tiempo">
+      <p className="well tabular whitespace-nowrap rounded-[10px] px-3.5 py-2.5 font-mono text-[24px] font-semibold leading-none text-washi" aria-label="Tiempo">
         {formatTime(time, { tenths: true })}
         <span className="text-base text-washi-subtle"> / {formatTime(duration)}</span>
       </p>
@@ -53,13 +53,13 @@ export function PlaybackTile() {
   );
 }
 
-export function SpeedTile() {
+export function SpeedTile({ className }: { className?: string }) {
   const rate = usePlayer((s) => s.rate);
   const { setRate } = usePlayer.getState();
   const isPreset = (SPEED_PRESETS as readonly number[]).includes(rate);
 
   return (
-    <Tile title="Velocidad" glyph="速">
+    <Tile title="Velocidad" glyph="速" className={className}>
       <div className="flex items-center justify-between gap-3">
         <Button variant="secondary" size="icon" aria-label="Más lento" onClick={() => setRate(stepSpeed(rate, -1))}>
           <Minus className="size-5" />
@@ -96,24 +96,29 @@ export function SpeedTile() {
   );
 }
 
-export function MirrorTile() {
+export function MirrorTile({ className }: { className?: string }) {
   const mirrored = usePlayer((s) => s.mirrored);
   const { setMirrored } = usePlayer.getState();
 
   return (
-    <Tile title="Espejo" glyph="鏡">
-      <p className="text-sm leading-relaxed text-washi-muted">
-        {mirrored ? 'Ves la coreo como frente al espejo de la sala.' : 'Ves la coreo tal como se grabó.'}
-      </p>
-      <div className="mt-auto flex items-center justify-between">
-        <ElasticToggle checked={mirrored} onChange={setMirrored} label={mirrored ? 'Activado' : 'Desactivado'} />
-        <AnimatePresence>{mirrored && <Seal key="seal" glyph="鏡" size={38} stamp />}</AnimatePresence>
+    <Tile title="Espejo" glyph="鏡" className={className}>
+      {/* Full-width row on medium screens, stacked when it sits in the three-column bar. */}
+      <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-3 2xl:flex-col 2xl:items-stretch">
+        <p className="min-w-[16rem] flex-1 text-sm leading-relaxed text-washi-muted 2xl:flex-none">
+          {mirrored ? 'Ves la coreo como frente al espejo de la sala.' : 'Ves la coreo tal como se grabó.'}
+        </p>
+        <div className="flex items-center gap-4 2xl:mt-auto 2xl:justify-between">
+          <ElasticToggle checked={mirrored} onChange={setMirrored} label={mirrored ? 'Activado' : 'Desactivado'} />
+          <span className="grid size-[38px] place-items-center">
+            <AnimatePresence>{mirrored && <Seal key="seal" glyph="鏡" size={38} stamp />}</AnimatePresence>
+          </span>
+        </div>
       </div>
     </Tile>
   );
 }
 
-export function LoopTile({ onSaveClip }: { onSaveClip: () => void }) {
+export function LoopTile({ onSaveClip, className }: { onSaveClip: () => void; className?: string }) {
   const loop = usePlayer((s) => s.loop);
   const gap = usePlayer((s) => s.gap);
   const ready = usePlayer((s) => s.ready);
@@ -122,7 +127,7 @@ export function LoopTile({ onSaveClip }: { onSaveClip: () => void }) {
   const range = hasRange(loop);
 
   return (
-    <Tile title="Tramo A–B" glyph="反復" className="sm:col-span-2 xl:col-span-3">
+    <Tile title="Tramo A–B" glyph="反復" className={className}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-2">
           <MarkButton letter="A" value={loop.start} onClick={() => markStart()} disabled={!ready} label="Marcar inicio" />

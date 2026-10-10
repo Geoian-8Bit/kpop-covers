@@ -125,7 +125,7 @@ export function Timeline({ seed, clips, onClipSelect }: TimelineProps) {
   const range = hasRange(loop) ? loop : null;
 
   return (
-    <div className="paper select-none rounded-[18px] px-4 pb-3 pt-4 sm:px-5">
+    <div className="select-none px-3 pb-4 pt-4 sm:px-5">
       {/* saved clips lane */}
       <div className="relative mb-3 h-2.5" aria-label="Clips guardados">
         {duration > 0 &&

@@ -98,51 +98,60 @@ export function StudioPage() {
   }
 
   return (
-    <Page className="mx-auto max-w-[1440px] px-4 pb-20 pt-5 sm:px-6">
-      <div className="mb-4 flex items-center gap-3">
-        <Link
-          to="/"
-          aria-label="Volver a la biblioteca"
-          className="grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi"
-        >
-          <ArrowLeft className="size-5" />
-        </Link>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-[22px] font-bold leading-tight sm:text-[28px]">{current.title}</h1>
-          <p className="truncate text-sm text-washi-muted">
-            {current.artist || 'Artista sin especificar'} · {current.source === 'youtube' ? 'YouTube' : current.file_name}
-          </p>
-        </div>
-        {current.source === 'youtube' && current.youtube_id && (
-          <a
-            href={youTubeWatchUrl(current.youtube_id)}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Abrir en YouTube"
-            className="hidden size-11 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted hover:text-washi sm:grid"
+    <Page className="pb-16 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
+      <div className="paper mx-auto max-w-[1500px] rounded-none border-x-0 sm:rounded-[20px] sm:border-x">
+        {/* Title bar */}
+        <div className="flex items-center gap-3 border-b border-rule px-4 py-3.5 sm:px-6">
+          <Link
+            to="/"
+            aria-label="Volver a la biblioteca"
+            className="grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi"
           >
-            <ExternalLink className="size-4.5" />
-          </a>
-        )}
-        <Button variant="secondary" size="icon" aria-label="Atajos de teclado" onClick={openHelp}>
-          <Keyboard className="size-5" />
-        </Button>
-      </div>
-
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.35fr_1fr]">
-          <div className="min-w-0 sm:col-span-2 xl:col-span-3">
-            <MediaStage video={current} />
+            <ArrowLeft className="size-5" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">{current.title}</h1>
+            <p className="truncate text-sm text-washi-muted">
+              {current.artist || 'Artista sin especificar'} · {current.source === 'youtube' ? 'YouTube' : current.file_name}
+            </p>
           </div>
-          <div className="min-w-0 sm:col-span-2 xl:col-span-3">
-            <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
-          </div>
-          <PlaybackTile />
-          <SpeedTile />
-          <MirrorTile />
-          <LoopTile onSaveClip={openSave} />
+          {current.source === 'youtube' && current.youtube_id && (
+            <a
+              href={youTubeWatchUrl(current.youtube_id)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Abrir en YouTube"
+              className="hidden size-11 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted hover:text-washi sm:grid"
+            >
+              <ExternalLink className="size-4.5" />
+            </a>
+          )}
+          <Button variant="secondary" size="icon" aria-label="Atajos de teclado" onClick={openHelp} className="max-sm:hidden">
+            <Keyboard className="size-5" />
+          </Button>
         </div>
-        <ClipList clips={clips.data ?? []} loading={clips.isPending} onApply={applyClip} onNew={openSave} />
+
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
+          {/* Work area */}
+          <div className="min-w-0">
+            {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
+            <div className="sticky top-16 z-20 bg-sumi-850 px-2.5 pb-1 pt-2.5 sm:static sm:bg-transparent sm:px-5 sm:pt-5">
+              <MediaStage video={current} />
+            </div>
+            <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
+            <div className="grid border-t border-rule sm:grid-cols-2 2xl:grid-cols-[1fr_1.35fr_1fr]">
+              <PlaybackTile />
+              <SpeedTile className="border-t border-rule sm:border-l sm:border-t-0" />
+              <MirrorTile className="border-t border-rule sm:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0" />
+            </div>
+            <LoopTile onSaveClip={openSave} className="border-t border-rule" />
+          </div>
+
+          {/* Clips column */}
+          <div className="border-t border-rule lg:border-l lg:border-t-0">
+            <ClipList clips={clips.data ?? []} loading={clips.isPending} onApply={applyClip} onNew={openSave} />
+          </div>
+        </div>
       </div>
 
       <SaveClipDialog open={saving} onClose={() => setSaving(false)} video={current} clipCount={clips.data?.length ?? 0} />
@@ -219,8 +228,8 @@ function MediaStage({ video }: { video: Video }) {
   }
 
   return (
-    <div className="paper rounded-[20px] p-2.5">
-    <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-black ring-1 ring-washi/15">
+    <div>
+    <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-black shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]">
       <motion.div
         className="absolute inset-0"
         initial={false}
