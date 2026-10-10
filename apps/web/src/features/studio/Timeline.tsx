@@ -1,6 +1,15 @@
 import { clamp, formatTime, MIN_LOOP_LENGTH, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type Ref,
+} from 'react';
 import { CLIP_SWATCH } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -92,23 +101,65 @@ interface TimelineProps {
 
 export function Timeline({ seed, clips, onClipSelect, compact = false }: TimelineProps) {
   const duration = usePlayer((s) => s.duration);
-  const time = usePlayer((s) => s.time);
   const loop = usePlayer((s) => s.loop);
   const activeClipId = usePlayer((s) => s.activeClipId);
   const railRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const tideRef = useRef<SVGRectElement>(null);
+  const hoverRef = useRef<HoverControl>(null);
   const dragRef = useRef<{ mode: DragMode; anchor: number; x: number; moved: boolean } | null>(null);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
-  const [hover, setHover] = useState<number | null>(null);
   const clipId = `tide-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const wave = useMemo(() => buildPaths(seededSwell(seed)), [seed]);
   const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
 
+  // The playhead moves every frame: paint it straight onto the DOM instead of re-rendering the whole timeline.
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    const track = trackRef.current;
+    if (!rail || !track) return;
+    let width = rail.clientWidth;
+    let lastTime = Number.NaN;
+    let lastDuration = Number.NaN;
+    let lastSecond = Number.NaN;
+    const paint = (time: number, total: number, force = false) => {
+      if (!force && time === lastTime && total === lastDuration) return;
+      lastTime = time;
+      lastDuration = total;
+      const f = total > 0 ? clamp(time / total, 0, 1) : 0;
+      playheadRef.current?.style.setProperty('transform', `translate3d(${f * width}px,0,0)`);
+      tideRef.current?.setAttribute('width', `${f * 100}%`);
+      const second = Math.floor(time);
+      if (second !== lastSecond) {
+        lastSecond = second;
+        track.setAttribute('aria-valuenow', String(second));
+        track.setAttribute('aria-valuetext', formatTime(second));
+      }
+    };
+    const repaint = () => {
+      const { time, duration: total } = usePlayer.getState();
+      paint(time, total, true);
+    };
+    repaint();
+    const resize = new ResizeObserver(() => {
+      width = rail.clientWidth;
+      repaint();
+    });
+    resize.observe(rail);
+    const unsubscribe = usePlayer.subscribe((s) => paint(s.time, s.duration));
+    return () => {
+      unsubscribe();
+      resize.disconnect();
+    };
+  }, []);
+
   const pct = (t: number) => (duration > 0 ? clamp(t / duration, 0, 1) * 100 : 0);
-  const played = pct(time);
   const fractionAt = (clientX: number) => {
     const rect = railRef.current!.getBoundingClientRect();
     return clamp((clientX - rect.left) / rect.width, 0, 1);
   };
+  const clearHover = () => hoverRef.current?.(null);
 
   function begin(mode: DragMode, event: ReactPointerEvent) {
     if (!duration || event.button > 0) return;
@@ -119,7 +170,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
     const player = usePlayer.getState();
     if (mode === 'scrub') {
       player.setScrubbing(true);
-      player.seek(t);
+      player.scrubTo(t);
     }
     // A range only appears once the pointer actually travels; a plain tap on the lane just seeks.
     dragRef.current = { mode, anchor: t, x: event.clientX, moved: false };
@@ -127,16 +178,18 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
   }
 
   function move(event: ReactPointerEvent) {
-    const f = fractionAt(event.clientX);
-    setHover(f);
     const drag = dragRef.current;
+    // Fingers have no hover: skip the guide (and the rect read) unless a drag needs the position.
+    if (!drag && event.pointerType === 'touch') return;
+    const f = fractionAt(event.clientX);
+    if (event.pointerType !== 'touch') hoverRef.current?.(f);
     if (!drag) return;
     const t = f * duration;
     const player = usePlayer.getState();
     const { loop: current } = player;
     switch (drag.mode) {
       case 'scrub':
-        player.seek(t);
+        player.scrubTo(t);
         break;
       case 'select':
         if (!drag.moved && Math.abs(event.clientX - drag.x) < 6) break;
@@ -179,7 +232,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={clearHover}
         className={cn(
           'group/lane relative mb-2 touch-none rounded-[8px] border border-dashed border-washi/15 px-3 transition-colors',
           duration ? 'cursor-crosshair hover:border-shu-400/50 hover:bg-shu-500/[0.05]' : 'cursor-wait',
@@ -222,15 +275,15 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
         </div>
       </div>
 
+      {/* aria-valuenow / aria-valuetext are written once per second by the paint effect above. */}
       <div
+        ref={trackRef}
         data-track
         role="slider"
         tabIndex={0}
         aria-label="Línea de tiempo"
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(time)}
-        aria-valuetext={formatTime(time)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             e.preventDefault();
@@ -242,7 +295,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={clearHover}
         className={cn(
           'well relative touch-none rounded-[12px]',
           compact ? 'h-[60px]' : 'h-[96px]',
@@ -259,7 +312,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
           >
             <defs>
               <clipPath id={clipId}>
-                <rect x="0" y="0" width={`${played}%`} height="100%" />
+                <rect ref={tideRef} x="0" y="0" height="100%" />
               </clipPath>
             </defs>
             <path d={wave.area} fill="#1f3b60" fillOpacity="0.85" />
@@ -281,18 +334,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
               />
             </g>
           </svg>
-          {/* foam on the crests turns white once the song has passed it */}
-          {wave.crests.map((c) => (
-            <span
-              key={c.x}
-              aria-hidden
-              className={cn(
-                'absolute size-[5px] -translate-x-1/2 -translate-y-[140%] rounded-full transition-colors duration-500',
-                c.x * 100 <= played ? 'bg-washi' : 'bg-ai-400',
-              )}
-              style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
-            />
-          ))}
+          <Crests crests={wave.crests} />
 
           {/* A–B band */}
           <AnimatePresence>
@@ -342,23 +384,13 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
             )}
           </AnimatePresence>
 
-          {/* hover guide */}
-          {hover != null && duration > 0 && !dragMode && (
-            <div
-              className="pointer-events-none absolute inset-y-1 w-px bg-washi/35"
-              style={{ left: `${hover * 100}%` }}
-            >
-              <span className="tabular absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-sumi-950 px-2 py-1 font-mono text-[11px] text-washi">
-                {formatTime(hover * duration, { tenths: true })}
-              </span>
-            </div>
-          )}
+          <HoverGuide control={hoverRef} duration={duration} hidden={dragMode != null} />
 
-          {/* playhead */}
+          {/* playhead (moved with a transform by the paint effect) */}
           <div
+            ref={playheadRef}
             aria-hidden
-            className="pointer-events-none absolute -inset-y-1 w-[2px] -translate-x-1/2 bg-kin-300"
-            style={{ left: `${played}%` }}
+            className="pointer-events-none absolute -inset-y-1 left-0 w-[2px] -translate-x-1/2 bg-kin-300 will-change-transform"
           >
             <span className="absolute -top-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-kin-300" />
           </div>
@@ -392,6 +424,53 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
         </AnimatePresence>
         <span>{formatTime(duration)}</span>
       </div>
+    </div>
+  );
+}
+
+type Crest = ReturnType<typeof buildPaths>['crests'][number];
+
+/** Foam on the crests turns white once the song has passed it; re-renders only when a crest is crossed. */
+function Crests({ crests }: { crests: Crest[] }) {
+  const passed = usePlayer((s) => {
+    const played = s.duration > 0 ? clamp(s.time / s.duration, 0, 1) : 0;
+    let n = 0;
+    while (n < crests.length && crests[n]!.x <= played) n++;
+    return n;
+  });
+  return crests.map((c, i) => (
+    <span
+      key={c.x}
+      aria-hidden
+      className={cn(
+        'absolute size-[5px] -translate-x-1/2 -translate-y-[140%] rounded-full transition-colors duration-500',
+        i < passed ? 'bg-washi' : 'bg-ai-400',
+      )}
+      style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
+    />
+  ));
+}
+
+type HoverControl = (fraction: number | null) => void;
+
+/** Mouse-only time guide; owns its state so hovering never re-renders the timeline. */
+function HoverGuide({
+  control,
+  duration,
+  hidden,
+}: {
+  control: Ref<HoverControl>;
+  duration: number;
+  hidden: boolean;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  useImperativeHandle(control, () => setHover, []);
+  if (hover == null || duration <= 0 || hidden) return null;
+  return (
+    <div className="pointer-events-none absolute inset-y-1 w-px bg-washi/35" style={{ left: `${hover * 100}%` }}>
+      <span className="tabular absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-[6px] bg-sumi-950 px-2 py-1 font-mono text-[11px] text-washi">
+        {formatTime(hover * duration, { tenths: true })}
+      </span>
     </div>
   );
 }

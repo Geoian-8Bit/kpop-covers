@@ -14,8 +14,18 @@
     <meta name="apple-mobile-web-app-title" content="One Shoot" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Only the weights the UI uses: display 700/800 (font-bold/extrabold), sans 400/500/700, mono 500/600. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Shippori+Mincho+B1:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <!--
+      The UI's kanji (札 舞 稽古帳 書庫 帖) as one ~4 KB Shippori Mincho file per weight. Loaded after the
+      main sheet, so for these characters its faces win over the large Japanese unicode-range slices, which are
+      then never downloaded; Latin keeps coming from the main sheet. Add any new UI kanji to `text=`.
+    -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&display=swap&text=%E6%9C%AD%E8%88%9E%E7%A8%BD%E5%8F%A4%E5%B8%B3%E6%9B%B8%E5%BA%AB%E5%B8%96"
       rel="stylesheet"
     />
     <link rel="preconnect" href="https://www.youtube.com" />

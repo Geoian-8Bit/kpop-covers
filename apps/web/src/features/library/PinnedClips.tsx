@@ -678,6 +678,14 @@ function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () =>
 export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: QuickStyle }) {
   const scroller = useRef<HTMLUListElement>(null);
   const lastLeft = useRef(0);
+  /**
+   * Until when a scroll counts as the user's own. Only those swing the items: swinging items can nudge
+   * the scroll width, and if that fed back into the swing the row would keep moving on its own.
+   */
+  const userScrollUntil = useRef(0);
+  const byUser = (ms: number) => {
+    userScrollUntil.current = Math.max(userScrollUntil.current, performance.now() + ms);
+  };
   const [edges, setEdges] = useState({ start: false, end: false });
 
   const measure = useCallback(() => {
@@ -706,6 +714,7 @@ export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: Q
   }, [measure, style, clips.length]);
 
   const slide = useCallback((dx: number) => {
+    userScrollUntil.current = performance.now() + 250;
     scroller.current?.scrollBy({ left: -dx });
   }, []);
 
@@ -719,6 +728,7 @@ export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: Q
   }
 
   const page = (dir: 1 | -1) => {
+    byUser(900);
     const el = scroller.current;
     el?.scrollBy({ left: dir * Math.max(el.clientWidth * 0.8, ITEM_W[style]), behavior: 'smooth' });
   };
@@ -737,14 +747,24 @@ export function PinnedClips({ clips, style }: { clips: ClipWithVideo[]; style: Q
             const el = e.currentTarget;
             const dx = el.scrollLeft - lastLeft.current;
             lastLeft.current = el.scrollLeft;
-            // The rail slides with the row; whatever hangs from it lags behind and swings.
-            if (style !== 'hanko') nudgeAll(Math.max(-1.2, Math.min(1.2, dx * 0.02)));
+            // The rail slides with the row; whatever hangs from it lags behind and swings — but only
+            // when the user is the one sliding it, never in reaction to the items' own movement.
+            if (style !== 'hanko' && performance.now() < userScrollUntil.current) {
+              nudgeAll(Math.max(-1.2, Math.min(1.2, dx * 0.02)));
+            }
             measure();
           }}
-          className="scrollbar-none -mx-2 flex snap-x snap-proximity gap-x-4 overflow-x-auto overscroll-x-contain px-2 pb-3 pt-3"
+          onWheel={() => byUser(300)}
+          onTouchStart={() => byUser(60_000)}
+          onTouchEnd={() => {
+            // Momentum scrolling keeps going a little after the finger lifts.
+            userScrollUntil.current = performance.now() + 900;
+          }}
+          // No scroll snapping: the row stays exactly where it is left, even half way.
+          className="scrollbar-none -mx-2 flex gap-x-4 overflow-x-auto overscroll-x-contain px-2 pb-3 pt-3 [overflow-anchor:none]"
         >
           {clips.map((clip) => (
-            <motion.li key={clip.id} variants={fadeUp} className="shrink-0 snap-start">
+            <motion.li key={clip.id} variants={fadeUp} className="shrink-0">
               <Link
                 to={`/v/${clip.video_id}?clip=${clip.id}`}
                 aria-label={clipLabel(clip)}

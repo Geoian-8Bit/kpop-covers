@@ -57,12 +57,14 @@
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --animate-shimmer: shimmer 2.4s linear infinite;
+  /* One gradient tile per cycle: same drift speed as the old 2.4s / two-tile background-position sweep. */
+  --animate-shimmer: shimmer 1.2s linear infinite;
 }
 
+/* Compositor-only: slides the ::after strip of .skeleton (4 widths = 2 tiles) left by one tile. */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
 }
 
 /* ───────────────────── Surfaces ───────────────────── */
@@ -222,9 +224,17 @@
 }
 
 @utility skeleton {
-  background: linear-gradient(90deg, rgb(239 230 212 / 0.04) 0%, rgb(239 230 212 / 0.09) 50%, rgb(239 230 212 / 0.04) 100%);
-  background-size: 200% 100%;
-  animation: var(--animate-shimmer);
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 400%;
+    background: linear-gradient(90deg, rgb(239 230 212 / 0.04) 0%, rgb(239 230 212 / 0.09) 50%, rgb(239 230 212 / 0.04) 100%);
+    background-size: 50% 100%;
+    animation: var(--animate-shimmer);
+  }
 }
 
 @utility scrollbar-none {

@@ -4,22 +4,28 @@ import { Film, HardDrive, Layers, Play, Trash2, Youtube } from 'lucide-react';
 import { Link } from 'react-router';
 import type { VideoWithClipCount } from '@/data/videos';
 import { cn } from '@/lib/cn';
-import { easeOutExpo, fadeUp, jelly } from '@/lib/motion';
+import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
+
+/** Cards cascade in, but only the first 8 wait: the rest of a long library appears with the 8th. */
+const cardIn = fadeUpCapped(0.04, 8);
 
 interface VideoCardProps {
   video: VideoWithClipCount;
   onDelete: (video: VideoWithClipCount) => void;
   featured?: boolean;
+  /** Position in the grid; drives the (capped) entrance cascade. */
+  index?: number;
   className?: string;
 }
 
-export function VideoCard({ video, onDelete, featured = false, className }: VideoCardProps) {
+export function VideoCard({ video, onDelete, featured = false, index = 0, className }: VideoCardProps) {
   const clipCount = video.clips[0]?.count ?? 0;
 
   return (
     <motion.article
       layout
-      variants={fadeUp}
+      variants={cardIn}
+      custom={index}
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
       whileHover="hover"
       className={cn('group relative', className)}
@@ -38,7 +44,10 @@ export function VideoCard({ video, onDelete, featured = false, className }: Vide
             <motion.img
               src={video.thumbnail_url}
               alt=""
-              loading="lazy"
+              // The featured thumbnail is the library's LCP image: fetch it first; the rest wait for the viewport.
+              loading={featured ? 'eager' : 'lazy'}
+              fetchPriority={featured ? 'high' : 'auto'}
+              decoding="async"
               variants={{ hover: { scale: 1.04 } }}
               transition={{ duration: 0.7, ease: easeOutExpo }}
               className="absolute inset-0 size-full object-cover"

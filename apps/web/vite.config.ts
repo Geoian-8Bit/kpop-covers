@@ -104,10 +104,16 @@ export default defineConfig(({ mode }) => {
     target: 'es2022',
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router'],
-          motion: ['motion'],
-          supabase: ['@supabase/supabase-js'],
+        // Function form so transitive deps (react-dom → scheduler, motion → framer-motion, @supabase/*) follow
+        // their entry package into a long-lived vendor chunk instead of the app's entry chunk.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          const pkg = id.replace(/\\/g, '/').split('node_modules/').pop()!;
+          if (/^(react|react-dom|react-router|scheduler|cookie|set-cookie-parser)\//.test(pkg)) return 'react';
+          if (/^(motion|framer-motion|motion-dom|motion-utils)\//.test(pkg)) return 'motion';
+          if (pkg.startsWith('@supabase/')) return 'supabase';
+          if (pkg.startsWith('@tanstack/')) return 'query';
+          if (pkg.startsWith('lucide-react/')) return 'icons';
         },
       },
     },

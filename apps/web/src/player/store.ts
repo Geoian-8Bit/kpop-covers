@@ -48,6 +48,8 @@ interface PlayerState extends PlayerStatus {
   pause(): void;
   togglePlay(): void;
   seek(seconds: number): void;
+  /** Drag-seek: the playhead follows at once, the engine only every ~130 ms (the last spot lands on release). */
+  scrubTo(seconds: number): void;
   nudge(delta: number): void;
 
   setRate(rate: number): void;
@@ -114,6 +116,22 @@ const initialStatus: PlayerStatus = {
 
 const emptyLoop: LoopState = { start: null, end: null, enabled: false };
 
+/** Seeking the YouTube iframe on every pointermove floods it; drags forward at most this often. */
+const SCRUB_SEEK_MS = 130;
+let scrubTimer: ReturnType<typeof setTimeout> | undefined;
+let scrubSeekAt = 0;
+/** Latest drag target the engine hasn't been sent yet. */
+let scrubPending: number | null = null;
+
+function flushScrub() {
+  clearTimeout(scrubTimer);
+  scrubTimer = undefined;
+  if (scrubPending == null) return;
+  usePlayer.getState().engine?.seek(scrubPending);
+  scrubPending = null;
+  scrubSeekAt = performance.now();
+}
+
 export function hasRange(loop: LoopState): loop is LoopState & { start: number; end: number } {
   return loop.start != null && loop.end != null;
 }
@@ -143,6 +161,9 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   reset() {
+    clearTimeout(scrubTimer);
+    scrubTimer = undefined;
+    scrubPending = null;
     set({
       ...initialStatus,
       engine: null,
@@ -187,8 +208,19 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   seek(seconds) {
     const { engine, duration } = get();
     const target = clamp(seconds, 0, duration || seconds);
+    scrubPending = null; // an explicit seek wins over a throttled drag position still in flight
     engine?.seek(target);
     set({ time: target });
+  },
+
+  scrubTo(seconds) {
+    const { duration } = get();
+    const target = clamp(seconds, 0, duration || seconds);
+    set({ time: target });
+    scrubPending = target;
+    const wait = SCRUB_SEEK_MS - (performance.now() - scrubSeekAt);
+    if (wait <= 0) flushScrub();
+    else scrubTimer ??= setTimeout(flushScrub, wait);
   },
 
   nudge(delta) {
@@ -291,6 +323,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   setScrubbing(scrubbing) {
+    // Release: the last drag position reaches the engine now, not on the next throttle tick.
+    if (!scrubbing) flushScrub();
     set(scrubbing ? { scrubbing } : { scrubbing, scrubEndedAt: performance.now() });
   },
 

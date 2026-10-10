@@ -214,10 +214,11 @@ function NudgeButton({ delta, disabled, onClick }: { delta: number; disabled: bo
 }
 
 function TimeReadout() {
-  const time = usePlayer((s) => s.time);
+  // Tenths are all the readout shows: re-render ~10×/s instead of on every frame.
+  const tenths = usePlayer((s) => Math.floor(s.time * 10));
   return (
     <p className="tabular ml-3 whitespace-nowrap font-mono text-[17px] font-semibold text-washi" aria-label="Tiempo">
-      {formatTime(time, { tenths: true })}
+      {formatTime(tenths / 10, { tenths: true })}
     </p>
   );
 }

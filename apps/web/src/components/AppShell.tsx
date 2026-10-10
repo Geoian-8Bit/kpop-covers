@@ -1,9 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Library, LogOut, MoreVertical, Plus } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useOutletContext } from 'react-router';
 import { CLIP_SWATCH, useQuickClips } from '@/data/clips';
-import { AddVideoDialog } from '@/features/library/AddVideoDialog';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, jelly } from '@/lib/motion';
 import { useAuth } from '@/providers/AuthProvider';
@@ -12,6 +11,11 @@ import { InstallAppButton } from './InstallApp';
 import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
+
+// Only fetched the first time someone taps "Añadir vídeo".
+const AddVideoDialog = lazy(() =>
+  import('@/features/library/AddVideoDialog').then((m) => ({ default: m.AddVideoDialog })),
+);
 
 interface ShellContext {
   openAddVideo: () => void;
@@ -27,7 +31,14 @@ export function useShell(): ShellContext {
  */
 export function AppShell() {
   const [adding, setAdding] = useState(false);
-  const context: ShellContext = { openAddVideo: () => setAdding(true) };
+  // Stays mounted after the first open so closing still plays the dialog's exit animation.
+  const [addLoaded, setAddLoaded] = useState(false);
+  const context: ShellContext = {
+    openAddVideo: () => {
+      setAddLoaded(true);
+      setAdding(true);
+    },
+  };
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[264px_minmax(0,1fr)]">
@@ -38,7 +49,11 @@ export function AppShell() {
           <Outlet context={context} />
         </main>
       </div>
-      <AddVideoDialog open={adding} onClose={() => setAdding(false)} />
+      {addLoaded && (
+        <Suspense fallback={null}>
+          <AddVideoDialog open={adding} onClose={() => setAdding(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -265,9 +280,9 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
 export function Page({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: easeOutExpo }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2, ease: easeOutExpo }}
       className={className}
     >
       {children}

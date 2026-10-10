@@ -25,7 +25,7 @@ import {
   RotateCw,
   Youtube,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -625,21 +625,90 @@ function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
 
 /** Thin YouTube-like progress line: scrub anywhere, A–B band in vermilion, saved clips as thin lines above. */
 function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (clip: Clip) => void }) {
-  const time = usePlayer((s) => s.time);
   const duration = usePlayer((s) => s.duration);
   const loop = usePlayer((s) => s.loop);
   const activeClipId = usePlayer((s) => s.activeClipId);
   const barRef = useRef<HTMLDivElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLSpanElement>(null);
   const dragging = useRef(false);
   const [hover, setHover] = useState<number | null>(null);
   const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
+
+  // Fill, thumb and aria follow the clock through the DOM, so playback never re-renders the bar.
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    let width = bar.clientWidth;
+    let lastTime = Number.NaN;
+    let lastDuration = Number.NaN;
+    let lastSecond = Number.NaN;
+    const paint = (time: number, total: number, force = false) => {
+      if (!force && time === lastTime && total === lastDuration) return;
+      lastTime = time;
+      lastDuration = total;
+      const f = total > 0 ? Math.min(1, Math.max(0, time / total)) : 0;
+      fillRef.current?.style.setProperty('transform', `translate3d(${(f - 1) * 100}%,0,0)`);
+      thumbRef.current?.style.setProperty('transform', `translate3d(${f * width}px,0,0)`);
+      const second = Math.floor(time);
+      if (second !== lastSecond) {
+        lastSecond = second;
+        bar.setAttribute('aria-valuenow', String(second));
+        bar.setAttribute('aria-valuetext', formatTime(second));
+      }
+    };
+    const repaint = () => {
+      const { time, duration: total } = usePlayer.getState();
+      paint(time, total, true);
+    };
+    repaint();
+    const resize = new ResizeObserver(() => {
+      width = bar.clientWidth;
+      repaint();
+    });
+    resize.observe(bar);
+    const unsubscribe = usePlayer.subscribe((s) => paint(s.time, s.duration));
+    return () => {
+      unsubscribe();
+      resize.disconnect();
+    };
+  }, []);
 
   const pct = (t: number) => (duration > 0 ? Math.min(100, Math.max(0, (t / duration) * 100)) : 0);
   const fractionAt = (clientX: number) => {
     const rect = barRef.current!.getBoundingClientRect();
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   };
-  const seekTo = (clientX: number) => usePlayer.getState().seek(fractionAt(clientX) * duration);
+  const scrubAt = (clientX: number) => usePlayer.getState().scrubTo(fractionAt(clientX) * duration);
+
+  const clipLines = useMemo(() => {
+    if (duration <= 0) return null;
+    const at = (t: number) => Math.min(100, Math.max(0, (t / duration) * 100));
+    return clips.map((clip) => (
+      <button
+        key={clip.id}
+        type="button"
+        title={`${clip.name} · ${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`}
+        aria-label={`Reproducir clip ${clip.name}`}
+        onClick={() => onClipSelect(clip)}
+        className="group/clip absolute flex items-center"
+        style={{
+          left: `${at(clip.start_seconds)}%`,
+          width: `${Math.max(0.6, at(clip.end_seconds) - at(clip.start_seconds))}%`,
+          top: (layout.lanes.get(clip.id) ?? 0) * 7,
+          height: 7,
+        }}
+      >
+        <span
+          className={cn(
+            'block h-[3px] w-full rounded-full transition-[height,opacity] group-hover/clip:h-[5px]',
+            CLIP_SWATCH[clip.color].dot,
+            clip.id === activeClipId ? 'opacity-100' : 'opacity-70',
+          )}
+        />
+      </button>
+    ));
+  }, [clips, duration, layout, activeClipId, onClipSelect]);
 
   return (
     <div className="relative">
@@ -649,33 +718,10 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
         style={{ height: Math.max(1, layout.count) * 7 }}
         aria-label="Clips guardados"
       >
-        {duration > 0 &&
-          clips.map((clip) => (
-            <button
-              key={clip.id}
-              type="button"
-              title={`${clip.name} · ${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`}
-              aria-label={`Reproducir clip ${clip.name}`}
-              onClick={() => onClipSelect(clip)}
-              className="group/clip absolute flex items-center"
-              style={{
-                left: `${pct(clip.start_seconds)}%`,
-                width: `${Math.max(0.6, pct(clip.end_seconds) - pct(clip.start_seconds))}%`,
-                top: (layout.lanes.get(clip.id) ?? 0) * 7,
-                height: 7,
-              }}
-            >
-              <span
-                className={cn(
-                  'block h-[3px] w-full rounded-full transition-[height,opacity] group-hover/clip:h-[5px]',
-                  CLIP_SWATCH[clip.color].dot,
-                  clip.id === activeClipId ? 'opacity-100' : 'opacity-70',
-                )}
-              />
-            </button>
-          ))}
+        {clipLines}
       </div>
 
+      {/* aria-valuenow / aria-valuetext are written once per second by the paint effect above. */}
       <div
         ref={barRef}
         role="slider"
@@ -683,18 +729,17 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
         aria-label="Progreso"
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(time)}
-        aria-valuetext={formatTime(time)}
         onPointerDown={(e) => {
           if (!duration) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           dragging.current = true;
           usePlayer.getState().setScrubbing(true);
-          seekTo(e.clientX);
+          scrubAt(e.clientX);
         }}
         onPointerMove={(e) => {
-          setHover(fractionAt(e.clientX));
-          if (dragging.current) seekTo(e.clientX);
+          // Fingers only get the time bubble while dragging; a mouse gets it on hover too.
+          if (e.pointerType !== 'touch' || dragging.current) setHover(fractionAt(e.clientX));
+          if (dragging.current) scrubAt(e.clientX);
         }}
         onPointerUp={() => {
           dragging.current = false;
@@ -707,7 +752,7 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
         onPointerLeave={() => setHover(null)}
         className="group/bar relative flex h-5 cursor-pointer touch-none items-center"
       >
-        <div className="relative h-[3px] w-full rounded-full bg-washi/25 transition-[height] duration-150 group-hover/bar:h-[5px]">
+        <div className="relative h-[3px] w-full overflow-hidden rounded-full bg-washi/25 transition-[height] duration-150 group-hover/bar:h-[5px]">
           {hover != null && (
             <div
               className="absolute inset-y-0 left-0 rounded-full bg-washi/25"
@@ -720,14 +765,11 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
               style={{ left: `${pct(loop.start)}%`, width: `${pct(loop.end) - pct(loop.start)}%` }}
             />
           )}
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-shu-500"
-            style={{ width: `${pct(time)}%` }}
-          />
+          <div ref={fillRef} className="absolute inset-0 rounded-full bg-shu-500 will-change-transform" />
         </div>
         <span
-          className="pointer-events-none absolute size-3.5 -translate-x-1/2 scale-0 rounded-full bg-shu-500 shadow transition-transform duration-150 group-hover/bar:scale-100"
-          style={{ left: `${pct(time)}%` }}
+          ref={thumbRef}
+          className="pointer-events-none absolute left-0 size-3.5 -translate-x-1/2 scale-0 rounded-full bg-shu-500 shadow transition-[scale] duration-150 group-hover/bar:scale-100"
         />
         {hover != null && duration > 0 && (
           <span
@@ -758,8 +800,6 @@ function FullscreenBar({
   onMenuChange: (open: boolean) => void;
 }) {
   const playing = usePlayer((s) => s.playing);
-  const time = usePlayer((s) => s.time);
-  const duration = usePlayer((s) => s.duration);
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
   const loop = usePlayer((s) => s.loop);
@@ -819,10 +859,7 @@ function FullscreenBar({
           <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
             <RotateCw className="size-[18px]" />
           </button>
-          <span className="tabular ml-1.5 font-mono text-[13px] text-washi">
-            {formatTime(time)}
-            <span className="text-washi-subtle"> / {formatTime(duration)}</span>
-          </span>
+          <FsClock />
 
           <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
             <div className="relative">
@@ -938,6 +975,18 @@ function FullscreenBar({
   );
 }
 
+/** Only the clock reads the playhead, and only once per second. */
+function FsClock() {
+  const second = usePlayer((s) => Math.floor(s.time));
+  const duration = usePlayer((s) => s.duration);
+  return (
+    <span className="tabular ml-1.5 font-mono text-[13px] text-washi">
+      {formatTime(second)}
+      <span className="text-washi-subtle"> / {formatTime(duration)}</span>
+    </span>
+  );
+}
+
 function GapBadge({ seconds }: { seconds: number }) {
   return (
     <span className="tabular pointer-events-none absolute -right-0.5 -top-0.5 rounded-full bg-shu-500 px-1 font-mono text-[9px] font-bold leading-[14px] text-washi">
@@ -960,11 +1009,18 @@ function Countdown() {
     };
   }, [endsAt]);
 
+  // Wake exactly when the shown number changes (each whole second left), not on a fast poll.
   useEffect(() => {
     if (endsAt == null) return;
-    setNow(performance.now());
-    const id = setInterval(() => setNow(performance.now()), 80);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setTimeout>;
+    const step = () => {
+      const t = performance.now();
+      setNow(t);
+      const left = endsAt - t;
+      if (left > 0) id = setTimeout(step, (left % 1000 || 1000) + 5);
+    };
+    step();
+    return () => clearTimeout(id);
   }, [endsAt]);
 
   const remaining = endsAt == null ? null : Math.max(1, Math.ceil((endsAt - now) / 1000));

@@ -1,22 +1,25 @@
 import { motion, MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AppShell } from '@/components/AppShell';
 import { Backdrop } from '@/components/Backdrop';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
-import { PrivacyPage } from '@/features/legal/PrivacyPage';
 import { LibraryPage } from '@/features/library/LibraryPage';
-import { StudioPage } from '@/features/studio/StudioPage';
+import { loadStudioPage } from '@/lib/prefetch';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { CrewProvider, useCrew } from '@/providers/CrewProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
 
+// Route-level splitting: the library is the landing page, the studio and legal pages load on demand.
+const StudioPage = lazy(() => loadStudioPage().then((m) => ({ default: m.StudioPage })));
+const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, refetchOnWindowFocus: true, retry: 1 },
+    queries: { staleTime: 5 * 60_000, refetchOnWindowFocus: false, retry: 1 },
   },
 });
 
@@ -90,9 +93,23 @@ export function App() {
                       }
                     >
                       <Route index element={<LibraryPage />} />
-                      <Route path="/v/:videoId" element={<StudioPage />} />
+                      <Route
+                        path="/v/:videoId"
+                        element={
+                          <Suspense fallback={<Splash />}>
+                            <StudioPage />
+                          </Suspense>
+                        }
+                      />
                     </Route>
-                    <Route path="/privacidad" element={<PrivacyPage />} />
+                    <Route
+                      path="/privacidad"
+                      element={
+                        <Suspense fallback={<Splash />}>
+                          <PrivacyPage />
+                        </Suspense>
+                      }
+                    />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </BrowserRouter>

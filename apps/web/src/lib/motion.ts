@@ -20,6 +20,16 @@ export const inkReveal: Variants = {
   show: { clipPath: 'inset(0 0% 0 0)', opacity: 1, transition: { duration: 0.9, ease: easeOutExpo } },
 };
 
+/** fadeUp for list items (index as `custom`): the delay steps per item but stops after `cap`, so long lists never trail. */
+export const fadeUpCapped = (step = 0.06, cap = 8): Variants => ({
+  hidden: fadeUp.hidden!,
+  show: (index = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.55, ease: easeOutExpo, delay: Math.min(index, cap) * step },
+  }),
+});
+
 export const stagger = (step = 0.06, delay = 0): Variants => ({
   hidden: {},
   show: { transition: { staggerChildren: step, delayChildren: delay } },

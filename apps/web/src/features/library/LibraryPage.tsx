@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus, Search } from 'lucide-react';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
@@ -8,7 +8,8 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useQuickClips } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
-import { fadeUp, inkReveal, stagger } from '@/lib/motion';
+import { fadeUp, inkReveal } from '@/lib/motion';
+import { prefetchStudio } from '@/lib/prefetch';
 import { friendlyError } from '@/lib/supabase';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
@@ -30,6 +31,9 @@ export function LibraryPage() {
   const [pendingDelete, setPendingDelete] = useState<VideoWithClipCount | null>(null);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
+
+  // Opening a video is the next step: warm the studio chunk and the YouTube API while the phone is idle.
+  useEffect(() => prefetchStudio(), []);
 
   const filtered = useMemo(() => {
     const list = videos.data ?? [];
@@ -127,8 +131,8 @@ export function LibraryPage() {
           ) : total === 0 ? (
             <EmptyLibrary onAdd={openAddVideo} />
           ) : (
+            // No staggerChildren here: each card delays itself by index (capped) via its own variants.
             <motion.div
-              variants={stagger(0.04)}
               initial="hidden"
               animate="show"
               className="grid grid-flow-dense gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4"
@@ -140,6 +144,7 @@ export function LibraryPage() {
                     video={video}
                     onDelete={setPendingDelete}
                     featured={index === 0 && !deferredQuery}
+                    index={index}
                     className={index === 0 && !deferredQuery ? 'sm:col-span-2 xl:row-span-2' : undefined}
                   />
                 ))}
