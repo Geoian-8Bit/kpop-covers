@@ -1,22 +1,15 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowRight, FlipHorizontal2, Gauge, Repeat, Users } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
-import { fadeUp, inkReveal, soft, stagger } from '@/lib/motion';
+import { soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { useAuth } from '@/providers/AuthProvider';
 
 type Mode = 'signin' | 'signup';
-
-const features = [
-  { icon: FlipHorizontal2, label: 'Espejo en un toque' },
-  { icon: Gauge, label: 'De 0.25× a 2×' },
-  { icon: Repeat, label: 'Tramos A–B en bucle' },
-  { icon: Users, label: 'Clips compartidos con el grupo' },
-];
 
 export function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -42,33 +35,16 @@ export function AuthPage() {
   }
 
   return (
-    <div className="mx-auto grid min-h-dvh max-w-[1180px] items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_440px] lg:gap-16">
-      <motion.section variants={stagger(0.07, 0.1)} initial="hidden" animate="show">
-        <motion.div variants={fadeUp} className="flex items-center gap-4">
-          <Seal glyph="舞" size={64} stamp />
-          <span className="font-display text-[28px] font-bold">One Shoot</span>
-        </motion.div>
-        <motion.h1
-          variants={inkReveal}
-          className="mt-10 font-display text-[clamp(2.6rem,6vw,4.6rem)] font-extrabold leading-[1.02] tracking-[-0.02em]"
-        >
-          Cada paso,
-          <br />
-          en espejo.
-        </motion.h1>
-        <motion.p variants={fadeUp} className="mt-5 max-w-[46ch] text-[16px] leading-relaxed text-washi-muted">
-          El estudio de ensayo del grupo. Pega un enlace de YouTube o sube el vídeo, dale la vuelta, frénalo y guarda
-          cada parte de la coreo como clip.
-        </motion.p>
-        <motion.ul variants={fadeUp} className="mt-6 grid max-w-md grid-cols-2 gap-x-5 gap-y-2.5 text-sm text-washi-muted">
-          {features.map(({ icon: Icon, label }) => (
-            <li key={label} className="flex items-center gap-2">
-              <Icon className="size-4 shrink-0 text-ai-300" />
-              {label}
-            </li>
-          ))}
-        </motion.ul>
-      </motion.section>
+    <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col items-center justify-center gap-8 px-4 py-10">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={soft}
+        className="flex flex-col items-center gap-4"
+      >
+        <Seal glyph="舞" size={84} stamp />
+        <h1 className="font-display text-[32px] font-bold tracking-[-0.01em]">One Shoot</h1>
+      </motion.div>
 
       <motion.form
         onSubmit={onSubmit}
