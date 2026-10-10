@@ -145,6 +145,15 @@ export function GapPicker({
 const tool =
   'relative flex h-11 shrink-0 items-center gap-2 rounded-[10px] border px-3 text-sm font-bold transition-colors disabled:opacity-40';
 const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
+/** Buttons inside the settings tray: borderless, the tray itself is the frame. */
+const trayBtn =
+  'relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors';
+const trayIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
+const trayOn = 'bg-ai-600/50 text-ai-200 shadow-[inset_0_0_0_1px_rgb(124_156_196/0.35)]';
+
+function TrayDivider() {
+  return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line-strong" />;
+}
 
 /**
  * One player bar under the timeline: transport on the left, quick toggles on the right,
@@ -155,21 +164,29 @@ export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
   const { nudge } = usePlayer.getState();
 
   return (
-    <div className="px-3 pb-4 sm:px-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <PlayButton />
-        <button type="button" aria-label="Retroceder 5 segundos" disabled={!ready} onClick={() => nudge(-5)} className={cn(tool, toolIdle, 'w-11 justify-center px-0')}>
-          <RotateCcw className="size-5" />
-        </button>
-        <button type="button" aria-label="Avanzar 5 segundos" disabled={!ready} onClick={() => nudge(5)} className={cn(tool, toolIdle, 'w-11 justify-center px-0')}>
-          <RotateCw className="size-5" />
-        </button>
-        <TimeReadout />
+    <div className="px-3 pb-5 pt-1 sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        {/* Transport: the play seal flanked by the ±5 s jumps, then the clock. */}
+        <div className="flex items-center gap-1">
+          <NudgeButton delta={-5} disabled={!ready} onClick={() => nudge(-5)} />
+          <PlayButton />
+          <NudgeButton delta={5} disabled={!ready} onClick={() => nudge(5)} />
+          <TimeReadout />
+        </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-          <SpeedButton />
-          <MirrorButton />
-          <LoopAllButton />
+        <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto sm:gap-4">
+          {/* Playback settings live together in one tray instead of loose buttons. */}
+          <div
+            role="group"
+            aria-label="Ajustes de reproducción"
+            className="flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+          >
+            <SpeedButton />
+            <TrayDivider />
+            <MirrorButton />
+            <TrayDivider />
+            <LoopAllButton />
+          </div>
           <ClipButton onSaveClip={onSaveClip} />
         </div>
       </div>
@@ -178,10 +195,28 @@ export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
   );
 }
 
+function NudgeButton({ delta, disabled, onClick }: { delta: number; disabled: boolean; onClick: () => void }) {
+  const Icon = delta < 0 ? RotateCcw : RotateCw;
+  return (
+    <motion.button
+      type="button"
+      aria-label={delta < 0 ? 'Retroceder 5 segundos' : 'Avanzar 5 segundos'}
+      disabled={disabled}
+      onClick={onClick}
+      whileTap={{ scale: 0.85, rotate: delta < 0 ? -25 : 25 }}
+      transition={jelly}
+      className="relative grid size-11 place-items-center rounded-full text-washi-muted transition-colors hover:bg-washi/[0.07] hover:text-washi disabled:opacity-40"
+    >
+      <Icon className="size-[26px]" strokeWidth={1.6} />
+      <span className="tabular absolute font-mono text-[9px] font-bold">5</span>
+    </motion.button>
+  );
+}
+
 function TimeReadout() {
   const time = usePlayer((s) => s.time);
   return (
-    <p className="tabular whitespace-nowrap px-1 font-mono text-[17px] font-semibold text-washi" aria-label="Tiempo">
+    <p className="tabular ml-3 whitespace-nowrap font-mono text-[17px] font-semibold text-washi" aria-label="Tiempo">
       {formatTime(time, { tenths: true })}
     </p>
   );
@@ -231,7 +266,7 @@ function SpeedButton() {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className={cn(tool, rate !== 1 ? 'border-kin-300/60 bg-sumi-800 text-kin-200' : toolIdle)}
+        className={cn(trayBtn, rate !== 1 ? 'bg-kin-300/10 text-kin-200' : trayIdle, open && 'bg-washi/[0.07]')}
       >
         <span className="tabular font-mono">{formatSpeed(rate)}</span>
       </button>
@@ -280,7 +315,7 @@ function MirrorButton() {
       aria-label="Espejo"
       title="Espejo (M)"
       onClick={() => usePlayer.getState().toggleMirror()}
-      className={cn(tool, mirrored ? 'border-ai-400/70 bg-ai-600 text-washi' : toolIdle)}
+      className={cn(trayBtn, mirrored ? trayOn : trayIdle)}
     >
       <FlipHorizontal2 className="size-[18px]" />
       <span className="max-sm:sr-only">Espejo</span>
@@ -313,7 +348,7 @@ function LoopAllButton() {
         aria-label="Repetir la canción entera (mantén pulsado para la pausa)"
         title="Repetir la canción (R) · mantén pulsado para la pausa"
         {...press}
-        className={cn(tool, loopAll ? 'border-ai-400/70 bg-ai-600 text-washi' : toolIdle)}
+        className={cn(trayBtn, loopAll ? trayOn : trayIdle)}
       >
         <Repeat1 className="size-[18px]" />
         <span className="max-sm:sr-only">Bucle</span>
@@ -358,7 +393,7 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
       transition={jelly}
       className={cn(
         tool,
-        'justify-center max-sm:flex-1',
+        'h-12 justify-center px-4 max-sm:flex-1',
         step === 'start' && toolIdle,
         step === 'end' && 'animate-pulse border-shu-400 bg-sumi-800 text-shu-400',
         step === 'save' && 'border-shu-500 bg-shu-500 text-washi hover:bg-shu-400',
