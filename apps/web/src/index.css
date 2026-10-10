@@ -472,3 +472,56 @@
 [data-skin='kamon'] .skin-track {
   border-color: transparent;
 }
+
+/* Imperial: black-garnet urushi lacquer with gold — like the rail's end caps. Buttons become lacquer
+ * pills with a gold rim and gold lettering (the principal action stays vermilion, rimmed in gold);
+ * wells and trays get a gold hairline; the sliding tab is gold leaf. */
+[data-skin='imperial'] :is(.skin-btn, .skin-track, .skin-thumb, .skin-pill) {
+  border-radius: 9999px;
+}
+[data-skin='imperial'] .skin-btn {
+  border-color: transparent !important;
+  color: var(--color-kin-300);
+  background:
+    radial-gradient(120% 90% at 30% 15%, rgb(255 246 230 / 0.12), transparent 55%),
+    linear-gradient(color-mix(in oklab, var(--color-enji-500) 28%, var(--color-sumi-950)),
+      color-mix(in oklab, var(--color-enji-500) 28%, var(--color-sumi-950))) !important;
+  box-shadow:
+    inset 0 0 0 1.6px var(--color-kin-400),
+    inset 0 0 0 4px color-mix(in oklab, var(--color-enji-500) 28%, var(--color-sumi-950)),
+    inset 0 0 0 4.8px rgb(228 200 143 / 0.35),
+    0 8px 16px -10px rgb(0 0 0 / 0.9) !important;
+}
+[data-skin='imperial'] .skin-btn.skin-primary {
+  color: var(--color-washi);
+  background:
+    radial-gradient(120% 90% at 30% 15%, rgb(255 246 230 / 0.16), transparent 55%),
+    linear-gradient(var(--color-shu-500), var(--color-shu-500)) !important;
+  box-shadow:
+    inset 0 0 0 1.6px var(--color-kin-400),
+    inset 0 0 0 4px var(--color-shu-500),
+    inset 0 0 0 4.8px rgb(243 236 223 / 0.45),
+    0 10px 18px -10px rgb(120 28 12 / 0.95) !important;
+}
+[data-skin='imperial'] .skin-btn::before,
+[data-skin='imperial'] .skin-btn::after {
+  display: none;
+}
+[data-skin='imperial'] .skin-track {
+  border-color: transparent !important;
+  background: color-mix(in oklab, var(--color-enji-500) 18%, var(--color-sumi-950)) !important;
+  box-shadow:
+    inset 0 0 0 1.2px rgb(201 164 92 / 0.75),
+    inset 0 2px 5px rgb(0 0 0 / 0.6) !important;
+}
+[data-skin='imperial'] .skin-thumb {
+  background: linear-gradient(180deg, var(--color-kin-300), var(--color-kin-400)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 246 230 / 0.45),
+    0 3px 8px -3px rgb(0 0 0 / 0.8) !important;
+}
+[data-skin='imperial'] .skin-pill[aria-pressed='true'] {
+  background: rgb(201 164 92 / 0.22) !important;
+  color: var(--color-kin-200) !important;
+  box-shadow: inset 0 0 0 1px rgb(228 200 143 / 0.5) !important;
+}

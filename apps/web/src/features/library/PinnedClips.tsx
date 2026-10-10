@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { Link } from 'react-router';
+import { useButtonStyle } from '@/components/ui/ButtonSkin';
 import { Segmented } from '@/components/ui/Segmented';
 import type { ClipWithVideo } from '@/data/clips';
 import { cn } from '@/lib/cn';
@@ -658,6 +659,9 @@ const BRUSH_ARROW =
  */
 function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () => void }) {
   const dir = side === 'start' ? -1 : 1;
+  // Same garnet lacquer and gold in every interface skin; only the shape follows the skin
+  // ("actual" and "imperial" share the round lacquer end cap).
+  const skin = useButtonStyle((s) => s.style);
   return (
     <motion.button
       type="button"
@@ -674,11 +678,43 @@ function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () =>
         side === 'start' ? '-left-2 sm:-left-3' : '-right-2 sm:-right-3',
       )}
     >
-      <svg viewBox="0 0 44 44" className="size-full" aria-hidden>
-        <circle cx="22" cy="22" r="21" fill="var(--color-kin-400)" />
-        <circle cx="22" cy="22" r="19.2" fill="var(--color-sumi-950)" />
-        <circle cx="22" cy="22" r="19.2" fill="var(--color-enji-500)" fillOpacity="0.28" />
-        <circle cx="22" cy="22" r="16" fill="none" stroke="var(--color-kin-300)" strokeOpacity="0.35" strokeWidth="0.8" />
+      <svg viewBox="0 0 44 44" className="size-full overflow-visible" aria-hidden>
+        {skin === 'kamon' ? (
+          <>
+            {/* Crest: garnet kikkō hexagon with a gold rim. */}
+            <polygon points="22,1 40.5,11.5 40.5,32.5 22,43 3.5,32.5 3.5,11.5" fill="var(--color-kin-400)" />
+            <polygon points="22,3.2 38.6,12.6 38.6,31.4 22,40.8 5.4,31.4 5.4,12.6" fill="var(--color-sumi-950)" />
+            <polygon points="22,3.2 38.6,12.6 38.6,31.4 22,40.8 5.4,31.4 5.4,12.6" fill="var(--color-enji-500)" fillOpacity="0.28" />
+            <polygon
+              points="22,7 35.3,14.6 35.3,29.4 22,37 8.7,29.4 8.7,14.6"
+              fill="none"
+              stroke="var(--color-kin-300)"
+              strokeOpacity="0.4"
+              strokeWidth="0.8"
+            />
+          </>
+        ) : skin === 'enso' ? (
+          <>
+            {/* Ensō: garnet lacquer disc, the gold rim drawn as one open brush stroke. */}
+            <circle cx="22" cy="22" r="20" fill="var(--color-sumi-950)" />
+            <circle cx="22" cy="22" r="20" fill="var(--color-enji-500)" fillOpacity="0.28" />
+            <path
+              d="M37.5 14.5A17 17 0 1 0 38.4 26.4"
+              fill="none"
+              stroke="var(--color-kin-400)"
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              filter="url(#os-ink)"
+            />
+          </>
+        ) : (
+          <>
+            <circle cx="22" cy="22" r="21" fill="var(--color-kin-400)" />
+            <circle cx="22" cy="22" r="19.2" fill="var(--color-sumi-950)" />
+            <circle cx="22" cy="22" r="19.2" fill="var(--color-enji-500)" fillOpacity="0.28" />
+            <circle cx="22" cy="22" r="16" fill="none" stroke="var(--color-kin-300)" strokeOpacity="0.35" strokeWidth="0.8" />
+          </>
+        )}
         {/* lacquer sheen */}
         <ellipse cx="16" cy="13" rx="9" ry="4.5" fill="var(--color-washi)" fillOpacity="0.1" transform="rotate(-28 16 13)" />
         <g transform={`translate(10 10)${side === 'start' ? ' translate(24 0) scale(-1 1)' : ''}`}>

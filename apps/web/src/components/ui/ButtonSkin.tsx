@@ -4,10 +4,11 @@ import { Segmented } from '@/components/ui/Segmented';
 
 /**
  * Trial skins for the app's signature buttons (back, play/pause, add). "actual" keeps the existing
- * look; "enso" draws a one-stroke zen brush circle on washi; "kamon" frames the icon in a family crest.
+ * look; "enso" draws a one-stroke zen brush circle on washi; "kamon" frames the icon in a family crest;
+ * "imperial" is black-garnet lacquer with a gold rim and gold glyphs.
  * The choice is per device and only meant while the group decides.
  */
-export type ButtonStyle = 'actual' | 'enso' | 'kamon';
+export type ButtonStyle = 'actual' | 'enso' | 'kamon' | 'imperial';
 export type SkinKind = 'back' | 'play' | 'pause' | 'add';
 
 const KEY = 'coverscape.buttonStyle';
@@ -20,7 +21,7 @@ function apply(style: ButtonStyle) {
 function read(): ButtonStyle {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === 'enso' || v === 'kamon' || v === 'actual') return v;
+    if (v === 'enso' || v === 'kamon' || v === 'imperial' || v === 'actual') return v;
   } catch {
     /* storage blocked */
   }
@@ -59,8 +60,9 @@ export function ButtonStylePicker({ className }: { className?: string }) {
           { value: 'actual', label: 'Actual' },
           { value: 'enso', label: 'Ensō' },
           { value: 'kamon', label: 'Kamon' },
+          { value: 'imperial', label: 'Imperial' },
         ]}
-        className="w-full [&>button]:flex-1"
+        className="w-full [&>button]:flex-1 [&>button]:px-1.5 [&>button]:text-[12px]"
       />
     </div>
   );
@@ -84,6 +86,27 @@ const PETAL = 'M0-21C6-21 9-15 6-11 3-15-3-15-6-11-9-15-6-21 0-21Z';
 export function ButtonSkin({ kind, style }: { kind: SkinKind; style: ButtonStyle }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   if (style === 'actual') return null;
+
+  if (style === 'imperial') {
+    // Black-garnet urushi disc, gold rim and inner hairline, a soft sheen and a gold glyph.
+    return (
+      <svg viewBox="0 0 44 44" className="size-full overflow-visible" aria-hidden>
+        <circle cx="22" cy="22" r="21" fill="var(--color-kin-400)" />
+        <circle cx="22" cy="22" r="19.2" fill="var(--color-sumi-950)" />
+        <circle
+          cx="22"
+          cy="22"
+          r="19.2"
+          fill="var(--color-enji-500)"
+          fillOpacity={kind === 'play' || kind === 'pause' ? 0.55 : 0.28}
+        />
+        <circle cx="22" cy="22" r="16" fill="none" stroke="var(--color-kin-300)" strokeOpacity="0.35" strokeWidth="0.8" />
+        <ellipse cx="16" cy="13" rx="9" ry="4.5" fill="var(--color-washi)" fillOpacity="0.1" transform="rotate(-28 16 13)" />
+        <path d={GLYPH[kind]} fill="var(--color-kin-300)" transform="translate(10 10)" />
+      </svg>
+    );
+  }
+
   const accent = kind === 'back' ? 'var(--color-sumi-950)' : 'var(--color-shu-500)';
 
   if (style === 'enso') {
