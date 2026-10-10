@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { easeOutExpo, jelly } from '@/lib/motion';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
+import { InstallAppButton } from './InstallApp';
 import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
@@ -112,6 +113,10 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
         </ul>
       </div>
 
+      <div className="px-4 pb-3">
+        <InstallAppButton compact />
+      </div>
+
       <div className="flex items-center gap-3 border-t border-line px-4 py-3">
         <Avatar name={name} hue={profile?.avatar_hue} />
         <div className="min-w-0 flex-1">
@@ -190,6 +195,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                     </div>
                   </div>
                   <div className="my-1 h-px bg-line" />
+                  <InstallAppButton compact className="mb-1" />
                   <button
                     role="menuitem"
                     type="button"
