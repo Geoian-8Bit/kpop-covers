@@ -20,3 +20,7 @@ supabase/.branches/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+.vercel
+.env*
+!.env.example
