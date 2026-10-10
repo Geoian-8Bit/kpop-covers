@@ -33,10 +33,12 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   // oEmbed answers 401/403 when the owner disabled embedding.
+  // Negative answers are cached briefly too, so scripted random ids don't all reach YouTube.
+  const shortCache = { 'Cache-Control': 'public, s-maxage=300' };
   if (upstream.status === 401 || upstream.status === 403) {
-    return json({ error: 'not_embeddable' }, 422);
+    return json({ error: 'not_embeddable' }, 422, shortCache);
   }
-  if (upstream.status === 404 || upstream.status === 400) return json({ error: 'not_found' }, 404);
+  if (upstream.status === 404 || upstream.status === 400) return json({ error: 'not_found' }, 404, shortCache);
   if (!upstream.ok) return json({ error: 'upstream_error' }, 502);
 
   const data = (await upstream.json()) as OEmbed;

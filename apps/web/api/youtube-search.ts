@@ -53,7 +53,12 @@ export function parseIsoDuration(value: string | undefined): number | null {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const q = (new URL(request.url).searchParams.get('q') ?? '').trim().replace(/\s+/g, ' ');
+  const params = new URL(request.url).searchParams;
+  const raw = params.get('q') ?? '';
+  const q = raw.trim().replace(/\s+/g, ' ').toLowerCase();
+  // One canonical URL per search: extra params or another spelling of the same query would miss the
+  // edge cache and burn the daily quota, so they are refused.
+  if ([...params.keys()].some((k) => k !== 'q') || raw !== q) return json({ error: 'non_canonical_query' }, 400);
   if (q.length < 2 || q.length > 100) return json({ error: 'invalid_query' }, 400);
 
   const key = process.env.YOUTUBE_API_KEY;

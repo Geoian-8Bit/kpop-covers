@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
-import { useCreateVideo } from '@/data/videos';
+import { useCreateVideo, useVideos } from '@/data/videos';
 import { cn } from '@/lib/cn';
 import { probeMediaFile } from '@/lib/localVideos';
 import { jelly, soft } from '@/lib/motion';
@@ -69,6 +69,9 @@ const slide = (dir: 1 | -1) => ({
 export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeCrew } = useCrew();
   const createVideo = useCreateVideo();
+  const library = useVideos(activeCrew?.id);
+  /** Synchronous lock: a fast double tap must not create the video twice before React re-renders. */
+  const submitting = useRef(false);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -201,8 +204,13 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
     void pickFile(event.dataTransfer.files[0]);
   }
 
+  /** Already in the group's library: offer to open it instead of adding a copy. */
+  const existing = tab === 'youtube' && youtubeId ? library.data?.find((v) => v.youtube_id === youtubeId) : undefined;
+  const alreadyAdded = new Set(library.data?.map((v) => v.youtube_id).filter(Boolean));
+
   const canSubmit =
     Boolean(activeCrew) &&
+    !existing &&
     title.trim().length > 0 &&
     (tab === 'youtube' ? Boolean(youtubeId) && meta.status !== 'error' : Boolean(file));
 
@@ -212,7 +220,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
       void runSearch();
       return;
     }
-    if (!activeCrew || !canSubmit) return;
+    if (!activeCrew || !canSubmit || submitting.current) return;
+    submitting.current = true;
     setError(null);
     try {
       const result = await createVideo.mutateAsync(
@@ -228,6 +237,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
       navigate(`/v/${result.video.id}`);
     } catch (err) {
       setError(friendlyError(err));
+    } finally {
+      submitting.current = false;
     }
   }
 
@@ -287,7 +298,23 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                 }
               />
 
-              {!youtubeId && search.status !== 'idle' && <SearchResults state={search} onPick={pickResult} />}
+              {!youtubeId && search.status !== 'idle' && <SearchResults state={search} onPick={pickResult} added={alreadyAdded} />}
+
+              {existing && (
+                <div role="status" className="flex items-center gap-3 rounded-[12px] border border-kin-300/40 bg-kin-300/[0.07] px-3.5 py-3 text-[13px] text-kin-200">
+                  <span className="min-w-0 flex-1">Este vídeo ya está en la biblioteca.</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      onClose();
+                      navigate(`/v/${existing.id}`);
+                    }}
+                  >
+                    Abrir
+                  </Button>
+                </div>
+              )}
 
               <AnimatePresence>
                 {youtubeId && meta.status !== 'error' && (
@@ -460,7 +487,15 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
 }
 
 /** Search hits, credited to YouTube as its API policies ask. */
-function SearchResults({ state, onPick }: { state: SearchState; onPick: (item: SearchItem) => void }) {
+function SearchResults({
+  state,
+  onPick,
+  added,
+}: {
+  state: SearchState;
+  onPick: (item: SearchItem) => void;
+  added: Set<string | null>;
+}) {
   return (
     <div className="rounded-[12px] border border-line bg-sumi-950/50">
       <p className="flex items-center gap-1.5 border-b border-line px-3 py-2 text-xs text-washi-subtle">
@@ -507,6 +542,11 @@ function SearchResults({ state, onPick }: { state: SearchState; onPick: (item: S
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-2 text-sm font-medium text-washi">{item.title}</span>
+                  {added.has(item.id) && (
+                    <span className="mt-1 inline-block rounded-[4px] bg-kin-300/15 px-1.5 text-[11px] font-medium text-kin-200">
+                      Ya en la biblioteca
+                    </span>
+                  )}
                   <span className="mt-0.5 block truncate text-xs text-washi-muted">{item.channel}</span>
                 </span>
               </button>

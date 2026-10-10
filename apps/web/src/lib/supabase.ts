@@ -7,7 +7,8 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const isSupabaseConfigured = Boolean(url && key);
 
 export const supabase = createClient<Database>(url ?? 'http://localhost', key ?? 'missing-key', {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  // No login flow in the app any more, so never parse session tokens out of the URL.
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
 });
 
 export const VIDEO_BUCKET = 'videos';
@@ -24,5 +25,11 @@ export function friendlyError(error: unknown): string {
   if (/rate limit/i.test(message)) return 'Demasiados intentos. Espera un momento.';
   if (/payload too large|exceeded the maximum/i.test(message)) return 'Archivo demasiado grande para la nube.';
   if (/failed to fetch|network/i.test(message)) return 'Sin conexión. Revisa tu red.';
-  return message || 'Algo salió mal. Inténtalo otra vez.';
+  if (/videos_crew_youtube_key/.test(message)) return 'Ese vídeo ya está en la biblioteca.';
+  if (/clips_video_range_key/.test(message)) return 'Ya hay un clip guardado con este mismo tramo.';
+  if (/videos_cap_reached|clips_cap_reached/.test(message)) return 'La biblioteca está llena. Borra algo antes de añadir más.';
+  if (/bulk_delete_blocked/.test(message)) return 'Solo se puede borrar de uno en uno.';
+  // Never show raw database text (constraint names, policies…) to the group.
+  if (message) console.error('[friendlyError]', error);
+  return 'Algo salió mal. Inténtalo otra vez.';
 }

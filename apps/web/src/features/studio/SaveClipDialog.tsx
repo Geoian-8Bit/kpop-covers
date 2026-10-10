@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { ElasticToggle } from '@/components/ui/ElasticToggle';
 import { Field } from '@/components/ui/Field';
-import { CLIP_SWATCH, useCreateClip } from '@/data/clips';
+import { CLIP_SWATCH, useClips, useCreateClip } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
@@ -27,6 +27,9 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
   const rate = usePlayer((s) => s.rate);
   const mirrored = usePlayer((s) => s.mirrored);
   const create = useCreateClip();
+  const clips = useClips(open ? video.id : undefined);
+  /** Synchronous lock: a fast double tap must not save the clip twice before React re-renders. */
+  const submitting = useRef(false);
   const toast = useToast();
   const [name, setName] = useState('');
   const [color, setColor] = useState<ClipColor>('wine');
@@ -45,9 +48,22 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
     setError(null);
   }, [open]);
 
+  // Same range, speed and mirror already saved: point at it instead of creating a copy.
+  const same = (a: number, b: number) => Math.abs(a - b) < 0.0005;
+  const duplicate = hasRange(loop)
+    ? clips.data?.find(
+        (c) =>
+          same(c.start_seconds, loop.start) &&
+          same(c.end_seconds, loop.end) &&
+          same(c.speed, rate) &&
+          c.mirrored === mirrored,
+      )
+    : undefined;
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!hasRange(loop) || !name.trim()) return;
+    if (!hasRange(loop) || !name.trim() || duplicate || submitting.current) return;
+    submitting.current = true;
     try {
       const clip = await create.mutateAsync({
         video_id: video.id,
@@ -65,6 +81,8 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
       onClose();
     } catch (err) {
       setError(friendlyError(err));
+    } finally {
+      submitting.current = false;
     }
   }
 
@@ -140,11 +158,17 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
 
         <ElasticToggle checked={pinned} onChange={setPinned} label="Fijar en acceso rápido" />
 
+        {duplicate && (
+          <p role="status" className="rounded-[10px] bg-kin-300/10 px-3.5 py-3 text-[13px] leading-snug text-kin-200">
+            Ya tienes este tramo guardado como «{duplicate.name}» con la misma velocidad y espejo.
+          </p>
+        )}
+
         <div className="flex justify-end gap-2 border-t border-line pt-4">
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" loading={create.isPending} disabled={!name.trim() || !hasRange(loop)}>
+          <Button type="submit" loading={create.isPending} disabled={!name.trim() || !hasRange(loop) || Boolean(duplicate)}>
             Guardar clip
           </Button>
         </div>
