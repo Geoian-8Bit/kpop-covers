@@ -19,7 +19,6 @@ import {
   Keyboard,
   Maximize2,
   Minimize2,
-  Play,
   Repeat,
   Repeat1,
   RotateCcw,
@@ -308,6 +307,7 @@ function MediaStage({
   const error = usePlayer((s) => s.error);
   const rate = usePlayer((s) => s.rate);
   const counting = usePlayer((s) => s.countdownEndsAt != null);
+  const recentToggle = useRecentToggle(playing);
   const [reloadKey, setReloadKey] = useState(0);
   const file = useFileSource(video, reloadKey);
   const link = useLinkLocalFile();
@@ -489,20 +489,23 @@ function MediaStage({
         </div>
 
         {/*
-          Always mounted and driven by a CSS transition: YouTube fires PAUSED/BUFFERING/PLAYING in quick
-          bursts and a mount/unmount exit animation could get stranded mid-way, leaving the icon stuck.
-          In fullscreen it also fades out together with the controls.
+          Our crest in the middle of the small player. Always mounted and driven by a CSS transition:
+          YouTube fires PAUSED/BUFFERING/PLAYING in quick bursts and a mount/unmount exit animation could
+          get stranded mid-way. Paused it invites a tap; right after play/pause it also sits (softened) on
+          top of YouTube's own plain play/pause for as long as YouTube shows it.
         */}
         <div
           aria-hidden
           className={cn(
-            'pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)] transition-[opacity,scale] duration-200 ease-out',
-            !fullscreen && ready && !playing && !buffering && !counting && !error
-              ? 'scale-100 opacity-100'
-              : 'scale-125 opacity-0',
+            'pointer-events-none absolute inset-0 z-20 m-auto size-20 drop-shadow-[0_12px_20px_rgb(0_0_0/0.65)] transition-[opacity,scale] duration-300 ease-out',
+            !fullscreen && ready && !buffering && !counting && !error && (!playing || recentToggle)
+              ? playing
+                ? 'scale-100 opacity-60'
+                : 'scale-100 opacity-100'
+              : 'scale-110 opacity-0',
           )}
         >
-          <Play className="ml-1 size-8 fill-sumi-900" />
+          <ButtonSkin kind={playing ? 'pause' : 'play'} />
         </div>
 
         {(loading || buffering) && (
@@ -1309,6 +1312,22 @@ function FsNoteBubble({ notes }: { notes: Note[] }) {
 /** Roughly how long YouTube keeps its own play/pause on screen after the state changes. */
 const YT_OVERLAY_MS = 5000;
 
+/** True for a few seconds after play/pause flips: while YouTube still shows its own button. */
+function useRecentToggle(playing: boolean): boolean {
+  const [recent, setRecent] = useState(false);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setRecent(true);
+    const id = setTimeout(() => setRecent(false), YT_OVERLAY_MS);
+    return () => clearTimeout(id);
+  }, [playing]);
+  return recent;
+}
+
 /**
  * YouTube draws its own (mirrored, plain black) play/pause in the middle of the iframe: always while
  * paused, and for a few seconds after every play or pause. Nothing outside the iframe can switch it off,
@@ -1319,18 +1338,7 @@ function YouTubeCover({ hidden, onWake }: { hidden: boolean; onWake: () => void 
   const playing = usePlayer((s) => s.playing);
   const counting = usePlayer((s) => s.countdownEndsAt != null);
   const ready = usePlayer((s) => s.ready);
-  const [recent, setRecent] = useState(false);
-  const first = useRef(true);
-
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    setRecent(true);
-    const id = setTimeout(() => setRecent(false), YT_OVERLAY_MS);
-    return () => clearTimeout(id);
-  }, [playing]);
+  const recent = useRecentToggle(playing);
 
   const shown = hidden && ready && !counting && (!playing || recent);
   return (
