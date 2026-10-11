@@ -1,10 +1,11 @@
 import { formatTime, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { Mic, Music2, RefreshCw, SwitchCamera, X, Zap, ZapOff } from 'lucide-react';
+import { Aperture, Mic, Music2, RefreshCw, SwitchCamera, X, Zap, ZapOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
+import { createCameraFrame, type CameraFrame } from '@/lib/cameraFrame';
 import { cn } from '@/lib/cn';
 import { scheduleCountIn, unlockAudio } from '@/lib/metronome';
 import { jelly } from '@/lib/motion';
@@ -56,23 +57,25 @@ function cameraError(err: unknown): string {
 
 /** Camera abilities the standard TS types don't list yet (Chrome/Android expose them, Safari mostly not). */
 type CameraCaps = MediaTrackCapabilities & { zoom?: { min: number; max: number; step?: number }; torch?: boolean };
-type Lens = 'main' | 'ultra';
+/** Digital zoom range when the camera itself offers none (the recorded frame is cropped instead). */
+const DIGITAL_ZOOM = { min: 1, max: 4 };
 
-/** Ultra-wide back camera, when the phone lists it as its own device (iPhone, many Androids). */
-async function findUltraWide(): Promise<string | null> {
+/**
+ * The phone's back cameras, and which of them is the ultra-wide (0.5×) when its name says so (iPhone
+ * and many Androids name it; others only number their lenses, so we offer to step through them).
+ */
+async function listBackCameras(): Promise<{ ids: string[]; ultra: string | null }> {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const ultra = devices.find(
-      (d) =>
-        d.kind === 'videoinput' &&
-        /ultra|0[.,]5|gran ?angular|grand ?angle|weitwinkel/i.test(d.label) &&
-        !/front|frontal|delantera|user/i.test(d.label),
-    );
-    return ultra?.deviceId ?? null;
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const back = devices.filter((d) => !/front|frontal|delantera|user|selfie/i.test(d.label));
+    const ultra = back.find((d) => /ultra|0[.,]5|gran ?angular|grand ?angle|weitwinkel/i.test(d.label));
+    return { ids: back.map((d) => d.deviceId).filter(Boolean), ultra: ultra?.deviceId ?? null };
   } catch {
-    return null;
+    return { ids: [], ultra: null };
   }
 }
+
+const isPortrait = () => window.matchMedia('(orientation: portrait)').matches;
 
 const formatZoom = (z: number) => `${Number.isInteger(z) ? z : z.toFixed(1).replace(/\.0$/, '')}×`;
 
@@ -97,8 +100,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [take, setTake] = useState<Take | null>(null);
   const [songAudio, setSongAudio] = useState(false);
   /** Camera controls, driven by what this phone's camera actually offers. */
-  const [lens, setLens] = useState<Lens>('main');
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [backCams, setBackCams] = useState<string[]>([]);
   const [ultraId, setUltraId] = useState<string | null>(null);
+  /** Upright phone records 9:16, phone on its side 16:9 — like the camera app. */
+  const [portrait, setPortrait] = useState(isPortrait);
+  const portraitRef = useRef(portrait);
+  portraitRef.current = portrait;
+  const stage = useRef<HTMLDivElement>(null);
+  const frame = useRef<CameraFrame | null>(null);
   const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [torchCap, setTorchCap] = useState(false);
@@ -166,7 +176,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (saved) usePlayer.setState((s) => ({ loop: { ...s.loop, enabled: saved.loopEnabled }, loopAll: saved.loopAll }));
   }, []);
 
-  const startCamera = useCallback(async (which: Facing, wantLens: Lens = 'main', ultra: string | null = null) => {
+  const startCamera = useCallback(async (which: Facing, device: string | null = null) => {
     const id = ++session.current;
     camera.current?.getTracks().forEach((t) => t.stop());
     camera.current = null;
@@ -176,12 +186,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       const tap = usePlayer.getState().engine?.captureAudio?.() ?? null;
       songTrack.current = tap;
       setSongAudio(Boolean(tap));
-      const size = { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } };
+      // Ask for the shape we'll record, so the crop onto the 9:16 / 16:9 frame loses as little as possible.
+      const size = portraitRef.current
+        ? { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } }
+        : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
       const stream = await navigator.mediaDevices.getUserMedia({
-        video:
-          which === 'environment' && wantLens === 'ultra' && ultra
-            ? { deviceId: { exact: ultra }, ...size }
-            : { facingMode: { ideal: which }, ...size },
+        video: device ? { deviceId: { exact: device }, ...size } : { facingMode: { ideal: which }, ...size },
         // Music through the speaker must not be "cancelled" as if it were an echo.
         audio: tap ? false : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
@@ -200,11 +210,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       setZoom(settings.zoom ?? 1);
       setTorchCap(Boolean(caps.torch));
       setTorch(false);
-      setLens(which === 'environment' && wantLens === 'ultra' && ultra ? 'ultra' : 'main');
+      setDeviceId(device ?? (track?.getSettings?.().deviceId || null));
+      frame.current?.setZoom(1);
       // Device labels are only readable once the camera is allowed.
       if (which === 'environment') {
-        void findUltraWide().then((found) => {
-          if (id === session.current) setUltraId(found);
+        void listBackCameras().then(({ ids, ultra }) => {
+          if (id !== session.current) return;
+          setBackCams(ids);
+          setUltraId(ultra);
         });
       }
       setPhase('ready');
@@ -243,6 +256,39 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // The recorded frame: a canvas fed by the (hidden) camera video, shown as the preview.
+  useEffect(() => {
+    const source = preview.current;
+    const host = stage.current;
+    if (!open || !source || !host) return;
+    const f = createCameraFrame(source, portraitRef.current);
+    f.canvas.className = 'absolute inset-0 size-full object-contain';
+    host.appendChild(f.canvas);
+    frame.current = f;
+    return () => {
+      f.dispose();
+      f.canvas.remove();
+      frame.current = null;
+    };
+  }, [open]);
+
+  // Turning the phone turns the frame (not mid-take), and re-asks the camera for that shape.
+  useEffect(() => {
+    if (!open) return;
+    const query = window.matchMedia('(orientation: portrait)');
+    const onChange = () => setPortrait(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [open]);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  useEffect(() => {
+    frame.current?.setPortrait(portrait);
+    if (open && phaseRef.current === 'ready') void startCamera(facing, deviceId);
+    // Only orientation changes restart the camera here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portrait]);
+
   const stop = useCallback(() => {
     clearTimers();
     if (recorder.current?.state === 'recording') recorder.current.stop();
@@ -267,7 +313,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const stream = camera.current;
     if (!stream) return;
     const audio = songTrack.current ?? stream.getAudioTracks()[0] ?? null;
-    const tracks = [...stream.getVideoTracks(), ...(audio ? [audio] : [])];
+    let picture = stream.getVideoTracks();
+    try {
+      frame.current?.lock(true);
+      if (frame.current) picture = frame.current.captureStream(30).getVideoTracks();
+    } catch {
+      /* no canvas capture: record the camera as it comes */
+    }
+    const tracks = [...picture, ...(audio ? [audio] : [])];
     const mimeType = pickMimeType();
     let rec: MediaRecorder;
     try {
@@ -283,6 +336,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (e.data.size > 0) chunks.push(e.data);
     };
     rec.onstop = () => {
+      frame.current?.lock(false);
+      picture.forEach((t) => {
+        if (t !== stream.getVideoTracks()[0]) t.stop();
+      });
       const blob = new Blob(chunks, { type: rec.mimeType || mimeType || 'video/webm' });
       replaceTake({ url: URL.createObjectURL(blob), blob });
       setPhase('review');
@@ -380,32 +437,45 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function switchCamera() {
     const next = facing === 'user' ? 'environment' : 'user';
     setFacing(next);
-    void startCamera(next, 'main', ultraId);
+    void startCamera(next);
   }
 
   const videoTrack = () => camera.current?.getVideoTracks()[0];
+  /** Hardware zoom when the camera has it, otherwise a digital zoom on the recorded frame. */
+  const range = zoomRange ?? DIGITAL_ZOOM;
+  const onUltra = facing === 'environment' && ultraId != null && deviceId === ultraId;
 
   function applyZoom(value: number) {
-    if (!zoomRange) return;
-    const z = Math.min(zoomRange.max, Math.max(zoomRange.min, value));
+    const z = Math.min(range.max, Math.max(range.min, value));
     setZoom(z);
-    void videoTrack()
-      ?.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] })
-      .catch(() => undefined);
+    if (zoomRange) {
+      void videoTrack()
+        ?.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] })
+        .catch(() => undefined);
+    } else {
+      frame.current?.setZoom(z);
+    }
   }
 
-  /** Zoom chips: the ultra-wide lens (0.5) when there is one, then 1×, 2× and further when the camera allows. */
+  /** Zoom chips: 0.5 (ultra-wide lens, or the camera's own range), then 1×, 2× and further. */
   function pickZoom(target: number) {
-    if (target < 1 && ultraId && facing === 'environment' && !(zoomRange && zoomRange.min <= target)) {
-      if (lens !== 'ultra') void startCamera('environment', 'ultra', ultraId);
+    if (target < 1 && !(zoomRange && zoomRange.min <= target)) {
+      if (ultraId && !onUltra) void startCamera('environment', ultraId);
       return;
     }
-    if (lens === 'ultra') {
-      // Back to the main lens; its zoom resets to 1×.
-      void startCamera('environment', 'main', ultraId);
+    if (onUltra) {
+      // Back to the main lens; it starts at 1×.
+      void startCamera('environment').then(() => target !== 1 && applyZoom(target));
       return;
     }
     applyZoom(target);
+  }
+
+  /** Phones that only number their lenses: step through the back cameras to find the 0.5. */
+  function nextLens() {
+    if (backCams.length < 2) return;
+    const at = deviceId ? backCams.indexOf(deviceId) : -1;
+    void startCamera('environment', backCams[(at + 1) % backCams.length]!);
   }
 
   function toggleTorch() {
@@ -430,7 +500,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const p = pinch.current;
     if (!p.pointers.has(e.pointerId)) return;
     p.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (p.pointers.size !== 2 || !zoomRange) return;
+    if (p.pointers.size !== 2 || onUltra) return;
     const [a, b] = [...p.pointers.values()];
     p.next = p.startZoom * (Math.hypot(a!.x - b!.x, a!.y - b!.y) / p.startDist);
     if (!p.frame) {
@@ -448,14 +518,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   if (facing === 'environment' && (ultraId || (zoomRange && zoomRange.min < 1))) {
     zoomChips.push(zoomRange && zoomRange.min < 1 ? zoomRange.min : 0.5);
   }
-  if (zoomRange || zoomChips.length) zoomChips.push(1);
-  if (zoomRange && zoomRange.max >= 2) zoomChips.push(2);
-  if (zoomRange && zoomRange.max >= 5) zoomChips.push(5);
-  else if (zoomRange && zoomRange.max >= 3) zoomChips.push(3);
-  const activeChip =
-    lens === 'ultra'
-      ? zoomChips[0]
-      : zoomChips.reduce((best, c) => (Math.abs(c - zoom) < Math.abs(best - zoom) ? c : best), 1);
+  zoomChips.push(1, 2);
+  if (range.max >= 5) zoomChips.push(5);
+  else if (range.max >= 3) zoomChips.push(3);
+  const activeChip = onUltra
+    ? zoomChips[0]
+    : zoomChips.reduce((best, c) => (Math.abs(c - zoom) < Math.abs(best - zoom) ? c : best), 1);
+  const lensCycle = facing === 'environment' && !ultraId && backCams.length > 1;
+  const lensIndex = deviceId ? backCams.indexOf(deviceId) + 1 : 1;
   const cameraControls = phase === 'ready' || phase === 'recording';
 
   if (!open) return null;
@@ -466,17 +536,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         Camera preview, mirrored like a mirror for the front camera (the file itself is not mirrored).
         object-contain: the preview shows exactly the frame that gets recorded, no hidden crop. Pinch zooms.
       */}
-      <video
-        ref={preview}
-        autoPlay
-        muted
-        playsInline
+      {/* The raw camera: only the source of the frame below (kept in the page so it keeps decoding). */}
+      <video ref={preview} autoPlay muted playsInline className="pointer-events-none absolute inset-0 size-full object-contain opacity-0" />
+      <div
+        ref={stage}
         onPointerDown={onPinchDown}
         onPointerMove={onPinchMove}
         onPointerUp={onPinchUp}
         onPointerCancel={onPinchUp}
         className={cn(
-          'absolute inset-0 size-full touch-none object-contain',
+          'absolute inset-0 touch-none',
           facing === 'user' && '-scale-x-100',
           phase === 'review' && 'invisible',
         )}
@@ -547,8 +616,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
       {/* Bottom controls */}
       <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-10">
-        {cameraControls && zoomChips.length > 1 && (
+        {cameraControls && (
           <div role="group" aria-label="Zoom" className="flex items-center gap-1 rounded-full bg-black/45 p-1">
+            {lensCycle && !recording && (
+              <button
+                type="button"
+                aria-label="Cambiar de lente"
+                onClick={nextLens}
+                className="tabular flex h-9 items-center gap-1 rounded-full px-2.5 font-mono text-[12px] font-bold text-washi/90"
+              >
+                <Aperture className="size-4" /> {lensIndex}/{backCams.length}
+              </button>
+            )}
             {zoomChips.map((z) => (
               <button
                 key={z}
@@ -560,7 +639,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                   z === activeChip ? 'bg-washi text-sumi-900' : 'text-washi/90',
                 )}
               >
-                {z === activeChip && lens !== 'ultra' && zoomRange && Math.abs(zoom - z) > 0.05
+                {z === activeChip && !onUltra && Math.abs(zoom - z) > 0.05
                   ? formatZoom(Math.round(zoom * 10) / 10)
                   : formatZoom(z)}
               </button>
