@@ -9,7 +9,7 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useQuickClips } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
 import { byRecentlyOpened, readRecent } from '@/lib/recent';
-import { fadeUp, inkReveal } from '@/lib/motion';
+import { fadeUp } from '@/lib/motion';
 import { prefetchStudio } from '@/lib/prefetch';
 import { friendlyError } from '@/lib/supabase';
 import { useCrew } from '@/providers/CrewProvider';
@@ -18,11 +18,11 @@ import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
 
 /**
- * One framed sheet: title block → quick-access slips → library grid, divided by gold rules.
+ * One framed sheet: search → quick-access pendants → library grid, divided by gold rules.
  * The sheet always sits inside a page margin (smaller on phones) so its frame never touches the screen edge.
  */
 export function LibraryPage() {
-  const { activeCrew, profile } = useCrew();
+  const { activeCrew } = useCrew();
   const { openAddVideo } = useShell();
   const videos = useVideos(activeCrew?.id);
   const quick = useQuickClips(activeCrew?.id);
@@ -45,7 +45,6 @@ export function LibraryPage() {
   }, [videos.data, deferredQuery, recent]);
 
   const total = videos.data?.length ?? 0;
-  const clipTotal = (videos.data ?? []).reduce((sum, v) => sum + (v.clips[0]?.count ?? 0), 0);
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -62,31 +61,11 @@ export function LibraryPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
-        <header className="relative flex flex-wrap items-end justify-between gap-5 px-5 pb-5 pt-6 sm:px-9 sm:pb-6 sm:pt-7">
-          <span
-            aria-hidden
-            className="pointer-events-none absolute right-8 top-8 hidden font-display text-[17px] font-bold leading-[1.2] tracking-[0.25em] text-shu-400 [writing-mode:vertical-rl] md:block"
-          >
-            稽古帳
-          </span>
-          <div className="min-w-0">
-            <p className="text-[15px] text-washi-muted">{profile ? `Hola, ${profile.display_name}.` : 'Hola.'}</p>
-            <motion.h1
-              variants={inkReveal}
-              initial="hidden"
-              animate="show"
-              className="mt-0.5 font-display text-[clamp(1.6rem,3vw,2.35rem)] font-extrabold leading-[1.05] tracking-[-0.01em]"
-            >
-              Covers One Shoot
-            </motion.h1>
-            <p className="tabular mt-2.5 text-sm text-washi-muted">
-              <span className="font-display text-lg font-bold text-washi">{total}</span> {total === 1 ? 'vídeo' : 'vídeos'}
-              <span className="mx-3 text-washi-subtle">·</span>
-              <span className="font-display text-lg font-bold text-washi">{clipTotal}</span> {clipTotal === 1 ? 'clip' : 'clips'}
-            </p>
-          </div>
-          {total > 0 && (
-            <label className="well flex h-11 w-full items-center gap-2 rounded-[10px] px-3.5 focus-within:border-kin-300/70 md:mr-12 md:w-72">
+        {/* Just the search: the app name is already in the top bar, and every pixel goes to the videos. */}
+        <h1 className="sr-only">Biblioteca</h1>
+        {total > 0 && (
+          <header className="px-4 pb-1 pt-4 sm:px-9 sm:pt-6">
+            <label className="well flex h-11 w-full items-center gap-2 rounded-[10px] px-3.5 focus-within:border-kin-300/70">
               <Search className="size-4 text-washi-subtle" />
               <span className="sr-only">Buscar</span>
               <input
@@ -96,8 +75,8 @@ export function LibraryPage() {
                 className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
             </label>
-          )}
-        </header>
+          </header>
+        )}
 
         <section aria-labelledby="quick-title" className="sep-t px-5 py-7 sm:px-9">
           <SectionTitle id="quick-title" glyph="札">
