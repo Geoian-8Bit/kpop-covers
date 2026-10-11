@@ -1,6 +1,7 @@
 import { clamp, formatTime, MIN_LOOP_LENGTH, type Clip, type Note } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  Fragment,
   useEffect,
   useId,
   useImperativeHandle,
@@ -453,9 +454,38 @@ function waveY(levels: number[], fraction: number): number {
   return (H - (14 + v * 70)) / H;
 }
 
+/** Highest point of the wave (smallest y fraction) within ±`span` samples of a position. */
+function localPeakY(levels: number[], fraction: number, span = 4): number {
+  const centre = Math.round(clamp(fraction, 0, 1) * POINTS);
+  let peak = 1;
+  for (let i = Math.max(0, centre - span); i <= Math.min(POINTS, centre + span); i++) {
+    peak = Math.min(peak, (H - (14 + levels[i]! * 70)) / H);
+  }
+  return peak;
+}
+
 /**
- * The group's notes as dots riding on the wave. A dot turns white once the song has passed it (the
- * component re-renders only when a note is crossed). Tapping one jumps there and opens it.
+ * Where each note's dot floats: a little above the nearest crest (higher hills lift it higher), so a
+ * note in a valley never hides in the wave. Notes close together step up alternately so their dots
+ * don't sit on top of each other. Fractions of the track height, 0 = top.
+ */
+function layoutNoteDots(notes: Note[], levels: number[], duration: number) {
+  let prevF = -1;
+  let stack = 0;
+  return notes.map((note) => {
+    const f = note.at_seconds / duration;
+    stack = f - prevF < 0.035 ? stack + 1 : 0;
+    prevF = f;
+    const anchor = waveY(levels, f);
+    const dot = Math.max(0.1, localPeakY(levels, f) - 0.12 - (stack % 3) * 0.13);
+    return { note, f, anchor, dot };
+  });
+}
+
+/**
+ * The group's notes as blue dots floating over the wave, each tied to its exact moment on the line by a
+ * dashed thread. A dot turns white once the song has passed it (the component re-renders only when a
+ * note is crossed). Tapping one jumps there and opens it.
  */
 function NoteDots({
   notes,
@@ -473,41 +503,60 @@ function NoteDots({
     while (n < notes.length && notes[n]!.at_seconds <= s.time) n++;
     return n;
   });
-  if (duration <= 0) return null;
-  return notes.map((note, i) => {
-    const f = note.at_seconds / duration;
+  const placed = useMemo(
+    () => (duration > 0 ? layoutNoteDots(notes, levels, duration) : []),
+    [notes, levels, duration],
+  );
+  return placed.map(({ note, f, anchor, dot }, i) => {
+    const done = i < passed;
     return (
-      <button
-        key={note.id}
-        type="button"
-        aria-label={`Nota en ${formatTime(note.at_seconds)}: ${note.body}`}
-        title={`${formatTime(note.at_seconds)} · ${note.body}`}
-        // Keep the track from starting a scrub under the finger.
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          usePlayer.getState().seek(note.at_seconds);
-          onOpen?.(note);
-        }}
-        className="group/note absolute z-10 grid size-6 -translate-x-1/2 -translate-y-[85%] place-items-center"
-        style={{ left: `${f * 100}%`, top: `${waveY(levels, f) * 100}%` }}
-      >
+      <Fragment key={note.id}>
         <span
+          aria-hidden
           className={cn(
-            'size-[9px] rounded-full ring-2 ring-sumi-950/70 transition-[background-color,transform] duration-300 group-hover/note:scale-150',
-            i < passed ? 'bg-washi' : 'bg-kin-300',
+            'pointer-events-none absolute w-0 -translate-x-1/2 border-l border-dashed transition-colors duration-300',
+            done ? 'border-washi/50' : 'border-ai-400/90',
           )}
+          style={{ left: `${f * 100}%`, top: `${dot * 100}%`, height: `${Math.max(0, anchor - dot) * 100}%` }}
         />
-      </button>
+        <span
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute size-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full',
+            done ? 'bg-washi/70' : 'bg-ai-400',
+          )}
+          style={{ left: `${f * 100}%`, top: `${anchor * 100}%` }}
+        />
+        <button
+          type="button"
+          aria-label={`Nota en ${formatTime(note.at_seconds)}: ${note.body}`}
+          title={`${formatTime(note.at_seconds)} · ${note.body}`}
+          // Keep the track from starting a scrub under the finger.
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            usePlayer.getState().seek(note.at_seconds);
+            onOpen?.(note);
+          }}
+          className="group/note absolute z-10 grid size-7 -translate-x-1/2 -translate-y-1/2 place-items-center"
+          style={{ left: `${f * 100}%`, top: `${dot * 100}%` }}
+        >
+          <span
+            className={cn(
+              'size-[11px] rounded-full ring-2 ring-sumi-950/80 transition-[background-color,transform,box-shadow] duration-300 group-hover/note:scale-150',
+              done
+                ? 'bg-washi shadow-[0_0_8px_rgb(243_236_223/0.45)]'
+                : 'bg-ai-400 shadow-[0_0_10px_var(--color-ai-300)]',
+            )}
+          />
+        </button>
+      </Fragment>
     );
   });
 }
 
-/**
- * While the song plays, each note pops up above its dot for a few seconds as the playhead reaches it,
- * so the dancers read "this step needs work" right when it matters.
- */
-function NoteBubble({ notes, duration }: { notes: Note[]; duration: number }) {
+/** Shows each note for a few seconds as natural playback reaches it (not on scrubs or jumps). */
+export function useNoteAlert(notes: Note[]): Note | null {
   const [shown, setShown] = useState<Note | null>(null);
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -535,6 +584,15 @@ function NoteBubble({ notes, duration }: { notes: Note[]; duration: number }) {
     };
   }, []);
 
+  return shown;
+}
+
+/**
+ * While the song plays, each note pops up above its dot for a few seconds as the playhead reaches it,
+ * so the dancers read "this step needs work" right when it matters.
+ */
+function NoteBubble({ notes, duration }: { notes: Note[]; duration: number }) {
+  const shown = useNoteAlert(notes);
   const f = shown && duration > 0 ? clamp(shown.at_seconds / duration, 0.12, 0.88) : 0.5;
   return (
     <AnimatePresence>

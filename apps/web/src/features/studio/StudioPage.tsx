@@ -52,9 +52,12 @@ import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { RecordStudio } from './RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
-import { assignLanes, Timeline } from './Timeline';
+import { assignLanes, Timeline, useNoteAlert } from './Timeline';
 import { GapPicker, PlayerBar, useLongPress } from './Transport';
 import { useShortcuts } from './useShortcuts';
+
+/** Stable empty list, so the stage never re-renders for a new [] while notes load. */
+const NO_NOTES: Note[] = [];
 
 export function StudioPage() {
   const { videoId } = useParams();
@@ -211,7 +214,7 @@ export function StudioPage() {
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
-              <MediaStage video={current} clips={clips.data ?? []} onClipSelect={tapClipLine} />
+              <MediaStage video={current} clips={clips.data ?? []} notes={notes.data ?? NO_NOTES} onClipSelect={tapClipLine} />
             </div>
             <Timeline
               seed={current.id}
@@ -290,10 +293,12 @@ function useFileSource(video: Video, reloadKey: number): FileSource {
 function MediaStage({
   video,
   clips,
+  notes,
   onClipSelect,
 }: {
   video: Video;
   clips: Clip[];
+  notes: Note[];
   onClipSelect: (clip: Clip) => void;
 }) {
   const mirrored = usePlayer((s) => s.mirrored);
@@ -609,28 +614,8 @@ function MediaStage({
               onExit={() => void toggleFullscreen()}
             />
           </div>
-          {/*
-            Paused YouTube draws its own (mirrored, plain black) play button in the middle of the iframe, and
-            nothing outside the iframe can switch it off. With the controls hidden, our crest stays on top of
-            it so the only thing in the middle is ours; a tap on it plays.
-          */}
-          {video.source === 'youtube' && (
-            <button
-              type="button"
-              aria-label="Reproducir"
-              tabIndex={chrome.visible || playing || counting ? -1 : 0}
-              onClick={() => {
-                usePlayer.getState().play();
-                chrome.wake();
-              }}
-              className={cn(
-                'absolute inset-0 z-30 m-auto size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24',
-                !chrome.visible && !playing && !counting && ready ? 'opacity-100' : 'pointer-events-none opacity-0',
-              )}
-            >
-              <ButtonSkin kind="play" />
-            </button>
-          )}
+          <FsNoteBubble notes={notes} />
+          {video.source === 'youtube' && <YouTubeCover hidden={!chrome.visible} onWake={chrome.wake} />}
         </>
       )}
     </div>
@@ -1295,5 +1280,75 @@ function Countdown() {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Fullscreen: the note the song just reached, in the bottom-right corner above the controls. */
+function FsNoteBubble({ notes }: { notes: Note[] }) {
+  const shown = useNoteAlert(notes);
+  return (
+    <AnimatePresence>
+      {shown && (
+        <motion.div
+          key={shown.id}
+          role="status"
+          initial={{ opacity: 0, x: 24, scale: 0.94 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 16, transition: { duration: 0.2 } }}
+          transition={jelly}
+          className="pointer-events-none absolute bottom-[calc(max(6px,env(safe-area-inset-bottom))+104px)] right-4 z-40 max-w-[min(340px,70vw)] rounded-[12px] bg-washi px-4 py-2.5 text-[15px] font-medium leading-snug text-sumi-900 shadow-[0_14px_30px_-12px_rgb(0_0_0/0.9)] sm:right-6"
+        >
+          <span className="tabular mr-2 font-mono text-[12px] text-shu-500">{formatTime(shown.at_seconds)}</span>
+          {shown.body}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Roughly how long YouTube keeps its own play/pause on screen after the state changes. */
+const YT_OVERLAY_MS = 3500;
+
+/**
+ * YouTube draws its own (mirrored, plain black) play/pause in the middle of the iframe: always while
+ * paused, and for a few seconds after every play or pause. Nothing outside the iframe can switch it off,
+ * so with our controls hidden this crest sits exactly on top of it for as long as YouTube shows it, then
+ * fades with it. The only thing ever in the middle is ours; a tap on it plays or pauses.
+ */
+function YouTubeCover({ hidden, onWake }: { hidden: boolean; onWake: () => void }) {
+  const playing = usePlayer((s) => s.playing);
+  const counting = usePlayer((s) => s.countdownEndsAt != null);
+  const ready = usePlayer((s) => s.ready);
+  const [recent, setRecent] = useState(false);
+  const first = useRef(true);
+
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setRecent(true);
+    const id = setTimeout(() => setRecent(false), YT_OVERLAY_MS);
+    return () => clearTimeout(id);
+  }, [playing]);
+
+  const shown = hidden && ready && !counting && (!playing || recent);
+  return (
+    <button
+      type="button"
+      aria-label={playing ? 'Pausar' : 'Reproducir'}
+      tabIndex={shown ? 0 : -1}
+      onClick={() => {
+        usePlayer.getState().togglePlay();
+        onWake();
+      }}
+      className={cn(
+        'absolute inset-0 z-30 m-auto size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24',
+        // Appears at once (YouTube's button is already there), leaves with a short fade like YouTube's.
+        shown ? 'opacity-100' : 'pointer-events-none opacity-0 transition-opacity duration-300',
+      )}
+    >
+      <ButtonSkin kind={playing ? 'pause' : 'play'} />
+    </button>
   );
 }
