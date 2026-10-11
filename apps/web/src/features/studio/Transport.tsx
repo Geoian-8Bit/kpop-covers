@@ -144,7 +144,7 @@ export function GapPicker({
 }
 
 const tool =
-  'relative flex h-11 shrink-0 items-center gap-2 rounded-[10px] border px-3 text-sm font-bold transition-colors disabled:opacity-40';
+  'relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3 text-sm font-bold transition-colors disabled:opacity-40';
 const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
 /** Buttons inside the settings tray: borderless, the tray itself is the frame. */
 const trayBtn =

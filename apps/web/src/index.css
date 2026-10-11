@@ -385,4 +385,21 @@
 [data-skin='kamon'] .skin-track {
   border-color: transparent;
 }
+/* The controls tray holds the speed and pause menus: clipping the tray itself would cut them off, so its
+   crest shape is painted on a backdrop layer instead and the menus can open above it. */
+[data-skin='kamon'] .skin-tray {
+  clip-path: none;
+  background: none;
+  box-shadow: none;
+  isolation: isolate;
+}
+[data-skin='kamon'] .skin-tray::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--color-sumi-900) 70%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  clip-path: polygon(var(--k) 0, calc(100% - var(--k)) 0, 100% 50%, calc(100% - var(--k)) 100%, var(--k) 100%, 0 50%);
+}
 
