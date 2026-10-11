@@ -365,9 +365,8 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
                 transition={jelly}
                 className={cn(
                   'absolute inset-y-0 border-x-2 transition-colors duration-300',
-                  loop.enabled
-                    ? 'border-shu-500 bg-shu-500/[0.14]'
-                    : 'border-dashed border-washi-subtle bg-washi/[0.04]',
+                  // Always the solid vermilion edges; a paused loop is just dimmer.
+                  loop.enabled ? 'border-shu-500 bg-shu-500/[0.14]' : 'border-shu-500/55 bg-shu-500/[0.06]',
                 )}
                 style={{ left: `${pct(range.start)}%`, width: `${pct(range.end) - pct(range.start)}%` }}
               >
