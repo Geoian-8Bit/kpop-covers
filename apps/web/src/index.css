@@ -253,6 +253,14 @@
   html {
     color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
+    /* No double-tap zoom: taps fire at once and a quick second tap isn't read as a zoom gesture. */
+    touch-action: manipulation;
+  }
+
+  /* Press-and-hold buttons (pause pickers) must not select text or pop the iOS callout. */
+  button {
+    -webkit-touch-callout: none;
+    user-select: none;
   }
 
   body {

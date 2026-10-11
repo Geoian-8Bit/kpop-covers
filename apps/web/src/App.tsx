@@ -19,7 +19,8 @@ const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) =
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 5 * 60_000, refetchOnWindowFocus: false, retry: 1 },
+    // Back in the app after a while: pick up what the rest of the group changed (only stale data refetches).
+    queries: { staleTime: 5 * 60_000, refetchOnWindowFocus: true, retry: 1 },
   },
 });
 

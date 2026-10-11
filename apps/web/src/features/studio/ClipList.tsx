@@ -1,7 +1,7 @@
 import { formatSpeed, formatTime, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { FlipHorizontal2, Pin, Plus, Repeat, Trash2 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { CLIP_SWATCH, useDeleteClip, useUpdateClip } from '@/data/clips';
@@ -20,10 +20,13 @@ interface ClipListProps {
 
 export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
   const activeClipId = usePlayer((s) => s.activeClipId);
+  const ready = usePlayer((s) => s.ready);
   const update = useUpdateClip();
   const remove = useDeleteClip();
   const toast = useToast();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  /** When the delete button was armed: a fast double tap must not skip the confirmation. */
+  const armedAt = useRef(0);
 
   useEffect(() => {
     if (!confirmId) return;
@@ -32,23 +35,20 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
   }, [confirmId]);
 
   function togglePin(clip: Clip) {
-    update.mutate(
-      { clip, patch: { is_pinned: !clip.is_pinned } },
-      {
-        onSuccess: (c) => toast(c.is_pinned ? 'Fijado en acceso rápido' : 'Quitado de acceso rápido', 'success'),
-        onError: (err) => toast(friendlyError(err), 'error'),
-      },
-    );
+    // The pin icon flips at once (optimistic), so only a failure needs a message.
+    update.mutateAsync({ clip, patch: { is_pinned: !clip.is_pinned } }).catch((err) => toast(friendlyError(err), 'error'));
   }
 
   function onDelete(clip: Clip) {
     if (confirmId !== clip.id) {
+      armedAt.current = performance.now();
       setConfirmId(clip.id);
       return;
     }
+    if (performance.now() - armedAt.current < 400) return;
     setConfirmId(null);
     if (activeClipId === clip.id) usePlayer.getState().setActiveClip(null);
-    remove.mutate(clip, { onError: (err) => toast(friendlyError(err), 'error') });
+    remove.mutateAsync(clip).catch((err) => toast(friendlyError(err), 'error'));
   }
 
   return (
@@ -107,7 +107,8 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                     <button
                       type="button"
                       onClick={() => onApply(clip)}
-                      className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left"
+                      disabled={!ready}
+                      className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left transition-[opacity,scale] duration-150 active:scale-[0.98] disabled:opacity-60"
                       aria-current={active || undefined}
                     >
                       <span className={cn('grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]', CLIP_SWATCH[clip.color].dot)}>

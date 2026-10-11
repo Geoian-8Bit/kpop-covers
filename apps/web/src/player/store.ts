@@ -136,6 +136,21 @@ function flushScrub() {
   scrubSeekAt = performance.now();
 }
 
+/**
+ * Play/pause flip the UI at once (a phone's iframe can take a second to report back); this check
+ * puts it right if the media didn't follow, e.g. a blocked autoplay.
+ */
+let playCheck: ReturnType<typeof setTimeout> | undefined;
+function verifyPlaying() {
+  clearTimeout(playCheck);
+  playCheck = setTimeout(() => {
+    const { engine, playing, countdownEndsAt } = usePlayer.getState();
+    const actual = engine?.isPlaying?.();
+    if (actual == null || countdownEndsAt != null || actual === playing) return;
+    usePlayer.setState({ playing: actual });
+  }, 2500);
+}
+
 export function hasRange(loop: LoopState): loop is LoopState & { start: number; end: number } {
   return loop.start != null && loop.end != null;
 }
@@ -161,10 +176,11 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   detach(engine) {
-    if (get().engine === engine) set({ engine: null, ready: false, playing: false });
+    if (get().engine === engine) set({ engine: null, ready: false, playing: false, scrubbing: false });
   },
 
   reset() {
+    clearTimeout(playCheck);
     clearTimeout(scrubTimer);
     scrubTimer = undefined;
     scrubPending = null;
@@ -190,13 +206,16 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       engine.seek(loop.start);
       set({ time: loop.start });
     }
-    set({ countdownEndsAt: null });
+    set({ countdownEndsAt: null, playing: true });
     engine.play();
+    verifyPlaying();
   },
 
   pause() {
-    set({ countdownEndsAt: null });
-    get().engine?.pause();
+    const { engine } = get();
+    set({ countdownEndsAt: null, playing: false, buffering: false });
+    engine?.pause();
+    if (engine) verifyPlaying();
   },
 
   togglePlay() {
@@ -323,11 +342,13 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       countdownEndsAt: null,
     });
     get().seek(range.start);
-    if (autoplay) get().engine?.play();
+    if (autoplay) get().play();
   },
 
   setScrubbing(scrubbing) {
     if (scrubbing) {
+      // A plain tap sends only the exact seek on release; previews start once the finger travels.
+      scrubSeekAt = performance.now();
       set({ scrubbing });
       return;
     }

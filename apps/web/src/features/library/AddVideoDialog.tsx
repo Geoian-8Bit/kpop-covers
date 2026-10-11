@@ -119,6 +119,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
     fetch(`/api/youtube-meta?id=${youtubeId}`, { signal: controller.signal })
       .then(async (res) => {
         const body = (await res.json().catch(() => ({}))) as { title?: string | null; author?: string | null };
+        // The body read swallows an abort: a newer link may already be loading.
+        if (controller.signal.aborted) return;
         if (res.status === 422) {
           setMeta({
             status: 'error',
@@ -159,6 +161,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
         signal: controller.signal,
       });
       const body = (await res.json().catch(() => ({}))) as { items?: SearchItem[] };
+      // A newer search took over while this one was reading: don't paint stale results over it.
+      if (controller.signal.aborted) return;
       if (!res.ok) {
         setSearch({ status: 'error', message: SEARCH_ERRORS[res.status] ?? 'No se pudo buscar. Prueba otra vez.' });
         return;
@@ -245,7 +249,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   const tooBig = file ? file.size > MAX_CLOUD_UPLOAD_BYTES : false;
 
   return (
-    <Dialog open={open} onClose={onClose} title="Añadir vídeo" description="Busca en YouTube, pega un enlace o sube un archivo tuyo.">
+    <Dialog open={open} onClose={onClose} busy={createVideo.isPending} title="Añadir vídeo" description="Busca en YouTube, pega un enlace o sube un archivo tuyo.">
       <form onSubmit={onSubmit} noValidate={wantsSearch} className="space-y-5">
         <Segmented
           label="Origen"
@@ -468,7 +472,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
         </AnimatePresence>
 
         <div className="flex justify-end gap-2 border-t border-line pt-4">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={createVideo.isPending}>
             Cancelar
           </Button>
           {wantsSearch ? (

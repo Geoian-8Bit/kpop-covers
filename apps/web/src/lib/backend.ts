@@ -8,7 +8,8 @@ import { supabase, VIDEO_BUCKET } from './supabase';
 export const IS_DEMO = import.meta.env.DEV && import.meta.env.VITE_DEMO === 'true';
 export const DEMO_USER_ID = '00000000-0000-4000-8000-000000000001';
 
-export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id' | 'thumbnail_url'>;
+// No thumbnail: an uploaded video's poster is an inline data URL, and the quick row would repeat it once per clip.
+export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
 export type ClipWithVideo = Clip & { video: ClipVideo | null };
 export type VideoWithClipCount = Video & { clips: { count: number }[] };
 
@@ -85,7 +86,7 @@ const supabaseBackend: Backend = {
   async listQuickClips(crewId) {
     const { data, error } = await supabase
       .from('clips')
-      .select('*, video:videos(id, title, artist, source, youtube_id, thumbnail_url)')
+      .select('*, video:videos(id, title, artist, source, youtube_id)')
       .eq('crew_id', crewId)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
@@ -240,7 +241,7 @@ const demoBackend: Backend = {
           return {
             ...c,
             video: v
-              ? { id: v.id, title: v.title, artist: v.artist, source: v.source, youtube_id: v.youtube_id, thumbnail_url: v.thumbnail_url }
+              ? { id: v.id, title: v.title, artist: v.artist, source: v.source, youtube_id: v.youtube_id }
               : null,
           };
         }),

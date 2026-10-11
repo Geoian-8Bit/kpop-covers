@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { jelly } from '@/lib/motion';
 
 type Tone = 'info' | 'success' | 'error';
@@ -22,17 +23,46 @@ const icons = {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
+  /** Hide timers by message: repeating a message restarts its timer instead of stacking a copy. */
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Native fullscreen only shows the fullscreen element's subtree: toasts must live inside it.
+  const [host, setHost] = useState<Element>(() => document.body);
+
+  useEffect(() => {
+    const onChange = () => setHost(document.fullscreenElement ?? document.body);
+    document.addEventListener('fullscreenchange', onChange);
+    const pending = timers.current;
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      pending.forEach(clearTimeout);
+    };
+  }, []);
 
   const toast = useCallback<ToastFn>((message, tone = 'info') => {
-    const id = nextId.current++;
-    setToasts((current) => [...current.slice(-2), { id, message, tone }]);
-    setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), tone === 'error' ? 5200 : 3200);
+    const key = `${tone}:${message}`;
+    const existing = timers.current.get(key);
+    if (existing) clearTimeout(existing);
+    else {
+      const id = nextId.current++;
+      setToasts((current) => [...current.slice(-2), { id, message, tone }]);
+    }
+    timers.current.set(
+      key,
+      setTimeout(() => {
+        timers.current.delete(key);
+        setToasts((current) => current.filter((t) => `${t.tone}:${t.message}` !== key));
+      }, tone === 'error' ? 5200 : 3200),
+    );
   }, []);
 
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2 px-4">
+      {createPortal(
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-0 bottom-[max(20px,calc(env(safe-area-inset-bottom)+12px))] z-[100] flex flex-col items-center gap-2 px-4"
+      >
         <AnimatePresence initial={false}>
           {toasts.map((t) => (
             <motion.div
@@ -50,7 +80,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </motion.div>
           ))}
         </AnimatePresence>
-      </div>
+      </div>,
+      host,
+      )}
     </ToastContext.Provider>
   );
 }

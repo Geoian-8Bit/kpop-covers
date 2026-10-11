@@ -59,15 +59,20 @@ export function useCreateClip() {
       queryClient.setQueryData<Clip[]>(clipKeys.forVideo(clip.video_id), (current = []) =>
         [...current, clip].sort((a, b) => a.start_seconds - b.start_seconds),
       );
+      // Not awaited: the dialog closes as soon as the clip is saved, the lists refresh behind it.
       void queryClient.invalidateQueries({ queryKey: ['videos', clip.crew_id] });
-      return queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
+      void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
     },
   });
 }
 
+/** Refetch only after the last of a burst of taps settles, so the list never flickers back mid-burst. */
+const CLIP_WRITE = ['clip-write'] as const;
+
 export function useUpdateClip() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: CLIP_WRITE,
     mutationFn: ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) => backend.updateClip(clip.id, patch),
     onMutate: async ({ clip, patch }) => {
       const key = clipKeys.forVideo(clip.video_id);
@@ -82,8 +87,9 @@ export function useUpdateClip() {
       if (context) queryClient.setQueryData(context.key, context.previous);
     },
     onSettled: (_data, _error, { clip }) => {
+      if (queryClient.isMutating({ mutationKey: CLIP_WRITE }) > 1) return;
       void queryClient.invalidateQueries({ queryKey: clipKeys.forVideo(clip.video_id) });
-      return queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
+      void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
     },
   });
 }
@@ -91,6 +97,7 @@ export function useUpdateClip() {
 export function useDeleteClip() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: CLIP_WRITE,
     mutationFn: async (clip: Clip) => {
       await backend.deleteClip(clip.id);
       return clip;
@@ -106,8 +113,9 @@ export function useDeleteClip() {
       if (context) queryClient.setQueryData(context.key, context.previous);
     },
     onSettled: (_data, _error, clip) => {
+      if (queryClient.isMutating({ mutationKey: CLIP_WRITE }) > 1) return;
       void queryClient.invalidateQueries({ queryKey: ['videos', clip.crew_id] });
-      return queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
+      void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
     },
   });
 }

@@ -40,9 +40,11 @@ export function wake() {
 function scheduleBreeze() {
   clearTimeout(breezeTimer);
   if (nudgeTargets.size === 0) return;
+  // Rarer than a swing takes to settle, and never while something still moves: between gusts the
+  // loop really sleeps instead of being kept awake forever by overlapping breezes.
   breezeTimer = setTimeout(
     () => {
-      if (breezeOn && !document.hidden && !reducedMotion()) {
+      if (!frame && breezeOn && !document.hidden && !reducedMotion()) {
         const targets = [...nudgeTargets];
         const sign = Math.random() < 0.5 ? -1 : 1;
         targets[Math.floor(Math.random() * targets.length)]!(sign * (0.35 + Math.random() * 0.4));
@@ -50,7 +52,7 @@ function scheduleBreeze() {
       }
       scheduleBreeze();
     },
-    2500 + Math.random() * 4000,
+    9000 + Math.random() * 7000,
   );
 }
 
@@ -100,7 +102,8 @@ export interface PendulumConfig {
 
 /** Advances the pendulum; returns false once it is at rest (and snaps it exactly to rest). */
 export function stepPendulum(p: Pendulum, cfg: PendulumConfig, dt: number): boolean {
-  if (p.target == null && Math.abs(p.theta) < 4e-4 && Math.abs(p.omega) < 4e-3) {
+  // ~0.3 px at the bottom of a 240 px item: invisible, and it lets a gust settle well before the next one.
+  if (p.target == null && Math.abs(p.theta) < 1.5e-3 && Math.abs(p.omega) < 1e-2) {
     p.theta = 0;
     p.omega = 0;
     return false;

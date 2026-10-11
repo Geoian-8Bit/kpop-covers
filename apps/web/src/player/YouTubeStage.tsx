@@ -38,6 +38,11 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
       }, 1000);
     };
 
+    // Blocked embeds or a dead connection never fire onReady: say so instead of spinning forever.
+    const stalled = setTimeout(() => {
+      if (!disposed && !engine) sync({ error: 'YouTube no responde. Revisa la conexión y vuelve a intentarlo.' });
+    }, 20000);
+
     loadYouTubeApi()
       .then((YT) => {
         if (disposed) return;
@@ -61,6 +66,7 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
           events: {
             onReady: (event) => {
               if (disposed) return;
+              clearTimeout(stalled);
               engine = createYouTubeEngine(event.target, (actual, requested) => {
                 usePlayer.setState({ rate: actual });
                 toastRef.current(
@@ -103,6 +109,7 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
 
     return () => {
       disposed = true;
+      clearTimeout(stalled);
       clearInterval(bufferWatch);
       if (engine) {
         engine.dispose();

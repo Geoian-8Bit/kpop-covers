@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { FlipHorizontal2 } from 'lucide-react';
 import {
   createContext,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -12,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { Link } from 'react-router';
+import { guardNav } from '@/components/AppShell';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import type { ClipWithVideo } from '@/data/clips';
 import { cn } from '@/lib/cn';
@@ -73,25 +75,32 @@ const RailDrag = createContext<((dx: number) => void) | null>(null);
  */
 function RailSegment() {
   const slide = useContext(RailDrag);
-  const s = useRef({ down: false, x: 0 });
+  const s = useRef({ down: false, sliding: false, x: 0, y: 0 });
   return (
     <span
       aria-hidden
       onPointerDown={(e) => {
         e.stopPropagation();
         if (e.button > 0) return;
-        s.current = { down: true, x: e.clientX };
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          /* pointer already gone */
-        }
+        s.current = { down: true, sliding: false, x: e.clientX, y: e.clientY };
       }}
       onPointerMove={(e) => {
         e.stopPropagation();
-        if (!s.current.down) return;
-        const dx = e.clientX - s.current.x;
-        s.current.x = e.clientX;
+        const st = s.current;
+        if (!st.down) return;
+        if (!st.sliding) {
+          // `touch-pan-y`: an up/down drag on the rail still scrolls the page; only a sideways one slides the row.
+          const ax = Math.abs(e.clientX - st.x);
+          if (ax < 6 || ax < Math.abs(e.clientY - st.y)) return;
+          st.sliding = true;
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* pointer already gone */
+          }
+        }
+        const dx = e.clientX - st.x;
+        st.x = e.clientX;
         slide?.(dx);
       }}
       onPointerUp={(e) => {
@@ -103,7 +112,7 @@ function RailSegment() {
       }}
       // The rail never opens the clip.
       onClick={(e) => e.preventDefault()}
-      className="absolute -inset-x-2 -top-3 z-10 h-8 cursor-grab touch-none active:cursor-grabbing"
+      className="absolute -inset-x-2 -top-3 z-10 h-8 cursor-grab touch-pan-y active:cursor-grabbing"
     >
       <span className="absolute inset-x-0 top-3 h-2 rounded-full bg-kiji-700 shadow-[0_3px_6px_-2px_rgb(0_0_0/0.7)]" />
     </span>
@@ -192,13 +201,20 @@ function usePendulum(
   onFrame?: (p: Pendulum, dt: number) => boolean,
 ) {
   const p = useRef<Pendulum>({ theta: 0, omega: 0, target: null });
+  /**
+   * At rest with everything attached settled: frames skip all work (the loop may still be running for
+   * another item) until a nudge, the breeze or the pointer disturbs it again.
+   */
+  const asleep = useRef(false);
   const frameCb = useRef(onFrame);
   frameCb.current = onFrame;
 
   useEffect(() => {
     let shown = Number.NaN;
+    asleep.current = false;
     return subscribeTick(
       (dt) => {
+        if (asleep.current) return false;
         const st = p.current;
         const moving = stepPendulum(st, cfg, dt);
         if (body.current && st.theta !== shown) {
@@ -206,30 +222,56 @@ function usePendulum(
           body.current.style.transform = `rotate(${(-st.theta).toFixed(4)}rad)`;
         }
         const attached = frameCb.current?.(st, dt) ?? false;
-        return moving || attached;
+        asleep.current = !moving && !attached;
+        return !asleep.current;
       },
       (impulse) => {
         p.current.omega += impulse;
+        asleep.current = false;
       },
     );
   }, [body, cfg]);
 
-  const aim = (x: number, y: number) => {
-    const r = wrap.current!.getBoundingClientRect();
-    const ang = Math.atan2(x - (r.left + pivot.x), Math.max(y - (r.top + pivot.y), 24));
-    p.current.target = Math.max(-cfg.maxAngle, Math.min(cfg.maxAngle, ang));
+  const rouse = () => {
+    asleep.current = false;
     wake();
   };
+
+  // The item's box, read once per grab instead of on every pointermove; a scroll (page or row) moves it.
+  const rect = useRef<DOMRect | null>(null);
+  const untrack = useRef<(() => void) | null>(null);
+  const stopTracking = () => {
+    untrack.current?.();
+    untrack.current = null;
+    rect.current = null;
+  };
+  useEffect(() => stopTracking, []);
+
+  const aim = (x: number, y: number) => {
+    const r = (rect.current ??= wrap.current!.getBoundingClientRect());
+    const ang = Math.atan2(x - (r.left + pivot.x), Math.max(y - (r.top + pivot.y), 24));
+    p.current.target = Math.max(-cfg.maxAngle, Math.min(cfg.maxAngle, ang));
+    rouse();
+  };
   return useGrab({
-    onGrab: aim,
+    onGrab: (x, y) => {
+      stopTracking();
+      const stale = () => {
+        rect.current = null;
+      };
+      window.addEventListener('scroll', stale, { capture: true, passive: true });
+      untrack.current = () => window.removeEventListener('scroll', stale, { capture: true });
+      aim(x, y);
+    },
     onDrag: aim,
     onRelease: () => {
+      stopTracking();
       p.current.target = null;
-      wake();
+      rouse();
     },
     onBrush: (dx) => {
       p.current.omega += dx * 0.012;
-      wake();
+      rouse();
     },
   });
 }
@@ -241,10 +283,12 @@ const NORI_PIVOT = { x: 66, y: 3 };
 const TASSEL_TOP = 155;
 const STRANDS = [-9, -5.5, -2, 2, 5.5, 9];
 
-function Norigae({ clip }: { clip: ClipWithVideo }) {
+const Norigae = memo(function Norigae({ clip }: { clip: ClipWithVideo }) {
   const wrap = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const strandEls = useRef<(SVGPathElement | null)[]>([]);
+  /** Last `d` written per strand: settled threads round to the same path, so the DOM isn't touched. */
+  const strandPaths = useRef<string[]>([]);
   const ropes = useRef(STRANDS.map((ox, i) => new Rope(7, 10.5 + (i % 3) * 0.8, NORI_PIVOT.x + ox, TASSEL_TOP)));
 
   const grab = usePendulum(wrap, body, NORI_PIVOT, NORIGAE_SWING, (p, dt) => {
@@ -256,7 +300,11 @@ function Norigae({ clip }: { clip: ClipWithVideo }) {
       const ox = STRANDS[i]!;
       // The threads hang from the swinging cap: rotate (ox, dy) about the pivot.
       speed = Math.max(speed, rope.step(dt, NORI_PIVOT.x + ox * cos + dy * sin, NORI_PIVOT.y - ox * sin + dy * cos));
-      strandEls.current[i]?.setAttribute('d', rope.path());
+      const d = rope.path();
+      if (strandPaths.current[i] !== d) {
+        strandPaths.current[i] = d;
+        strandEls.current[i]?.setAttribute('d', d);
+      }
     });
     return speed > 0.02;
   });
@@ -311,7 +359,7 @@ function Norigae({ clip }: { clip: ClipWithVideo }) {
       </div>
     </div>
   );
-}
+});
 
 /* ───────────────────────────── The row ───────────────────────────── */
 
@@ -352,9 +400,11 @@ function ScrollButton({ side, onClick }: { side: 'start' | 'end'; onClick: () =>
  * the studio already looping the clip. Hanging styles are little toys: drag an item sideways to play
  * with it; drag the wooden rail (or use the arrows) to slide the row, and everything on it sways.
  */
-export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
+export const PinnedClips = memo(function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
   const scroller = useRef<HTMLUListElement>(null);
   const lastLeft = useRef(0);
+  /** A finger is on the row: its scrolls (including the momentum after a fling) are the user's. */
+  const touching = useRef(false);
   /**
    * Until when a scroll counts as the user's own. Only those swing the items: swinging items can nudge
    * the scroll width, and if that fed back into the swing the row would keep moving on its own.
@@ -390,10 +440,21 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
     };
   }, [measure, clips.length]);
 
+  // Rail drags can fire several pointermoves per frame: add them up and scroll once per frame.
+  const slideDx = useRef(0);
+  const slideFrame = useRef(0);
   const slide = useCallback((dx: number) => {
-    userScrollUntil.current = performance.now() + 250;
-    scroller.current?.scrollBy({ left: -dx });
+    userScrollUntil.current = Math.max(userScrollUntil.current, performance.now() + 250);
+    slideDx.current += dx;
+    if (slideFrame.current) return;
+    slideFrame.current = requestAnimationFrame(() => {
+      slideFrame.current = 0;
+      const left = -slideDx.current;
+      slideDx.current = 0;
+      scroller.current?.scrollBy({ left });
+    });
   }, []);
+  useEffect(() => () => cancelAnimationFrame(slideFrame.current), []);
 
   if (clips.length === 0) {
     return (
@@ -403,6 +464,12 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
       </p>
     );
   }
+
+  const endTouch = () => {
+    touching.current = false;
+    // Momentum scrolling keeps going a little after the finger lifts.
+    userScrollUntil.current = performance.now() + 900;
+  };
 
   const page = (dir: 1 | -1) => {
     byUser(900);
@@ -423,6 +490,7 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
             const el = e.currentTarget;
             const dx = el.scrollLeft - lastLeft.current;
             lastLeft.current = el.scrollLeft;
+            if (touching.current) byUser(2000);
             // The rail slides with the row; whatever hangs from it lags behind and swings — but only
             // when the user is the one sliding it, never in reaction to the items' own movement.
             if (performance.now() < userScrollUntil.current) {
@@ -431,11 +499,14 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
             measure();
           }}
           onWheel={() => byUser(300)}
-          onTouchStart={() => byUser(60_000)}
-          onTouchEnd={() => {
-            // Momentum scrolling keeps going a little after the finger lifts.
-            userScrollUntil.current = performance.now() + 900;
+          // Short window, refreshed by every scroll while the finger is down: a finger resting on the
+          // row (or a lost touchend) can't keep the feedback guard open for long.
+          onTouchStart={() => {
+            touching.current = true;
+            byUser(2000);
           }}
+          onTouchEnd={endTouch}
+          onTouchCancel={endTouch}
           // No scroll snapping: the row stays exactly where it is left, even half way.
           className="scrollbar-none -mx-2 flex gap-x-4 overflow-x-auto overscroll-x-contain px-2 pb-3 pt-3 [overflow-anchor:none]"
         >
@@ -446,6 +517,7 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
                 aria-label={clipLabel(clip)}
                 title={clipLabel(clip)}
                 draggable={false}
+                onClick={guardNav}
                 className="block rounded-[10px] [-webkit-touch-callout:none]"
               >
                 <Norigae clip={clip} />
@@ -460,4 +532,4 @@ export function PinnedClips({ clips }: { clips: ClipWithVideo[] }) {
       </div>
     </RailDrag.Provider>
   );
-}
+});

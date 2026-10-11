@@ -293,7 +293,9 @@ function MediaStage({
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
   const [menuOpen, setMenuOpen] = useState(false);
-  const chrome = useAutoHideChrome(fullscreen, playing, menuOpen);
+  const scrubbing = usePlayer((s) => s.scrubbing);
+  // A finger dragging the progress line keeps the controls up, however long it takes.
+  const chrome = useAutoHideChrome(fullscreen, playing, menuOpen || scrubbing);
   const pointerType = useRef<string>('mouse');
   const tap = useRef<{
     at: number;
@@ -328,7 +330,8 @@ function MediaStage({
    */
   function onStageClick(event: React.MouseEvent<HTMLButtonElement>) {
     const player = usePlayer.getState();
-    if (!fullscreen || pointerType.current !== 'touch') {
+    // detail 0: a keyboard press, whatever the last pointer was.
+    if (!fullscreen || pointerType.current !== 'touch' || event.detail === 0) {
       player.togglePlay();
       chrome.wake();
       return;
@@ -400,7 +403,7 @@ function MediaStage({
           transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
         >
           {video.source === 'youtube' && video.youtube_id ? (
-            <YouTubeStage videoId={video.youtube_id} />
+            <YouTubeStage key={reloadKey} videoId={video.youtube_id} />
           ) : file.status === 'ready' ? (
             <FileStage src={file.url} />
           ) : null}
@@ -469,7 +472,7 @@ function MediaStage({
           aria-hidden
           className={cn(
             'pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)] transition-[opacity,scale] duration-200 ease-out',
-            !fullscreen && ready && !playing && !counting && !error
+            !fullscreen && ready && !playing && !buffering && !counting && !error
               ? 'scale-100 opacity-100'
               : 'scale-125 opacity-0',
           )}
@@ -477,7 +480,7 @@ function MediaStage({
           <Play className="ml-1 size-8 fill-sumi-900" />
         </div>
 
-        {(loading || (buffering && playing)) && (
+        {(loading || buffering) && (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
             <Spinner className="size-10 text-washi" label="Cargando vídeo" />
           </div>
@@ -515,6 +518,16 @@ function MediaStage({
             <div className="max-w-sm">
               <AlertTriangle className="mx-auto size-8 text-enji-300" />
               <p className="mt-3 font-medium">{error}</p>
+              <Button
+                className="mt-5"
+                variant="ghost"
+                onClick={() => {
+                  usePlayer.setState({ error: null });
+                  setReloadKey((k) => k + 1);
+                }}
+              >
+                Reintentar
+              </Button>
             </div>
           </div>
         )}
@@ -790,8 +803,30 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
   const fillRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
   const dragging = useRef(false);
-  const [hover, setHover] = useState<number | null>(null);
+  /** Bar rect cached for the whole drag: no forced layout on every pointermove. */
+  const rectRef = useRef<DOMRect | null>(null);
+  const [hover, setHoverNow] = useState<number | null>(null);
+  const hoverFrame = useRef(0);
+  const hoverNext = useRef<number | null>(null);
+  /** At most one re-render per frame for the time bubble, however fast the pointer moves. */
+  const setHover = useCallback((value: number | null) => {
+    hoverNext.current = value;
+    if (hoverFrame.current) return;
+    hoverFrame.current = requestAnimationFrame(() => {
+      hoverFrame.current = 0;
+      setHoverNow(hoverNext.current);
+    });
+  }, []);
   const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
+
+  // Leaving fullscreen mid-drag unmounts the bar without a pointerup: never leave the player scrubbing.
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(hoverFrame.current);
+      if (dragging.current) usePlayer.getState().setScrubbing(false);
+    },
+    [],
+  );
 
   // Fill, thumb and aria follow the clock through the DOM, so playback never re-renders the bar.
   useLayoutEffect(() => {
@@ -834,10 +869,16 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
 
   const pct = (t: number) => (duration > 0 ? Math.min(100, Math.max(0, (t / duration) * 100)) : 0);
   const fractionAt = (clientX: number) => {
-    const rect = barRef.current!.getBoundingClientRect();
+    const rect = (dragging.current && rectRef.current) || barRef.current!.getBoundingClientRect();
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   };
   const scrubAt = (clientX: number) => usePlayer.getState().scrubTo(fractionAt(clientX) * duration);
+  const release = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    rectRef.current = null;
+    usePlayer.getState().setScrubbing(false);
+  };
 
   const clipLines = useMemo(() => {
     if (duration <= 0) return null;
@@ -889,24 +930,31 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
         aria-valuemax={Math.round(duration)}
         onPointerDown={(e) => {
           if (!duration) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* synthetic pointer */
+          }
+          rectRef.current = e.currentTarget.getBoundingClientRect();
           dragging.current = true;
           usePlayer.getState().setScrubbing(true);
           scrubAt(e.clientX);
+          setHover(fractionAt(e.clientX));
         }}
         onPointerMove={(e) => {
           // Fingers only get the time bubble while dragging; a mouse gets it on hover too.
           if (e.pointerType !== 'touch' || dragging.current) setHover(fractionAt(e.clientX));
           if (dragging.current) scrubAt(e.clientX);
         }}
-        onPointerUp={() => {
-          dragging.current = false;
-          usePlayer.getState().setScrubbing(false);
+        onPointerUp={(e) => {
+          release();
+          if (e.pointerType === 'touch') setHover(null);
         }}
         onPointerCancel={() => {
-          dragging.current = false;
-          usePlayer.getState().setScrubbing(false);
+          release();
+          setHover(null);
         }}
+        onLostPointerCapture={release}
         onPointerLeave={() => setHover(null)}
         className="group/bar relative flex h-5 cursor-pointer touch-none items-center"
       >
@@ -982,6 +1030,26 @@ function FullscreenBar({
     if (!visible) setSpeedOpen(false);
   }, [visible]);
 
+  const speedRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!speedOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!speedRef.current?.contains(e.target as Node)) setSpeedOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setSpeedOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [speedOpen]);
+
   return (
     <div className={cn('absolute inset-x-0 bottom-0', visible ? 'pointer-events-auto' : 'pointer-events-none')}>
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)]" />
@@ -991,7 +1059,7 @@ function FullscreenBar({
           <FsClock />
 
           <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
-            <div className="relative">
+            <div ref={speedRef} className="relative">
               <button
                 type="button"
                 aria-label="Velocidad"

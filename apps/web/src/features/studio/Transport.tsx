@@ -20,6 +20,7 @@ import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, usePlayer } from '@/player/store';
+import { useToast } from '@/providers/ToastProvider';
 
 const GAP_CHOICES = [0, 1, 2, 3, 5, 10] as const;
 
@@ -378,11 +379,17 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
   const loop = usePlayer((s) => s.loop);
   const ready = usePlayer((s) => s.ready);
   const step = hasRange(loop) ? 'save' : loop.start != null ? 'end' : 'start';
+  const toast = useToast();
 
   function onClick() {
     const p = usePlayer.getState();
     if (step === 'start') p.markStart();
     else if (step === 'end') {
+      // A double tap would cut a useless 0.2 s clip: the end needs the song to have moved on.
+      if (p.loop.start != null && p.time - p.loop.start < 0.5) {
+        toast('Deja avanzar la canción y vuelve a pulsar para marcar el final.', 'info');
+        return;
+      }
       p.markEnd();
       onSaveClip();
     } else onSaveClip();

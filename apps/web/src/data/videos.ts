@@ -96,7 +96,8 @@ export function useCreateVideo() {
     },
     onSuccess: ({ video }) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
-      return queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
+      // Not awaited: the caller moves on at once, the list refreshes behind it.
+      void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
     },
   });
 }
@@ -107,7 +108,8 @@ export function useUpdateVideo() {
     mutationFn: ({ id, patch }: { id: string; patch: TablesUpdate<'videos'> }) => backend.updateVideo(id, patch),
     onSuccess: (video) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
-      return queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
+      // Not awaited: the caller moves on at once, the list refreshes behind it.
+      void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
     },
   });
 }
@@ -123,8 +125,12 @@ export function useDeleteVideo() {
     },
     onSuccess: (video) => {
       queryClient.removeQueries({ queryKey: videoKeys.detail(video.id) });
+      queryClient.setQueryData<{ id: string }[]>(videoKeys.list(video.crew_id), (current) =>
+        current?.filter((v) => v.id !== video.id),
+      );
       void queryClient.invalidateQueries({ queryKey: ['quick-clips', video.crew_id] });
-      return queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
+      // Not awaited: the caller moves on at once, the list refreshes behind it.
+      void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
     },
   });
 }

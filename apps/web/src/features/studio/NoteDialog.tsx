@@ -26,7 +26,12 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
   const [error, setError] = useState<string | null>(null);
   /** Synchronous lock: a double tap must not save the note twice. */
   const submitting = useRef(false);
-  const note = target?.note ?? null;
+  // Keep showing the last note while the dialog fades out (target is already null by then).
+  const lastTarget = useRef(target);
+  if (target) lastTarget.current = target;
+  const shown = target ?? lastTarget.current;
+  const note = shown?.note ?? null;
+  const busy = create.isPending || update.isPending || remove.isPending;
 
   useEffect(() => {
     if (!target) return;
@@ -41,7 +46,10 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
     submitting.current = true;
     try {
       if (note) {
-        if (text !== note.body) await update.mutateAsync({ note, body: text });
+        if (text !== note.body) {
+          await update.mutateAsync({ note, body: text });
+          toast('Nota actualizada', 'success');
+        }
       } else {
         await create.mutateAsync({ video_id: video.id, crew_id: video.crew_id, at_seconds: target.at, body: text });
         toast(`Nota en ${formatTime(target.at)}`, 'success');
@@ -55,12 +63,16 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
   }
 
   async function onDelete() {
-    if (!note) return;
+    if (!note || submitting.current) return;
+    submitting.current = true;
     try {
       await remove.mutateAsync(note);
+      toast('Nota borrada', 'success');
       onClose();
     } catch (err) {
       setError(friendlyError(err));
+    } finally {
+      submitting.current = false;
     }
   }
 
@@ -68,8 +80,9 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
     <Dialog
       open={target != null}
       onClose={onClose}
+      busy={busy}
       title={note ? 'Nota' : 'Nueva nota'}
-      description={target ? `En el ${formatTime(target.at, { tenths: true })} de la canción.` : undefined}
+      description={shown ? `En el ${formatTime(shown.at, { tenths: true })} de la canción.` : undefined}
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
@@ -113,7 +126,7 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
               <Trash2 className="size-4" /> Borrar
             </Button>
           )}
-          <Button variant="ghost" className="ml-auto" onClick={onClose}>
+          <Button variant="ghost" className="ml-auto" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
           <Button type="submit" disabled={!body.trim()} loading={create.isPending || update.isPending}>

@@ -27,7 +27,8 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
   const rate = usePlayer((s) => s.rate);
   const mirrored = usePlayer((s) => s.mirrored);
   const create = useCreateClip();
-  const clips = useClips(open ? video.id : undefined);
+  // Always on (cached): dropping it on close would make the duplicate warning vanish mid fade-out.
+  const clips = useClips(video.id);
   /** Synchronous lock: a fast double tap must not save the clip twice before React re-renders. */
   const submitting = useRef(false);
   const toast = useToast();
@@ -87,7 +88,7 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Guardar clip" description="Se guarda con su velocidad y su modo espejo.">
+    <Dialog open={open} onClose={onClose} busy={create.isPending} title="Guardar clip" description="Se guarda con su velocidad y su modo espejo.">
       <form onSubmit={onSubmit} className="space-y-5">
         {hasRange(loop) && (
           <div className="flex flex-wrap gap-2 text-sm">
@@ -103,7 +104,8 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
 
         <div>
           <Field
-            data-autofocus
+            // The name comes filled in: on phones don't pop the keyboard over the colours and Guardar.
+            data-autofocus="desktop"
             label="Nombre"
             required
             maxLength={80}
@@ -165,7 +167,7 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
         )}
 
         <div className="flex justify-end gap-2 border-t border-line pt-4">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
             Cancelar
           </Button>
           <Button type="submit" loading={create.isPending} disabled={!name.trim() || !hasRange(loop) || Boolean(duplicate)}>

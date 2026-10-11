@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/cn';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { soft } from '@/lib/motion';
 import { Button } from './Button';
 
@@ -13,6 +14,8 @@ interface DialogProps {
   description?: ReactNode;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /** Work in flight (saving, uploading): Escape, the backdrop, back and the X can't close it. */
+  busy?: boolean;
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
@@ -26,11 +29,17 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export function Dialog({ open, onClose, title, description, children, size = 'md' }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false }: DialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const dismiss = () => {
+    if (!busyRef.current) onCloseRef.current();
+  };
+  useBackToClose(open, onClose, busy);
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +52,11 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
     const frame = requestAnimationFrame(() => {
       const panel = panelRef.current;
       const preferred = panel?.querySelector<HTMLElement>('[data-autofocus]');
+      // data-autofocus="desktop": a field that would only pop the phone keyboard for nothing.
+      if (preferred?.dataset.autofocus === 'desktop' && window.matchMedia('(pointer: coarse)').matches) {
+        panel?.focus();
+        return;
+      }
       const nodes = focusables();
       // nodes[0] is the close button; prefer the first real field/control after it.
       (preferred ?? nodes[1] ?? nodes[0] ?? panel)?.focus();
@@ -51,7 +65,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onCloseRef.current();
+        if (!busyRef.current) onCloseRef.current();
         return;
       }
       const panel = panelRef.current;
@@ -94,7 +108,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: 0.25 } }}
             exit={{ opacity: 0, transition: { duration: 0.16 } }}
-            onClick={onClose}
+            onClick={dismiss}
           />
           <motion.div
             ref={panelRef}
@@ -119,7 +133,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
                   {title}
                 </h2>
                 <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-washi/25 to-washi/5" />
-                <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={onClose} className="-mr-2">
+                <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2">
                   <X className="size-5" />
                 </Button>
               </div>
@@ -130,6 +144,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
         </div>
       )}
     </AnimatePresence>,
-    document.body,
+    // Native fullscreen only shows the fullscreen element's subtree.
+    document.fullscreenElement ?? document.body,
   );
 }

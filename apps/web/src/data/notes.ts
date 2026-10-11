@@ -50,7 +50,9 @@ export function useDeleteNote() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (note: Note) => backend.deleteNote(note.id),
-    onMutate: (note) => {
+    onMutate: async (note) => {
+      // A refetch already in flight would bring the deleted note back.
+      await queryClient.cancelQueries({ queryKey: noteKeys.forVideo(note.video_id) });
       queryClient.setQueryData<Note[]>(noteKeys.forVideo(note.video_id), (current = []) =>
         current.filter((n) => n.id !== note.id),
       );

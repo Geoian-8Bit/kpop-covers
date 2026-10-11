@@ -1,7 +1,9 @@
 import { formatDuration } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { Film, HardDrive, Layers, Play, Trash2, Youtube } from 'lucide-react';
+import { memo } from 'react';
 import { Link } from 'react-router';
+import { guardNav } from '@/components/AppShell';
 import type { VideoWithClipCount } from '@/data/videos';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
@@ -18,12 +20,22 @@ interface VideoCardProps {
   className?: string;
 }
 
-export function VideoCard({ video, onDelete, featured = false, index = 0, className }: VideoCardProps) {
+/**
+ * Memoised: typing in the search re-renders the library, but a card only changes with its own data.
+ * `layout="position"`: a filtered grid only moves cards, so they are never measured for a size change.
+ */
+export const VideoCard = memo(function VideoCard({
+  video,
+  onDelete,
+  featured = false,
+  index = 0,
+  className,
+}: VideoCardProps) {
   const clipCount = video.clips[0]?.count ?? 0;
 
   return (
     <motion.article
-      layout
+      layout="position"
       variants={cardIn}
       custom={index}
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
@@ -32,8 +44,9 @@ export function VideoCard({ video, onDelete, featured = false, index = 0, classN
     >
       <Link
         to={`/v/${video.id}`}
+        onClick={guardNav}
         className={cn(
-          '-m-2 flex h-full rounded-[14px] p-2 transition-colors duration-300 hover:bg-washi/[0.04]',
+          '-m-2 flex h-full rounded-[14px] p-2 transition-[background-color,scale] duration-200 hover:bg-washi/[0.04] active:scale-[0.98] active:bg-washi/[0.06]',
           // Phones: compact rows (thumb + caption) for everything but the featured video.
           featured ? 'flex-col' : 'flex-row items-center gap-3 sm:flex-col sm:items-stretch sm:gap-0',
         )}
@@ -101,18 +114,21 @@ export function VideoCard({ video, onDelete, featured = false, index = 0, classN
         type="button"
         aria-label={`Eliminar ${video.title}`}
         onClick={() => onDelete(video)}
-        initial={{ opacity: 0, scale: 0.7 }}
-        variants={{ hover: { opacity: 1, scale: 1 } }}
-        whileFocus={{ opacity: 1, scale: 1 }}
         whileTap={{ scale: 0.85 }}
         transition={jelly}
-        className="absolute right-3 top-3 grid size-9 place-items-center rounded-[8px] bg-sumi-950/85 text-washi-muted hover:text-enji-300 max-sm:opacity-100"
+        // Visibility lives in CSS, not in motion's inline styles: always shown on touch screens and phones;
+        // with a mouse it appears on card hover or keyboard focus.
+        className={cn(
+          'absolute right-3 top-3 grid size-9 place-items-center rounded-[8px] bg-sumi-950/85 text-washi-muted transition-[opacity,scale,color] duration-200 hover:text-enji-300',
+          'sm:[@media(hover:hover)]:scale-75 sm:[@media(hover:hover)]:opacity-0',
+          'group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100',
+        )}
       >
         <Trash2 className="size-4" />
       </motion.button>
     </motion.article>
   );
-}
+});
 
 export function VideoCardSkeleton({ className }: { className?: string }) {
   return (

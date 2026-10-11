@@ -1,12 +1,12 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus, Search } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { useQuickClips } from '@/data/clips';
+import { useQuickClips, type ClipWithVideo } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
 import { byRecentlyOpened, readRecent } from '@/lib/recent';
 import { fadeUp } from '@/lib/motion';
@@ -16,6 +16,9 @@ import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
+
+/** Stable empty list, so the memoised row doesn't re-render on every keystroke while clips load or fail. */
+const NO_CLIPS: ClipWithVideo[] = [];
 
 /**
  * One framed sheet: search → quick-access pendants → library grid, divided by gold rules.
@@ -29,6 +32,7 @@ export function LibraryPage() {
   const deleteVideo = useDeleteVideo();
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<VideoWithClipCount | null>(null);
+  const closeDelete = useCallback(() => setPendingDelete(null), []);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
 
@@ -46,14 +50,23 @@ export function LibraryPage() {
 
   const total = videos.data?.length ?? 0;
 
+  // The dialog keeps showing the last video while it animates out, instead of collapsing to “” and 0 clips.
+  const shownDelete = useRef<VideoWithClipCount | null>(null);
+  if (pendingDelete) shownDelete.current = pendingDelete;
+  const deleteTarget = pendingDelete ?? shownDelete.current;
+  // Synchronous lock: a double tap lands before `isPending` re-renders the button as loading.
+  const deleting = useRef(false);
+
   async function confirmDelete() {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting.current) return;
+    deleting.current = true;
     try {
       await deleteVideo.mutateAsync(pendingDelete);
       toast('Vídeo eliminado', 'success');
     } catch (err) {
       toast(friendlyError(err), 'error');
     } finally {
+      deleting.current = false;
       setPendingDelete(null);
     }
   }
@@ -92,7 +105,7 @@ export function LibraryPage() {
               ))}
             </div>
           ) : (
-            <PinnedClips clips={quick.data ?? []} />
+            <PinnedClips clips={quick.data ?? NO_CLIPS} />
           )}
         </section>
 
@@ -139,18 +152,19 @@ export function LibraryPage() {
 
       <Dialog
         open={pendingDelete != null}
-        onClose={() => setPendingDelete(null)}
+        onClose={closeDelete}
+        busy={deleteVideo.isPending}
         title="¿Eliminar vídeo?"
         description={
           <>
-            Se borrarán <span className="font-medium text-washi">“{pendingDelete?.title}”</span> y sus{' '}
-            {pendingDelete?.clips[0]?.count ?? 0} clips para todo el grupo.
+            Se borrarán <span className="font-medium text-washi">“{deleteTarget?.title}”</span> y sus{' '}
+            {deleteTarget?.clips[0]?.count ?? 0} clips para todo el grupo.
           </>
         }
         size="sm"
       >
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setPendingDelete(null)}>
+          <Button variant="ghost" disabled={deleteVideo.isPending} onClick={closeDelete}>
             Cancelar
           </Button>
           <Button variant="danger" loading={deleteVideo.isPending} onClick={confirmDelete}>

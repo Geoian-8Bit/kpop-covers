@@ -113,6 +113,15 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
   const hoverRef = useRef<HoverControl>(null);
   const dragRef = useRef<{ mode: DragMode; anchor: number; x: number; moved: boolean } | null>(null);
   const [dragMode, setDragMode] = useState<DragMode | null>(null);
+  /** Rail rect cached for the whole drag: no forced layout on every pointermove. */
+  const dragRect = useRef<DOMRect | null>(null);
+  // Unmounting mid-drag (route change, fullscreen) has no pointerup: never leave the player scrubbing.
+  useEffect(
+    () => () => {
+      if (dragRef.current) usePlayer.getState().setScrubbing(false);
+    },
+    [],
+  );
   const clipId = `tide-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const wave = useMemo(() => buildPaths(seededSwell(seed)), [seed]);
   const layout = useMemo(() => assignLanes(clips, duration), [clips, duration]);
@@ -159,7 +168,7 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
 
   const pct = (t: number) => (duration > 0 ? clamp(t / duration, 0, 1) * 100 : 0);
   const fractionAt = (clientX: number) => {
-    const rect = railRef.current!.getBoundingClientRect();
+    const rect = (dragRef.current && dragRect.current) || railRef.current!.getBoundingClientRect();
     return clamp((clientX - rect.left) / rect.width, 0, 1);
   };
   const clearHover = () => hoverRef.current?.(null);
@@ -169,6 +178,7 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.closest<HTMLElement>('[data-track],[data-lane]')?.setPointerCapture(event.pointerId);
+    dragRect.current = railRef.current!.getBoundingClientRect();
     const t = fractionAt(event.clientX) * duration;
     const player = usePlayer.getState();
     if (mode === 'scrub') {
@@ -215,6 +225,7 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
     if (drag.mode === 'select' && !drag.moved) usePlayer.getState().seek(drag.anchor);
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     dragRef.current = null;
+    dragRect.current = null;
     usePlayer.getState().setScrubbing(false);
     setDragMode(null);
   }
@@ -235,6 +246,7 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
+        onLostPointerCapture={end}
         onPointerLeave={clearHover}
         className={cn(
           'group/lane relative mb-2 touch-none rounded-[8px] border border-dashed border-washi/15 px-3 transition-colors',
@@ -298,6 +310,7 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
         onPointerMove={move}
         onPointerUp={end}
         onPointerCancel={end}
+        onLostPointerCapture={end}
         onPointerLeave={clearHover}
         className={cn(
           'well relative touch-none rounded-[12px]',

@@ -10,6 +10,8 @@ export interface PlayerEngine {
    */
   seek(seconds: number, opts?: { preview?: boolean }): void;
   getCurrentTime(): number;
+  /** What the media is really doing (playing or loading to play), to correct optimistic UI. */
+  isPlaying?(): boolean;
   getDuration(): number;
   setRate(rate: number): void;
   /**
@@ -33,6 +35,7 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
       void el.play().catch(() => undefined);
     },
     pause: () => el.pause(),
+    isPlaying: () => !el.paused,
     seek: (seconds, opts) => {
       // fastSeek jumps to the nearest keyframe: cheap enough to follow a finger.
       if (opts?.preview && typeof el.fastSeek === 'function') el.fastSeek(seconds);
@@ -75,14 +78,17 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
 
 /** How long a seek target is trusted over the iframe's clock while YouTube is still loading it. */
 const SEEK_TRUST_MS = 6000;
+/** Seeks reach the iframe at most this often; the latest target always lands (trailing edge). */
+const SEEK_GAP_MS = 250;
 
 /**
  * The IFrame API only refreshes `getCurrentTime()` a few times per second, so we interpolate
  * between reports while playing. That keeps the playhead smooth and A–B loops tight.
  *
  * After a seek the iframe keeps reporting the old position until the new one has loaded (seconds on
- * a slow connection). Until it catches up the engine reports the target, so the playhead never
- * snaps back to where it came from.
+ * a slow connection). Until it has really moved there the engine reports the target, so the playhead
+ * never snaps back. Bursts of seeks (rapid taps, ±5 streaks) are coalesced: on phones the iframe
+ * shares the main thread, and every exact seek starts a new download.
  */
 export function createYouTubeEngine(
   player: YTPlayer,
@@ -92,29 +98,72 @@ export function createYouTubeEngine(
   let lastAt = 0;
   let disposed = false;
   let rateCheck: ReturnType<typeof setTimeout> | undefined;
+  /** Where the playhead should be until the iframe confirms it got there. */
   let target: number | null = null;
   let targetAt = 0;
+  /** The iframe's (stale) clock when the seek was sent, to tell "still old" from "landed". */
+  let rawAtSend = Number.NaN;
+  let sentAt = 0;
+  let queued: { seconds: number; exact: boolean } | null = null;
+  let sendTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether the dancer asked to play: a seek must not start a video nobody started. */
+  let wantPlay = false;
+
+  const send = () => {
+    sendTimer = undefined;
+    if (disposed || !queued) return;
+    const { seconds, exact } = queued;
+    queued = null;
+    rawAtSend = player.getCurrentTime() ?? 0;
+    sentAt = performance.now();
+    const state = player.getPlayerState();
+    // allowSeekAhead=false only moves within what's already buffered: no new request per drag step.
+    player.seekTo(seconds, exact);
+    // Seeking a cued video starts it (IFrame API behaviour); keep it still unless play was asked for.
+    if (!wantPlay && (state === YTState.CUED || state === YTState.UNSTARTED)) player.pauseVideo();
+  };
 
   return {
     dispose: () => {
       disposed = true;
       clearTimeout(rateCheck);
+      clearTimeout(sendTimer);
     },
-    play: () => player.playVideo(),
-    pause: () => player.pauseVideo(),
+    play: () => {
+      wantPlay = true;
+      player.playVideo();
+    },
+    pause: () => {
+      wantPlay = false;
+      player.pauseVideo();
+    },
+    isPlaying: () => {
+      const state = player.getPlayerState();
+      return state === YTState.PLAYING || state === YTState.BUFFERING;
+    },
     seek: (seconds, opts) => {
       lastRaw = -1;
       target = seconds;
       targetAt = performance.now();
-      // allowSeekAhead=false only moves within what's already buffered: no new request per drag step.
-      player.seekTo(seconds, !opts?.preview);
+      // Within one burst an exact seek wins over previews.
+      queued = { seconds, exact: !opts?.preview || Boolean(queued?.exact && sendTimer) };
+      if (sendTimer) return;
+      const wait = SEEK_GAP_MS - (performance.now() - sentAt);
+      if (wait <= 0) send();
+      else sendTimer = setTimeout(send, wait);
     },
     getCurrentTime: () => {
       if (disposed) return lastRaw > 0 ? lastRaw : 0;
       const raw = player.getCurrentTime() ?? 0;
       const now = performance.now();
       if (target != null) {
-        if (Math.abs(raw - target) < 2 || now - targetAt > SEEK_TRUST_MS) target = null;
+        const landed =
+          !queued &&
+          now - sentAt > 200 &&
+          raw !== rawAtSend &&
+          Math.abs(raw - target) < 1 &&
+          player.getPlayerState() !== YTState.BUFFERING;
+        if (landed || now - targetAt > SEEK_TRUST_MS) target = null;
         else return target;
       }
       if (raw !== lastRaw || player.getPlayerState() !== YTState.PLAYING) {

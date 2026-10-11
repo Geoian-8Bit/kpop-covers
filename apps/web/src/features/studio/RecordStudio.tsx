@@ -8,6 +8,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/cn';
 import { scheduleCountIn, unlockAudio } from '@/lib/metronome';
 import { jelly } from '@/lib/motion';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 
 type Phase = 'starting' | 'ready' | 'countdown' | 'recording' | 'review' | 'error';
@@ -85,6 +86,23 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const restore = useRef<{ loopEnabled: boolean; loopAll: boolean } | null>(null);
   const startedAt = useRef(0);
   const takeUrl = useRef<string | null>(null);
+  /** Bumped on every camera request and on close: a late getUserMedia answer is stopped, not kept. */
+  const session = useRef(0);
+  /** Synchronous locks: double taps must not start two takes or open two share sheets. */
+  const starting = useRef(false);
+  const sharing = useRef(false);
+  const recording = phase === 'recording';
+
+  // Back / swipe-back closes the studio, except mid-take (it would throw the take away).
+  useBackToClose(open, onClose, recording);
+
+  // Leaving the page mid-take loses it: ask first.
+  useEffect(() => {
+    if (!recording) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [recording]);
 
   const replaceTake = (next: Take | null) => {
     if (takeUrl.current) URL.revokeObjectURL(takeUrl.current);
@@ -112,6 +130,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }, []);
 
   const startCamera = useCallback(async (which: Facing) => {
+    const id = ++session.current;
     camera.current?.getTracks().forEach((t) => t.stop());
     camera.current = null;
     setPhase('starting');
@@ -125,10 +144,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         // Music through the speaker must not be "cancelled" as if it were an echo.
         audio: tap ? false : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
+      if (id !== session.current) {
+        // Closed, or another camera asked for, while the permission prompt was up.
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       camera.current = stream;
       if (preview.current) preview.current.srcObject = stream;
       setPhase('ready');
     } catch (err) {
+      if (id !== session.current) return;
       setError(cameraError(err));
       setPhase('error');
     }
@@ -144,6 +169,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     return () => {
+      session.current++;
+      starting.current = false;
+      sharing.current = false;
+      setPhase('starting');
       document.body.style.overflow = overflow;
       clearTimers();
       if (recorder.current?.state === 'recording') recorder.current.stop();
@@ -198,7 +227,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }
 
   async function startCountdown() {
-    if (phase !== 'ready') return;
+    if (phase !== 'ready' || starting.current) return;
+    starting.current = true;
+    const id = session.current;
     unlockAudio();
     const p = usePlayer.getState();
     // Record the song cleanly: no A–B wrap or whole-song repeat while the camera rolls.
@@ -210,6 +241,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       wakeLock.current = (await (navigator as WakeLockNavigator).wakeLock?.request('screen')) ?? null;
     } catch {
       /* the screen may dim on long takes; recording still works */
+    }
+    starting.current = false;
+    if (id !== session.current) {
+      // Closed while asking for the wake lock.
+      releaseWakeLock();
+      return;
     }
     setPhase('countdown');
     setLeft(countdown);
@@ -237,7 +274,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }, [phase, from, stop]);
 
   async function save() {
-    if (!take) return;
+    if (!take || sharing.current) return;
+    sharing.current = true;
+    try {
+      await shareTake(take);
+    } finally {
+      sharing.current = false;
+    }
+  }
+
+  async function shareTake(take: Take) {
     const name = fileName(video, take.blob.type);
     const file = new File([take.blob], name, { type: take.blob.type });
     // Phones: the share sheet offers "Guardar vídeo" straight into the gallery.
@@ -269,7 +315,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   if (!open) return null;
 
-  const recording = phase === 'recording';
   return createPortal(
     <div className="fixed inset-0 z-[90] bg-black text-washi" role="dialog" aria-modal="true" aria-label="Grabar baile">
       {/* Camera preview, mirrored like a mirror for the front camera (the file itself is not mirrored). */}
