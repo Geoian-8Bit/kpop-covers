@@ -11,13 +11,14 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
+  ChevronsLeft,
+  ChevronsRight,
   ExternalLink,
   FileVideo,
   FlipHorizontal2,
   Keyboard,
   Maximize2,
   Minimize2,
-  Pause,
   Play,
   Repeat,
   Repeat1,
@@ -294,18 +295,36 @@ function MediaStage({
   const [menuOpen, setMenuOpen] = useState(false);
   const chrome = useAutoHideChrome(fullscreen, playing, menuOpen);
   const pointerType = useRef<string>('mouse');
-  const lastTap = useRef<{ at: number; timer?: ReturnType<typeof setTimeout> }>({ at: 0 });
-  const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; key: number } | null>(null);
+  const tap = useRef<{
+    at: number;
+    timer?: ReturnType<typeof setTimeout>;
+    streak: 'left' | 'right' | null;
+    streakUntil: number;
+  }>({ at: 0, streak: null, streakUntil: 0 });
+  const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; seconds: number; key: number } | null>(null);
   // Plain timer, not an animation callback, so the badge can never get stranded on screen.
   useEffect(() => {
     if (!seekFlash) return;
-    const id = setTimeout(() => setSeekFlash(null), 650);
+    const id = setTimeout(() => setSeekFlash(null), 700);
     return () => clearTimeout(id);
   }, [seekFlash]);
+  useEffect(() => () => clearTimeout(tap.current.timer), []);
+
+  /** ±5 s with a YouTube-style badge; taps that keep coming on the same side add up (−5, −10, −15…). */
+  const seekBy = useCallback((side: 'left' | 'right') => {
+    usePlayer.getState().nudge(side === 'left' ? -5 : 5);
+    setSeekFlash((prev) => ({
+      side,
+      seconds: prev && prev.side === side ? prev.seconds + 5 : 5,
+      key: performance.now(),
+    }));
+  }, []);
 
   /**
-   * Mouse / desktop: click toggles playback. Touch in fullscreen (YouTube-style): one tap shows/hides the
-   * controls, a double tap on the left or right side jumps 5 s, in the middle it plays/pauses.
+   * Desktop: a click plays/pauses and a double click toggles fullscreen. Touch in fullscreen (YouTube
+   * mobile): a tap shows the controls at once, or hides them unless it turns into a double tap; a double
+   * tap on a side jumps 5 s and every further tap on that side jumps again; in the middle it plays or
+   * pauses. Outside fullscreen a tap plays/pauses.
    */
   function onStageClick(event: React.MouseEvent<HTMLButtonElement>) {
     const player = usePlayer.getState();
@@ -316,24 +335,35 @@ function MediaStage({
     }
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
+    const side = x < 0.35 ? 'left' : x > 0.65 ? 'right' : 'center';
     const now = performance.now();
-    const tap = lastTap.current;
-    if (now - tap.at < 300) {
-      clearTimeout(tap.timer);
-      tap.at = 0;
-      if (x < 0.4) {
-        player.nudge(-5);
-        setSeekFlash({ side: 'left', key: now });
-      } else if (x > 0.6) {
-        player.nudge(5);
-        setSeekFlash({ side: 'right', key: now });
-      } else {
+    const t = tap.current;
+
+    if (side !== 'center' && t.streak === side && now < t.streakUntil) {
+      t.streakUntil = now + 700;
+      seekBy(side);
+      return;
+    }
+    if (now - t.at < 300) {
+      clearTimeout(t.timer);
+      t.at = 0;
+      if (side === 'center') {
         player.togglePlay();
+        chrome.wake();
+      } else {
+        t.streak = side;
+        t.streakUntil = now + 700;
+        seekBy(side);
       }
       return;
     }
-    tap.at = now;
-    tap.timer = setTimeout(() => chrome.toggle(), 280);
+    t.at = now;
+    t.streak = null;
+    if (!chrome.visible) {
+      chrome.wake();
+      return;
+    }
+    t.timer = setTimeout(() => chrome.hide(), 260);
   }
 
   async function onPick(picked: File | undefined) {
@@ -383,11 +413,19 @@ function MediaStage({
           aria-label={playing ? 'Pausar' : 'Reproducir'}
           onPointerDown={(e) => (pointerType.current = e.pointerType)}
           onClick={onStageClick}
+          onDoubleClick={() => {
+            if (pointerType.current === 'mouse') void toggleFullscreen();
+          }}
           disabled={!ready}
           className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
         />
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5">
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-3.5',
+            fullscreen && 'hidden',
+          )}
+        >
           {/* Source credit for YouTube videos (API policies); opens the original at the current second. */}
           {video.source === 'youtube' && video.youtube_id && (
             <a
@@ -431,7 +469,7 @@ function MediaStage({
           aria-hidden
           className={cn(
             'pointer-events-none absolute inset-0 z-20 m-auto grid size-20 place-items-center rounded-full bg-washi text-sumi-900 shadow-[0_16px_30px_-14px_rgb(0_0_0/0.9)] transition-[opacity,scale] duration-200 ease-out',
-            ready && !playing && !counting && !error && (!fullscreen || chrome.visible)
+            !fullscreen && ready && !playing && !counting && !error
               ? 'scale-100 opacity-100'
               : 'scale-125 opacity-0',
           )}
@@ -499,26 +537,45 @@ function MediaStage({
             {seekFlash && (
               <motion.span
                 key={seekFlash.key}
-                initial={{ opacity: 0, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
+                transition={{ duration: 0.15 }}
                 className={cn(
-                  'pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 rounded-full bg-black/55 px-4 py-2 font-mono text-sm font-semibold text-washi',
-                  seekFlash.side === 'left' ? 'left-[12%]' : 'right-[12%]',
+                  'tabular pointer-events-none absolute top-1/2 z-40 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-black/60 px-4 py-2.5 font-mono text-base font-semibold text-washi',
+                  seekFlash.side === 'left' ? 'left-[10%]' : 'right-[10%]',
                 )}
               >
-                {seekFlash.side === 'left' ? '−5 s' : '+5 s'}
+                {seekFlash.side === 'left' ? (
+                  <>
+                    <ChevronsLeft className="size-5" /> −{seekFlash.seconds} s
+                  </>
+                ) : (
+                  <>
+                    +{seekFlash.seconds} s <ChevronsRight className="size-5" />
+                  </>
+                )}
               </motion.span>
             )}
           </AnimatePresence>
-          <FullscreenBar
-            visible={chrome.visible}
-            onMenuChange={setMenuOpen}
-            clips={clips}
-            onClipSelect={onClipSelect}
-            onExit={() => void toggleFullscreen()}
-          />
+          <div
+            // Touching any control keeps the controls up; the layer itself lets taps through to the video.
+            onPointerDownCapture={() => chrome.wake()}
+            className={cn(
+              'pointer-events-none absolute inset-0 z-30 transition-opacity duration-200',
+              chrome.visible ? 'opacity-100' : 'opacity-0',
+            )}
+          >
+            <FsTopBar video={video} visible={chrome.visible} />
+            <FsCenter visible={chrome.visible} onSeek={seekBy} />
+            <FullscreenBar
+              visible={chrome.visible}
+              onMenuChange={setMenuOpen}
+              clips={clips}
+              onClipSelect={onClipSelect}
+              onExit={() => void toggleFullscreen()}
+            />
+          </div>
         </>
       )}
     </div>
@@ -588,12 +645,11 @@ function useFullscreen() {
   return { stageRef, fullscreen: mode !== 'none', toggleFullscreen };
 }
 
-/** Touch-friendly transport shown only in fullscreen; fades out while playing and nobody touches the screen. */
 /**
- * Controls visibility in fullscreen, YouTube-style: shown on any activity, hidden after 2.5 s of
- * playback without input; always shown while paused.
+ * Controls visibility in fullscreen, YouTube-style: shown on any activity, hidden 3 s after the last
+ * touch while playing. Pausing brings them back; a tap can still hide them. `hold` keeps them up while
+ * a speed or pause menu is open.
  */
-/** `hold` keeps the controls up (e.g. while a speed or pause menu is open). */
 function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
   const [visible, setVisible] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -604,7 +660,7 @@ function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       if (playingRef.current) setVisible(false);
-    }, 2500);
+    }, 3000);
   }, []);
 
   const wake = useCallback(() => {
@@ -612,12 +668,10 @@ function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
     schedule();
   }, [schedule]);
 
-  const toggle = useCallback(() => {
-    setVisible((v) => {
-      if (!v) schedule();
-      return !v;
-    });
-  }, [schedule]);
+  const hide = useCallback(() => {
+    clearTimeout(timer.current);
+    setVisible(false);
+  }, []);
 
   useEffect(() => {
     if (!active) return;
@@ -648,7 +702,83 @@ function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
     if (!hold && active) wake();
   }, [hold, active, wake]);
 
-  return { visible: visible || !playing || hold, wake, toggle };
+  return { visible: visible || hold, wake, hide };
+}
+
+/** Title and source credit across the top of the fullscreen video. */
+function FsTopBar({ video, visible }: { video: Video; visible: boolean }) {
+  return (
+    <div className="absolute inset-x-0 top-0 flex items-start gap-3 bg-[linear-gradient(to_bottom,rgb(0_0_0/0.7),transparent)] px-4 pb-10 pt-[max(12px,env(safe-area-inset-top))] sm:px-6">
+      <p className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-washi sm:text-xl">{video.title}</p>
+      {video.source === 'youtube' && video.youtube_id && (
+        <a
+          href={youTubeWatchUrl(video.youtube_id)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Ver en YouTube"
+          onClick={(e) => {
+            e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
+          }}
+          className={cn(
+            'flex shrink-0 items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/80 hover:text-washi',
+            visible ? 'pointer-events-auto' : 'pointer-events-none',
+          )}
+        >
+          <Youtube className="size-3.5" /> YouTube
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** Big centre transport, like YouTube on phones: −5 · play/pause · +5. */
+function FsCenter({ visible, onSeek }: { visible: boolean; onSeek: (side: 'left' | 'right') => void }) {
+  const playing = usePlayer((s) => s.playing);
+  const counting = usePlayer((s) => s.countdownEndsAt != null);
+  const active = playing || counting;
+  const round =
+    'relative grid size-14 place-items-center rounded-full bg-black/45 text-washi shadow-[0_8px_20px_-8px_rgb(0_0_0/0.8)] sm:size-16';
+  return (
+    <div
+      className={cn(
+        'absolute inset-0 m-auto flex h-24 w-max items-center gap-10 sm:gap-16',
+        visible ? 'pointer-events-auto' : 'pointer-events-none',
+      )}
+    >
+      <motion.button
+        type="button"
+        aria-label="Retroceder 5 segundos"
+        onClick={() => onSeek('left')}
+        whileTap={{ scale: 0.82, rotate: -25 }}
+        transition={jelly}
+        className={round}
+      >
+        <RotateCcw className="size-7" strokeWidth={1.7} />
+        <span className="tabular absolute font-mono text-[10px] font-bold">5</span>
+      </motion.button>
+      <motion.button
+        type="button"
+        aria-label={active ? 'Pausar' : 'Reproducir'}
+        onClick={() => usePlayer.getState().togglePlay()}
+        whileTap={{ scale: 0.86, rotate: -6 }}
+        transition={jelly}
+        className="size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24"
+      >
+        <ButtonSkin kind={active ? 'pause' : 'play'} />
+      </motion.button>
+      <motion.button
+        type="button"
+        aria-label="Avanzar 5 segundos"
+        onClick={() => onSeek('right')}
+        whileTap={{ scale: 0.82, rotate: 25 }}
+        transition={jelly}
+        className={round}
+      >
+        <RotateCw className="size-7" strokeWidth={1.7} />
+        <span className="tabular absolute font-mono text-[10px] font-bold">5</span>
+      </motion.button>
+    </div>
+  );
 }
 
 /** Thin YouTube-like progress line: scrub anywhere, A–B band in vermilion, saved clips as thin lines above. */
@@ -827,7 +957,6 @@ function FullscreenBar({
   /** Reports whether a menu is open so the controls never auto-hide underneath it. */
   onMenuChange: (open: boolean) => void;
 }) {
-  const playing = usePlayer((s) => s.playing);
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
   const loop = usePlayer((s) => s.loop);
@@ -847,46 +976,18 @@ function FullscreenBar({
     () => usePlayer.getState().toggleLoop(),
   );
   const p = usePlayer.getState();
-  const btn = 'grid size-10 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15';
+  const btn = 'grid size-11 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15 active:bg-washi/20';
 
   useEffect(() => {
     if (!visible) setSpeedOpen(false);
   }, [visible]);
 
   return (
-    <div
-      className={cn(
-        'absolute inset-x-0 bottom-0 z-30 transition-opacity duration-200',
-        visible ? 'opacity-100' : 'pointer-events-none opacity-0',
-      )}
-    >
+    <div className={cn('absolute inset-x-0 bottom-0', visible ? 'pointer-events-auto' : 'pointer-events-none')}>
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)]" />
       <div className="px-3 pb-[max(6px,env(safe-area-inset-bottom))] pt-10 sm:px-5">
         <FsProgress clips={clips} onClipSelect={onClipSelect} />
         <div className="flex items-center gap-0.5 sm:gap-1">
-          <button
-            type="button"
-            aria-label={playing ? 'Pausar' : 'Reproducir'}
-            className={btn}
-            onClick={() => p.togglePlay()}
-          >
-            {playing ? (
-              <Pause className="size-5 fill-washi" />
-            ) : (
-              <Play className="ml-0.5 size-5 fill-washi" />
-            )}
-          </button>
-          <button
-            type="button"
-            aria-label="Retroceder 5 segundos"
-            className={btn}
-            onClick={() => p.nudge(-5)}
-          >
-            <RotateCcw className="size-[18px]" />
-          </button>
-          <button type="button" aria-label="Avanzar 5 segundos" className={btn} onClick={() => p.nudge(5)}>
-            <RotateCw className="size-[18px]" />
-          </button>
           <FsClock />
 
           <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
@@ -1008,7 +1109,7 @@ function FsClock() {
   const second = usePlayer((s) => Math.floor(s.time));
   const duration = usePlayer((s) => s.duration);
   return (
-    <span className="tabular ml-1.5 font-mono text-[13px] text-washi">
+    <span className="tabular ml-1 font-mono text-[13px] text-washi">
       {formatTime(second)}
       <span className="text-washi-subtle"> / {formatTime(duration)}</span>
     </span>
