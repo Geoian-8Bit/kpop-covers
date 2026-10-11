@@ -1307,7 +1307,7 @@ function FsNoteBubble({ notes }: { notes: Note[] }) {
 }
 
 /** Roughly how long YouTube keeps its own play/pause on screen after the state changes. */
-const YT_OVERLAY_MS = 3500;
+const YT_OVERLAY_MS = 5000;
 
 /**
  * YouTube draws its own (mirrored, plain black) play/pause in the middle of the iframe: always while
@@ -1345,7 +1345,8 @@ function YouTubeCover({ hidden, onWake }: { hidden: boolean; onWake: () => void 
       className={cn(
         'absolute inset-0 z-30 m-auto size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24',
         // Appears at once (YouTube's button is already there), leaves with a short fade like YouTube's.
-        shown ? 'opacity-100' : 'pointer-events-none opacity-0 transition-opacity duration-300',
+        // Softened so the red doesn't shout and the frame stays visible behind it.
+        shown ? 'opacity-60' : 'pointer-events-none opacity-0 transition-opacity duration-300',
       )}
     >
       <ButtonSkin kind={playing ? 'pause' : 'play'} />

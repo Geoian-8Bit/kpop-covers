@@ -15,6 +15,9 @@ export function keepViewportFitted(): void {
     meta.content = `${base}, maximum-scale=1`;
     timer = setTimeout(() => {
       meta.content = base;
+      // Some phones only re-measure on the next resize/scroll: nudge both so layout uses the new width.
+      window.scrollTo(window.scrollX, window.scrollY);
+      window.dispatchEvent(new Event('resize'));
     }, 400);
   };
 

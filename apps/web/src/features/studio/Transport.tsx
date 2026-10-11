@@ -148,7 +148,7 @@ const tool =
 const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
 /** Buttons inside the settings tray: borderless, the tray itself is the frame. */
 const trayBtn =
-  'skin-pill relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors';
+  'skin-pill relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors max-sm:px-2.5';
 const trayIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
 const trayOn = 'bg-ai-600/50 text-ai-200 shadow-[inset_0_0_0_1px_rgb(124_156_196/0.35)]';
 
@@ -404,7 +404,8 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
       transition={jelly}
       className={cn(
         tool,
-        'skin-btn h-12 justify-center px-4 max-sm:flex-1',
+        // Phones: takes the space the tray leaves and may tighten, but never spills out of the card.
+        'skin-btn h-12 justify-center px-4 max-sm:min-w-0 max-sm:flex-1 max-sm:shrink max-sm:gap-1.5 max-sm:px-3',
         step === 'save'
           ? 'skin-primary [--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)]'
           : '[--skin-fill:var(--color-sumi-800)]',
@@ -413,7 +414,12 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
         step === 'save' && 'border-shu-500 bg-shu-500 text-washi hover:bg-shu-400',
       )}
     >
-      {step === 'save' ? <BookmarkPlus className="size-[18px]" /> : <Scissors className="size-[18px]" />}
+      {/* Very narrow phones drop the icon so the label never spills out of the card. */}
+      {step === 'save' ? (
+        <BookmarkPlus className="size-[18px] shrink-0 max-[380px]:hidden" />
+      ) : (
+        <Scissors className="size-[18px] shrink-0 max-[380px]:hidden" />
+      )}
       {step === 'start' ? 'Nuevo clip' : step === 'end' ? 'Fin del clip' : 'Guardar clip'}
     </motion.button>
   );
