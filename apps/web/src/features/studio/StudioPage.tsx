@@ -96,6 +96,26 @@ export function StudioPage() {
   useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording });
 
   const applyClip = useCallback((clip: Clip) => usePlayer.getState().applyClip(clip), []);
+  const lastLineTap = useRef<{ id: string; at: number } | null>(null);
+  /**
+   * The clip lines above the timeline: one tap plays the clip (again, from its start); a quick second
+   * tap on the same line takes the clip off, back to the whole song.
+   */
+  const tapClipLine = useCallback(
+    (clip: Clip) => {
+      const now = performance.now();
+      const last = lastLineTap.current;
+      if (last && last.id === clip.id && now - last.at < 350) {
+        lastLineTap.current = null;
+        usePlayer.getState().clearLoop();
+        toast(`“${clip.name}” quitado`, 'info');
+        return;
+      }
+      lastLineTap.current = { id: clip.id, at: now };
+      usePlayer.getState().applyClip(clip);
+    },
+    [toast],
+  );
 
   // Deep link from quick access: /v/:id?clip=<clipId>
   useEffect(() => {
@@ -191,12 +211,12 @@ export function StudioPage() {
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
-              <MediaStage video={current} clips={clips.data ?? []} onClipSelect={applyClip} />
+              <MediaStage video={current} clips={clips.data ?? []} onClipSelect={tapClipLine} />
             </div>
             <Timeline
               seed={current.id}
               clips={clips.data ?? []}
-              onClipSelect={applyClip}
+              onClipSelect={tapClipLine}
               notes={notes.data}
               onNoteOpen={openNote}
             />
