@@ -1,17 +1,17 @@
 /**
- * Turns the live camera into the exact frame we record, like a phone's camera app: portrait when the
- * phone is upright, landscape when it's on its side, whatever orientation the camera itself delivers.
- * Each frame is centre-cropped from the camera onto a 9:16 (or 16:9) canvas, optionally zoomed in
- * digitally (for phones whose camera has no zoom control, e.g. iPhone in a browser); the canvas is both
- * the preview on screen and the video track that gets recorded, so what you see is what you get.
+ * The camera picture exactly as the phone shows it, ready to record — like the camera app, nothing is
+ * cropped. Browsers rotate the camera to how the phone is held when you draw its <video>, but the
+ * recorded file doesn't always carry that rotation (iOS can save MP4s lying on their side). So every
+ * frame is drawn upright onto a canvas of the same shape as the picture, and the canvas is both the
+ * preview on screen and the video track that gets recorded: what you see is exactly what you get.
+ *
+ * Phones whose camera has no zoom control in the browser (iPhone) zoom digitally here instead.
  */
 export interface CameraFrame {
   canvas: HTMLCanvasElement;
-  /** Portrait (9:16) or landscape (16:9). Ignored while locked (recording). */
-  setPortrait(portrait: boolean): void;
-  /** Digital zoom, 1 = the whole frame. */
+  /** Digital zoom, 1 = the whole picture. */
   setZoom(zoom: number): void;
-  /** Keep size and orientation fixed while a take is being recorded. */
+  /** Keep the frame's size for the whole take; turning the phone mid-take letterboxes instead. */
   lock(locked: boolean): void;
   /** The canvas as a video track to record. */
   captureStream(fps?: number): MediaStream;
@@ -20,49 +20,44 @@ export interface CameraFrame {
 
 type CapturableCanvas = HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream };
 
-export function createCameraFrame(source: HTMLVideoElement, portrait: boolean): CameraFrame {
+/** Long side cap: 1080p is plenty for a dance video and keeps the per-frame copy cheap. */
+const MAX_LONG = 1920;
+
+export function createCameraFrame(source: HTMLVideoElement): CameraFrame {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: false });
-  let wantPortrait = portrait;
   let zoom = 1;
   let locked = false;
   let frame = 0;
   let disposed = false;
 
-  /** Short side follows the camera (never upscaled past it), capped at 1080 p. */
-  const fit = () => {
-    if (locked) return;
-    const sw = source.videoWidth;
-    const sh = source.videoHeight;
-    if (!sw || !sh) return;
-    const short = Math.min(1080, Math.min(sw, sh)) & ~1;
-    const long = Math.round((short * 16) / 9) & ~1;
-    const w = wantPortrait ? short : long;
-    const h = wantPortrait ? long : short;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
-  };
-
   const draw = () => {
     frame = 0;
     if (disposed) return;
-    fit();
     const sw = source.videoWidth;
     const sh = source.videoHeight;
-    if (ctx && sw && sh && canvas.width && source.readyState >= 2) {
-      // Largest centred crop of the camera with the canvas's shape, shrunk further by the zoom.
-      const target = canvas.width / canvas.height;
-      let cw = sw;
-      let ch = sw / target;
-      if (ch > sh) {
-        ch = sh;
-        cw = sh * target;
+    if (ctx && sw && sh && source.readyState >= 2) {
+      if (!locked) {
+        // Same shape as the picture, scaled down only if it is larger than 1080p.
+        const scale = Math.min(1, MAX_LONG / Math.max(sw, sh));
+        const w = Math.round(sw * scale) & ~1;
+        const h = Math.round(sh * scale) & ~1;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
       }
-      cw /= zoom;
-      ch /= zoom;
-      ctx.drawImage(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
+      // Whole picture (or its zoomed centre), fitted into the canvas; bars only if the phone turned mid-take.
+      const cw = sw / zoom;
+      const ch = sh / zoom;
+      const fit = Math.min(canvas.width / cw, canvas.height / ch);
+      const dw = cw * fit;
+      const dh = ch * fit;
+      if (dw < canvas.width || dh < canvas.height) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx.drawImage(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
     }
     frame = requestAnimationFrame(draw);
   };
@@ -70,9 +65,6 @@ export function createCameraFrame(source: HTMLVideoElement, portrait: boolean): 
 
   return {
     canvas,
-    setPortrait(next) {
-      wantPortrait = next;
-    },
     setZoom(next) {
       zoom = Math.max(1, next);
     },

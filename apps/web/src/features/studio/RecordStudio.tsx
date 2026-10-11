@@ -75,8 +75,6 @@ async function listBackCameras(): Promise<{ ids: string[]; ultra: string | null 
   }
 }
 
-const isPortrait = () => window.matchMedia('(orientation: portrait)').matches;
-
 const formatZoom = (z: number) => `${Number.isInteger(z) ? z : z.toFixed(1).replace(/\.0$/, '')}×`;
 
 type WakeLockNavigator = Navigator & {
@@ -103,10 +101,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [backCams, setBackCams] = useState<string[]>([]);
   const [ultraId, setUltraId] = useState<string | null>(null);
-  /** Upright phone records 9:16, phone on its side 16:9 — like the camera app. */
-  const [portrait, setPortrait] = useState(isPortrait);
-  const portraitRef = useRef(portrait);
-  portraitRef.current = portrait;
   const stage = useRef<HTMLDivElement>(null);
   const frame = useRef<CameraFrame | null>(null);
   const [zoomRange, setZoomRange] = useState<{ min: number; max: number } | null>(null);
@@ -186,10 +180,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       const tap = usePlayer.getState().engine?.captureAudio?.() ?? null;
       songTrack.current = tap;
       setSongAudio(Boolean(tap));
-      // Ask for the shape we'll record, so the crop onto the 9:16 / 16:9 frame loses as little as possible.
-      const size = portraitRef.current
-        ? { width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } }
-        : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+      // Always ask in landscape numbers: phones then pick a real camera mode and turn the picture to how
+      // the phone is held. Asking 1080×1920 makes Safari (and some Chrome) hand back the sensor unrotated.
+      const size = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
       const stream = await navigator.mediaDevices.getUserMedia({
         video: device ? { deviceId: { exact: device }, ...size } : { facingMode: { ideal: which }, ...size },
         // Music through the speaker must not be "cancelled" as if it were an echo.
@@ -261,7 +254,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const source = preview.current;
     const host = stage.current;
     if (!open || !source || !host) return;
-    const f = createCameraFrame(source, portraitRef.current);
+    const f = createCameraFrame(source);
     f.canvas.className = 'absolute inset-0 size-full object-contain';
     host.appendChild(f.canvas);
     frame.current = f;
@@ -271,23 +264,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       frame.current = null;
     };
   }, [open]);
-
-  // Turning the phone turns the frame (not mid-take), and re-asks the camera for that shape.
-  useEffect(() => {
-    if (!open) return;
-    const query = window.matchMedia('(orientation: portrait)');
-    const onChange = () => setPortrait(query.matches);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, [open]);
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
-  useEffect(() => {
-    frame.current?.setPortrait(portrait);
-    if (open && phaseRef.current === 'ready') void startCamera(facing, deviceId);
-    // Only orientation changes restart the camera here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portrait]);
 
   const stop = useCallback(() => {
     clearTimers();
