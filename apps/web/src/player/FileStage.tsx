@@ -61,6 +61,8 @@ export function FileStage({ src }: { src: string }) {
     <video
       ref={ref}
       src={src}
+      // Lets the recorder tap the song's audio (cloud copies are served with CORS headers).
+      crossOrigin="anonymous"
       playsInline
       preload="auto"
       className="absolute inset-0 size-full bg-black object-contain"

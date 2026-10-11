@@ -23,6 +23,7 @@ import {
   Repeat1,
   RotateCcw,
   RotateCw,
+  Video as VideoIcon,
   Youtube,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -47,6 +48,7 @@ import { YouTubeStage } from '@/player/YouTubeStage';
 import { useToast } from '@/providers/ToastProvider';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
+import { RecordStudio } from './RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline } from './Timeline';
@@ -63,6 +65,7 @@ export function StudioPage() {
   const [help, setHelp] = useState(false);
   const notes = useNotes(videoId);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
+  const [recording, setRecording] = useState(false);
   const [params, setParams] = useSearchParams();
   const clipParam = params.get('clip');
   const ready = usePlayer((s) => s.ready);
@@ -89,7 +92,7 @@ export function StudioPage() {
   // A new note belongs to the moment the button is pressed, even if the song keeps playing.
   const addNote = useCallback(() => setNoteTarget({ note: null, at: usePlayer.getState().time }), []);
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
-  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget });
+  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording });
 
   const applyClip = useCallback((clip: Clip) => usePlayer.getState().applyClip(clip), []);
 
@@ -176,6 +179,10 @@ export function StudioPage() {
           >
             <Keyboard className="size-5" />
           </Button>
+          <Button size="sm" aria-label="Grabar baile con la canción" onClick={() => setRecording(true)} disabled={!ready}>
+            <VideoIcon className="size-4" />
+            <span className="max-sm:sr-only">Grabar</span>
+          </Button>
         </div>
 
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -214,6 +221,7 @@ export function StudioPage() {
         clipCount={clips.data?.length ?? 0}
       />
       <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
+      <RecordStudio open={recording} onClose={() => setRecording(false)} video={current} />
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
     </Page>
   );

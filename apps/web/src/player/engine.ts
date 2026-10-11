@@ -8,7 +8,20 @@ export interface PlayerEngine {
   getCurrentTime(): number;
   getDuration(): number;
   setRate(rate: number): void;
+  /**
+   * The song's own audio as a track, for recording dance videos with the original sound. Only media
+   * files can offer it; the YouTube player is a cross-origin iframe whose audio the page can't reach.
+   */
+  captureAudio?(): MediaStreamTrack | null;
 }
+
+type CapturableMedia = HTMLMediaElement & {
+  captureStream?: () => MediaStream;
+  mozCaptureStream?: () => MediaStream;
+};
+
+/** Web Audio taps, one per element (an element can only be wired into Web Audio once). */
+const audioTaps = new WeakMap<HTMLMediaElement, MediaStream>();
 
 export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
   return {
@@ -24,6 +37,32 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
     setRate: (rate) => {
       el.defaultPlaybackRate = rate;
       el.playbackRate = rate;
+    },
+    captureAudio: () => {
+      const media = el as CapturableMedia;
+      try {
+        const track = (media.captureStream ?? media.mozCaptureStream)?.call(media).getAudioTracks()[0];
+        if (track) return track;
+      } catch {
+        /* not capturable this way (e.g. Safari): fall back to Web Audio */
+      }
+      try {
+        let tap = audioTaps.get(el);
+        if (!tap) {
+          // Route the element through Web Audio: to the speakers as before, and into a recordable stream.
+          const ctx = new AudioContext();
+          const source = ctx.createMediaElementSource(el);
+          const out = ctx.createMediaStreamDestination();
+          source.connect(ctx.destination);
+          source.connect(out);
+          void ctx.resume();
+          tap = out.stream;
+          audioTaps.set(el, tap);
+        }
+        return tap.getAudioTracks()[0] ?? null;
+      } catch {
+        return null;
+      }
     },
   };
 }
