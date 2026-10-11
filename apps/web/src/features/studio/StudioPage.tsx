@@ -10,7 +10,6 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
-  ArrowLeft,
   ExternalLink,
   FileVideo,
   FlipHorizontal2,
@@ -30,7 +29,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
-import { ButtonSkin, useButtonStyle } from '@/components/ui/ButtonSkin';
+import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
@@ -53,7 +52,6 @@ import { useShortcuts } from './useShortcuts';
 
 export function StudioPage() {
   const { videoId } = useParams();
-  const skin = useButtonStyle((s) => s.style);
   const video = useVideo(videoId);
   const clips = useClips(videoId);
   const toast = useToast();
@@ -137,13 +135,9 @@ export function StudioPage() {
           <Link
             to="/"
             aria-label="Volver a la biblioteca"
-            className={
-              skin === 'actual'
-                ? 'grid size-11 shrink-0 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted transition-colors hover:border-washi/40 hover:text-washi'
-                : 'size-11 shrink-0 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] transition-transform hover:scale-105 active:scale-95'
-            }
+            className="size-11 shrink-0 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] transition-transform hover:scale-105 active:scale-95"
           >
-            {skin === 'actual' ? <ArrowLeft className="size-5" /> : <ButtonSkin kind="back" style={skin} />}
+            <ButtonSkin kind="back" />
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">

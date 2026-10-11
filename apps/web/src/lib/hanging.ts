@@ -198,30 +198,3 @@ export class Rope {
     return d;
   }
 }
-
-/* ─────────────────────────────── Textures ─────────────────────────────── */
-
-let fibre: string | null = null;
-
-/**
- * A small tileable fibre/noise texture, drawn once on a canvas and reused as a CSS background. Moving
- * layers use this instead of live SVG filters, which browsers re-rasterise on every frame.
- */
-export function fibreTexture(): string {
-  if (fibre != null) return fibre;
-  const size = 96;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return (fibre = '');
-  for (let i = 0; i < 900; i++) {
-    const dark = Math.random() < 0.6;
-    ctx.fillStyle = dark
-      ? `rgba(0,0,0,${0.05 + Math.random() * 0.1})`
-      : `rgba(255,246,230,${0.03 + Math.random() * 0.06})`;
-    const long = Math.random() < 0.25;
-    ctx.fillRect(Math.random() * size, Math.random() * size, long ? 1 : 1 + Math.random(), long ? 3 + Math.random() * 5 : 1);
-  }
-  fibre = canvas.toDataURL('image/png');
-  return fibre;
-}

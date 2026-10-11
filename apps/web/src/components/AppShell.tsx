@@ -8,7 +8,7 @@ import { easeOutExpo, jelly } from '@/lib/motion';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
 import { InstallAppButton } from './InstallApp';
-import { ButtonSkin, ButtonStylePicker, useButtonStyle } from './ui/ButtonSkin';
+import { ButtonSkin } from './ui/ButtonSkin';
 import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
@@ -144,7 +144,6 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
 
       <div className="px-4 pb-3">
         <InstallAppButton compact />
-        <ButtonStylePicker className="mt-3 px-1" />
         <Link
           to="/privacidad"
           className="mt-1 block px-3 py-1.5 text-xs text-washi-subtle transition-colors hover:text-washi-muted"
@@ -174,7 +173,6 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const skin = useButtonStyle((st) => st.style);
   const name = profile?.display_name ?? user?.email ?? 'Tú';
 
   useEffect(() => {
@@ -203,23 +201,17 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
           <Logo />
         </Link>
         <div className="flex items-center gap-2">
-          {skin === 'actual' ? (
-            <Button size="icon" aria-label="Añadir vídeo" onClick={onAdd}>
-              <Plus className="size-5" />
-            </Button>
-          ) : (
-            <motion.button
-              type="button"
-              aria-label="Añadir vídeo"
-              onClick={onAdd}
-              whileHover={{ scale: 1.06 }}
-              whileTap={{ scale: 0.88, rotate: 8 }}
-              transition={jelly}
-              className="size-11 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)]"
-            >
-              <ButtonSkin kind="add" style={skin} />
-            </motion.button>
-          )}
+          <motion.button
+            type="button"
+            aria-label="Añadir vídeo"
+            onClick={onAdd}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.88, rotate: 8 }}
+            transition={jelly}
+            className="size-11 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)]"
+          >
+            <ButtonSkin kind="add" />
+          </motion.button>
           <div ref={menuRef} className="relative">
             <motion.button
               type="button"
@@ -261,7 +253,6 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                     </>
                   )}
                   <InstallAppButton compact className="mb-1" />
-                  <ButtonStylePicker className="px-1.5 pb-2 pt-1" />
                   {user && (
                     <button
                       role="menuitem"

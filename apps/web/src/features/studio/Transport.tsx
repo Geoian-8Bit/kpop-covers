@@ -4,8 +4,6 @@ import {
   BookmarkPlus,
   FlipHorizontal2,
   Minus,
-  Pause,
-  Play,
   Plus,
   Repeat,
   Repeat1,
@@ -17,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ButtonSkin, useButtonStyle } from '@/components/ui/ButtonSkin';
+import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, usePlayer } from '@/player/store';
@@ -229,24 +227,6 @@ function PlayButton() {
   const ready = usePlayer((s) => s.ready);
   const counting = usePlayer((s) => s.countdownEndsAt != null);
   const active = playing || counting;
-  const skin = useButtonStyle((s) => s.style);
-
-  if (skin !== 'actual') {
-    return (
-      <motion.button
-        type="button"
-        aria-label={active ? 'Pausar' : 'Reproducir'}
-        onClick={() => usePlayer.getState().togglePlay()}
-        disabled={!ready}
-        whileHover={{ scale: 1.06 }}
-        whileTap={{ scale: 0.88, rotate: -6 }}
-        transition={jelly}
-        className="relative size-12 drop-shadow-[0_8px_12px_rgb(0_0_0/0.55)] disabled:opacity-40"
-      >
-        <ButtonSkin kind={active ? 'pause' : 'play'} style={skin} />
-      </motion.button>
-    );
-  }
 
   return (
     <motion.button
@@ -254,21 +234,12 @@ function PlayButton() {
       aria-label={active ? 'Pausar' : 'Reproducir'}
       onClick={() => usePlayer.getState().togglePlay()}
       disabled={!ready}
-      whileTap={{ scale: 0.88 }}
+      whileHover={{ scale: 1.06 }}
+      whileTap={{ scale: 0.88, rotate: -6 }}
       transition={jelly}
-      className="relative grid size-12 place-items-center rounded-[12px] bg-shu-500 bg-[linear-gradient(180deg,rgb(255_255_255/0.16),rgb(0_0_0/0.1))] text-washi shadow-[0_10px_20px_-12px_rgb(120_28_12/0.95)] before:pointer-events-none before:absolute before:inset-[3px] before:rounded-[9px] before:border before:border-washi/45 hover:bg-shu-400 disabled:opacity-40"
+      className="relative size-12 drop-shadow-[0_8px_12px_rgb(0_0_0/0.55)] disabled:opacity-40"
     >
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
-          key={active ? 'pause' : 'play'}
-          initial={{ scale: 0.3, opacity: 0, rotate: -60 }}
-          animate={{ scale: 1, opacity: 1, rotate: 0 }}
-          exit={{ scale: 0.3, opacity: 0, rotate: 60 }}
-          transition={jelly}
-        >
-          {active ? <Pause className="size-5 fill-washi" /> : <Play className="ml-0.5 size-5 fill-washi" />}
-        </motion.span>
-      </AnimatePresence>
+      <ButtonSkin kind={active ? 'pause' : 'play'} />
     </motion.button>
   );
 }

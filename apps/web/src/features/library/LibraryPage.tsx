@@ -14,7 +14,7 @@ import { prefetchStudio } from '@/lib/prefetch';
 import { friendlyError } from '@/lib/supabase';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
-import { PinnedClips, QuickStylePicker, useQuickStyle } from './PinnedClips';
+import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
 
 /**
@@ -26,7 +26,6 @@ export function LibraryPage() {
   const { openAddVideo } = useShell();
   const videos = useVideos(activeCrew?.id);
   const quick = useQuickClips(activeCrew?.id);
-  const [quickStyle, setQuickStyle] = useQuickStyle();
   const deleteVideo = useDeleteVideo();
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<VideoWithClipCount | null>(null);
@@ -106,7 +105,6 @@ export function LibraryPage() {
           </SectionTitle>
           <div className="mb-4 mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <p className="text-[13px] text-washi-subtle">Fijados primero · toca uno y empieza a repetir</p>
-            {(quick.data?.length ?? 0) > 0 && <QuickStylePicker value={quickStyle} onChange={setQuickStyle} />}
           </div>
           {quick.isPending ? (
             <div className="flex gap-3">
@@ -115,7 +113,7 @@ export function LibraryPage() {
               ))}
             </div>
           ) : (
-            <PinnedClips clips={quick.data ?? []} style={quickStyle} />
+            <PinnedClips clips={quick.data ?? []} />
           )}
         </section>
 
