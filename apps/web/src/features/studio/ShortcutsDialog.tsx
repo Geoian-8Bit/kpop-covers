@@ -15,6 +15,7 @@ const SHORTCUTS: Array<[keys: string[], action: string]> = [
   [['R'], 'Repetir la canción entera'],
   [['Esc'], 'Quitar tramo'],
   [['S'], 'Guardar clip'],
+  [['N'], 'Nota en este momento'],
   [['Inicio'], 'Volver al inicio del tramo'],
   [['?'], 'Ver atajos'],
 ];

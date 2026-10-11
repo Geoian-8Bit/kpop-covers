@@ -122,6 +122,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      notes: {
+        Row: {
+          at_seconds: number;
+          body: string;
+          created_at: string;
+          created_by: string | null;
+          crew_id: string;
+          id: string;
+          updated_at: string;
+          video_id: string;
+        };
+        Insert: {
+          at_seconds: number;
+          body: string;
+          created_at?: string;
+          created_by?: string | null;
+          crew_id: string;
+          id?: string;
+          updated_at?: string;
+          video_id: string;
+        };
+        Update: {
+          at_seconds?: number;
+          body?: string;
+          created_at?: string;
+          created_by?: string | null;
+          crew_id?: string;
+          id?: string;
+          updated_at?: string;
+          video_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notes_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'notes_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       profiles: {
         Row: {
           avatar_hue: number;

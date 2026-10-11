@@ -1,4 +1,4 @@
-import type { Clip, Crew, Profile, TablesInsert, TablesUpdate, Video } from '@coverscape/shared';
+import type { Clip, Crew, Note, Profile, TablesInsert, TablesUpdate, Video } from '@coverscape/shared';
 import { supabase, VIDEO_BUCKET } from './supabase';
 
 /**
@@ -25,6 +25,10 @@ export interface Backend {
   insertClip(row: TablesInsert<'clips'>): Promise<Clip>;
   updateClip(id: string, patch: TablesUpdate<'clips'>): Promise<Clip>;
   deleteClip(id: string): Promise<void>;
+  listNotes(videoId: string): Promise<Note[]>;
+  insertNote(row: TablesInsert<'notes'>): Promise<Note>;
+  updateNote(id: string, patch: TablesUpdate<'notes'>): Promise<Note>;
+  deleteNote(id: string): Promise<void>;
   /** Returns the storage path, or null when the file stays on this device only. */
   uploadFile(path: string, file: File): Promise<string | null>;
   removeFile(path: string): Promise<void>;
@@ -103,6 +107,25 @@ const supabaseBackend: Backend = {
     const { error } = await supabase.from('clips').delete().eq('id', id);
     if (error) throw error;
   },
+  async listNotes(videoId) {
+    const { data, error } = await supabase.from('notes').select('*').eq('video_id', videoId).order('at_seconds');
+    if (error) throw error;
+    return data;
+  },
+  async insertNote(row) {
+    const { data, error } = await supabase.from('notes').insert(row).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async updateNote(id, patch) {
+    const { data, error } = await supabase.from('notes').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async deleteNote(id) {
+    const { error } = await supabase.from('notes').delete().eq('id', id);
+    if (error) throw error;
+  },
   async uploadFile(path, file) {
     const { error } = await supabase.storage
       .from(VIDEO_BUCKET)
@@ -125,6 +148,8 @@ interface DemoDb {
   profiles: Profile[];
   videos: Video[];
   clips: Clip[];
+  /** Added later; older demo stores don't have it yet. */
+  notes?: Note[];
 }
 
 const DEMO_KEY = 'coverscape.demo.v1';
@@ -200,6 +225,7 @@ const demoBackend: Backend = {
     mutate((db) => {
       db.videos = db.videos.filter((v) => v.id !== video.id);
       db.clips = db.clips.filter((c) => c.video_id !== video.id);
+      db.notes = (db.notes ?? []).filter((n) => n.video_id !== video.id);
     }),
   listClips: (videoId) =>
     query((db) => db.clips.filter((c) => c.video_id === videoId).sort((a, b) => a.start_seconds - b.start_seconds)),
@@ -246,6 +272,33 @@ const demoBackend: Backend = {
   deleteClip: (id) =>
     mutate((db) => {
       db.clips = db.clips.filter((c) => c.id !== id);
+    }),
+  listNotes: (videoId) =>
+    query((db) => (db.notes ?? []).filter((n) => n.video_id === videoId).sort((a, b) => a.at_seconds - b.at_seconds)),
+  insertNote: (row) =>
+    mutate((db) => {
+      const video = db.videos.find((v) => v.id === row.video_id);
+      const note: Note = {
+        id: crypto.randomUUID(),
+        created_by: DEMO_USER_ID,
+        created_at: now(),
+        updated_at: now(),
+        ...row,
+        crew_id: video?.crew_id ?? row.crew_id,
+      };
+      (db.notes ??= []).push(note);
+      return note;
+    }),
+  updateNote: (id, patch) =>
+    mutate((db) => {
+      const note = db.notes?.find((n) => n.id === id);
+      if (!note) throw new Error('not found');
+      Object.assign(note, patch, { updated_at: now() });
+      return note;
+    }),
+  deleteNote: (id) =>
+    mutate((db) => {
+      db.notes = (db.notes ?? []).filter((n) => n.id !== id);
     }),
   uploadFile: () => Promise.resolve(null),
   removeFile: () => Promise.resolve(),

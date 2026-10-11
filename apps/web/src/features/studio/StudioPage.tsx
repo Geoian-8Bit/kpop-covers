@@ -5,6 +5,7 @@ import {
   SPEED_PRESETS,
   youTubeWatchUrl,
   type Clip,
+  type Note,
   type Video,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
@@ -32,6 +33,7 @@ import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
+import { useNotes } from '@/data/notes';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
@@ -44,6 +46,7 @@ import { useLoopController } from '@/player/useLoopController';
 import { YouTubeStage } from '@/player/YouTubeStage';
 import { useToast } from '@/providers/ToastProvider';
 import { ClipList } from './ClipList';
+import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline } from './Timeline';
@@ -58,6 +61,8 @@ export function StudioPage() {
   const { mutate: patchVideo } = useUpdateVideo();
   const [saving, setSaving] = useState(false);
   const [help, setHelp] = useState(false);
+  const notes = useNotes(videoId);
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [params, setParams] = useSearchParams();
   const clipParam = params.get('clip');
   const ready = usePlayer((s) => s.ready);
@@ -81,7 +86,10 @@ export function StudioPage() {
     setSaving(true);
   }, [toast]);
   const openHelp = useCallback(() => setHelp(true), []);
-  useShortcuts({ onSave: openSave, onHelp: openHelp, enabled: !saving && !help });
+  // A new note belongs to the moment the button is pressed, even if the song keeps playing.
+  const addNote = useCallback(() => setNoteTarget({ note: null, at: usePlayer.getState().time }), []);
+  const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
+  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget });
 
   const applyClip = useCallback((clip: Clip) => usePlayer.getState().applyClip(clip), []);
 
@@ -177,8 +185,14 @@ export function StudioPage() {
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
               <MediaStage video={current} clips={clips.data ?? []} onClipSelect={applyClip} />
             </div>
-            <Timeline seed={current.id} clips={clips.data ?? []} onClipSelect={applyClip} />
-            <PlayerBar onSaveClip={openSave} />
+            <Timeline
+              seed={current.id}
+              clips={clips.data ?? []}
+              onClipSelect={applyClip}
+              notes={notes.data}
+              onNoteOpen={openNote}
+            />
+            <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
           </div>
 
           {/* Clips column */}
@@ -199,6 +213,7 @@ export function StudioPage() {
         video={current}
         clipCount={clips.data?.length ?? 0}
       />
+      <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
     </Page>
   );

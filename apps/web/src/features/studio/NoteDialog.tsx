@@ -1,0 +1,126 @@
+import { formatTime, type Note, type Video } from '@coverscape/shared';
+import { Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { useCreateNote, useDeleteNote, useUpdateNote } from '@/data/notes';
+import { friendlyError } from '@/lib/supabase';
+import { useToast } from '@/providers/ToastProvider';
+
+const IDEAS = ['Limpiar este paso', 'Brazos más arriba', 'Ir a tempo', 'Cambio de formación', 'Mirar a cámara'];
+
+export interface NoteTarget {
+  /** Existing note to read or edit, or null for a new one. */
+  note: Note | null;
+  /** Moment of the song the note belongs to. */
+  at: number;
+}
+
+/** Write, read, edit or delete a note pinned to a moment of the song. */
+export function NoteDialog({ target, onClose, video }: { target: NoteTarget | null; onClose: () => void; video: Video }) {
+  const create = useCreateNote();
+  const update = useUpdateNote();
+  const remove = useDeleteNote();
+  const toast = useToast();
+  const [body, setBody] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  /** Synchronous lock: a double tap must not save the note twice. */
+  const submitting = useRef(false);
+  const note = target?.note ?? null;
+
+  useEffect(() => {
+    if (!target) return;
+    setBody(target.note?.body ?? '');
+    setError(null);
+  }, [target]);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const text = body.trim();
+    if (!target || !text || submitting.current) return;
+    submitting.current = true;
+    try {
+      if (note) {
+        if (text !== note.body) await update.mutateAsync({ note, body: text });
+      } else {
+        await create.mutateAsync({ video_id: video.id, crew_id: video.crew_id, at_seconds: target.at, body: text });
+        toast(`Nota en ${formatTime(target.at)}`, 'success');
+      }
+      onClose();
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      submitting.current = false;
+    }
+  }
+
+  async function onDelete() {
+    if (!note) return;
+    try {
+      await remove.mutateAsync(note);
+      onClose();
+    } catch (err) {
+      setError(friendlyError(err));
+    }
+  }
+
+  return (
+    <Dialog
+      open={target != null}
+      onClose={onClose}
+      title={note ? 'Nota' : 'Nueva nota'}
+      description={target ? `En el ${formatTime(target.at, { tenths: true })} de la canción.` : undefined}
+    >
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="note-body" className="mb-1.5 block text-[13px] font-medium text-washi-muted">
+            Qué hay que mirar aquí
+          </label>
+          <textarea
+            id="note-body"
+            data-autofocus
+            rows={3}
+            maxLength={500}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Ej. Este paso hay que limpiarlo, brazos más arriba"
+            className="well w-full resize-none rounded-[10px] px-3.5 py-3 text-[15px] leading-relaxed text-washi outline-none placeholder:text-washi-subtle focus:border-kin-300/70"
+          />
+          {!note && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {IDEAS.map((idea) => (
+                <button
+                  key={idea}
+                  type="button"
+                  onClick={() => setBody(idea)}
+                  className="h-8 rounded-[8px] border border-line px-3 text-[13px] text-washi-muted transition-colors hover:text-washi"
+                >
+                  {idea}
+                </button>
+              ))}
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-enji-300">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-line pt-4">
+          {note && (
+            <Button variant="danger" size="sm" onClick={() => void onDelete()} loading={remove.isPending}>
+              <Trash2 className="size-4" /> Borrar
+            </Button>
+          )}
+          <Button variant="ghost" className="ml-auto" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={!body.trim()} loading={create.isPending || update.isPending}>
+            Guardar
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}

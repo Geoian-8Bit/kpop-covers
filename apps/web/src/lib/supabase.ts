@@ -27,7 +27,8 @@ export function friendlyError(error: unknown): string {
   if (/failed to fetch|network/i.test(message)) return 'Sin conexión. Revisa tu red.';
   if (/videos_crew_youtube_key/.test(message)) return 'Ese vídeo ya está en la biblioteca.';
   if (/clips_video_range_key/.test(message)) return 'Ya hay un clip guardado con este mismo tramo.';
-  if (/videos_cap_reached|clips_cap_reached/.test(message)) return 'La biblioteca está llena. Borra algo antes de añadir más.';
+  if (/notes_video_at_body_key/.test(message)) return 'Esa nota ya está guardada.';
+  if (/videos_cap_reached|clips_cap_reached|notes_cap_reached/.test(message)) return 'La biblioteca está llena. Borra algo antes de añadir más.';
   if (/bulk_delete_blocked/.test(message)) return 'Solo se puede borrar de uno en uno.';
   // Never show raw database text (constraint names, policies…) to the group.
   if (message) console.error('[friendlyError]', error);

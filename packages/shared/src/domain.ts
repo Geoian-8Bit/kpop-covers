@@ -10,6 +10,7 @@ export type Profile = Tables<'profiles'>;
 export type CrewMember = Tables<'crew_members'> & { role: 'owner' | 'member' };
 export type Video = Omit<Tables<'videos'>, 'source'> & { source: VideoSource };
 export type Clip = Omit<Tables<'clips'>, 'color'> & { color: ClipColor };
+export type Note = Tables<'notes'>;
 
 export function isClipColor(value: string): value is ClipColor {
   return (CLIP_COLORS as readonly string[]).includes(value);

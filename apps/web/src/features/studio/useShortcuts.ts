@@ -12,7 +12,17 @@ function isTyping(target: EventTarget | null): boolean {
 const NATIVE_KEYS = new Set([' ', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 const CONTROL_SELECTOR = 'button, a[href], summary, [role="radio"], [role="switch"], [role="slider"], [role="menuitem"]';
 
-export function useShortcuts({ onSave, onHelp, enabled }: { onSave: () => void; onHelp: () => void; enabled: boolean }) {
+export function useShortcuts({
+  onSave,
+  onHelp,
+  onNote,
+  enabled,
+}: {
+  onSave: () => void;
+  onHelp: () => void;
+  onNote: () => void;
+  enabled: boolean;
+}) {
   const toast = useToast();
 
   useEffect(() => {
@@ -74,6 +84,9 @@ export function useShortcuts({ onSave, onHelp, enabled }: { onSave: () => void; 
         case 'Escape':
           p.clearLoop();
           break;
+        case 'n':
+          onNote();
+          break;
         case 's':
           onSave();
           break;
@@ -93,5 +106,5 @@ export function useShortcuts({ onSave, onHelp, enabled }: { onSave: () => void; 
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enabled, onSave, onHelp, toast]);
+  }, [enabled, onSave, onHelp, onNote, toast]);
 }

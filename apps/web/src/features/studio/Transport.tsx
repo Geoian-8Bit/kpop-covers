@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   BookmarkPlus,
   FlipHorizontal2,
+  MessageSquarePlus,
   Minus,
   Plus,
   Repeat,
@@ -158,7 +159,7 @@ function TrayDivider() {
  * One player bar under the timeline: transport on the left, quick toggles on the right,
  * and a contextual row for the current A–B range.
  */
-export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
+export function PlayerBar({ onSaveClip, onAddNote }: { onSaveClip: () => void; onAddNote: () => void }) {
   const ready = usePlayer((s) => s.ready);
   const { nudge } = usePlayer.getState();
 
@@ -185,6 +186,18 @@ export function PlayerBar({ onSaveClip }: { onSaveClip: () => void }) {
             <MirrorButton />
             <TrayDivider />
             <LoopAllButton />
+            <TrayDivider />
+            <button
+              type="button"
+              aria-label="Añadir una nota en este momento"
+              title="Nota en este momento (N)"
+              disabled={!ready}
+              onClick={onAddNote}
+              className={cn(trayBtn, trayIdle, 'disabled:opacity-40')}
+            >
+              <MessageSquarePlus className="size-[18px]" />
+              <span className="max-sm:sr-only">Nota</span>
+            </button>
           </div>
           <ClipButton onSaveClip={onSaveClip} />
         </div>

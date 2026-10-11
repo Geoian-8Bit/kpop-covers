@@ -1,6 +1,7 @@
-import { clamp, formatTime, MIN_LOOP_LENGTH, type Clip } from '@coverscape/shared';
+import { clamp, formatTime, MIN_LOOP_LENGTH, type Clip, type Note } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  useEffect,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -56,10 +57,7 @@ function buildPaths(levels: number[]) {
   }
   const last = pts[pts.length - 1]!;
   line += ` L${last[0]},${last[1]}`;
-  const crests = pts
-    .map(([x, y], i) => ({ x: x / W, y: y / H, v: levels[i]! }))
-    .filter((p, i) => i > 0 && i < POINTS && p.v > levels[i - 1]! && p.v >= levels[i + 1]! && p.v > 0.62);
-  return { line, area: `${line} L${W},${H} L0,${H} Z`, crests };
+  return { line, area: `${line} L${W},${H} L0,${H} Z`, levels };
 }
 
 /**
@@ -95,11 +93,16 @@ interface TimelineProps {
   seed: string;
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
+  /** Timed notes, drawn as dots on the wave. */
+  notes?: Note[];
+  onNoteOpen?: (note: Note) => void;
   /** Slimmer track for the fullscreen overlay. */
   compact?: boolean;
 }
 
-export function Timeline({ seed, clips, onClipSelect, compact = false }: TimelineProps) {
+const NO_NOTES: Note[] = [];
+
+export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOpen, compact = false }: TimelineProps) {
   const duration = usePlayer((s) => s.duration);
   const loop = usePlayer((s) => s.loop);
   const activeClipId = usePlayer((s) => s.activeClipId);
@@ -334,7 +337,8 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
               />
             </g>
           </svg>
-          <Crests crests={wave.crests} />
+          <NoteDots notes={notes} levels={wave.levels} duration={duration} onOpen={onNoteOpen} />
+          <NoteBubble notes={notes} duration={duration} />
 
           {/* A–B band */}
           <AnimatePresence>
@@ -418,7 +422,7 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
               exit={{ opacity: 0 }}
               className={cn('hidden truncate px-2 font-sans', !compact && 'sm:inline')}
             >
-              Toca para saltar · arrastra en la franja de clips para marcar un tramo
+              Toca para saltar · arrastra en la franja de clips para marcar un tramo · los puntos son notas
             </motion.span>
           )}
         </AnimatePresence>
@@ -428,27 +432,116 @@ export function Timeline({ seed, clips, onClipSelect, compact = false }: Timelin
   );
 }
 
-type Crest = ReturnType<typeof buildPaths>['crests'][number];
+/** Height of the wave line at a fraction of the song (0..1), as a fraction of the track height. */
+function waveY(levels: number[], fraction: number): number {
+  const p = clamp(fraction, 0, 1) * POINTS;
+  const i = Math.min(Math.floor(p), POINTS - 1);
+  const v = levels[i]! + (levels[i + 1]! - levels[i]!) * (p - i);
+  return (H - (14 + v * 70)) / H;
+}
 
-/** Foam on the crests turns white once the song has passed it; re-renders only when a crest is crossed. */
-function Crests({ crests }: { crests: Crest[] }) {
+/**
+ * The group's notes as dots riding on the wave. A dot turns white once the song has passed it (the
+ * component re-renders only when a note is crossed). Tapping one jumps there and opens it.
+ */
+function NoteDots({
+  notes,
+  levels,
+  duration,
+  onOpen,
+}: {
+  notes: Note[];
+  levels: number[];
+  duration: number;
+  onOpen?: (note: Note) => void;
+}) {
   const passed = usePlayer((s) => {
-    const played = s.duration > 0 ? clamp(s.time / s.duration, 0, 1) : 0;
     let n = 0;
-    while (n < crests.length && crests[n]!.x <= played) n++;
+    while (n < notes.length && notes[n]!.at_seconds <= s.time) n++;
     return n;
   });
-  return crests.map((c, i) => (
-    <span
-      key={c.x}
-      aria-hidden
-      className={cn(
-        'absolute size-[5px] -translate-x-1/2 -translate-y-[140%] rounded-full transition-colors duration-500',
-        i < passed ? 'bg-washi' : 'bg-ai-400',
+  if (duration <= 0) return null;
+  return notes.map((note, i) => {
+    const f = note.at_seconds / duration;
+    return (
+      <button
+        key={note.id}
+        type="button"
+        aria-label={`Nota en ${formatTime(note.at_seconds)}: ${note.body}`}
+        title={`${formatTime(note.at_seconds)} · ${note.body}`}
+        // Keep the track from starting a scrub under the finger.
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          usePlayer.getState().seek(note.at_seconds);
+          onOpen?.(note);
+        }}
+        className="group/note absolute z-10 grid size-6 -translate-x-1/2 -translate-y-[85%] place-items-center"
+        style={{ left: `${f * 100}%`, top: `${waveY(levels, f) * 100}%` }}
+      >
+        <span
+          className={cn(
+            'size-[9px] rounded-full ring-2 ring-sumi-950/70 transition-[background-color,transform] duration-300 group-hover/note:scale-150',
+            i < passed ? 'bg-washi' : 'bg-kin-300',
+          )}
+        />
+      </button>
+    );
+  });
+}
+
+/**
+ * While the song plays, each note pops up above its dot for a few seconds as the playhead reaches it,
+ * so the dancers read "this step needs work" right when it matters.
+ */
+function NoteBubble({ notes, duration }: { notes: Note[]; duration: number }) {
+  const [shown, setShown] = useState<Note | null>(null);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+
+  useEffect(() => {
+    let last = usePlayer.getState().time;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = usePlayer.subscribe((s) => {
+      const now = s.time;
+      // Only natural forward playback announces a note: not scrubs, and not jumps longer than a
+      // throttled frame (a phone saving battery can tick as slowly as ~1 s).
+      if (s.playing && !s.scrubbing && now > last && now - last < 2.5) {
+        const hit = notesRef.current.find((n) => n.at_seconds > last && n.at_seconds <= now);
+        if (hit) {
+          setShown(hit);
+          clearTimeout(timer);
+          timer = setTimeout(() => setShown(null), 4200);
+        }
+      }
+      last = now;
+    });
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const f = shown && duration > 0 ? clamp(shown.at_seconds / duration, 0.12, 0.88) : 0.5;
+  return (
+    <AnimatePresence>
+      {shown && (
+        <motion.div
+          key={shown.id}
+          role="status"
+          initial={{ opacity: 0, y: 8, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.2 } }}
+          transition={jelly}
+          className="pointer-events-none absolute bottom-[calc(100%+10px)] z-20 w-max max-w-[min(260px,80vw)] -translate-x-1/2 rounded-[10px] bg-washi px-3 py-2 text-[13px] font-medium leading-snug text-sumi-900 shadow-[0_10px_24px_-10px_rgb(0_0_0/0.9)]"
+          style={{ left: `${f * 100}%` }}
+        >
+          <span className="tabular mr-1.5 font-mono text-[11px] text-shu-500">{formatTime(shown.at_seconds)}</span>
+          {shown.body}
+        </motion.div>
       )}
-      style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
-    />
-  ));
+    </AnimatePresence>
+  );
 }
 
 type HoverControl = (fraction: number | null) => void;
