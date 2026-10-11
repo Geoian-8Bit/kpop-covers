@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { unlockAudio } from './lib/metronome';
+import { keepViewportFitted } from './lib/viewport';
 import './index.css';
 
 // PWA ('prompt' mode): a new deploy installs in the background and waits. It is applied (fresh service worker
 // + one reload) only at a safe moment: outside the studio (/v/…) and with no dialog open, so a rehearsal, a
 // recording or an upload is never cut short. Installed apps also check for a new version every hour.
+keepViewportFitted();
+
 let updateWaiting = false;
 let updatePoll: ReturnType<typeof setInterval> | undefined;
 

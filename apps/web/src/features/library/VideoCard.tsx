@@ -1,9 +1,10 @@
 import { formatDuration } from '@coverscape/shared';
 import { motion } from 'motion/react';
-import { Film, HardDrive, Layers, Play, Trash2, Youtube } from 'lucide-react';
+import { Film, HardDrive, Layers, Play, Youtube } from 'lucide-react';
 import { memo } from 'react';
 import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
+import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import type { VideoWithClipCount } from '@/data/videos';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
@@ -114,17 +115,20 @@ export const VideoCard = memo(function VideoCard({
         type="button"
         aria-label={`Eliminar ${video.title}`}
         onClick={() => onDelete(video)}
-        whileTap={{ scale: 0.85 }}
+        whileTap={{ scale: 0.85, rotate: -8 }}
         transition={jelly}
         // Visibility lives in CSS, not in motion's inline styles: always shown on touch screens and phones;
         // with a mouse it appears on card hover or keyboard focus.
         className={cn(
-          'absolute right-3 top-3 grid size-9 place-items-center rounded-[8px] bg-sumi-950/85 text-washi-muted transition-[opacity,scale,color] duration-200 hover:text-enji-300',
+          'absolute size-10 drop-shadow-[0_6px_12px_rgb(0_0_0/0.7)] transition-[opacity,scale] duration-200',
+          // On the thumbnail's top corner, never over the title or the clip count. Phone rows have a small
+          // thumbnail on the left, so the crest sits on its top-left corner there.
+          featured ? 'right-3 top-3' : 'left-1 top-1 size-9 sm:left-auto sm:right-3 sm:top-3 sm:size-10',
           'sm:[@media(hover:hover)]:scale-75 sm:[@media(hover:hover)]:opacity-0',
           'group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100',
         )}
       >
-        <Trash2 className="size-4" />
+        <ButtonSkin kind="delete" />
       </motion.button>
     </motion.article>
   );

@@ -609,6 +609,28 @@ function MediaStage({
               onExit={() => void toggleFullscreen()}
             />
           </div>
+          {/*
+            Paused YouTube draws its own (mirrored, plain black) play button in the middle of the iframe, and
+            nothing outside the iframe can switch it off. With the controls hidden, our crest stays on top of
+            it so the only thing in the middle is ours; a tap on it plays.
+          */}
+          {video.source === 'youtube' && (
+            <button
+              type="button"
+              aria-label="Reproducir"
+              tabIndex={chrome.visible || playing || counting ? -1 : 0}
+              onClick={() => {
+                usePlayer.getState().play();
+                chrome.wake();
+              }}
+              className={cn(
+                'absolute inset-0 z-30 m-auto size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24',
+                !chrome.visible && !playing && !counting && ready ? 'opacity-100' : 'pointer-events-none opacity-0',
+              )}
+            >
+              <ButtonSkin kind="play" />
+            </button>
+          )}
         </>
       )}
     </div>
@@ -650,7 +672,14 @@ function useFullscreen() {
 
   useEffect(() => {
     const onChange = () => {
-      if (!document.fullscreenElement) setMode((m) => (m === 'native' ? 'none' : m));
+      if (document.fullscreenElement) return;
+      // Hand the rotation back to the phone, or it can stay stuck sideways after leaving fullscreen.
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        /* not locked / not supported */
+      }
+      setMode((m) => (m === 'native' ? 'none' : m));
     };
     const onToggle = () => void toggleFullscreen();
     document.addEventListener('fullscreenchange', onChange);

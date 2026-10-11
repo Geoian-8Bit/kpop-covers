@@ -265,6 +265,8 @@
 
   body {
     min-height: 100dvh;
+    /* Nothing may widen the page sideways: a wider layout makes phones zoom out after rotating. */
+    overflow-x: clip;
     background-color: var(--color-sumi-900);
     color: var(--color-washi);
     font-family: var(--font-sans);

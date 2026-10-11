@@ -3,7 +3,7 @@
  * crests: a kikkō hexagon with a gold rim and an inner hairline. Back is ink, actions are vermilion.
  * The rest of the interface follows the same crest geometry through the `.skin-*` classes in index.css.
  */
-export type SkinKind = 'back' | 'play' | 'pause' | 'add';
+export type SkinKind = 'back' | 'play' | 'pause' | 'add' | 'delete';
 
 /* Brush-drawn glyphs in a 24×24 box. */
 const GLYPH: Record<SkinKind, string> = {
@@ -12,10 +12,12 @@ const GLYPH: Record<SkinKind, string> = {
   pause:
     'M7.4 5.2c.9-.3 2.2-.2 2.8.2.3 4.4.3 9.2-.1 13.6-.7.4-2 .4-2.7 0-.4-4.6-.4-9.2 0-13.8zM13.9 5.2c.9-.3 2.2-.2 2.8.2.3 4.4.3 9.2-.1 13.6-.7.4-2 .4-2.7 0-.4-4.6-.4-9.2 0-13.8z',
   add: 'M5 12.4c3.5-.8 10.5-1.3 14.2-.7.6.1.6.9 0 1-3.6.4-10.4.8-14 .9-.8 0-.9-1-.2-1.2zM12.3 4.8c.5 3.6.8 10.4.4 14.6 0 .6-.9.6-.9 0-.5-4-.8-10.6-.5-14.4.1-.8.9-.8 1-.2z',
+  delete:
+    'M9.6 3.6c1.6-.3 3.3-.3 4.9 0l.4 1.4c1.7.1 3.3.3 4.5.7.6.2.5 1-.1 1-4.5-.4-9.2-.4-13.7 0-.6 0-.7-.8-.1-1 1.2-.4 2.8-.6 4.5-.7zM6.7 8.2c3.5-.3 7.1-.3 10.6 0 .5 0 .8.4.7.9l-1 10.3c-.1.9-.8 1.5-1.7 1.6-2.2.2-4.5.2-6.7 0-.9-.1-1.6-.7-1.7-1.6L6 9.1c-.1-.5.2-.9.7-.9zm3 2.6c-.4 0-.6.3-.6.7l.4 6.6c0 .8 1.2.8 1.2 0l-.2-6.7c0-.4-.4-.6-.8-.6zm4.6 0c-.4 0-.8.2-.8.6l-.2 6.7c0 .8 1.2.8 1.2 0l.4-6.6c0-.4-.2-.7-.6-.7z',
 };
 
 /** The crest face of a button, filling its parent. `ink` forces the black-and-gold version. */
-export function ButtonSkin({ kind, ink = kind === 'back' }: { kind: SkinKind; ink?: boolean }) {
+export function ButtonSkin({ kind, ink = kind === 'back' || kind === 'delete' }: { kind: SkinKind; ink?: boolean }) {
   return (
     <svg viewBox="0 0 48 48" className="size-full overflow-visible" aria-hidden>
       <polygon
@@ -32,7 +34,8 @@ export function ButtonSkin({ kind, ink = kind === 'back' }: { kind: SkinKind; in
       />
       <path
         d={GLYPH[kind]}
-        fill={ink ? 'var(--color-kin-300)' : 'var(--color-washi)'}
+        // Delete keeps the ink-and-gold crest but its glyph is red, so it never reads as a harmless button.
+        fill={kind === 'delete' ? 'var(--color-enji-300)' : ink ? 'var(--color-kin-300)' : 'var(--color-washi)'}
         transform={kind === 'play' ? 'translate(12.8 12)' : 'translate(12 12)'}
       />
     </svg>
