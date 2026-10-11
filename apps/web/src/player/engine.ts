@@ -4,7 +4,11 @@ import { YTState, type YTPlayer } from '@/lib/youtubeIframe';
 export interface PlayerEngine {
   play(): void;
   pause(): void;
-  seek(seconds: number): void;
+  /**
+   * Jump to a moment. `preview` marks the in-between positions of a drag: the engine may land
+   * roughly (only where it has data) – the release always follows with an exact seek.
+   */
+  seek(seconds: number, opts?: { preview?: boolean }): void;
   getCurrentTime(): number;
   getDuration(): number;
   setRate(rate: number): void;
@@ -29,8 +33,10 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
       void el.play().catch(() => undefined);
     },
     pause: () => el.pause(),
-    seek: (seconds) => {
-      el.currentTime = seconds;
+    seek: (seconds, opts) => {
+      // fastSeek jumps to the nearest keyframe: cheap enough to follow a finger.
+      if (opts?.preview && typeof el.fastSeek === 'function') el.fastSeek(seconds);
+      else el.currentTime = seconds;
     },
     getCurrentTime: () => el.currentTime,
     getDuration: () => (Number.isFinite(el.duration) ? el.duration : 0),
@@ -67,9 +73,16 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
   };
 }
 
+/** How long a seek target is trusted over the iframe's clock while YouTube is still loading it. */
+const SEEK_TRUST_MS = 6000;
+
 /**
  * The IFrame API only refreshes `getCurrentTime()` a few times per second, so we interpolate
  * between reports while playing. That keeps the playhead smooth and A–B loops tight.
+ *
+ * After a seek the iframe keeps reporting the old position until the new one has loaded (seconds on
+ * a slow connection). Until it catches up the engine reports the target, so the playhead never
+ * snaps back to where it came from.
  */
 export function createYouTubeEngine(
   player: YTPlayer,
@@ -79,6 +92,8 @@ export function createYouTubeEngine(
   let lastAt = 0;
   let disposed = false;
   let rateCheck: ReturnType<typeof setTimeout> | undefined;
+  let target: number | null = null;
+  let targetAt = 0;
 
   return {
     dispose: () => {
@@ -87,14 +102,21 @@ export function createYouTubeEngine(
     },
     play: () => player.playVideo(),
     pause: () => player.pauseVideo(),
-    seek: (seconds) => {
+    seek: (seconds, opts) => {
       lastRaw = -1;
-      player.seekTo(seconds, true);
+      target = seconds;
+      targetAt = performance.now();
+      // allowSeekAhead=false only moves within what's already buffered: no new request per drag step.
+      player.seekTo(seconds, !opts?.preview);
     },
     getCurrentTime: () => {
       if (disposed) return lastRaw > 0 ? lastRaw : 0;
       const raw = player.getCurrentTime() ?? 0;
       const now = performance.now();
+      if (target != null) {
+        if (Math.abs(raw - target) < 2 || now - targetAt > SEEK_TRUST_MS) target = null;
+        else return target;
+      }
       if (raw !== lastRaw || player.getPlayerState() !== YTState.PLAYING) {
         // Re-anchor while paused too, so resuming never extrapolates from a stale timestamp.
         lastRaw = raw;

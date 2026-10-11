@@ -17,7 +17,7 @@ export function FileStage({ src }: { src: string }) {
       sync({ duration: engine.getDuration() });
     };
     const onPlay = () => sync({ playing: true });
-    const onPause = () => sync({ playing: false });
+    const onPause = () => sync({ playing: false, buffering: false });
     const onWaiting = () => sync({ buffering: true });
     const onPlaying = () => sync({ buffering: false, playing: true });
     const onEnded = () => {

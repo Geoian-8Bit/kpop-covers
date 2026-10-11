@@ -116,8 +116,12 @@ const initialStatus: PlayerStatus = {
 
 const emptyLoop: LoopState = { start: null, end: null, enabled: false };
 
-/** Seeking the YouTube iframe on every pointermove floods it; drags forward at most this often. */
-const SCRUB_SEEK_MS = 130;
+/**
+ * Seeking the YouTube iframe on every pointermove floods it (and on phones the iframe shares the main
+ * thread, so the whole app stalls). Drags send cheap preview seeks at most this often; the exact seek
+ * happens once, on release.
+ */
+const SCRUB_SEEK_MS = 220;
 let scrubTimer: ReturnType<typeof setTimeout> | undefined;
 let scrubSeekAt = 0;
 /** Latest drag target the engine hasn't been sent yet. */
@@ -127,7 +131,7 @@ function flushScrub() {
   clearTimeout(scrubTimer);
   scrubTimer = undefined;
   if (scrubPending == null) return;
-  usePlayer.getState().engine?.seek(scrubPending);
+  usePlayer.getState().engine?.seek(scrubPending, { preview: true });
   scrubPending = null;
   scrubSeekAt = performance.now();
 }
@@ -323,9 +327,17 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   setScrubbing(scrubbing) {
-    // Release: the last drag position reaches the engine now, not on the next throttle tick.
-    if (!scrubbing) flushScrub();
-    set(scrubbing ? { scrubbing } : { scrubbing, scrubEndedAt: performance.now() });
+    if (scrubbing) {
+      set({ scrubbing });
+      return;
+    }
+    if (!get().scrubbing) return;
+    // Release: drop any queued preview and land exactly where the finger let go.
+    clearTimeout(scrubTimer);
+    scrubTimer = undefined;
+    scrubPending = null;
+    get().engine?.seek(get().time);
+    set({ scrubbing, scrubEndedAt: performance.now() });
   },
 
   setActiveClip(id) {

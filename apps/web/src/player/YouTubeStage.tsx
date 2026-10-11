@@ -21,7 +21,22 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
     let disposed = false;
     let player: YTPlayer | null = null;
     let engine: ReturnType<typeof createYouTubeEngine> | null = null;
+    let bufferWatch: ReturnType<typeof setInterval> | undefined;
     const { sync, attach, detach } = usePlayer.getState();
+
+    /**
+     * Interrupted seeks can leave the iframe out of BUFFERING without firing another state change, and
+     * the spinner would spin forever. While buffering, ask the player itself once a second.
+     */
+    const watchBuffering = () => {
+      clearInterval(bufferWatch);
+      bufferWatch = setInterval(() => {
+        const state = player?.getPlayerState();
+        if (disposed || state === YTState.BUFFERING) return;
+        clearInterval(bufferWatch);
+        sync({ buffering: false, playing: state === YTState.PLAYING });
+      }, 1000);
+    };
 
     loadYouTubeApi()
       .then((YT) => {
@@ -59,9 +74,15 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
             onStateChange: (event) => {
               const state = event.data;
               const duration = event.target.getDuration();
+              if (state === YTState.BUFFERING) {
+                sync({ buffering: true });
+                watchBuffering();
+                return;
+              }
+              clearInterval(bufferWatch);
               if (state === YTState.PLAYING) sync({ playing: true, buffering: false, duration });
-              else if (state === YTState.BUFFERING) sync({ buffering: true });
-              else if (state === YTState.PAUSED || state === YTState.CUED) sync({ playing: false, buffering: false });
+              else if (state === YTState.PAUSED || state === YTState.CUED || state === YTState.UNSTARTED)
+                sync({ playing: false, buffering: false });
               else if (state === YTState.ENDED) {
                 const { loop, gap } = usePlayer.getState();
                 if (loop.enabled && hasRange(loop) && engine) {
@@ -82,6 +103,7 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
 
     return () => {
       disposed = true;
+      clearInterval(bufferWatch);
       if (engine) {
         engine.dispose();
         detach(engine);
