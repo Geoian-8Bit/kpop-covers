@@ -121,9 +121,9 @@ export const VideoCard = memo(function VideoCard({
         // with a mouse it appears on card hover or keyboard focus.
         className={cn(
           'absolute size-10 drop-shadow-[0_6px_12px_rgb(0_0_0/0.7)] transition-[opacity,scale] duration-200',
-          // On the thumbnail's top corner, never over the title or the clip count. Phone rows have a small
-          // thumbnail on the left, so the crest sits on its top-left corner there.
-          featured ? 'right-3 top-3' : 'left-1 top-1 size-9 sm:left-auto sm:right-3 sm:top-3 sm:size-10',
+          // Featured and grid cards: the thumbnail's top-right corner. Phone rows: the top-right of the text,
+          // straight above the clip count (which sits at the bottom of that column), never over either.
+          featured ? 'right-3 top-3' : 'right-0 top-0 size-9 sm:right-3 sm:top-3 sm:size-10',
           'sm:[@media(hover:hover)]:scale-75 sm:[@media(hover:hover)]:opacity-0',
           'group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100',
         )}

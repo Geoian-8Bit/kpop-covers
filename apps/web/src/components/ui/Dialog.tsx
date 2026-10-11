@@ -16,6 +16,8 @@ interface DialogProps {
   size?: 'sm' | 'md' | 'lg';
   /** Work in flight (saving, uploading): Escape, the backdrop, back and the X can't close it. */
   busy?: boolean;
+  /** Confirmations already offer Cancelar: no extra X in the corner. */
+  hideClose?: boolean;
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
@@ -29,7 +31,7 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false, hideClose = false }: DialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
@@ -129,13 +131,16 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             <div className="shrink-0 px-6 pb-5 pt-6 sm:px-7 sm:pt-7">
               <div className="flex items-center gap-3">
                 <span aria-hidden className="size-2.5 shrink-0 rotate-45 bg-shu-500" />
-                <h2 id={titleId} className="shrink-0 font-display text-[26px] font-bold leading-tight text-washi">
+                {/* The title may wrap on narrow phones; it never pushes the close button out of the panel. */}
+                <h2 id={titleId} className="min-w-0 font-display text-[26px] font-bold leading-tight text-washi">
                   {title}
                 </h2>
                 <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-washi/25 to-washi/5" />
-                <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2">
-                  <X className="size-5" />
-                </Button>
+                {!hideClose && (
+                  <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2 shrink-0">
+                    <X className="size-5" />
+                  </Button>
+                )}
               </div>
               {description && <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>}
             </div>

@@ -154,6 +154,7 @@ export function LibraryPage() {
         open={pendingDelete != null}
         onClose={closeDelete}
         busy={deleteVideo.isPending}
+        hideClose
         title="¿Eliminar vídeo?"
         description={
           <>
