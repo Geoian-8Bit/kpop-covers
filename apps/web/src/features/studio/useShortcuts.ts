@@ -8,9 +8,16 @@ function isTyping(target: EventTarget | null): boolean {
   return Boolean(el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)));
 }
 
-/** Keys a focused control handles natively (activate / move between options). */
-const NATIVE_KEYS = new Set([' ', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
-const CONTROL_SELECTOR = 'button, a[href], summary, [role="radio"], [role="switch"], [role="slider"], [role="menuitem"]';
+/**
+ * Only controls that really use a key keep it; everywhere else (plain buttons, links, the stage) the
+ * studio shortcuts win. Enter is never a shortcut, so it always reaches the focused control.
+ */
+const OPTION_ROLES = ['radiogroup', 'radio', 'menu', 'menuitem', 'menuitemradio', 'menuitemcheckbox', 'tablist', 'tab', 'listbox', 'option'];
+/** Move between options with the arrows. */
+const ARROW_SELECTOR = OPTION_ROLES.map((r) => `[role="${r}"]`).join(', ');
+/** Space picks an option or flips a switch; on a plain button it means play/pause instead of a re-click. */
+const SPACE_SELECTOR = [...OPTION_ROLES, 'switch', 'checkbox'].map((r) => `[role="${r}"]`).join(', ');
+const ACTIVATES_ON_SPACE = 'button, a[href], summary, [role="button"]';
 
 export function useShortcuts({
   onSave,
@@ -27,14 +34,28 @@ export function useShortcuts({
 
   useEffect(() => {
     if (!enabled) return;
+    /** Set when Space played/paused over a focused button: its keyup must not click that button too. */
+    let swallowSpaceUp = false;
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || !swallowSpaceUp) return;
+      swallowSpaceUp = false;
+      event.preventDefault();
+    };
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      const target = event.target instanceof Element ? event.target : null;
+      if (key.startsWith('Arrow') && target?.closest(ARROW_SELECTOR)) return;
+      // The time sliders seek with ←/→ (and Home/End) themselves; ↑/↓ still change the speed there.
+      if ((key === 'ArrowLeft' || key === 'ArrowRight' || key === 'Home' || key === 'End') && target?.closest('[role="slider"]')) return;
+      if (key === ' ' && target?.closest(SPACE_SELECTOR)) return;
+      if (key === ' ' && target?.closest(ACTIVATES_ON_SPACE)) {
+        // Held Space must not leak a click on release either, even on the repeats we ignore.
+        swallowSpaceUp = true;
+        event.preventDefault();
+      }
       if (event.repeat && !key.startsWith('Arrow')) return;
-      const target = event.target as HTMLElement | null;
-      // The big stage button is the one control where Space should mean play/pause.
-      if (NATIVE_KEYS.has(event.key) && target?.closest(CONTROL_SELECTOR) && !target.closest('[data-stage]')) return;
       const p = usePlayer.getState();
       let handled = true;
 
@@ -105,6 +126,10 @@ export function useShortcuts({
     };
 
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, [enabled, onSave, onHelp, onNote, toast]);
 }

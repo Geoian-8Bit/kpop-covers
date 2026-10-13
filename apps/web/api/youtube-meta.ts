@@ -41,7 +41,14 @@ export async function GET(request: Request): Promise<Response> {
   if (upstream.status === 404 || upstream.status === 400) return json({ error: 'not_found' }, 404, shortCache);
   if (!upstream.ok) return json({ error: 'upstream_error' }, 502);
 
-  const data = (await upstream.json()) as OEmbed;
+  let data: OEmbed;
+  try {
+    data = (await upstream.json()) as OEmbed;
+  } catch {
+    // e.g. an HTML consent/error page instead of oEmbed JSON.
+    console.error('[youtube-meta] oEmbed answered non-JSON', upstream.status, upstream.headers.get('content-type'));
+    return json({ error: 'upstream_bad_response' }, 502);
+  }
   return json(
     {
       id,

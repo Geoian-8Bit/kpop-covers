@@ -22,7 +22,7 @@ shares one library of videos and clips.
 ## Positioning
 
 One place for the crew: mirror, speed and saved A–B clips on top of the original YouTube video (no download),
-or on uploaded files, shared per crew with invite codes.
+or on uploaded files, plus timed notes, shared by the whole group through one link (no accounts).
 
 ## Operating Context
 
@@ -30,11 +30,18 @@ or on uploaded files, shared per crew with invite codes.
   targets readable at distance.
 - Sources: YouTube links (played through the IFrame API, never downloaded) and uploaded video/audio files
   (≤ 50 MB synced to Supabase Storage, larger kept on the device in IndexedDB).
-- Crew model: create a crew or join with an 8-character invite code; everything is shared inside the crew.
+- Group model: one single group, no login. Anyone with the URL uses the app as a visitor and sees and edits the
+  same videos, clips and notes. Nobody creates groups or invites people from the app.
+- Deleting from the app only archives (the item disappears but can be restored by the admin in Supabase); cloud
+  files are never deleted from the client.
+- Search: YouTube search inside the add dialog (official Data API, small daily quota, cached), or paste a link.
 
 ## Capabilities and Constraints
 
-- Stack: React 19 + Vite + Tailwind v4 + motion, Supabase (auth, Postgres with RLS, storage), Vercel.
+- Stack: React 19 + Vite + Tailwind v4 + motion, Supabase (Postgres with RLS for the anonymous role, storage),
+  Vercel (static app + two functions for YouTube metadata and search).
+- Installable PWA: only the interface is cached; the library needs a connection. Updates wait until the user is
+  outside the studio.
 - YouTube may round unsupported playback speeds; the app reports the speed actually applied.
 - UI copy is in Spanish.
 

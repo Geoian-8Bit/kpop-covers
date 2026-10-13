@@ -57,20 +57,29 @@ export function useLongPress(onLong: () => void, onTap: () => void, ms = 450) {
   };
 }
 
-/** Closes a popover on outside pointer or Escape. */
+/**
+ * Closes a popover on outside pointer or Escape. Escape is caught before anything else sees it, so
+ * closing a menu never also reaches the studio shortcut that clears the A–B range (or leaves fullscreen).
+ */
 function useDismiss(ref: React.RefObject<HTMLElement | null>, onClose: () => void) {
   useEffect(() => {
-    const close = (event: PointerEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !ref.current?.contains(event.target as Node)) onClose();
+    const onDown = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) onClose();
     };
-    const id = setTimeout(() => {
-      window.addEventListener('pointerdown', close);
-      window.addEventListener('keydown', close);
-    }, 0);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    // Escape is live from the first frame; the outside-pointer close waits a tick so the opening
+    // tap itself doesn't close the menu.
+    window.addEventListener('keydown', onKey, true);
+    const id = setTimeout(() => window.addEventListener('pointerdown', onDown), 0);
     return () => {
       clearTimeout(id);
-      window.removeEventListener('pointerdown', close);
-      window.removeEventListener('keydown', close);
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [ref, onClose]);
 }
@@ -230,7 +239,7 @@ function TimeReadout() {
   // Tenths are all the readout shows: re-render ~10×/s instead of on every frame.
   const tenths = usePlayer((s) => Math.floor(s.time * 10));
   return (
-    <p className="tabular ml-3 whitespace-nowrap font-mono text-[17px] font-semibold text-washi" aria-label="Tiempo">
+    <p role="timer" aria-label="Tiempo" className="tabular ml-3 whitespace-nowrap font-mono text-[17px] font-semibold text-washi">
       {formatTime(tenths / 10, { tenths: true })}
     </p>
   );
@@ -267,7 +276,7 @@ function SpeedButton() {
     <div className="relative">
       <button
         type="button"
-        aria-label="Velocidad"
+        aria-label={`Velocidad: ${formatSpeed(rate)}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -385,6 +394,11 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
     const p = usePlayer.getState();
     if (step === 'start') p.markStart();
     else if (step === 'end') {
+      // Rewound past A: the end must come after the start, waiting won't help from here.
+      if (p.loop.start != null && p.time < p.loop.start) {
+        toast(`El final tiene que ir después del inicio (${formatTime(p.loop.start, { tenths: true })}).`, 'info');
+        return;
+      }
       // A double tap would cut a useless 0.2 s clip: the end needs the song to have moved on.
       if (p.loop.start != null && p.time - p.loop.start < 0.5) {
         toast('Deja avanzar la canción y vuelve a pulsar para marcar el final.', 'info');

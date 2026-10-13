@@ -13,6 +13,8 @@ export interface CameraFrame {
   setZoom(zoom: number): void;
   /** Keep the frame's size for the whole take; turning the phone mid-take letterboxes instead. */
   lock(locked: boolean): void;
+  /** Stop drawing while nobody looks (a take under review); the last frame stays on the canvas. */
+  pause(paused: boolean): void;
   /** The canvas as a video track to record. */
   captureStream(fps?: number): MediaStream;
   dispose(): void;
@@ -28,12 +30,13 @@ export function createCameraFrame(source: HTMLVideoElement): CameraFrame {
   const ctx = canvas.getContext('2d', { alpha: false });
   let zoom = 1;
   let locked = false;
+  let paused = false;
   let frame = 0;
   let disposed = false;
 
   const draw = () => {
     frame = 0;
-    if (disposed) return;
+    if (disposed || paused) return;
     const sw = source.videoWidth;
     const sh = source.videoHeight;
     if (ctx && sw && sh && source.readyState >= 2) {
@@ -70,6 +73,10 @@ export function createCameraFrame(source: HTMLVideoElement): CameraFrame {
     },
     lock(next) {
       locked = next;
+    },
+    pause(next) {
+      paused = next;
+      if (!paused && !disposed && !frame) frame = requestAnimationFrame(draw);
     },
     captureStream(fps = 30) {
       const capture = (canvas as CapturableCanvas).captureStream;

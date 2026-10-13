@@ -40,9 +40,11 @@ export function formatBytes(bytes: number): string {
   const units = ['KB', 'MB', 'GB'];
   let value = bytes / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
+  // Compare the rounded value, so 1023.99 KB shows as "1 MB", never "1024 KB".
+  while (Math.round(value) >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit++;
   }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
+  const shown = value >= 10 ? value.toFixed(0) : value.toFixed(1).replace(/\.0$/, '');
+  return `${shown} ${units[unit]}`;
 }

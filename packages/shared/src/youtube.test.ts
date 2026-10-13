@@ -29,6 +29,21 @@ describe('parseYouTubeId', () => {
   ])('rejects %s', (input) => {
     expect(parseYouTubeId(input)).toBeNull();
   });
+
+  it.each(['NewJeansOMG', 'TWICE-FANCY', 'blackpinkxx', 'LESSERAFIMS', 'aespa_drama'])(
+    'treats the 11-character word %s as a search, not an id',
+    (input) => {
+      expect(parseYouTubeId(input)).toBeNull();
+    },
+  );
+
+  it.each(['dQw4w9WgXcQ', 'aBcDeFgHi-J', 'xY_zzzzzzzz', '12345678901'])('accepts the bare id %s', (input) => {
+    expect(parseYouTubeId(input)).toBe(input);
+  });
+
+  it('still accepts an id without digits when pasted as a link', () => {
+    expect(parseYouTubeId('https://youtu.be/NewJeansOMG')).toBe('NewJeansOMG');
+  });
 });
 
 describe('parseYouTubeStart', () => {

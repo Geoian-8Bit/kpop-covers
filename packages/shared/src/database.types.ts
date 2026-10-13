@@ -13,6 +13,7 @@ export type Database = {
         Row: {
           color: string;
           created_at: string;
+          archived_at: string | null;
           created_by: string | null;
           crew_id: string;
           end_seconds: number;
@@ -27,6 +28,7 @@ export type Database = {
         Insert: {
           color?: string;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id: string;
           end_seconds: number;
@@ -41,6 +43,7 @@ export type Database = {
         Update: {
           color?: string;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id?: string;
           end_seconds?: number;
@@ -101,21 +104,21 @@ export type Database = {
       crews: {
         Row: {
           created_at: string;
-          created_by: string;
+          created_by: string | null;
           id: string;
           invite_code: string;
           name: string;
         };
         Insert: {
           created_at?: string;
-          created_by?: string;
+          created_by?: string | null;
           id?: string;
           invite_code?: string;
           name: string;
         };
         Update: {
           created_at?: string;
-          created_by?: string;
+          created_by?: string | null;
           id?: string;
           invite_code?: string;
           name?: string;
@@ -127,6 +130,7 @@ export type Database = {
           at_seconds: number;
           body: string;
           created_at: string;
+          archived_at: string | null;
           created_by: string | null;
           crew_id: string;
           id: string;
@@ -137,6 +141,7 @@ export type Database = {
           at_seconds: number;
           body: string;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id: string;
           id?: string;
@@ -147,6 +152,7 @@ export type Database = {
           at_seconds?: number;
           body?: string;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id?: string;
           id?: string;
@@ -195,6 +201,7 @@ export type Database = {
         Row: {
           artist: string | null;
           created_at: string;
+          archived_at: string | null;
           created_by: string | null;
           crew_id: string;
           duration_seconds: number | null;
@@ -211,6 +218,7 @@ export type Database = {
         Insert: {
           artist?: string | null;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id: string;
           duration_seconds?: number | null;
@@ -227,6 +235,7 @@ export type Database = {
         Update: {
           artist?: string | null;
           created_at?: string;
+          archived_at?: string | null;
           created_by?: string | null;
           crew_id?: string;
           duration_seconds?: number | null;

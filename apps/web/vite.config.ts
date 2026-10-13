@@ -91,7 +91,13 @@ export default defineConfig(({ mode }) => {
           {
             urlPattern: ({ url }) => url.origin === 'https://i.ytimg.com',
             handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'thumbnails', expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+            // Cross-origin thumbnails are opaque: browsers bill each one as several MB of quota (the same quota
+            // the device copies of videos use), so keep few and drop them first when space runs out.
+            options: {
+              cacheName: 'thumbnails',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
+            },
           },
         ],
       },

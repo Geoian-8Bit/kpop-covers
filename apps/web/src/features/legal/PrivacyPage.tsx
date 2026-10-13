@@ -40,7 +40,7 @@ export function PrivacyPage() {
         </header>
         <div className="px-5 pb-6 sm:px-8">
           <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">Privacidad y condiciones</h1>
-          <p className="mt-1 text-sm text-washi-subtle">Última actualización: 10 de octubre de 2026</p>
+          <p className="mt-1 text-sm text-washi-subtle">Última actualización: 13 de octubre de 2026</p>
         </div>
 
         <Section title="Qué es One Shoot">
@@ -53,21 +53,33 @@ export function PrivacyPage() {
         <Section title="Qué datos guardamos">
           <p>
             Solo lo que el grupo añade: la lista de vídeos (título, artista y el identificador del vídeo de YouTube o el
-            archivo subido) y los clips (nombre, inicio, fin, velocidad y espejo). Se guardan en Supabase y los ve todo
-            el que usa la app.
+            archivo subido), los clips (nombre, inicio, fin, velocidad y espejo) y las notas con tiempo (el texto y el
+            momento del vídeo). Se guardan en Supabase y los ve todo el que usa la app.
           </p>
           <p>
             En tu dispositivo se guardan preferencias (por ejemplo el bucle o el sonido del metrónomo) y, si subes un
-            archivo grande, una copia local. No usamos analítica ni cookies propias.
+            archivo grande, una copia local. Lo que grabas con la cámara no se sube: se queda en tu dispositivo hasta que
+            lo compartes o lo descargas. No usamos analítica ni cookies propias.
           </p>
-          <p>Puedes borrar en cualquier momento los vídeos y clips desde la propia app.</p>
+          <p>
+            Al borrar un vídeo, un clip o una nota desde la app deja de verse, pero se archiva: sigue guardado para poder
+            recuperarlo si se borró por error. Para borrarlo del todo, pídeselo a quien gestiona el grupo.
+          </p>
+        </Section>
+
+        <Section title="Fuentes">
+          <p>
+            Las tipografías se cargan desde Google Fonts. Al abrir la app, tu navegador se conecta a los servidores de
+            Google, que reciben tu dirección IP. Consulta la{' '}
+            <Ext href={GOOGLE_PRIVACY}>Política de privacidad de Google</Ext>.
+          </p>
         </Section>
 
         <Section title="YouTube">
           <p>
             One Shoot usa los Servicios de API de YouTube para buscar vídeos y el reproductor oficial de YouTube para
             verlos. No descargamos ni guardamos los vídeos de YouTube; de cada búsqueda solo mostramos los resultados,
-            que se guardan en caché un día como máximo.
+            que se guardan en caché y pueden servirse durante unas 48 horas como máximo.
           </p>
           <p>
             Al usar la búsqueda o el reproductor aceptas las <Ext href={YT_TERMS}>Condiciones de servicio de YouTube</Ext>.

@@ -48,4 +48,12 @@ describe('formatDuration / formatBytes', () => {
     expect(formatBytes(1536)).toBe('1.5 KB');
     expect(formatBytes(48 * 1024 * 1024)).toBe('48 MB');
   });
+
+  it('carries a value that would round to 1024 into the next unit', () => {
+    expect(formatBytes(1024 * 1024 - 1)).toBe('1 MB');
+    expect(formatBytes(1024 * 1024 - 300)).toBe('1 MB');
+    expect(formatBytes(1023 * 1024)).toBe('1023 KB');
+    expect(formatBytes(1024 * 1024)).toBe('1 MB');
+    expect(formatBytes(1024 * 1024 * 1024 - 1)).toBe('1 GB');
+  });
 });

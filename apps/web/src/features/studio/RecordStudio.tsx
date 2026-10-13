@@ -1,6 +1,6 @@
 import { formatTime, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { Aperture, Mic, Music2, RefreshCw, SwitchCamera, X, Zap, ZapOff } from 'lucide-react';
+import { Aperture, Mic, MicOff, Music2, RefreshCw, SwitchCamera, X, Zap, ZapOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
@@ -8,7 +8,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { createCameraFrame, type CameraFrame } from '@/lib/cameraFrame';
 import { cn } from '@/lib/cn';
 import { scheduleCountIn, unlockAudio } from '@/lib/metronome';
-import { jelly } from '@/lib/motion';
+import { jelly, soft } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 
@@ -97,6 +97,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [elapsed, setElapsed] = useState(0);
   const [take, setTake] = useState<Take | null>(null);
   const [songAudio, setSongAudio] = useState(false);
+  /** No song audio and the microphone refused: the take records without sound rather than not at all. */
+  const [silent, setSilent] = useState(false);
+  /** The take under review went out through the share sheet or a download. */
+  const [saved, setSaved] = useState(false);
+  /** Asking before an unsaved take is thrown away, and what happens if the dancer says yes. */
+  const [confirm, setConfirm] = useState<'close' | 'again' | null>(null);
   /** Camera controls, driven by what this phone's camera actually offers. */
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [backCams, setBackCams] = useState<string[]>([]);
@@ -132,23 +138,36 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   /** Synchronous locks: double taps must not start two takes or open two share sheets. */
   const starting = useRef(false);
   const sharing = useRef(false);
+  /** Set by the first stop of a take: pausing the song re-notifies the watcher, which must not stop again. */
+  const stopped = useRef(false);
   const recording = phase === 'recording';
+  const unsaved = phase === 'review' && take != null && !saved;
 
-  // Back / swipe-back closes the studio, except mid-take (it would throw the take away).
-  useBackToClose(open, onClose, recording);
+  // Back / swipe-back closes the studio, except mid-take or with an unsaved take (it would throw it away).
+  useBackToClose(open, onClose, recording || unsaved);
 
-  // Leaving the page mid-take loses it: ask first.
+  // Back with an unsaved take: the history entry stays (busy above) and we ask first; back again cancels.
   useEffect(() => {
-    if (!recording) return;
+    if (!open || !unsaved) return;
+    const onPop = () => setConfirm((c) => (c ? null : 'close'));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [open, unsaved]);
+
+  // Leaving the page mid-take, or before saving it, loses it: ask first.
+  useEffect(() => {
+    if (!recording && !unsaved) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [recording]);
+  }, [recording, unsaved]);
 
   const replaceTake = (next: Take | null) => {
     if (takeUrl.current) URL.revokeObjectURL(takeUrl.current);
     takeUrl.current = next?.url ?? null;
     setTake(next);
+    setSaved(false);
+    setConfirm(null);
   };
 
   const clearTimers = () => {
@@ -171,6 +190,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }, []);
 
   const startCamera = useCallback(async (which: Facing, device: string | null = null) => {
+    // Never under a running take: restarting the camera (and its microphone) would cut it off.
+    if (recorder.current) return;
     const id = ++session.current;
     camera.current?.getTracks().forEach((t) => t.stop());
     camera.current = null;
@@ -183,16 +204,26 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       // Always ask in landscape numbers: phones then pick a real camera mode and turn the picture to how
       // the phone is held. Asking 1080×1920 makes Safari (and some Chrome) hand back the sensor unrotated.
       const size = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: device ? { deviceId: { exact: device }, ...size } : { facingMode: { ideal: which }, ...size },
-        // Music through the speaker must not be "cancelled" as if it were an echo.
-        audio: tap ? false : { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      });
+      const video = device ? { deviceId: { exact: device }, ...size } : { facingMode: { ideal: which }, ...size };
+      // Music through the speaker must not be "cancelled" as if it were an echo.
+      const audio = tap ? false : { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      let stream: MediaStream;
+      let mic = Boolean(audio);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video, audio });
+      } catch (err) {
+        // Microphone refused (or missing): still record the picture, silently, rather than nothing.
+        const name = err instanceof DOMException ? err.name : '';
+        if (!audio || id !== session.current || (name !== 'NotAllowedError' && name !== 'NotFoundError')) throw err;
+        stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        mic = false;
+      }
       if (id !== session.current) {
         // Closed, or another camera asked for, while the permission prompt was up.
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
+      setSilent(!tap && !mic);
       camera.current = stream;
       if (preview.current) preview.current.srcObject = stream;
       // What this camera can do: zoom range (some phones reach 0.5× here) and the flash as a torch.
@@ -265,7 +296,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     };
   }, [open]);
 
+  // Reviewing a take: the camera keeps running for a retake, but nothing redraws the hidden frame.
+  useEffect(() => {
+    frame.current?.pause(phase === 'review');
+  }, [phase]);
+
   const stop = useCallback(() => {
+    // Once per take: the pause below re-notifies the watcher, which would otherwise call stop forever.
+    if (stopped.current) return;
+    stopped.current = true;
     clearTimers();
     if (recorder.current?.state === 'recording') recorder.current.stop();
     // The song stops here; the dancer's loop settings come back only when the studio closes, so nothing
@@ -274,20 +313,21 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     releaseWakeLock();
   }, []);
 
-  // Reviewing a take: its own sound plays, the song stays quiet.
+  // Reviewing a take: its own sound plays, the song stays quiet (only while the studio is open).
   useEffect(() => {
-    if (phase !== 'review') return;
+    if (!open || phase !== 'review') return;
     usePlayer.getState().pause();
     const unsubscribe = usePlayer.subscribe((s) => {
       if (s.playing) s.pause();
     });
     void review.current?.play().catch(() => undefined);
     return unsubscribe;
-  }, [phase, take]);
+  }, [open, phase, take]);
 
   function beginRecording() {
     const stream = camera.current;
     if (!stream) return;
+    const id = session.current;
     const audio = songTrack.current ?? stream.getAudioTracks()[0] ?? null;
     let picture = stream.getVideoTracks();
     try {
@@ -297,11 +337,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       /* no canvas capture: record the camera as it comes */
     }
     const tracks = [...picture, ...(audio ? [audio] : [])];
+    /** The canvas capture ends with the take; the camera's own track stays for the next one. */
+    const dropPicture = () =>
+      picture.forEach((t) => {
+        if (t !== stream.getVideoTracks()[0]) t.stop();
+      });
     const mimeType = pickMimeType();
     let rec: MediaRecorder;
     try {
       rec = new MediaRecorder(new MediaStream(tracks), mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined);
     } catch {
+      frame.current?.lock(false);
+      dropPicture();
+      releaseWakeLock();
       setError('Este navegador no puede grabar vídeo.');
       setPhase('error');
       restorePlayer();
@@ -312,15 +360,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (e.data.size > 0) chunks.push(e.data);
     };
     rec.onstop = () => {
+      dropPicture();
+      // A take that ends after the studio closed (or from an older session) is dropped, not reviewed.
+      if (id !== session.current || recorder.current !== rec) return;
+      recorder.current = null;
       frame.current?.lock(false);
-      picture.forEach((t) => {
-        if (t !== stream.getVideoTracks()[0]) t.stop();
-      });
       const blob = new Blob(chunks, { type: rec.mimeType || mimeType || 'video/webm' });
       replaceTake({ url: URL.createObjectURL(blob), blob });
       setPhase('review');
     };
     recorder.current = rec;
+    stopped.current = false;
     rec.start(1000);
     usePlayer.getState().play();
     startedAt.current = performance.now();
@@ -380,34 +430,54 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (!take || sharing.current) return;
     sharing.current = true;
     try {
-      await shareTake(take);
+      if (await shareTake(take)) setSaved(true);
     } finally {
       sharing.current = false;
     }
   }
 
-  async function shareTake(take: Take) {
+  /** False when the dancer backed out of the share sheet: the take is still only here. */
+  async function shareTake(take: Take): Promise<boolean> {
     const name = fileName(video, take.blob.type);
     const file = new File([take.blob], name, { type: take.blob.type });
     // Phones: the share sheet offers "Guardar vídeo" straight into the gallery.
     if (navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: video.title });
-        return;
+        return true;
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (err instanceof DOMException && err.name === 'AbortError') return false;
       }
     }
     const a = document.createElement('a');
     a.href = take.url;
     a.download = name;
     a.click();
+    return true;
   }
 
   function again() {
     replaceTake(null);
     if (preview.current && camera.current) preview.current.srcObject = camera.current;
     setPhase('ready');
+  }
+
+  /** The X and "Repetir": an unsaved take is only thrown away once the dancer says so. */
+  function requestClose() {
+    if (unsaved) setConfirm('close');
+    else onClose();
+  }
+
+  function requestAgain() {
+    if (unsaved) setConfirm('again');
+    else again();
+  }
+
+  function discard() {
+    const action = confirm;
+    setConfirm(null);
+    if (action === 'close') onClose();
+    else if (action === 'again') again();
   }
 
   function switchCamera() {
@@ -420,6 +490,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   /** Hardware zoom when the camera has it, otherwise a digital zoom on the recorded frame. */
   const range = zoomRange ?? DIGITAL_ZOOM;
   const onUltra = facing === 'environment' && ultraId != null && deviceId === ultraId;
+  /** Chips that change lens (restart the camera) instead of zooming: off limits mid-take. */
+  const switchesLens = (target: number) => onUltra || (target < 1 && !(zoomRange && zoomRange.min <= target));
 
   function applyZoom(value: number) {
     const z = Math.min(range.max, Math.max(range.min, value));
@@ -435,6 +507,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   /** Zoom chips: 0.5 (ultra-wide lens, or the camera's own range), then 1×, 2× and further. */
   function pickZoom(target: number) {
+    // Mid-take only zoom: a lens change would restart the camera under the recorder.
+    if (recorder.current && switchesLens(target)) return;
     if (target < 1 && !(zoomRange && zoomRange.min <= target)) {
       if (ultraId && !onUltra) void startCamera('environment', ultraId);
       return;
@@ -449,7 +523,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   /** Phones that only number their lenses: step through the back cameras to find the 0.5. */
   function nextLens() {
-    if (backCams.length < 2) return;
+    if (backCams.length < 2 || recorder.current) return;
     const at = deviceId ? backCams.indexOf(deviceId) : -1;
     void startCamera('environment', backCams[(at + 1) % backCams.length]!);
   }
@@ -536,7 +610,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           type="button"
           aria-label="Cerrar"
           disabled={recording}
-          onClick={onClose}
+          onClick={requestClose}
           className="grid size-11 place-items-center rounded-full bg-black/40 disabled:opacity-30"
         >
           <X className="size-6" />
@@ -556,10 +630,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
       {(phase === 'ready' || phase === 'starting') && (
         <p className="absolute inset-x-0 top-[calc(max(14px,env(safe-area-inset-top))+56px)] mx-auto flex w-max max-w-[90vw] items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 text-[12px] text-washi/90">
-          {songAudio ? <Music2 className="size-3.5 text-kin-300" /> : <Mic className="size-3.5 text-kin-300" />}
+          {songAudio ? (
+            <Music2 className="size-3.5 text-kin-300" />
+          ) : silent ? (
+            <MicOff className="size-3.5 text-kin-300" />
+          ) : (
+            <Mic className="size-3.5 text-kin-300" />
+          )}
           {songAudio
             ? 'Se graba con el audio original de la canción'
-            : 'YouTube no deja grabar su audio: se graba con el micrófono, sube el volumen'}
+            : silent
+              ? 'Sin permiso para el micrófono: se graba sin sonido'
+              : 'YouTube no deja grabar su audio: se graba con el micrófono, sube el volumen'}
         </p>
       )}
 
@@ -604,7 +686,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                 <Aperture className="size-4" /> {lensIndex}/{backCams.length}
               </button>
             )}
-            {zoomChips.map((z) => (
+            {zoomChips.filter((z) => !recording || z === activeChip || !switchesLens(z)).map((z) => (
               <button
                 key={z}
                 type="button"
@@ -704,12 +786,50 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         {phase === 'review' && (
           <div className="flex w-full max-w-sm flex-wrap items-center justify-center gap-2">
             <Button onClick={() => void save()}>Guardar en el móvil</Button>
-            <Button variant="secondary" onClick={again}>
+            <Button variant="secondary" onClick={requestAgain}>
               Repetir
             </Button>
           </div>
         )}
       </div>
+
+      {/* Inside the studio (above it), not a page Dialog: the studio covers every layer below it. */}
+      <AnimatePresence>
+        {confirm && (
+          <motion.div
+            className="absolute inset-0 grid place-items-center bg-sumi-950/80 p-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setConfirm(null)}
+          >
+            <motion.div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="record-discard-title"
+              className="paper-raised w-full max-w-sm rounded-[16px] p-6"
+              initial={{ y: 24, scale: 0.97 }}
+              animate={{ y: 0, scale: 1, transition: soft }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="record-discard-title" className="font-display text-[22px] font-bold leading-tight text-washi">
+                ¿Descartar la toma?
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-washi-muted">
+                Aún no la has guardado en el móvil. Si la descartas, se pierde.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="ghost" autoFocus onClick={() => setConfirm(null)}>
+                  Cancelar
+                </Button>
+                <Button variant="danger" onClick={discard}>
+                  Descartar
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>,
     document.body,
   );

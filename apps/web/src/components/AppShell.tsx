@@ -20,7 +20,7 @@ import { loadAddVideoDialog, prefetchAddVideo, prefetchAddVideoWhenIdle } from '
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
 import { ErrorBoundary } from './ErrorBoundary';
-import { InstallAppButton } from './InstallApp';
+import { InstallAppButton, InstallAppHelp } from './InstallApp';
 import { ButtonSkin } from './ui/ButtonSkin';
 import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
@@ -111,6 +111,8 @@ export function AppShell() {
           </Routed>
         </main>
       </div>
+      {/* One help dialog for every install button, outside the phone menu so closing the menu can't take it down. */}
+      <InstallAppHelp />
     </div>
   );
 }
@@ -192,10 +194,25 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
               </Link>
             </li>
           ))}
-          {!quick.isPending && pinned.length === 0 && (
+          {!quick.data && (quick.isError || quick.fetchStatus === 'paused') ? (
+            // A failed load is not "nothing pinned".
             <li className="px-3 py-1 text-[13px] leading-relaxed text-washi-subtle">
-              Fija un clip con la chincheta y aparecerá aquí, a un toque.
+              {quick.fetchStatus === 'paused' || !navigator.onLine ? 'Sin conexión.' : 'No se pudieron cargar.'}{' '}
+              <button
+                type="button"
+                onClick={() => void quick.refetch()}
+                className="font-medium text-kin-300 hover:underline"
+              >
+                Reintentar
+              </button>
             </li>
+          ) : (
+            !quick.isPending &&
+            pinned.length === 0 && (
+              <li className="px-3 py-1 text-[13px] leading-relaxed text-washi-subtle">
+                Fija un clip con la chincheta y aparecerá aquí, a un toque.
+              </li>
+            )
           )}
         </ul>
       </div>

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
-import { useCreateVideo, useVideos } from '@/data/videos';
+import { uploadFailureMessage, useCreateVideo, useVideos } from '@/data/videos';
 import { cn } from '@/lib/cn';
 import { probeMediaFile } from '@/lib/localVideos';
 import { jelly, soft } from '@/lib/motion';
@@ -69,7 +69,8 @@ const slide = (dir: 1 | -1) => ({
 export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activeCrew } = useCrew();
   const createVideo = useCreateVideo();
-  const library = useVideos(activeCrew?.id);
+  // Only while open: once mounted the dialog stays (for its exit animation), even inside the studio.
+  const library = useVideos(activeCrew?.id, { enabled: open });
   /** Synchronous lock: a fast double tap must not create the video twice before React re-renders. */
   const submitting = useRef(false);
   const navigate = useNavigate();
@@ -88,6 +89,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const titleTouched = useRef(false);
+  /** The search hit chosen last: its title survives a failed metadata fetch, its duration is saved. */
+  const picked = useRef<SearchItem | null>(null);
   /** Bumped on every pick/remove/close so a slow probe for an old file is ignored. */
   const probeToken = useRef(0);
 
@@ -106,6 +109,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
       setArtist('');
       setError(null);
       titleTouched.current = false;
+      picked.current = null;
     }
   }, [open]);
 
@@ -133,7 +137,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
           return;
         }
         setMeta({ status: 'ok', title: body.title ?? null, author: body.author ?? null });
-        if (!titleTouched.current) {
+        // A failed lookup (no title) keeps the title that came with the chosen search hit.
+        if (!titleTouched.current && (body.title || picked.current?.id !== youtubeId)) {
           setTitle(body.title ?? '');
           setArtist(body.author ?? '');
         }
@@ -160,11 +165,16 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
       const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.toLowerCase())}`, {
         signal: controller.signal,
       });
-      const body = (await res.json().catch(() => ({}))) as { items?: SearchItem[] };
+      const body = (await res.json().catch(() => ({}))) as { items?: SearchItem[]; error?: string };
       // A newer search took over while this one was reading: don't paint stale results over it.
       if (controller.signal.aborted) return;
       if (!res.ok) {
-        setSearch({ status: 'error', message: SEARCH_ERRORS[res.status] ?? 'No se pudo buscar. Prueba otra vez.' });
+        // 429 is either the day's YouTube quota or this phone searching too fast (the server says which).
+        const message =
+          body.error === 'rate_limited'
+            ? 'Demasiadas búsquedas seguidas. Espera unos minutos o pega el enlace.'
+            : SEARCH_ERRORS[res.status] ?? 'No se pudo buscar. Prueba otra vez.';
+        setSearch({ status: 'error', message });
         return;
       }
       setSearch({ status: 'ok', query, items: body.items ?? [] });
@@ -174,6 +184,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   }
 
   function pickResult(item: SearchItem) {
+    picked.current = item;
     setLink(`https://youtu.be/${item.id}`);
     if (!titleTouched.current) {
       setTitle(item.title);
@@ -230,15 +241,21 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
     try {
       const result = await createVideo.mutateAsync(
         tab === 'youtube'
-          ? { crewId: activeCrew.id, title, artist, youtubeId: youtubeId! }
+          ? {
+              crewId: activeCrew.id,
+              title,
+              artist,
+              youtubeId: youtubeId!,
+              // The search already knows the length: the card shows it before anyone opens the studio.
+              duration: picked.current?.id === youtubeId ? picked.current.duration : null,
+            }
           : { crewId: activeCrew.id, title, artist, file: file!, duration: probe?.duration, poster: probe?.poster },
       );
-      toast(
-        tab === 'file' && !result.synced ? 'Guardado en este dispositivo (no subido a la nube).' : 'Vídeo añadido a la biblioteca',
-        tab === 'file' && !result.synced ? 'info' : 'success',
-      );
+      if (result.uploadFailure) toast(uploadFailureMessage(result.uploadFailure), 'info');
+      else toast('Vídeo añadido a la biblioteca', 'success');
       onClose();
-      navigate(`/v/${result.video.id}`);
+      // Replace the dialog's own back-button entry: otherwise “back” from the studio lands on a stale copy of the library.
+      navigate(`/v/${result.video.id}`, { replace: true });
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -312,7 +329,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                     variant="secondary"
                     onClick={() => {
                       onClose();
-                      navigate(`/v/${existing.id}`);
+                      navigate(`/v/${existing.id}`, { replace: true });
                     }}
                   >
                     Abrir

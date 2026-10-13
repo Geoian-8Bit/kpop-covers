@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { Plus, Search } from 'lucide-react';
+import { AlertTriangle, Plus, Search, WifiOff } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
@@ -8,6 +8,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useQuickClips, type ClipWithVideo } from '@/data/clips';
 import { useDeleteVideo, useVideos, type VideoWithClipCount } from '@/data/videos';
+import { cn } from '@/lib/cn';
 import { byRecentlyOpened, readRecent } from '@/lib/recent';
 import { fadeUp } from '@/lib/motion';
 import { prefetchStudio } from '@/lib/prefetch';
@@ -49,6 +50,9 @@ export function LibraryPage() {
   }, [videos.data, deferredQuery, recent]);
 
   const total = videos.data?.length ?? 0;
+  // A failed or paused (offline) first load is not an empty library: say so and offer a retry.
+  const videosFailed = !videos.data && (videos.isError || videos.fetchStatus === 'paused');
+  const quickFailed = !quick.data && (quick.isError || quick.fetchStatus === 'paused');
 
   // The dialog keeps showing the last video while it animates out, instead of collapsing to “” and 0 clips.
   const shownDelete = useRef<VideoWithClipCount | null>(null);
@@ -98,7 +102,9 @@ export function LibraryPage() {
           <div className="mb-4 mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <p className="text-[13px] text-washi-subtle">Fijados primero · toca uno y empieza a repetir</p>
           </div>
-          {quick.isPending ? (
+          {quickFailed ? (
+            <LoadError compact query={quick} what="el acceso rápido" />
+          ) : quick.isPending ? (
             <div className="flex gap-3">
               {Array.from({ length: 5 }, (_, i) => (
                 <div key={i} className="skeleton h-[188px] w-[138px] rounded-[10px]" />
@@ -114,7 +120,9 @@ export function LibraryPage() {
             Biblioteca
           </SectionTitle>
 
-          {videos.isPending ? (
+          {videosFailed ? (
+            <LoadError query={videos} what="la biblioteca" />
+          ) : videos.isPending ? (
             <div className="grid gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4">
               <VideoCardSkeleton className="sm:col-span-2 xl:row-span-2" />
               {Array.from({ length: 4 }, (_, i) => (
@@ -174,6 +182,34 @@ export function LibraryPage() {
         </div>
       </Dialog>
     </Page>
+  );
+}
+
+/** Load failure (or no connection) with a retry; the query refetches by itself once back online. */
+function LoadError({
+  query,
+  what,
+  compact = false,
+}: {
+  query: { isFetching: boolean; fetchStatus: string; refetch: () => Promise<unknown> };
+  what: string;
+  compact?: boolean;
+}) {
+  const offline = query.fetchStatus === 'paused' || !navigator.onLine;
+  const Icon = offline ? WifiOff : AlertTriangle;
+  return (
+    <div role="alert" className={cn('flex flex-col items-center text-center', compact ? 'py-4' : 'px-6 py-14')}>
+      <Icon className={cn('size-8', offline ? 'text-washi-muted' : 'text-enji-300')} />
+      <p className={cn('mt-3 font-display font-bold', compact ? 'text-lg' : 'text-2xl')}>
+        {offline ? 'Sin conexión' : `No pudimos cargar ${what}`}
+      </p>
+      <p className="mt-1.5 max-w-[46ch] text-sm text-washi-muted">
+        {offline ? 'Se cargará en cuanto vuelva la conexión.' : 'Revisa la conexión e inténtalo de nuevo.'}
+      </p>
+      <Button size={compact ? 'sm' : 'md'} variant="secondary" className="mt-4" loading={query.isFetching} onClick={() => void query.refetch()}>
+        Reintentar
+      </Button>
+    </div>
   );
 }
 

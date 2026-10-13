@@ -13,8 +13,12 @@ export const supabase = createClient<Database>(url ?? 'http://localhost', key ??
 
 export const VIDEO_BUCKET = 'videos';
 
+/** An error whose message is already Spanish copy for the group: `friendlyError` shows it as is. */
+export class FriendlyError extends Error {}
+
 /** Maps Postgres / auth errors to short Spanish copy for toasts. */
 export function friendlyError(error: unknown): string {
+  if (error instanceof FriendlyError) return error.message;
   const message =
     typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message) : '';
   if (/invalid login credentials/i.test(message)) return 'Email o contraseña incorrectos.';

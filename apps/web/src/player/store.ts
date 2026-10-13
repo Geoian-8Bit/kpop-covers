@@ -72,7 +72,11 @@ interface PlayerState extends PlayerStatus {
   /** Pause between whole-song repetitions (independent of the A–B pause). */
   gapAll: number;
   setGapAll(seconds: number): void;
-  applyClip(clip: ClipSettings, opts?: { autoplay?: boolean }): void;
+  /**
+   * Returns false (and changes nothing) when the clip lies past the end of this video, e.g. a clip
+   * saved on a longer linked copy: the caller says so instead of looping the last 0.2 s.
+   */
+  applyClip(clip: ClipSettings, opts?: { autoplay?: boolean }): boolean;
   setActiveClip(id: string | null): void;
   setScrubbing(scrubbing: boolean): void;
 }
@@ -115,6 +119,11 @@ const initialStatus: PlayerStatus = {
 };
 
 const emptyLoop: LoopState = { start: null, end: null, enabled: false };
+
+/** Never before 0; past the end only while the length is still unknown. */
+function clampTime(seconds: number, duration: number): number {
+  return duration > 0 ? clamp(seconds, 0, duration) : Math.max(0, seconds);
+}
 
 /**
  * Seeking the YouTube iframe on every pointermove floods it (and on phones the iframe shares the main
@@ -189,6 +198,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       engine: null,
       scrubbing: false,
       rate: 1,
+      // A clip may have flipped the mirror for this session only.
+      mirrored: readMirrorPreference(),
       loop: emptyLoop,
       countdownEndsAt: null,
       activeClipId: null,
@@ -212,8 +223,9 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   pause() {
-    const { engine } = get();
-    set({ countdownEndsAt: null, playing: false, buffering: false });
+    const { engine, playing, buffering, countdownEndsAt } = get();
+    // Already paused: notify nobody (a subscriber that stops on "not playing" would re-enter forever).
+    if (playing || buffering || countdownEndsAt != null) set({ countdownEndsAt: null, playing: false, buffering: false });
     engine?.pause();
     if (engine) verifyPlaying();
   },
@@ -230,7 +242,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   seek(seconds) {
     const { engine, duration } = get();
-    const target = clamp(seconds, 0, duration || seconds);
+    const target = clampTime(seconds, duration);
     scrubPending = null; // an explicit seek wins over a throttled drag position still in flight
     engine?.seek(target);
     set({ time: target });
@@ -238,7 +250,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   scrubTo(seconds) {
     const { duration } = get();
-    const target = clamp(seconds, 0, duration || seconds);
+    const target = clampTime(seconds, duration);
     set({ time: target });
     scrubPending = target;
     const wait = SCRUB_SEEK_MS - (performance.now() - scrubSeekAt);
@@ -293,7 +305,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     const t = round3(at ?? get().time);
     const { loop } = get();
     const end = loop.end != null && loop.end - t >= MIN_LOOP_LENGTH ? loop.end : null;
-    set({ loop: { start: t, end, enabled: end != null ? true : loop.enabled }, activeClipId: null });
+    // A new range also cancels a gap countdown, which would resume from the old A.
+    set({ loop: { start: t, end, enabled: end != null ? true : loop.enabled }, activeClipId: null, countdownEndsAt: null });
   },
 
   markEnd(at) {
@@ -301,13 +314,13 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     const { loop, duration } = get();
     const range = normalizeRange(loop.start ?? 0, t, duration || t);
     if (!range) return;
-    set({ loop: { ...range, enabled: true }, activeClipId: null });
+    set({ loop: { ...range, enabled: true }, activeClipId: null, countdownEndsAt: null });
   },
 
   setRange(start, end) {
     const range = normalizeRange(start, end, get().duration);
     if (!range) return;
-    set((s) => ({ loop: { ...range, enabled: s.loop.enabled || !hasRange(s.loop) }, activeClipId: null }));
+    set((s) => ({ loop: { ...range, enabled: s.loop.enabled || !hasRange(s.loop) }, activeClipId: null, countdownEndsAt: null }));
   },
 
   clearLoop() {
@@ -331,8 +344,10 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   applyClip(clip, opts = {}) {
     const { autoplay = true } = opts;
-    const range = normalizeRange(clip.start_seconds, clip.end_seconds, get().duration || clip.end_seconds);
-    if (!range) return;
+    const { duration } = get();
+    if (duration > 0 && Math.min(clip.start_seconds, clip.end_seconds) > duration - MIN_LOOP_LENGTH) return false;
+    const range = normalizeRange(clip.start_seconds, clip.end_seconds, duration || clip.end_seconds);
+    if (!range) return false;
     get().setRate(clip.speed);
     // Session-only: opening a teammate's clip must not overwrite the saved mirror preference.
     set({
@@ -343,6 +358,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     });
     get().seek(range.start);
     if (autoplay) get().play();
+    return true;
   },
 
   setScrubbing(scrubbing) {

@@ -5,11 +5,20 @@ export function isYouTubeId(value: string): boolean {
   return ID_RE.test(value);
 }
 
+/**
+ * A bare id typed in the search box must also look random: a digit, or '-'/'_' with mixed case.
+ * Plain 11-character words ("NewJeansOMG", "TWICE-FANCY") are searches, not ids; the rare real id
+ * with none of those still works pasted as a link.
+ */
+function looksLikeBareId(value: string): boolean {
+  return /\d/.test(value) || (/[-_]/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value));
+}
+
 /** Extracts the 11-char video id from any common YouTube URL shape (or a bare id). */
 export function parseYouTubeId(input: string): string | null {
   const raw = input.trim();
   if (!raw) return null;
-  if (ID_RE.test(raw)) return raw;
+  if (ID_RE.test(raw)) return looksLikeBareId(raw) ? raw : null;
 
   let url: URL;
   try {

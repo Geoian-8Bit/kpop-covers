@@ -239,7 +239,8 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
       {/* Saved clips lane. Dragging on its empty space marks a new range — the quick way to cut a clip. */}
       <div
         data-lane
-        aria-label="Clips guardados · arrastra en el hueco para marcar un tramo"
+        role="group"
+        aria-label="Clips guardados"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest('button')) return;
           begin('select', e);
@@ -305,6 +306,10 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
             e.preventDefault();
             e.stopPropagation();
             usePlayer.getState().nudge((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 5));
+          } else if ((e.key === 'Home' || e.key === 'End') && duration > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            usePlayer.getState().seek(e.key === 'Home' ? 0 : duration);
           }
         }}
         onPointerDown={(e) => begin(e.shiftKey ? 'select' : 'scrub', e)}

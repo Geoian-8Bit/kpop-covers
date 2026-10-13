@@ -21,17 +21,24 @@ export function FileStage({ src }: { src: string }) {
     const onWaiting = () => sync({ buffering: true });
     const onPlaying = () => sync({ buffering: false, playing: true });
     const onEnded = () => {
-      const { loop, gap } = usePlayer.getState();
-      if (loop.enabled && hasRange(loop)) {
-        engine.seek(loop.start);
-        if (gap > 0) usePlayer.setState({ countdownEndsAt: performance.now() + gap * 1000, playing: false });
-        else engine.play();
-      } else if (usePlayer.getState().loopAll) {
-        engine.seek(0);
-        engine.play();
+      // Same as the loop controller: a gap keeps the media paused while the countdown runs.
+      const { loop, gap, loopAll, gapAll } = usePlayer.getState();
+      const restartAt = loop.enabled && hasRange(loop) ? loop.start : loopAll ? 0 : null;
+      if (restartAt != null) {
+        const wait = loop.enabled && hasRange(loop) ? gap : gapAll;
+        engine.seek(restartAt);
+        if (wait > 0) {
+          engine.pause();
+          usePlayer.setState({ time: restartAt, countdownEndsAt: performance.now() + wait * 1000, playing: false });
+        } else engine.play();
       } else {
         sync({ playing: false });
       }
+    };
+    // Recorded WebMs only learn their length late (after playing through): pick it up when it arrives.
+    const onDuration = () => {
+      const duration = engine.getDuration();
+      if (duration > 0 && duration !== usePlayer.getState().duration) sync({ duration });
     };
     const onError = () => sync({ error: 'No se pudo reproducir este archivo en el navegador.' });
 
@@ -41,6 +48,7 @@ export function FileStage({ src }: { src: string }) {
     el.addEventListener('waiting', onWaiting);
     el.addEventListener('playing', onPlaying);
     el.addEventListener('ended', onEnded);
+    el.addEventListener('durationchange', onDuration);
     el.addEventListener('error', onError);
     if (el.readyState >= 1) onMeta();
 
@@ -51,6 +59,7 @@ export function FileStage({ src }: { src: string }) {
       el.removeEventListener('waiting', onWaiting);
       el.removeEventListener('playing', onPlaying);
       el.removeEventListener('ended', onEnded);
+      el.removeEventListener('durationchange', onDuration);
       el.removeEventListener('error', onError);
       el.pause();
       detach(engine);

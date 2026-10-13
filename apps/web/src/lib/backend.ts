@@ -11,7 +11,30 @@ export const DEMO_USER_ID = '00000000-0000-4000-8000-000000000001';
 // No thumbnail: an uploaded video's poster is an inline data URL, and the quick row would repeat it once per clip.
 export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
 export type ClipWithVideo = Clip & { video: ClipVideo | null };
-export type VideoWithClipCount = Video & { clips: { count: number }[] };
+
+/** Only what the library cards and the add dialog read: no file metadata, no audit columns. */
+const LIBRARY_COLUMNS = 'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at';
+export type LibraryVideo = Pick<
+  Video,
+  'id' | 'crew_id' | 'title' | 'artist' | 'source' | 'youtube_id' | 'thumbnail_url' | 'duration_seconds' | 'created_at'
+>;
+export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
+
+/** Why a file stayed on this device instead of reaching the group's cloud. */
+export type UploadFailure = 'too-big' | 'type' | 'network' | 'denied' | 'unavailable';
+export type UploadResult = { ok: true; path: string } | { ok: false; reason: UploadFailure };
+
+function uploadFailure(error: unknown): UploadFailure {
+  const e = (error ?? {}) as { name?: string; status?: number; statusCode?: string; code?: string; message?: string };
+  const status = Number(e.status ?? e.statusCode) || 0;
+  const message = e.message ?? '';
+  if (status === 413 || e.code === 'EntityTooLarge' || /too large|maximum allowed size|exceeded the maximum/i.test(message)) {
+    return 'too-big';
+  }
+  if (status === 415 || e.code === 'InvalidMimeType' || /mime type/i.test(message)) return 'type';
+  if (e.name === 'StorageUnknownError' || !status || /failed to fetch|network|load failed/i.test(message)) return 'network';
+  return 'denied';
+}
 
 export interface Backend {
   joinGroup(): Promise<Crew>;
@@ -20,7 +43,7 @@ export interface Backend {
   getVideo(id: string): Promise<Video | null>;
   insertVideo(row: TablesInsert<'videos'> & { id: string }): Promise<Video>;
   updateVideo(id: string, patch: TablesUpdate<'videos'>): Promise<Video>;
-  deleteVideo(video: Video): Promise<void>;
+  deleteVideo(video: Pick<Video, 'id'>): Promise<void>;
   listClips(videoId: string): Promise<Clip[]>;
   listQuickClips(crewId: string): Promise<ClipWithVideo[]>;
   insertClip(row: TablesInsert<'clips'>): Promise<Clip>;
@@ -30,9 +53,11 @@ export interface Backend {
   insertNote(row: TablesInsert<'notes'>): Promise<Note>;
   updateNote(id: string, patch: TablesUpdate<'notes'>): Promise<Note>;
   deleteNote(id: string): Promise<void>;
-  /** Returns the storage path, or null when the file stays on this device only. */
-  uploadFile(path: string, file: File): Promise<string | null>;
-  removeFile(path: string): Promise<void>;
+  /**
+   * Never overwrites (each name is unique per video). Failures come back typed so the UI can say why.
+   * There is deliberately no way to delete cloud files from the client: deleting archives, files stay.
+   */
+  uploadFile(path: string, file: File): Promise<UploadResult>;
   signedUrl(path: string): Promise<string | null>;
 }
 
@@ -53,7 +78,7 @@ const supabaseBackend: Backend = {
   async listVideos(crewId) {
     const { data, error } = await supabase
       .from('videos')
-      .select('*, clips(count)')
+      .select(`${LIBRARY_COLUMNS}, clips(count)`)
       .eq('crew_id', crewId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -128,13 +153,11 @@ const supabaseBackend: Backend = {
     if (error) throw error;
   },
   async uploadFile(path, file) {
-    const { error } = await supabase.storage
-      .from(VIDEO_BUCKET)
-      .upload(path, file, { contentType: file.type || 'video/mp4', upsert: true });
-    return error ? null : path;
-  },
-  async removeFile(path) {
-    await supabase.storage.from(VIDEO_BUCKET).remove([path]);
+    // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
+    const { error } = await supabase.storage.from(VIDEO_BUCKET).upload(path, file, { contentType: file.type || 'video/mp4' });
+    if (!error) return { ok: true, path };
+    console.error('[uploadFile]', error);
+    return { ok: false, reason: uploadFailure(error) };
   },
   async signedUrl(path) {
     const { data, error } = await supabase.storage.from(VIDEO_BUCKET).createSignedUrl(path, 6 * 60 * 60);
@@ -208,6 +231,7 @@ const demoBackend: Backend = {
         thumbnail_url: null,
         youtube_id: null,
         created_by: DEMO_USER_ID,
+        archived_at: null,
         created_at: now(),
         updated_at: now(),
         ...row,
@@ -256,6 +280,7 @@ const demoBackend: Backend = {
         color: 'wine',
         is_pinned: false,
         created_by: DEMO_USER_ID,
+        archived_at: null,
         created_at: now(),
         ...row,
         crew_id: video?.crew_id ?? row.crew_id,
@@ -282,6 +307,7 @@ const demoBackend: Backend = {
       const note: Note = {
         id: crypto.randomUUID(),
         created_by: DEMO_USER_ID,
+        archived_at: null,
         created_at: now(),
         updated_at: now(),
         ...row,
@@ -301,8 +327,7 @@ const demoBackend: Backend = {
     mutate((db) => {
       db.notes = (db.notes ?? []).filter((n) => n.id !== id);
     }),
-  uploadFile: () => Promise.resolve(null),
-  removeFile: () => Promise.resolve(),
+  uploadFile: () => Promise.resolve({ ok: false, reason: 'unavailable' }),
   signedUrl: () => Promise.resolve(null),
 };
 

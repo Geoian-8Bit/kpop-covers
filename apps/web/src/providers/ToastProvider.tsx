@@ -42,10 +42,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const key = `${tone}:${message}`;
     const existing = timers.current.get(key);
     if (existing) clearTimeout(existing);
-    else {
-      const id = nextId.current++;
-      setToasts((current) => [...current.slice(-2), { id, message, tone }]);
-    }
+    // Decide on what is on screen, not on the timer: a toast pushed out by newer ones still has a timer
+    // running, and its repeat must show again instead of only restarting that timer.
+    const id = nextId.current++;
+    setToasts((current) =>
+      current.some((t) => `${t.tone}:${t.message}` === key) ? current : [...current.slice(-2), { id, message, tone }],
+    );
     timers.current.set(
       key,
       setTimeout(() => {

@@ -1,20 +1,27 @@
 import { MAX_CLOUD_UPLOAD_BYTES, round3, youTubeThumbnail, type TablesUpdate, type Video } from '@coverscape/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { backend, type VideoWithClipCount } from '@/lib/backend';
-import { deleteLocalVideo, saveLocalVideo } from '@/lib/localVideos';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { backend, type UploadFailure, type UploadResult, type VideoWithClipCount } from '@/lib/backend';
+import { deleteLocalVideo, purgeLocalVideos, saveLocalVideo } from '@/lib/localVideos';
+import { FriendlyError } from '@/lib/supabase';
 
-export type { VideoWithClipCount };
+export type { UploadFailure, VideoWithClipCount };
 
 export const videoKeys = {
   list: (crewId: string | undefined) => ['videos', crewId] as const,
   detail: (id: string | undefined) => ['video', id] as const,
 };
 
-export function useVideos(crewId: string | undefined) {
+/** `enabled: false` reads whatever is cached without fetching (e.g. a closed dialog). */
+export function useVideos(crewId: string | undefined, { enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: videoKeys.list(crewId),
-    enabled: Boolean(crewId),
-    queryFn: () => backend.listVideos(crewId!),
+    enabled: Boolean(crewId) && enabled,
+    queryFn: async () => {
+      const list = await backend.listVideos(crewId!);
+      // Videos deleted on another device leave their copy here: drop those (never blocks the list).
+      void purgeLocalVideos(list.map((v) => v.id));
+      return list;
+    },
   });
 }
 
@@ -26,14 +33,57 @@ export function useVideo(id: string | undefined) {
   });
 }
 
+/** Patches one video in the cached library list instead of downloading the whole list again. */
+function patchListedVideo(queryClient: QueryClient, video: Video) {
+  queryClient.setQueryData<VideoWithClipCount[]>(videoKeys.list(video.crew_id), (current) =>
+    current?.map((v) =>
+      v.id === video.id
+        ? {
+            ...v,
+            title: video.title,
+            artist: video.artist,
+            thumbnail_url: video.thumbnail_url,
+            duration_seconds: video.duration_seconds,
+          }
+        : v,
+    ),
+  );
+}
+
 function fileExtension(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5);
   return ext || 'mp4';
 }
 
-function uploadToGroup(crewId: string, videoId: string, file: File): Promise<string | null> {
-  if (file.size > MAX_CLOUD_UPLOAD_BYTES) return Promise.resolve(null);
+function uploadToGroup(crewId: string, videoId: string, file: File): Promise<UploadResult> {
+  if (file.size > MAX_CLOUD_UPLOAD_BYTES) return Promise.resolve({ ok: false, reason: 'too-big' });
   return backend.uploadFile(`${crewId}/${videoId}.${fileExtension(file.name)}`, file);
+}
+
+const UPLOAD_FAILURE_REASON: Record<UploadFailure, string> = {
+  'too-big': 'pesa más de 50 MB',
+  type: 'la nube no admite este formato',
+  network: 'no hay conexión',
+  denied: 'la nube lo rechazó',
+  unavailable: 'la nube no está disponible',
+};
+
+/** Toast copy for a file that stayed on this device only. */
+export function uploadFailureMessage(reason: UploadFailure): string {
+  return `Guardado solo en este dispositivo: no se subió a la nube porque ${UPLOAD_FAILURE_REASON[reason]}.`;
+}
+
+const NO_SPACE = 'No hay espacio en este dispositivo para guardar el vídeo.';
+
+/** Keeps the device copy; false when the browser can't store it (full, private mode…). */
+async function keepLocalCopy(videoId: string, file: File): Promise<boolean> {
+  try {
+    await saveLocalVideo(videoId, file);
+    return true;
+  } catch (error) {
+    console.error('[saveLocalVideo]', error);
+    return false;
+  }
 }
 
 export interface CreateVideoInput {
@@ -50,6 +100,8 @@ export interface CreateVideoResult {
   video: Video;
   /** For uploads: whether the file reached cloud storage (false → device only). */
   synced: boolean;
+  /** Why it didn't, when it didn't. */
+  uploadFailure?: UploadFailure;
 }
 
 export function useCreateVideo() {
@@ -66,26 +118,41 @@ export function useCreateVideo() {
       };
 
       if (input.file) {
-        await saveLocalVideo(id, input.file);
-        const storagePath = await uploadToGroup(input.crewId, id, input.file);
+        // The device copy is a cache: if it can't be stored, the cloud copy alone is enough.
+        const local = await keepLocalCopy(id, input.file);
+        if (!local && input.file.size > MAX_CLOUD_UPLOAD_BYTES) throw new FriendlyError(NO_SPACE);
+        // Row first: the group's storage only accepts a file for a video that already exists.
+        let video: Video;
         try {
-          const video = await backend.insertVideo({
+          video = await backend.insertVideo({
             ...base,
             source: 'upload',
             file_name: input.file.name,
             file_size: input.file.size,
-            storage_path: storagePath,
+            storage_path: null,
             thumbnail_url: input.poster ?? null,
           });
-          return { video, synced: Boolean(storagePath) };
         } catch (error) {
-          await deleteLocalVideo(id);
-          if (storagePath) await backend.removeFile(storagePath);
+          if (local) await deleteLocalVideo(id).catch(() => undefined);
           throw error;
+        }
+        const upload = await uploadToGroup(input.crewId, id, input.file);
+        if (!upload.ok) {
+          if (local) return { video, synced: false, uploadFailure: upload.reason };
+          // Neither here nor in the cloud: don't leave an empty entry behind (a client delete archives it).
+          await backend.deleteVideo({ id }).catch(() => undefined);
+          throw new FriendlyError(`${NO_SPACE} Tampoco se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
+        }
+        try {
+          video = await backend.updateVideo(id, { storage_path: upload.path });
+          return { video, synced: true };
+        } catch {
+          // The file is up but the row didn't take the path: the device copy still plays; "Subir a la nube" can retry.
+          return { video, synced: false, uploadFailure: 'network' };
         }
       }
 
-      if (!input.youtubeId) throw new Error('Falta el enlace de YouTube.');
+      if (!input.youtubeId) throw new FriendlyError('Falta el enlace de YouTube.');
       const video = await backend.insertVideo({
         ...base,
         source: 'youtube',
@@ -108,8 +175,7 @@ export function useUpdateVideo() {
     mutationFn: ({ id, patch }: { id: string; patch: TablesUpdate<'videos'> }) => backend.updateVideo(id, patch),
     onSuccess: (video) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
-      // Not awaited: the caller moves on at once, the list refreshes behind it.
-      void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
+      patchListedVideo(queryClient, video);
     },
   });
 }
@@ -117,20 +183,19 @@ export function useUpdateVideo() {
 export function useDeleteVideo() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (video: Video) => {
+    mutationFn: async (video: Pick<Video, 'id' | 'crew_id'>) => {
+      // Server-side this archives the row; the group's cloud file is kept. Only this device's copy goes.
       await backend.deleteVideo(video);
-      if (video.storage_path) await backend.removeFile(video.storage_path);
       await deleteLocalVideo(video.id).catch(() => undefined);
       return video;
     },
     onSuccess: (video) => {
       queryClient.removeQueries({ queryKey: videoKeys.detail(video.id) });
+      // The cache edit is exact: no need to download the whole library again.
       queryClient.setQueryData<{ id: string }[]>(videoKeys.list(video.crew_id), (current) =>
         current?.filter((v) => v.id !== video.id),
       );
       void queryClient.invalidateQueries({ queryKey: ['quick-clips', video.crew_id] });
-      // Not awaited: the caller moves on at once, the list refreshes behind it.
-      void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
     },
   });
 }
@@ -140,11 +205,29 @@ export function useLinkLocalFile() {
   const update = useUpdateVideo();
   return useMutation({
     mutationFn: async ({ video, file }: { video: Video; file: File }) => {
-      await saveLocalVideo(video.id, file);
+      const local = await keepLocalCopy(video.id, file);
       if (!video.storage_path) {
-        const storagePath = await uploadToGroup(video.crew_id, video.id, file);
-        if (storagePath) await update.mutateAsync({ id: video.id, patch: { storage_path: storagePath } });
+        const upload = await uploadToGroup(video.crew_id, video.id, file);
+        if (upload.ok) await update.mutateAsync({ id: video.id, patch: { storage_path: upload.path } });
+        else if (!local) throw new FriendlyError(NO_SPACE);
+      } else if (!local) {
+        throw new FriendlyError(NO_SPACE);
       }
+    },
+  });
+}
+
+/**
+ * Retries the cloud upload of a video that stayed on this device only (e.g. offline when it was added).
+ * The caller passes the device's file (from `loadLocalVideo`, wrapped in a `File`).
+ */
+export function useUploadToCloud() {
+  const update = useUpdateVideo();
+  return useMutation({
+    mutationFn: async ({ video, file }: { video: Video; file: File }): Promise<Video> => {
+      const upload = await uploadToGroup(video.crew_id, video.id, file);
+      if (!upload.ok) throw new FriendlyError(`No se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
+      return update.mutateAsync({ id: video.id, patch: { storage_path: upload.path } });
     },
   });
 }

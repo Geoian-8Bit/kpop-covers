@@ -14,6 +14,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ExternalLink,
+  CloudUpload,
   FileVideo,
   FlipHorizontal2,
   Keyboard,
@@ -24,6 +25,7 @@ import {
   RotateCcw,
   RotateCw,
   Video as VideoIcon,
+  WifiOff,
   Youtube,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -35,7 +37,7 @@ import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
-import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useVideo } from '@/data/videos';
+import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useUploadToCloud, useVideo } from '@/data/videos';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
@@ -97,7 +99,15 @@ export function StudioPage() {
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
   useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording });
 
-  const applyClip = useCallback((clip: Clip) => usePlayer.getState().applyClip(clip), []);
+  /** A clip cut on a longer copy of the song may not fit this one: say so instead of a stray loop. */
+  const applyClip = useCallback(
+    (clip: Clip) => {
+      const ok = usePlayer.getState().applyClip(clip) as unknown as boolean | undefined;
+      if (ok === false) toast('Este clip queda fuera de este vídeo', 'info');
+      return ok !== false;
+    },
+    [toast],
+  );
   const lastLineTap = useRef<{ id: string; at: number } | null>(null);
   /**
    * The clip lines above the timeline: one tap plays the clip (again, from its start); a quick second
@@ -113,17 +123,17 @@ export function StudioPage() {
         toast(`“${clip.name}” quitado`, 'info');
         return;
       }
-      lastLineTap.current = { id: clip.id, at: now };
-      usePlayer.getState().applyClip(clip);
+      // A clip that didn't fit was never put on: a second tap must not "take it off".
+      lastLineTap.current = applyClip(clip) ? { id: clip.id, at: now } : null;
     },
-    [toast],
+    [toast, applyClip],
   );
 
   // Deep link from quick access: /v/:id?clip=<clipId>
   useEffect(() => {
     if (!ready || !clipParam || !clips.data) return;
     const clip = clips.data.find((c) => c.id === clipParam);
-    if (clip) usePlayer.getState().applyClip(clip);
+    if (clip) applyClip(clip);
     setParams(
       (prev) => {
         prev.delete('clip');
@@ -131,7 +141,7 @@ export function StudioPage() {
       },
       { replace: true },
     );
-  }, [ready, clipParam, clips.data, setParams]);
+  }, [ready, clipParam, clips.data, setParams, applyClip]);
 
   // First time a file/stream reports its length, remember it for the library cards.
   const current = video.data;
@@ -140,6 +150,32 @@ export function StudioPage() {
       patchVideo({ id: current.id, patch: { duration_seconds: round3(duration) } });
     }
   }, [current, duration, patchVideo]);
+
+  // A failed or paused (offline) load is not "deleted": offer a retry, and say when it's the connection.
+  const offline = video.fetchStatus === 'paused' || (video.isError && !navigator.onLine);
+  if (!current && (video.isError || offline)) {
+    return (
+      <Page className="mx-auto max-w-lg px-5 py-24 text-center">
+        {offline ? (
+          <WifiOff className="mx-auto size-8 text-washi-muted" />
+        ) : (
+          <AlertTriangle className="mx-auto size-8 text-enji-300" />
+        )}
+        <h1 className="mt-3 font-display text-3xl font-bold">{offline ? 'Sin conexión' : 'No pudimos cargar el vídeo'}</h1>
+        <p className="mt-2 text-washi-muted">
+          {offline
+            ? 'Conéctate a internet para abrir este vídeo. Se cargará solo en cuanto vuelva la conexión.'
+            : 'Revisa la conexión e inténtalo de nuevo.'}
+        </p>
+        <Button className="mt-6" loading={video.isFetching} onClick={() => void video.refetch()}>
+          Reintentar
+        </Button>
+        <Link to="/" className="mt-4 block font-medium text-kin-300 hover:underline">
+          Volver a la biblioteca
+        </Link>
+      </Page>
+    );
+  }
 
   if (video.isPending) {
     return (
@@ -250,7 +286,8 @@ export function StudioPage() {
   );
 }
 
-type FileSource = { status: 'loading' } | { status: 'missing' } | { status: 'ready'; url: string };
+/** `local`: the device copy the picture plays from, when there is one (it can be sent to the cloud). */
+type FileSource = { status: 'loading' } | { status: 'missing' } | { status: 'ready'; url: string; local?: Blob };
 
 function useFileSource(video: Video, reloadKey: number): FileSource {
   const [state, setState] = useState<FileSource>({ status: 'loading' });
@@ -266,7 +303,7 @@ function useFileSource(video: Video, reloadKey: number): FileSource {
       if (cancelled) return;
       if (blob) {
         objectUrl = URL.createObjectURL(blob);
-        setState({ status: 'ready', url: objectUrl });
+        setState({ status: 'ready', url: objectUrl, local: blob });
         return;
       }
       if (video.storage_path) {
@@ -311,6 +348,20 @@ function MediaStage({
   const [reloadKey, setReloadKey] = useState(0);
   const file = useFileSource(video, reloadKey);
   const link = useLinkLocalFile();
+  const upload = useUploadToCloud();
+  /** Only on this device (the upload failed or was too big): offer to send it to the group from here. */
+  const localOnly = video.source === 'upload' && !video.storage_path && file.status === 'ready' && file.local != null;
+
+  async function sendToCloud() {
+    if (file.status !== 'ready' || !file.local || upload.isPending) return;
+    const copy = new File([file.local], video.file_name ?? 'video.mp4', { type: file.local.type || 'video/mp4' });
+    try {
+      await upload.mutateAsync({ video, file: copy });
+      toast('Subido a la nube: ya lo ve todo el grupo', 'success');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    }
+  }
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
 
@@ -472,6 +523,17 @@ function MediaStage({
               <Youtube className="size-3.5" /> YouTube
             </a>
           )}
+          {localOnly && !fullscreen && (
+            <button
+              type="button"
+              onClick={() => void sendToCloud()}
+              disabled={upload.isPending}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/85 transition-colors hover:text-washi disabled:opacity-60"
+            >
+              {upload.isPending ? <Spinner className="size-3.5" label="Subiendo" /> : <CloudUpload className="size-3.5" />}
+              {upload.isPending ? 'Subiendo…' : 'Solo en este móvil · Subir a la nube'}
+            </button>
+          )}
           <AnimatePresence>
             {rate !== 1 && (
               <motion.span
@@ -522,7 +584,7 @@ function MediaStage({
               <FileVideo className="mx-auto size-8 text-kin-300" />
               <p className="mt-3 font-display text-lg font-bold">Este archivo está en otro dispositivo</p>
               <p className="mt-1.5 text-sm text-washi-muted">
-                Pesaba demasiado para la nube. Elige tu copia de{' '}
+                No llegó a subirse a la nube. Elige tu copia de{' '}
                 <span className="font-medium text-washi">{video.file_name}</span> para usarla aquí; los clips
                 del grupo se aplican igual.
               </p>
@@ -682,13 +744,18 @@ function useFullscreen() {
     if (mode !== 'css') return;
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
+    // On document, so it runs after an open menu's own Escape (window, capture phase) and before the
+    // studio shortcut on window: Escape leaves fullscreen and must not also clear the A–B range.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMode('none');
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMode('none');
     };
-    window.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey);
     return () => {
       document.body.style.overflow = overflow;
-      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey);
     };
   }, [mode]);
 
@@ -952,6 +1019,7 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
       <div
         className="relative mb-1"
         style={{ height: Math.max(1, layout.count) * 7 }}
+        role="group"
         aria-label="Clips guardados"
       >
         {clipLines}
@@ -965,6 +1033,18 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
         aria-label="Progreso"
         aria-valuemin={0}
         aria-valuemax={Math.round(duration)}
+        // Same keys as the main timeline: ←/→ 5 s (Shift: 1 s), Home/End to either end.
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            e.stopPropagation();
+            usePlayer.getState().nudge((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 5));
+          } else if ((e.key === 'Home' || e.key === 'End') && duration > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            usePlayer.getState().seek(e.key === 'Home' ? 0 : duration);
+          }
+        }}
         onPointerDown={(e) => {
           if (!duration) return;
           try {
@@ -1099,7 +1179,7 @@ function FullscreenBar({
             <div ref={speedRef} className="relative">
               <button
                 type="button"
-                aria-label="Velocidad"
+                aria-label={`Velocidad: ${formatSpeed(rate)}`}
                 aria-haspopup="menu"
                 aria-expanded={speedOpen}
                 onClick={() => setSpeedOpen((v) => !v)}

@@ -33,11 +33,22 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
   const note = shown?.note ?? null;
   const busy = create.isPending || update.isPending || remove.isPending;
 
+  /** Delete armed: a second tap within a few seconds confirms. */
+  const [confirming, setConfirming] = useState(false);
+  const armedAt = useRef(0);
+
   useEffect(() => {
     if (!target) return;
     setBody(target.note?.body ?? '');
     setError(null);
+    setConfirming(false);
   }, [target]);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), 2600);
+    return () => clearTimeout(timer);
+  }, [confirming]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -64,6 +75,14 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
 
   async function onDelete() {
     if (!note || submitting.current) return;
+    // Two steps, like clips: the first tap arms «¿Borrar?», a second one (not a double tap) confirms.
+    if (!confirming) {
+      armedAt.current = performance.now();
+      setConfirming(true);
+      return;
+    }
+    if (performance.now() - armedAt.current < 400) return;
+    setConfirming(false);
     submitting.current = true;
     try {
       await remove.mutateAsync(note);
@@ -122,8 +141,14 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
 
         <div className="flex items-center gap-2 border-t border-line pt-4">
           {note && (
-            <Button variant="danger" size="sm" onClick={() => void onDelete()} loading={remove.isPending}>
-              <Trash2 className="size-4" /> Borrar
+            <Button
+              variant="danger"
+              size="sm"
+              aria-label={confirming ? 'Confirmar borrar la nota' : 'Borrar la nota'}
+              onClick={() => void onDelete()}
+              loading={remove.isPending}
+            >
+              <Trash2 className="size-4" /> {confirming ? '¿Borrar?' : 'Borrar'}
             </Button>
           )}
           <Button variant="ghost" className="ml-auto" onClick={onClose} disabled={busy}>

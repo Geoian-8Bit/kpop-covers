@@ -6,21 +6,24 @@ Estudio de práctica para un grupo de **covers de K-pop**. Pega un enlace de You
 - **Velocidad** de 0.25× a 2× (presets 0.5 · 0.6 · 0.75 · 0.8 · 1 · 1.2 · 1.5 · 2 y ajuste fino de 0.05×).
 - **Tramos A–B en bucle**, con pausa opcional entre repeticiones para volver a la posición.
 - **Clips guardados** (con su velocidad y modo espejo) y **acceso rápido** desde la biblioteca.
-- **Biblioteca compartida**: un único grupo; todos los usuarios ven los mismos vídeos y clips.
+- **Notas con tiempo** sobre el vídeo («aquí entra el giro»), visibles como puntos en la línea de tiempo.
+- **Búsqueda de YouTube** desde la propia app (o pega el enlace).
+- **Biblioteca compartida sin login**: un único grupo; quien tenga la URL ve y edita los mismos vídeos, clips y notas.
+  Borrar desde la app solo **archiva** (deja de verse, pero se puede recuperar desde Supabase).
 
 ## Monorepo
 
 ```
 apps/web            React 19 + Vite + Tailwind v4 + motion  (frontend + función Vercel /api)
-  api/              Vercel functions (backend ligero: metadatos YouTube vía oEmbed)
+  api/              Vercel functions (metadatos de YouTube vía oEmbed y búsqueda con la Data API v3)
   src/
     components/     shell, fondo seigaiha, sello hanko, primitivas UI (Button, ElasticToggle, Segmented, Dialog…)
-    features/       auth · library · studio
+    features/       library · studio · legal
     player/         motor de reproducción (YouTube IFrame / <video>), store zustand, loop controller
     data/           hooks React Query sobre lib/backend (Supabase o demo local)
     providers/      auth, grupo, toasts
 packages/shared     tipos de BD, parseo de YouTube, tiempo, velocidad/rangos (+ tests vitest)
-supabase/           migraciones SQL (tablas, RLS, storage, RPCs)
+supabase/           migraciones SQL (tablas, RLS, storage, archivado) y comprobaciones (tests/)
 docs/               arquitectura, diseño y despliegue
 ```
 
@@ -46,14 +49,17 @@ Supabase; nunca se incluye en la build de producción.
   o el icono de instalar de la barra de direcciones.
 - **iPhone / iPad:** Safari → Compartir → *Añadir a pantalla de inicio* (la app lo explica al tocar *Instalar app*).
 
-El service worker precachea la interfaz (abre al instante y sin conexión) y se actualiza solo en cada despliegue.
+El service worker precachea solo la interfaz: abre al instante, pero sin conexión la biblioteca no carga (los datos del
+grupo están en Supabase). Cada despliegue se instala solo, pero espera a que salgas del estudio y no haya ningún
+diálogo abierto, para no cortar un ensayo.
 Iconos: `pnpm --filter @coverscape/web pwa-assets` los regenera desde `apps/web/public/favicon.svg`.
 
 ## Sobre descargar de YouTube
 
 La app **no descarga** vídeos de YouTube: sus condiciones lo prohíben y bloquean los servidores que lo intentan
 (Vercel incluido). En su lugar reproduce el vídeo original con la IFrame API y aplica espejo, velocidad y bucles
-encima. Si quieres trabajar offline, descarga el vídeo por tu cuenta y súbelo como archivo:
+encima. Si el vídeo no se puede insertar o no quieres depender de YouTube, descárgalo por tu cuenta y súbelo como
+archivo:
 
 - ≤ 50 MB → se sube a Supabase Storage y lo ve todo el grupo.
 - \> 50 MB → se queda en el dispositivo (IndexedDB). Los demás pueden "vincular" su propia copia del archivo y

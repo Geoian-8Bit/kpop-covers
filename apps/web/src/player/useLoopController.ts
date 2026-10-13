@@ -6,11 +6,16 @@ type PlayerSnapshot = ReturnType<typeof usePlayer.getState>;
 
 /** Keep ticking this long after the last busy frame so a fresh pause or scrub settles on the engine's clock. */
 const IDLE_TAIL_MS = 700;
+/**
+ * Frames spent asking a paused engine for its length. Some files never say (recorded WebMs only know it
+ * after playing through), and the loop must not spin forever waiting; playing keeps asking anyway.
+ */
+const DURATION_PROBES = 120;
 
 /** Frames only matter while the clock moves, a gap counts down, or the length is still unknown. */
-function isBusy(state: PlayerSnapshot): boolean {
+function isBusy(state: PlayerSnapshot, probing: boolean): boolean {
   if (!state.engine) return false;
-  return state.playing || state.countdownEndsAt != null || state.scrubbing || !state.duration;
+  return state.playing || state.countdownEndsAt != null || state.scrubbing || (!state.duration && probing);
 }
 
 /**
@@ -22,6 +27,16 @@ export function useLoopController(): void {
   useEffect(() => {
     let frame = 0;
     let busyAt = 0;
+    let probes = 0;
+    let probed: PlayerSnapshot['engine'] = null;
+    const probing = (state: PlayerSnapshot) => {
+      // A new engine (another video) gets a fresh round of probes.
+      if (state.engine !== probed) {
+        probed = state.engine;
+        probes = 0;
+      }
+      return probes < DURATION_PROBES;
+    };
 
     const step = (state: PlayerSnapshot) => {
       const { engine } = state;
@@ -69,6 +84,7 @@ export function useLoopController(): void {
       if (!settling && Math.abs(t - state.time) > 0.008) usePlayer.setState({ time: t });
 
       if (!state.duration) {
+        probes++;
         const duration = engine.getDuration();
         if (duration > 0) usePlayer.setState({ duration });
       }
@@ -79,12 +95,12 @@ export function useLoopController(): void {
       step(usePlayer.getState());
       const state = usePlayer.getState();
       const now = performance.now();
-      if (isBusy(state)) busyAt = now;
+      if (isBusy(state, probing(state))) busyAt = now;
       if (state.engine && now - busyAt < IDLE_TAIL_MS) frame = requestAnimationFrame(tick);
     };
 
     const wake = (state: PlayerSnapshot) => {
-      if (frame || !isBusy(state)) return;
+      if (frame || !isBusy(state, probing(state))) return;
       busyAt = performance.now();
       frame = requestAnimationFrame(tick);
     };

@@ -28,6 +28,8 @@ type CapturableMedia = HTMLMediaElement & {
 
 /** Web Audio taps, one per element (an element can only be wired into Web Audio once). */
 const audioTaps = new WeakMap<HTMLMediaElement, MediaStream>();
+/** The track handed out last, reused while live: each camera switch asks again and must not pile up captures. */
+const audioTracks = new WeakMap<HTMLMediaElement, MediaStreamTrack>();
 
 export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
   return {
@@ -49,9 +51,14 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
     },
     captureAudio: () => {
       const media = el as CapturableMedia;
+      const cached = audioTracks.get(el);
+      if (cached?.readyState === 'live') return cached;
       try {
         const track = (media.captureStream ?? media.mozCaptureStream)?.call(media).getAudioTracks()[0];
-        if (track) return track;
+        if (track) {
+          audioTracks.set(el, track);
+          return track;
+        }
       } catch {
         /* not capturable this way (e.g. Safari): fall back to Web Audio */
       }
@@ -68,7 +75,9 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
           tap = out.stream;
           audioTaps.set(el, tap);
         }
-        return tap.getAudioTracks()[0] ?? null;
+        const track = tap.getAudioTracks()[0] ?? null;
+        if (track) audioTracks.set(el, track);
+        return track;
       } catch {
         return null;
       }
@@ -119,8 +128,8 @@ export function createYouTubeEngine(
     const state = player.getPlayerState();
     // allowSeekAhead=false only moves within what's already buffered: no new request per drag step.
     player.seekTo(seconds, exact);
-    // Seeking a cued video starts it (IFrame API behaviour); keep it still unless play was asked for.
-    if (!wantPlay && (state === YTState.CUED || state === YTState.UNSTARTED)) player.pauseVideo();
+    // Seeking a cued (or ended) video starts it (IFrame API behaviour); keep it still unless play was asked for.
+    if (!wantPlay && (state === YTState.CUED || state === YTState.UNSTARTED || state === YTState.ENDED)) player.pauseVideo();
   };
 
   return {

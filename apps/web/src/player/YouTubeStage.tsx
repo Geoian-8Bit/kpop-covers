@@ -90,14 +90,16 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
               else if (state === YTState.PAUSED || state === YTState.CUED || state === YTState.UNSTARTED)
                 sync({ playing: false, buffering: false });
               else if (state === YTState.ENDED) {
-                const { loop, gap } = usePlayer.getState();
-                if (loop.enabled && hasRange(loop) && engine) {
-                  engine.seek(loop.start);
-                  if (gap > 0) usePlayer.setState({ countdownEndsAt: performance.now() + gap * 1000, playing: false });
-                  else engine.play();
-                } else if (usePlayer.getState().loopAll && engine) {
-                  engine.seek(0);
-                  engine.play();
+                // Same as the loop controller: a gap pauses the video, or it would play on under the countdown.
+                const { loop, gap, loopAll, gapAll } = usePlayer.getState();
+                const restartAt = loop.enabled && hasRange(loop) ? loop.start : loopAll ? 0 : null;
+                if (restartAt != null && engine) {
+                  const wait = loop.enabled && hasRange(loop) ? gap : gapAll;
+                  engine.seek(restartAt);
+                  if (wait > 0) {
+                    engine.pause();
+                    usePlayer.setState({ time: restartAt, countdownEndsAt: performance.now() + wait * 1000, playing: false });
+                  } else engine.play();
                 } else sync({ playing: false, buffering: false });
               }
             },
