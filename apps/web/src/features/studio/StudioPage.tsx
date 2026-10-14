@@ -50,7 +50,7 @@ import { YouTubeStage } from '@/player/YouTubeStage';
 import { useToast } from '@/providers/ToastProvider';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
-import { RecordStudio } from './RecordStudio';
+import { RecordStudio } from '@/features/record/RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline, useNoteAlert } from './Timeline';
