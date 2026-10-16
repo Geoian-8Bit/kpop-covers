@@ -37,6 +37,7 @@ import {
   type TakeItem,
 } from '@/data/takes';
 import { MemberSeal } from '@/features/members/MembersUI';
+import { TakeReactions } from '@/features/reactions/TakeReactions';
 import { defaultReviewTake } from '@/features/review/reviewRules';
 import { loadKeptTake } from '@/features/record/takeStore';
 import { cn } from '@/lib/cn';
@@ -644,6 +645,8 @@ function TakeRow({
           onRefused={onRefused}
         />
       </div>
+      {/* F15 · Quick reactions, only on takes shared with the group. */}
+      {take.shared_path && <TakeReactions take={take} />}
     </motion.li>
   );
 }

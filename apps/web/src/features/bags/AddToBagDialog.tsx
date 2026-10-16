@@ -13,8 +13,11 @@ import { BagIcon } from './BagIcon';
 import { BagForm, defaultMode } from './BagSettingsDialog';
 import { countLabel, MODE_COPY } from './drawRules';
 
+/** A song of the library, a wish of the list (F12: bags of songs take both) or a clip. */
 export type BagTarget =
-  { kind: 'songs'; videoId: string; label: string } | { kind: 'clips'; clipId: string; label: string };
+  | { kind: 'songs'; videoId: string; label: string }
+  | { kind: 'songs'; wishId: string; label: string }
+  | { kind: 'clips'; clipId: string; label: string };
 
 /**
  * «Añadir a una bolsa» from the library (a song) or the studio's clip list (a clip): the bags of that kind, marking
@@ -39,16 +42,18 @@ export function AddToBagDialog({
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [busyBag, setBusyBag] = useState<string | null>(null);
-  const ref = target.kind === 'songs' ? target.videoId : target.clipId;
+  const ref = 'videoId' in target ? target.videoId : 'wishId' in target ? target.wishId : target.clipId;
 
   async function addTo(bagId: string, bagName: string) {
     if (busyBag) return;
     setBusyBag(bagId);
     try {
       await add.mutateAsync(
-        target.kind === 'songs'
+        'videoId' in target
           ? { bag_id: bagId, video_id: target.videoId }
-          : { bag_id: bagId, clip_id: target.clipId },
+          : 'wishId' in target
+            ? { bag_id: bagId, wish_id: target.wishId }
+            : { bag_id: bagId, clip_id: target.clipId },
       );
       toast(`Añadido a «${bagName}»`, 'success');
     } catch (err) {

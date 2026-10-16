@@ -19,15 +19,12 @@ import { cn } from '@/lib/cn';
 import { probeMediaFile } from '@/lib/localVideos';
 import { jelly, soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
+import { fetchYouTubeMeta, type YouTubeMetaState } from '@/lib/youtubeMeta';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 
 type Tab = 'youtube' | 'file';
-type MetaState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'ok'; title: string | null; author: string | null }
-  | { status: 'error'; message: string };
+type MetaState = YouTubeMetaState;
 
 interface SearchItem {
   id: string;
@@ -128,32 +125,18 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
     }
     const controller = new AbortController();
     setMeta({ status: 'loading' });
-    fetch(`/api/youtube-meta?id=${youtubeId}`, { signal: controller.signal })
-      .then(async (res) => {
-        const body = (await res.json().catch(() => ({}))) as { title?: string | null; author?: string | null };
+    fetchYouTubeMeta(youtubeId, controller.signal)
+      .then((next) => {
         // The body read swallows an abort: a newer link may already be loading.
         if (controller.signal.aborted) return;
-        if (res.status === 422) {
-          setMeta({
-            status: 'error',
-            message: 'El autor no permite reproducir este vídeo fuera de YouTube. Descárgalo y súbelo como archivo.',
-          });
-          return;
-        }
-        if (res.status === 404) {
-          setMeta({ status: 'error', message: 'No encontramos ese vídeo. ¿Es privado?' });
-          return;
-        }
-        setMeta({ status: 'ok', title: body.title ?? null, author: body.author ?? null });
+        setMeta(next);
         // A failed lookup (no title) keeps the title that came with the chosen search hit.
-        if (!titleTouched.current && (body.title || picked.current?.id !== youtubeId)) {
-          setTitle(body.title ?? '');
-          setArtist(body.author ?? '');
+        if (next.status === 'ok' && !titleTouched.current && (next.title || picked.current?.id !== youtubeId)) {
+          setTitle(next.title ?? '');
+          setArtist(next.author ?? '');
         }
       })
-      .catch((err: Error) => {
-        if (err.name !== 'AbortError') setMeta({ status: 'ok', title: null, author: null });
-      });
+      .catch(() => undefined);
     return () => controller.abort();
   }, [youtubeId]);
 

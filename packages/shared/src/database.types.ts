@@ -85,6 +85,7 @@ export type Database = {
           member_id: string | null;
           removed_at: string | null;
           video_id: string | null;
+          wish_id: string | null;
         };
         Insert: {
           archived_at?: string | null;
@@ -96,6 +97,7 @@ export type Database = {
           member_id?: string | null;
           removed_at?: string | null;
           video_id?: string | null;
+          wish_id?: string | null;
         };
         Update: {
           archived_at?: string | null;
@@ -107,6 +109,7 @@ export type Database = {
           member_id?: string | null;
           removed_at?: string | null;
           video_id?: string | null;
+          wish_id?: string | null;
         };
         Relationships: [
           {
@@ -142,6 +145,13 @@ export type Database = {
             columns: ['video_id'];
             isOneToOne: false;
             referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'bag_items_wish_id_fkey';
+            columns: ['wish_id'];
+            isOneToOne: false;
+            referencedRelation: 'wishes';
             referencedColumns: ['id'];
           },
         ];
@@ -195,6 +205,7 @@ export type Database = {
           created_by: string | null;
           crew_id: string;
           end_seconds: number;
+          follow_path_id: string | null;
           id: string;
           is_pinned: boolean;
           mirrored: boolean;
@@ -202,6 +213,9 @@ export type Database = {
           speed: number;
           start_seconds: number;
           video_id: string;
+          zoom_scale: number;
+          zoom_x: number;
+          zoom_y: number;
         };
         Insert: {
           color?: string;
@@ -210,6 +224,7 @@ export type Database = {
           created_by?: string | null;
           crew_id: string;
           end_seconds: number;
+          follow_path_id?: string | null;
           id?: string;
           is_pinned?: boolean;
           mirrored?: boolean;
@@ -217,6 +232,9 @@ export type Database = {
           speed?: number;
           start_seconds: number;
           video_id: string;
+          zoom_scale?: number;
+          zoom_x?: number;
+          zoom_y?: number;
         };
         Update: {
           color?: string;
@@ -225,6 +243,7 @@ export type Database = {
           created_by?: string | null;
           crew_id?: string;
           end_seconds?: number;
+          follow_path_id?: string | null;
           id?: string;
           is_pinned?: boolean;
           mirrored?: boolean;
@@ -232,6 +251,9 @@ export type Database = {
           speed?: number;
           start_seconds?: number;
           video_id?: string;
+          zoom_scale?: number;
+          zoom_x?: number;
+          zoom_y?: number;
         };
         Relationships: [
           {
@@ -239,6 +261,13 @@ export type Database = {
             columns: ['crew_id'];
             isOneToOne: false;
             referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'clips_follow_path_id_fkey';
+            columns: ['follow_path_id'];
+            isOneToOne: false;
+            referencedRelation: 'follow_paths';
             referencedColumns: ['id'];
           },
           {
@@ -302,6 +331,160 @@ export type Database = {
           name?: string;
         };
         Relationships: [];
+      };
+      event_songs: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          event_id: string;
+          id: string;
+          position: number;
+          video_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          event_id: string;
+          id?: string;
+          position?: number;
+          video_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          event_id?: string;
+          id?: string;
+          position?: number;
+          video_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'event_songs_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_songs_event_id_fkey';
+            columns: ['event_id'];
+            isOneToOne: false;
+            referencedRelation: 'events';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'event_songs_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      events: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          name: string;
+          place: string | null;
+          starts_at: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          name: string;
+          place?: string | null;
+          starts_at: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          name?: string;
+          place?: string | null;
+          starts_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'events_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      follow_paths: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          keyframes: Json;
+          label: string;
+          member_id: string | null;
+          model: string | null;
+          source: string;
+          updated_at: string;
+          video_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          keyframes?: Json;
+          label: string;
+          member_id?: string | null;
+          model?: string | null;
+          source?: string;
+          updated_at?: string;
+          video_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          keyframes?: Json;
+          label?: string;
+          member_id?: string | null;
+          model?: string | null;
+          source?: string;
+          updated_at?: string;
+          video_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'follow_paths_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'follow_paths_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'follow_paths_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       members: {
         Row: {
@@ -410,6 +593,194 @@ export type Database = {
           },
         ];
       };
+      poll_options: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          poll_id: string;
+          wish_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          poll_id: string;
+          wish_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          poll_id?: string;
+          wish_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'poll_options_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'poll_options_poll_id_fkey';
+            columns: ['poll_id'];
+            isOneToOne: false;
+            referencedRelation: 'polls';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'poll_options_wish_id_fkey';
+            columns: ['wish_id'];
+            isOneToOne: false;
+            referencedRelation: 'wishes';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      poll_votes: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          member_id: string;
+          option_id: string;
+          poll_id: string;
+          rank: number | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id: string;
+          option_id: string;
+          poll_id: string;
+          rank?: number | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id?: string;
+          option_id?: string;
+          poll_id?: string;
+          rank?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'poll_votes_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'poll_votes_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'poll_votes_option_id_fkey';
+            columns: ['option_id'];
+            isOneToOne: false;
+            referencedRelation: 'poll_options';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'poll_votes_poll_id_fkey';
+            columns: ['poll_id'];
+            isOneToOne: false;
+            referencedRelation: 'polls';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      polls: {
+        Row: {
+          anonymous: boolean;
+          archived_at: string | null;
+          closed_at: string | null;
+          closes_at: string | null;
+          created_at: string;
+          created_by_member_id: string | null;
+          crew_id: string;
+          id: string;
+          parent_poll_id: string | null;
+          results_live: boolean;
+          title: string;
+          vote_type: string;
+          winner_wish_id: string | null;
+        };
+        Insert: {
+          anonymous?: boolean;
+          archived_at?: string | null;
+          closed_at?: string | null;
+          closes_at?: string | null;
+          created_at?: string;
+          created_by_member_id?: string | null;
+          crew_id?: string;
+          id?: string;
+          parent_poll_id?: string | null;
+          results_live?: boolean;
+          title: string;
+          vote_type: string;
+          winner_wish_id?: string | null;
+        };
+        Update: {
+          anonymous?: boolean;
+          archived_at?: string | null;
+          closed_at?: string | null;
+          closes_at?: string | null;
+          created_at?: string;
+          created_by_member_id?: string | null;
+          crew_id?: string;
+          id?: string;
+          parent_poll_id?: string | null;
+          results_live?: boolean;
+          title?: string;
+          vote_type?: string;
+          winner_wish_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'polls_created_by_member_id_fkey';
+            columns: ['created_by_member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'polls_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'polls_parent_poll_id_fkey';
+            columns: ['parent_poll_id'];
+            isOneToOne: false;
+            referencedRelation: 'polls';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'polls_winner_wish_id_fkey';
+            columns: ['winner_wish_id'];
+            isOneToOne: false;
+            referencedRelation: 'wishes';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       profiles: {
         Row: {
           avatar_hue: number;
@@ -430,6 +801,58 @@ export type Database = {
           id?: string;
         };
         Relationships: [];
+      };
+      take_reactions: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          emoji: string;
+          id: string;
+          member_id: string | null;
+          take_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          emoji: string;
+          id?: string;
+          member_id?: string | null;
+          take_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          emoji?: string;
+          id?: string;
+          member_id?: string | null;
+          take_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'take_reactions_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'take_reactions_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'take_reactions_take_id_fkey';
+            columns: ['take_id'];
+            isOneToOne: false;
+            referencedRelation: 'takes';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       takes: {
         Row: {
@@ -704,11 +1127,138 @@ export type Database = {
           },
         ];
       };
+      wish_interest: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          member_id: string;
+          wish_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id: string;
+          wish_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id?: string;
+          wish_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'wish_interest_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'wish_interest_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'wish_interest_wish_id_fkey';
+            columns: ['wish_id'];
+            isOneToOne: false;
+            referencedRelation: 'wishes';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      wishes: {
+        Row: {
+          added_video_id: string | null;
+          archived_at: string | null;
+          artist: string | null;
+          comment: string | null;
+          created_at: string;
+          crew_id: string;
+          difficulty: string | null;
+          id: string;
+          members_count: number | null;
+          proposed_by_member_id: string | null;
+          thumbnail_url: string | null;
+          title: string;
+          youtube_id: string;
+        };
+        Insert: {
+          added_video_id?: string | null;
+          archived_at?: string | null;
+          artist?: string | null;
+          comment?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          difficulty?: string | null;
+          id?: string;
+          members_count?: number | null;
+          proposed_by_member_id?: string | null;
+          thumbnail_url?: string | null;
+          title: string;
+          youtube_id: string;
+        };
+        Update: {
+          added_video_id?: string | null;
+          archived_at?: string | null;
+          artist?: string | null;
+          comment?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          difficulty?: string | null;
+          id?: string;
+          members_count?: number | null;
+          proposed_by_member_id?: string | null;
+          thumbnail_url?: string | null;
+          title?: string;
+          youtube_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'wishes_added_video_id_fkey';
+            columns: ['added_video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'wishes_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'wishes_proposed_by_member_id_fkey';
+            columns: ['proposed_by_member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      cast_vote: {
+        Args: { p_member: string; p_options: string[]; p_poll: string };
+        Returns: number;
+      };
+      close_poll: {
+        Args: { p_poll: string; p_resolve?: string; p_winner?: string | null };
+        Returns: Json;
+      };
       draw_from_bag: {
         Args: { p_bag: string; p_count?: number; p_member?: string | null; p_remove?: boolean | null };
         Returns: {

@@ -9,7 +9,6 @@ export type { DesignMoment, DesignVariant, LabState } from './labState';
  *
  * To add a moment: append an entry here (stable ids, `defaultVariant` = the recommended one), add its demo
  * to `DEMOS` in `demos.tsx` (the type requires it) and read the variant in the real component.
- * Planned next, not added yet: vote-reveal, reactions, event-countdown.
  */
 export const MOMENTS = [
   {
@@ -171,6 +170,89 @@ export const MOMENTS = [
         label: 'Taiko',
         description:
           'La cuenta atrás como golpes en un taiko con su mitsudomoe; lo que viene después corre por una banda índigo debajo.',
+      },
+    ],
+  },
+  {
+    id: 'vote-reveal',
+    code: 'F11',
+    name: 'Revelar la ganadora de una votación',
+    description:
+      'Lo que se ve al cerrar una votación de la próxima cover: la ganadora aparece con su miniatura, su grupo y sus votos. Con empate, antes se sortea entre las empatadas.',
+    defaultVariant: 'hanabi',
+    variants: [
+      {
+        id: 'hanabi',
+        label: 'Hanabi',
+        description:
+          'La recomendada. Fuegos artificiales de papel suben sobre un cielo índigo y estallan en recortes de colores; al caer dejan el título y el sello 当選. Es la más festiva y la que mejor se ve de lejos.',
+      },
+      {
+        id: 'noren',
+        label: 'Noren',
+        description:
+          'Una cortina noren índigo con 当 y 選 se mece con la brisa y se abre en dos para descubrir la ganadora detrás, como al entrar en una tienda.',
+      },
+      {
+        id: 'kakejiku',
+        label: 'Kakejiku',
+        description:
+          'Un rollo colgante se desenrolla desde su vara: 決定 escrito a pincel en el lateral, el título trazado en tinta y el sello al pie.',
+      },
+    ],
+  },
+  {
+    id: 'event-countdown',
+    code: 'F16',
+    name: 'Cuenta atrás al próximo evento',
+    description:
+      'El aviso de la portada con los días que faltan para el evento más cercano («Faltan 12 días»; horas y minutos el último día; «Hoy» el día del evento).',
+    defaultVariant: 'koyomi',
+    variants: [
+      {
+        id: 'koyomi',
+        label: 'Koyomi',
+        description:
+          'La recomendada. Un calendario de hojas (himekuri) con la anilla bermellón: cada día que pasa se arranca una hoja y cae; el número de días se lee de un vistazo y el día del evento la hoja dice 今日.',
+      },
+      {
+        id: 'chochin',
+        label: 'Chōchin',
+        description:
+          'Una fila de siete farolillos de papel con 祭: se enciende uno por cada día de la última semana y el día del evento brillan todos y se mecen.',
+      },
+      {
+        id: 'sunadokei',
+        label: 'Sunadokei',
+        description:
+          'Un reloj de arena de madera y washi: la arena baja desde que se creó el evento hasta que empieza, con un hilo que cae sin parar.',
+      },
+    ],
+  },
+  {
+    id: 'reactions',
+    code: 'F15',
+    name: 'Reacciones en las tomas compartidas',
+    description:
+      'Los cuatro emojis rápidos (🔥 👏 💯 😂) bajo cada toma compartida, con su contador; tocar añade o quita la tuya.',
+    defaultVariant: 'hanko',
+    variants: [
+      {
+        id: 'hanko',
+        label: 'Hanko',
+        description:
+          'La recomendada. Cada reacción es un sello: al tocar se estampa en bermellón con un golpe de tinta y queda marcado; es la más clara de leer en una fila pequeña.',
+      },
+      {
+        id: 'kami-fubuki',
+        label: 'Kami-fubuki',
+        description: 'Al reaccionar salta una lluvia de confeti de papel de colores alrededor del emoji y el contador rebota.',
+      },
+      {
+        id: 'sensu',
+        label: 'Sensu',
+        description:
+          'Cada emoji va sobre un abanico plegable que se abre más cuantas más reacciones tiene; el tuyo se tiñe de color.',
       },
     ],
   },

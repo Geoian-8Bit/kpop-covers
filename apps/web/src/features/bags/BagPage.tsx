@@ -71,6 +71,8 @@ export function shownFor(
 ): DrawShown {
   if (item?.video)
     return { label: item.video.title, sub: item.video.artist ?? undefined, tone: 'kin', glyph: '曲' };
+  if (item?.wish)
+    return { label: item.wish.title, sub: item.wish.artist ?? 'De la lista de deseos', tone: 'kin', glyph: '願' };
   if (item?.clip)
     return {
       label: item.clip.name,
@@ -286,6 +288,16 @@ function BagView({ bag }: { bag: BagWithCount }) {
                       className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-washi px-5 text-[15px] font-bold text-sumi-900 hover:bg-kin-200"
                     >
                       <Film aria-hidden className="size-4.5" /> Abrir en el estudio
+                    </Link>
+                  )}
+                  {single?.wish && (
+                    <Link
+                      to={single.wish.added_video_id ? `/v/${single.wish.added_video_id}` : '/deseos'}
+                      onClick={guardNav}
+                      className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-washi px-5 text-[15px] font-bold text-sumi-900 hover:bg-kin-200"
+                    >
+                      <Film aria-hidden className="size-4.5" />{' '}
+                      {single.wish.added_video_id ? 'Abrir en el estudio' : 'Ver en la lista de deseos'}
                     </Link>
                   )}
                   {single?.clip && (
@@ -518,9 +530,9 @@ function ItemThumb({ item }: { item: BagItemView }) {
       aria-hidden
       className="relative aspect-video w-16 shrink-0 overflow-hidden rounded-[6px] bg-sumi-950"
     >
-      {item.video?.thumbnail_url && (
+      {(item.video?.thumbnail_url ?? item.wish?.thumbnail_url) && (
         <img
-          src={item.video.thumbnail_url}
+          src={(item.video?.thumbnail_url ?? item.wish?.thumbnail_url)!}
           alt=""
           loading="lazy"
           className="absolute inset-0 size-full object-cover"

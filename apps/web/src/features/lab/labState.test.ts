@@ -137,4 +137,13 @@ describe('MOMENTS registry', () => {
     expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'bag-draw')).toBe('omikuji');
     expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'random-play')).toBe('marquesina');
   });
+
+  it('recommends «hanabi» for revealing the winner of a vote (F11)', () => {
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'vote-reveal')).toBe('hanabi');
+  });
+
+  it('recommends «koyomi» for the event countdown (F16) and «hanko» for reactions (F15)', () => {
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'event-countdown')).toBe('koyomi');
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'reactions')).toBe('hanko');
+  });
 });

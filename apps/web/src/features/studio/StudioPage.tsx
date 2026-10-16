@@ -55,7 +55,12 @@ import { FileStage } from '@/player/FileStage';
 import { hasRange, usePlayer } from '@/player/store';
 import { useLoopController } from '@/player/useLoopController';
 import { YouTubeStage } from '@/player/YouTubeStage';
+import { useMediaBox } from '@/player/ZoomLayer';
+import { gestureZoom, isDoubleTap, isZoomed, keyZoom, NO_ZOOM, wheelZoom, type Pt, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
+import { PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
+import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
+import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { RecordStudio } from '@/features/record/RecordStudio';
@@ -111,6 +116,9 @@ export function StudioPage() {
   const clipParam = params.get('clip');
   const ready = usePlayer((s) => s.ready);
   const duration = usePlayer((s) => s.duration);
+  // F9 · No zoom subscription here: every gesture would repaint the whole page (the dialog reads it itself).
+  const stage = usePlayer((s) => s.stage);
+  const followed = useFollowedPath(videoId); // F10 · «Guardar clip siguiendo a X»
 
   useLoopController();
 
@@ -323,6 +331,8 @@ export function StudioPage() {
               onNoteOpen={openNote}
             />
             <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
+            <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
+            <FollowRow video={current} onLink={() => setLinking(true)} />
             <VoiceRow />
           </div>
 
@@ -367,6 +377,8 @@ export function StudioPage() {
         onClose={() => setSaving(false)}
         video={current}
         clipCount={clips.data?.length ?? 0}
+        zoomFrom={zoomAvailability(current, stage, ready).can ? 'player' : null}
+        follow={followed}
       />
       <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
       <RecordStudio open={recording} onClose={() => setRecording(false)} video={current} />
@@ -507,6 +519,104 @@ function MediaStage({
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
 
+  // ── F9 · Zoom over the file: two fingers or the wheel zoom, a drag moves, a double tap shows it whole. ──
+  // Never over YouTube's player (its terms): there the zoom row says how to get it.
+  // Only «zoomed or not» here: the zoom itself is read by the layer, so a gesture never repaints the whole stage.
+  const zoomed = usePlayer((s) => isZoomed(s.zoom));
+  const canZoom = zoomAvailability(video, stage, ready).can && file.status === 'ready';
+  const { ref: boxRef, el: boxEl, box, media } = useMediaBox<HTMLDivElement>();
+  const [zoomLive, setZoomLive] = useState(false);
+  const zoomPointers = useRef(new Map<number, Pt>());
+  const zoomGesture = useRef<{ start: Zoom; from: Pt[]; moved: boolean } | null>(null);
+  const swallowClickUntil = useRef(0);
+  const zoomTap = useRef<{ last: { at: number; x: number; y: number } | null; timer?: ReturnType<typeof setTimeout> }>({ last: null });
+  const zoomResetAt = useRef(0);
+  const geometry = useRef({ box, media, mirrored });
+  geometry.current = { box, media, mirrored };
+  useEffect(() => () => clearTimeout(zoomTap.current.timer), []);
+
+  const boxPoint = (e: { clientX: number; clientY: number }): Pt => {
+    const rect = boxEl?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+  const restartZoomGesture = (moved: boolean) => {
+    zoomGesture.current = { start: usePlayer.getState().zoom, from: [...zoomPointers.current.values()].slice(0, 2), moved };
+  };
+  function onZoomPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    pointerType.current = e.pointerType;
+    if (!canZoom || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    zoomPointers.current.set(e.pointerId, boxPoint(e));
+    restartZoomGesture(zoomPointers.current.size > 1 ? (zoomGesture.current?.moved ?? false) : false);
+  }
+  function onZoomPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const g = zoomGesture.current;
+    if (!g || !zoomPointers.current.has(e.pointerId)) return;
+    zoomPointers.current.set(e.pointerId, boxPoint(e));
+    const to = [...zoomPointers.current.values()].slice(0, 2);
+    if (to.length !== g.from.length) return;
+    // One finger on the whole video is a tap (or the page scrolling), not a drag.
+    if (to.length === 1 && !isZoomed(g.start)) return;
+    if (!g.moved && to.length === 1 && Math.hypot(to[0]!.x - g.from[0]!.x, to[0]!.y - g.from[0]!.y) < 6) return;
+    if (!g.moved) {
+      g.moved = true;
+      setZoomLive(true);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* already gone */
+      }
+    }
+    usePlayer.getState().setZoom(gestureZoom(g.start, g.from, to, box, media, mirrored));
+  }
+  function onZoomPointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!zoomPointers.current.delete(e.pointerId)) return;
+    const moved = zoomGesture.current?.moved ?? false;
+    if (moved) swallowClickUntil.current = performance.now() + 400;
+    if (zoomPointers.current.size > 0) {
+      restartZoomGesture(moved); // one finger lifted: carry on with the other from here
+      return;
+    }
+    zoomGesture.current = null;
+    setZoomLive(false);
+  }
+  /**
+   * Keyboard on the video (focus on it): + zooms in; once zoomed, the arrows move the view, − zooms out and 0 shows
+   * the whole video. Handled keys don't reach the studio's shortcuts (they skip prevented events).
+   */
+  function onZoomKey(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (!canZoom || e.metaKey || e.ctrlKey || e.altKey) return;
+    const current = usePlayer.getState().zoom;
+    if (!isZoomed(current) && e.key !== '+' && e.key !== '=') return;
+    const next = keyZoom(current, e.key, box, media, mirrored);
+    if (!next) return;
+    e.preventDefault();
+    e.stopPropagation();
+    usePlayer.getState().setZoom(next);
+  }
+  // The wheel needs a non-passive listener. On the whole video, scrolling down still scrolls the page.
+  useEffect(() => {
+    const el = boxEl;
+    if (!el || !canZoom) return;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const onWheel = (e: WheelEvent) => {
+      const current = usePlayer.getState().zoom;
+      if (!isZoomed(current) && e.deltaY >= 0) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const g = geometry.current;
+      const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      setZoomLive(true);
+      usePlayer.getState().setZoom(wheelZoom(current, delta, { x: e.clientX - rect.left, y: e.clientY - rect.top }, g.box, g.media, g.mirrored));
+      clearTimeout(settle);
+      settle = setTimeout(() => setZoomLive(false), 200);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      clearTimeout(settle);
+    };
+  }, [canZoom, boxEl]);
+
   const missing = playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
@@ -547,15 +657,38 @@ function MediaStage({
    * pauses. Outside fullscreen a tap plays/pauses.
    */
   function onStageClick(event: React.MouseEvent<HTMLButtonElement>) {
+    // F9 · The click after dragging or pinching the zoomed picture is not a tap.
+    if (performance.now() < swallowClickUntil.current) return;
+    const detail = event.detail;
+    const clientX = event.clientX;
+    const rect = event.currentTarget.getBoundingClientRect();
+    // F9 · Zoomed in: a double tap (or double click) goes back to the whole video, so a single tap waits a moment.
+    if (canZoom && isZoomed(usePlayer.getState().zoom) && detail !== 0) {
+      const now = { at: performance.now(), x: clientX, y: event.clientY };
+      const t = zoomTap.current;
+      clearTimeout(t.timer);
+      if (isDoubleTap(t.last, now)) {
+        t.last = null;
+        zoomResetAt.current = now.at;
+        usePlayer.getState().setZoom(NO_ZOOM);
+        return;
+      }
+      t.last = now;
+      t.timer = setTimeout(() => stageTap(detail, clientX, rect), 300);
+      return;
+    }
+    stageTap(detail, clientX, rect);
+  }
+
+  function stageTap(detail: number, clientX: number, rect: DOMRect) {
     const player = usePlayer.getState();
     // detail 0: a keyboard press, whatever the last pointer was.
-    if (!fullscreen || pointerType.current !== 'touch' || event.detail === 0) {
+    if (!fullscreen || pointerType.current !== 'touch' || detail === 0) {
       player.togglePlay();
       chrome.wake();
       return;
     }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / rect.width;
+    const x = (clientX - rect.left) / rect.width;
     const side = x < 0.35 ? 'left' : x > 0.65 ? 'right' : 'center';
     const now = performance.now();
     const t = tap.current;
@@ -607,6 +740,7 @@ function MediaStage({
       )}
     >
       <div
+        ref={boxRef}
         className={cn(
           'relative aspect-video w-full overflow-hidden bg-black',
           fullscreen
@@ -623,26 +757,45 @@ function MediaStage({
           {!playsFile && video.youtube_id ? (
             <YouTubeStage key={reloadKey} videoId={video.youtube_id} />
           ) : file.status === 'ready' ? (
-            <FileStage
-              src={file.url}
-              offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
-            />
+            // F9 · Inside the mirror: the zoom follows the picture when it flips.
+            <PlayerZoomLayer enabled={canZoom} box={box} media={media} live={zoomLive}>
+              <FileStage
+                src={file.url}
+                offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
+              />
+            </PlayerZoomLayer>
           ) : null}
         </motion.div>
 
-        {/* Click-catcher keeps YouTube's own UI from intercepting and toggles playback. */}
+        {/* Click-catcher keeps YouTube's own UI from intercepting and toggles playback (and takes the zoom gestures). */}
         <button
           type="button"
           data-stage
-          aria-label={playing ? 'Pausar' : 'Reproducir'}
-          onPointerDown={(e) => (pointerType.current = e.pointerType)}
+          aria-label={
+            canZoom && zoomed
+              ? `${playing ? 'Pausar' : 'Reproducir'} · vídeo ampliado: flechas para moverlo, + y − para el zoom, 0 para verlo entero`
+              : playing
+                ? 'Pausar'
+                : 'Reproducir'
+          }
+          onKeyDown={onZoomKey}
+          onPointerDown={onZoomPointerDown}
+          onPointerMove={onZoomPointerMove}
+          onPointerUp={onZoomPointerEnd}
+          onPointerCancel={onZoomPointerEnd}
           onClick={onStageClick}
           onDoubleClick={() => {
-            if (pointerType.current === 'mouse') void toggleFullscreen();
+            // A double click on a zoomed video went back to the whole video (onStageClick), not to fullscreen.
+            if (pointerType.current === 'mouse' && performance.now() - zoomResetAt.current > 500) void toggleFullscreen();
           }}
           disabled={!ready}
-          className="absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default"
+          className={cn(
+            'absolute inset-0 z-10 cursor-pointer rounded-[12px] disabled:cursor-default',
+            canZoom && (zoomed ? 'cursor-grab touch-none active:cursor-grabbing' : 'touch-pan-y'),
+          )}
         />
+        <ZoomBadge visible={canZoom && !fullscreen} className="bottom-3 left-3" />
+        <FollowStageLayer video={video} box={box} media={media} canZoom={canZoom} />
 
         <div
           className={cn(

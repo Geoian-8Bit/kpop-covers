@@ -2,13 +2,17 @@ import { clampAdjust, formatSpeed, formatTime, SYNC_ADJUST_LIMIT, type Clip, typ
 import { motion } from 'motion/react';
 import {
   ArrowLeftRight,
+  BookmarkPlus,
   ChevronLeft,
   ChevronRight,
   Crosshair,
   MessageSquarePlus,
   Repeat,
+  Scan,
   SlidersHorizontal,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +23,7 @@ import { CLIP_SWATCH } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, useReview } from '@/player/store';
+import { isZoomed, NO_ZOOM, stepZoom, zoomLabel, zoomOfClip, ZOOM_MAX } from '@/player/zoom';
 import {
   categoryLabel,
   noteStatus,
@@ -264,6 +269,34 @@ export function ReviewTransport({
 
 // ───────────── Settings ─────────────
 
+/** − 100 % + · whole picture, for one of the two (keyboard and screen readers reach the zoom here). */
+function ZoomStepper({ label, which }: { label: string; which: 'take' | 'original' }) {
+  const zoom = useReview((s) => (which === 'take' ? s.zoomTake : s.zoomOriginal));
+  // Only the scale changes: the zoomed spot stays put.
+  const set = (factor: number) => useReview.getState().setZoom(which, stepZoom(zoom, factor));
+  return (
+    <div role="group" aria-label={`Zoom: ${label}`} className="flex min-h-11 items-center gap-1">
+      <span className="w-20 shrink-0 text-[13px] text-washi-muted">{label}</span>
+      <IconButton label={`Reducir el zoom (${label.toLowerCase()})`} onClick={() => set(1 / 1.5)} disabled={!isZoomed(zoom)}>
+        <ZoomOut className="size-5" />
+      </IconButton>
+      <span aria-live="polite" className="tabular w-12 text-center font-mono text-[12px] text-washi">
+        {zoomLabel(zoom)}
+      </span>
+      <IconButton label={`Ampliar (${label.toLowerCase()})`} onClick={() => set(1.5)} disabled={zoom.scale >= ZOOM_MAX}>
+        <ZoomIn className="size-5" />
+      </IconButton>
+      <IconButton
+        label={`Ver entero (${label.toLowerCase()})`}
+        onClick={() => useReview.getState().setZoom(which, NO_ZOOM)}
+        disabled={!isZoomed(zoom)}
+      >
+        <Scan className="size-5" />
+      </IconButton>
+    </div>
+  );
+}
+
 function Row({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <section className="space-y-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
@@ -326,6 +359,10 @@ export interface ReviewSettingsProps {
   hasOriginal: boolean;
   practisedMirrored: boolean;
   clips: { clip: Clip; start: number; end: number }[];
+  /** F9 · The original can be zoomed (a file; YouTube's player is never altered). */
+  canZoomOriginal: boolean;
+  /** F8 · Save the take's A–B as a clip of the song. */
+  onSaveRange: () => void;
   onClose?: () => void;
 }
 
@@ -344,6 +381,8 @@ export function ReviewSettings({
   hasOriginal,
   practisedMirrored,
   clips,
+  canZoomOriginal,
+  onSaveRange,
   onClose,
 }: ReviewSettingsProps) {
   const rate = useReview((s) => s.rate);
@@ -517,6 +556,8 @@ export function ReviewSettings({
                 transition={jelly}
                 onClick={() => {
                   review().loopRange({ start, end }, clip.id);
+                  // F9 · A clip saved zoomed in opens zoomed in on the original (its picture is the song's).
+                  if (canZoomOriginal && mode === 'stacked') review().setZoom('original', zoomOfClip(clip));
                   review().play();
                 }}
                 className={cn(
@@ -534,10 +575,36 @@ export function ReviewSettings({
           </div>
         )}
         {hasRange(loop) && (
-          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => review().clearLoop()}>
-            Quitar el tramo A–B
-          </Button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {!activeClipId && (
+              <Button variant="secondary" size="sm" className="min-h-11" onClick={onSaveRange}>
+                <BookmarkPlus className="size-4" /> Guardar el tramo como clip
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => review().clearLoop()}>
+              Quitar el tramo A–B
+            </Button>
+          </div>
         )}
+      </Row>
+
+      <Row
+        title="Zoom"
+        hint={
+          mode === 'overlay'
+            ? 'En «Superpuesto» el zoom amplía los dos a la vez. Pulsa «Ampliar» sobre el vídeo para que los dedos amplíen en vez de encajar; doble toque para verlos enteros.'
+            : 'Pellizca o usa la rueda sobre la toma o el original para ampliar una zona; arrastra para moverla y toca dos veces para verlo entero.'
+        }
+      >
+        <ZoomStepper label={mode === 'overlay' ? 'Los dos' : 'Toma'} which="take" />
+        {hasOriginal && mode === 'stacked' &&
+          (canZoomOriginal ? (
+            <ZoomStepper label="Original" which="original" />
+          ) : (
+            <p className="text-[12px] leading-snug text-washi-muted">
+              Original de YouTube: vincula el archivo del vídeo para ampliar.
+            </p>
+          ))}
       </Row>
     </div>
   );

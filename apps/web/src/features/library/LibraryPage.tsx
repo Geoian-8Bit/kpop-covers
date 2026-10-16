@@ -15,6 +15,7 @@ import { prefetchStudio } from '@/lib/prefetch';
 import { friendlyError } from '@/lib/supabase';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
+import { NextEventBanner } from '@/features/events/NextEventBanner';
 import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
 
@@ -80,6 +81,8 @@ export function LibraryPage() {
       <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
         {/* Just the search: the app name is already in the top bar, and every pixel goes to the videos. */}
         <h1 className="sr-only">Biblioteca</h1>
+        {/* F16 · Countdown to the nearest event (nothing without one). */}
+        <NextEventBanner />
         {total > 0 && (
           <header className="px-4 pb-1 pt-4 sm:px-9 sm:pt-6">
             <label className="well flex h-11 w-full items-center gap-2 rounded-[10px] px-3.5 focus-within:border-kin-300/70">

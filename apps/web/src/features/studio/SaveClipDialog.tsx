@@ -1,4 +1,4 @@
-import { CLIP_COLORS, formatSpeed, formatTime, type ClipColor, type Video } from '@coverscape/shared';
+import { CLIP_COLORS, formatSpeed, formatTime, type Clip, type ClipColor, type Video } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { FlipHorizontal2 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -10,22 +10,52 @@ import { CLIP_SWATCH, useClips, useCreateClip } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
-import { hasRange, usePlayer } from '@/player/store';
+import { hasRange, usePlayer, useReview } from '@/player/store';
+import { clipZoomColumns, isZoomed, zoomLabel, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
 
 const SUGGESTIONS = ['Intro', 'Verso', 'Pre-estribillo', 'Estribillo', 'Puente', 'Dance break', 'Final'];
+
+/** A range of the song to save, when it doesn't come from the studio's own A–B (F8: a range marked on a take). */
+export interface ClipDraft {
+  start: number;
+  end: number;
+  speed: number;
+  mirrored: boolean;
+}
 
 interface SaveClipDialogProps {
   open: boolean;
   onClose: () => void;
   video: Video;
   clipCount: number;
+  /** F8 · The range to save instead of the studio's A–B (its speed and mirror come with it). */
+  draft?: ClipDraft | null;
+  /**
+   * F9 · Where the zoom to offer lives: the studio's player, or the review's original (null: nothing to offer,
+   * e.g. YouTube). Read here, only while open, so a gesture never re-renders the page that holds the dialog.
+   */
+  zoomFrom?: 'player' | 'review-original' | null;
+  /** F10 · The dancer followed now: offered as «Guardar siguiendo a X» (the clip opens zoomed on them). */
+  follow?: { id: string; label: string } | null;
+  description?: string;
+  /** Called with the new clip (the studio marks it as the clip being practised). */
+  onSaved?: (clip: Clip) => void;
 }
 
-export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDialogProps) {
-  const loop = usePlayer((s) => s.loop);
-  const rate = usePlayer((s) => s.rate);
-  const mirrored = usePlayer((s) => s.mirrored);
+export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFrom, follow, description, onSaved }: SaveClipDialogProps) {
+  const playerZoom = usePlayer((s) => (open && zoomFrom === 'player' ? s.zoom : null));
+  const reviewZoom = useReview((s) => (open && zoomFrom === 'review-original' ? s.zoomOriginal : null));
+  const zoom: Zoom | null = playerZoom ?? reviewZoom;
+  const playerLoop = usePlayer((s) => s.loop);
+  const playerRate = usePlayer((s) => s.rate);
+  const playerMirrored = usePlayer((s) => s.mirrored);
+  const loop = draft ? { start: draft.start, end: draft.end, enabled: true } : playerLoop;
+  const rate = draft ? draft.speed : playerRate;
+  const mirrored = draft ? draft.mirrored : playerMirrored;
+  const offered = zoom != null && isZoomed(zoom) ? zoom : null;
+  const [withZoom, setWithZoom] = useState(true);
+  const [withFollow, setWithFollow] = useState(true);
   const create = useCreateClip();
   // Always on (cached): dropping it on close would make the duplicate warning vanish mid fade-out.
   const clips = useClips(video.id);
@@ -46,6 +76,8 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
     setName(`Clip ${n + 1}`);
     setColor(CLIP_COLORS[n % CLIP_COLORS.length]!);
     setPinned(false);
+    setWithZoom(true);
+    setWithFollow(true);
     setError(null);
   }, [open]);
 
@@ -76,8 +108,13 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
         mirrored,
         color,
         is_pinned: pinned,
+        // F9 · Opened later, the clip shows this zoom (only offered on a file; YouTube is never zoomed).
+        ...(offered && withZoom ? clipZoomColumns(offered) : {}),
+        // F10 · Opened later, the clip follows this dancer.
+        ...(follow && withFollow ? { follow_path_id: follow.id } : {}),
       });
-      usePlayer.getState().setActiveClip(clip.id);
+      if (onSaved) onSaved(clip);
+      else usePlayer.getState().setActiveClip(clip.id);
       toast(`“${clip.name}” guardado`, 'success');
       onClose();
     } catch (err) {
@@ -88,7 +125,13 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
   }
 
   return (
-    <Dialog open={open} onClose={onClose} busy={create.isPending} title="Guardar clip" description="Se guarda con su velocidad y su modo espejo.">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      busy={create.isPending}
+      title="Guardar clip"
+      description={description ?? 'Se guarda con su velocidad y su modo espejo.'}
+    >
       <form onSubmit={onSubmit} className="space-y-5">
         {hasRange(loop) && (
           <div className="flex flex-wrap gap-2 text-sm">
@@ -158,7 +201,13 @@ export function SaveClipDialog({ open, onClose, video, clipCount }: SaveClipDial
           </div>
         </div>
 
-        <ElasticToggle checked={pinned} onChange={setPinned} label="Fijar en acceso rápido" />
+        <div className="flex flex-col gap-1">
+          <ElasticToggle checked={pinned} onChange={setPinned} label="Fijar en acceso rápido" />
+          {offered && (
+            <ElasticToggle checked={withZoom} onChange={setWithZoom} label={`Guardar con el zoom (${zoomLabel(offered)})`} />
+          )}
+          {follow && <ElasticToggle checked={withFollow} onChange={setWithFollow} label={`Guardar siguiendo a «${follow.label}»`} />}
+        </div>
 
         {duplicate && (
           <p role="status" className="rounded-[10px] bg-kin-300/10 px-3.5 py-3 text-[13px] leading-snug text-kin-200">

@@ -41,4 +41,19 @@ export const DEMOS: Record<MomentId, LazyExoticComponent<ComponentType<DemoProps
       default: m.RandomPlayDemo,
     })),
   ),
+  'vote-reveal': lazy(() =>
+    import('@/features/wishes/VoteRevealDemo').then((m) => ({
+      default: m.VoteRevealDemo,
+    })),
+  ),
+  'event-countdown': lazy(() =>
+    import('@/features/events/EventCountdownDemo').then((m) => ({
+      default: m.EventCountdownDemo,
+    })),
+  ),
+  reactions: lazy(() =>
+    import('@/features/reactions/ReactionsDemo').then((m) => ({
+      default: m.ReactionsDemo,
+    })),
+  ),
 };

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { Library, LogOut, MoreVertical, Plus, Settings, Shuffle } from 'lucide-react';
+import { CalendarDays, Library, LogOut, MoreVertical, Plus, Settings, Shuffle, Sparkles } from 'lucide-react';
 import {
   lazy,
   Suspense,
@@ -28,11 +28,13 @@ import { Button } from './ui/Button';
 import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
 import { BagIcon } from '@/features/bags/BagIcon';
 
-/** Main sections: the library, the bags to draw from (F13) and Random Play Dance (F14). */
+/** Main sections: the library, the next cover (F12 wishes, F11 votes), the bags (F13) and Random Play Dance (F14). */
 const MAIN_NAV: { to: string; end?: boolean; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
   { to: '/', end: true, label: 'Biblioteca', Icon: Library },
   { to: '/bolsas', label: 'Bolsas', Icon: BagIcon },
+  { to: '/deseos', label: 'Próxima cover', Icon: Sparkles },
   { to: '/rpd', label: 'Random Play Dance', Icon: Shuffle },
+  { to: '/eventos', label: 'Eventos', Icon: CalendarDays },
 ];
 
 // Not in the entry chunk: warmed while idle and on hover/press of the add buttons, so the first open is instant.
