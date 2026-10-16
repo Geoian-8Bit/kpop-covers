@@ -10,9 +10,13 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Grabación | Pasos 1–6 (Q1–Q8, C1–C5, S1–S3, R1–R5, A1) | **Hecha y desplegada** (16-10 17:33) | Falta probar en los Samsung (apartado 2) |
 | Ideas | F1 Archivo vinculado · F2 Quién es quién | **Hechas y desplegadas** (16-10 18:13) | 3 rondas de revisión; migraciones aplicadas en Supabase |
 | Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | **Hechas y desplegadas** (16-10 19:14) | 2 rondas de revisión; migración `takes` aplicada |
-| Ideas | F5–F10 | No empezadas | |
+| Ideas | F5 Repaso · F6 Notas sobre la toma · F7 Aplauso | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión con correcciones |
+| Ideas | F8 Clips en tomas · F9 Zoom | En la rama, sin revisar | Migración `clip_zoom` escrita |
+| Ideas | F10 Seguir a un bailarín | Pendiente | Migración `follow_paths` escrita |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
-| Grupo | F11–F16 | No empezadas | |
+| Grupo | F13 Bolsas · F14 Random Play Dance | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión (BD e interfaz) con correcciones |
+| Grupo | F11 Votaciones · F12 Lista de deseos | En la rama, sin revisar | Migración escrita |
+| Grupo | F15 Reacciones · F16 Cuenta atrás | En construcción | Migración escrita |
 | IA | Análisis de postura | No empezada | |
 
 ## 2. Cómo probar
@@ -183,6 +187,13 @@ definición anterior de `archive_row`). Vuelta atrás: `rollback-fase2.sql` en l
 las tomas y repone `archive_row`; la tabla y el bucket se quedan, vacíos). Advisors: nuevos avisos 0028/0029 por
 `public.storage_usage()`, intencionados (solo devuelve tres números, la app la necesita sin login); índices de
 `takes` sin usar todavía. Tipos regenerados: coinciden.
+
+**Fase 3 + bolsas (16-10 21:55):** `20261016020000_review_and_take_notes` (ajuste fino y encaje en la toma; notas
+sobre la toma), `20261016030000_bags_and_tracks` (bolsas, sorteos, pistas; sorteo en el servidor con
+`draw_from_bag`), `20261016035000_bag_draws_hardening` (el historial solo lo escribe el sorteo, con la hora del
+servidor; índice y tope). Aplicadas y verificadas (5 + 10 PASS en producción, todo revertido). Copia previa y vuelta
+atrás en `~/one-shoot-backups/20261016-2151-fase3-b1/`. Advisors: nada nuevo. Columnas reales comparadas con
+los tipos: coinciden.
 
 ## 7. Laboratorio de diseño
 
