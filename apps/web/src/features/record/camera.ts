@@ -58,6 +58,73 @@ export function readAbilities(track: MediaStreamTrack | undefined): CameraAbilit
   return { zoom, zoomNow: settings.zoom ?? 1, torch: Boolean(caps.torch) };
 }
 
+type Range = { min: number; max: number; step?: number };
+type FullCaps = MediaTrackCapabilities & {
+  zoom?: Range;
+  torch?: boolean;
+  focusMode?: string[];
+  exposureMode?: string[];
+  exposureCompensation?: Range;
+  whiteBalanceMode?: string[];
+  colorTemperature?: Range;
+  focusDistance?: Range;
+};
+
+/** What the camera really gives, for the «i» panel (plan: prueba 3). */
+export interface TrackInfo {
+  label: string;
+  width: number;
+  height: number;
+  frameRate: number;
+  maxWidth: number | null;
+  maxHeight: number | null;
+  maxFrameRate: number | null;
+  zoom: Range | null;
+  torch: boolean;
+  focusModes: string[];
+  exposureModes: string[];
+  exposureCompensation: Range | null;
+  whiteBalanceModes: string[];
+  colorTemperature: Range | null;
+  pointsOfInterest: boolean;
+}
+
+export function readTrackInfo(track: MediaStreamTrack | undefined): TrackInfo | null {
+  if (!track) return null;
+  const caps = (track.getCapabilities?.() ?? {}) as FullCaps;
+  const s = track.getSettings?.() ?? {};
+  const supported = (navigator.mediaDevices.getSupportedConstraints?.() ?? {}) as Record<string, boolean>;
+  const range = (r: Range | undefined) => (r && r.max > r.min ? { min: r.min, max: r.max, step: r.step } : null);
+  return {
+    label: track.label,
+    width: s.width ?? 0,
+    height: s.height ?? 0,
+    frameRate: Math.round((s.frameRate ?? 0) * 10) / 10,
+    maxWidth: caps.width?.max ?? null,
+    maxHeight: caps.height?.max ?? null,
+    maxFrameRate: caps.frameRate?.max ?? null,
+    zoom: range(caps.zoom),
+    torch: Boolean(caps.torch),
+    focusModes: caps.focusMode ?? [],
+    exposureModes: caps.exposureMode ?? [],
+    exposureCompensation: range(caps.exposureCompensation),
+    whiteBalanceModes: caps.whiteBalanceMode ?? [],
+    colorTemperature: range(caps.colorTemperature),
+    pointsOfInterest: Boolean(supported.pointsOfInterest),
+  };
+}
+
+/** Every camera the browser lists (names readable once the camera is allowed): checks how lenses show up. */
+export async function listCameras(): Promise<string[]> {
+  try {
+    return (await navigator.mediaDevices.enumerateDevices())
+      .filter((d) => d.kind === 'videoinput')
+      .map((d, i) => d.label || `Cámara ${i + 1}`);
+  } catch {
+    return [];
+  }
+}
+
 export function applyTrack(
   track: MediaStreamTrack | undefined,
   set: { zoom?: number; torch?: boolean },

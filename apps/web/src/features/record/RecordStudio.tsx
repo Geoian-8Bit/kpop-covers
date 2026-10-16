@@ -4,6 +4,7 @@ import {
   Aperture,
   Check,
   Download,
+  Info,
   Locate,
   Mic,
   MicOff,
@@ -30,14 +31,17 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 import { openMic } from './camera';
 import { canRecordCanvas } from './compositor';
+import { InfoPanel, type TakeStats } from './InfoPanel';
 import {
   IS_IOS,
   canRecord,
   canShareFile,
+  chooseFormat,
   createTakeRecorder,
   downloadFile,
   shareFile,
   takeFileName,
+  type RecordFormat,
   type TakeRecorder,
 } from './recorder';
 import { formatZoom, useCamera } from './useCamera';
@@ -97,6 +101,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [sound, setSound] = useState<SoundSource>('pending');
   const [notice, setNotice] = useState('');
   const [hereAt, setHereAt] = useState(0);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [lastStats, setLastStats] = useState<TakeStats | null>(null);
+  /** The format the current take is being recorded with (for the «i» panel's "pedida"). */
+  const takeFormat = useRef<RecordFormat | null>(null);
   const loopRange = usePlayer((s) => (hasRange(s.loop) ? { start: s.loop.start, end: s.loop.end } : null));
   const rate = usePlayer((s) => s.rate);
 
@@ -271,6 +279,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       return;
     }
     const file = new File([blob], takeFileName(video, blob.type), { type: blob.type });
+    setLastStats({
+      bytes: blob.size,
+      seconds: rec.seconds(),
+      mimeType: blob.type || rec.mimeType(),
+      requestedBps: takeFormat.current?.videoBitsPerSecond ?? 0,
+      dropped: null,
+      expected: 0,
+    });
     replaceTake({ url: URL.createObjectURL(file), file });
     setPhase('review');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,7 +305,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         const audio = [songTrack.current, micTrack.current].find((t) => t?.readyState === 'live') ?? null;
         if (!audio && sound !== 'none') setNotice('No llega el sonido: esta toma se graba sin audio.');
         const tracks = [...picture.getVideoTracks(), ...(audio ? [audio] : [])];
-        const rec = createTakeRecorder(tracks, compositor.canvas.width * compositor.canvas.height, () => {
+        const format = plannedFormat();
+        takeFormat.current = format;
+        const rec = createTakeRecorder(tracks, format, () => {
           // The browser stopped recording by itself: keep what exists rather than filming nothing.
           if (recorder.current !== rec) return;
           setNotice('La grabación se ha cortado. Te dejo lo grabado hasta ahí.');
@@ -375,6 +393,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (fromNow === 'range' && hasRange(p.loop)) return { start: p.loop.start, end: p.loop.end };
     if (fromNow === 'here') return { start: hereAt, end };
     return { start: 0, end };
+  }
+
+  /** Format for the picture as it is now (canvas size, 30 fps capture). */
+  function plannedFormat(): RecordFormat {
+    const canvas = cam.compositor.current?.canvas;
+    return chooseFormat({
+      width: canvas?.width ?? 1920,
+      height: canvas?.height ?? 1080,
+      fps: 30,
+      quality: 'auto',
+      codec: 'auto',
+    });
   }
 
   /** The camera has drawn at least one frame (the canvas starts at 2×2). */
@@ -683,8 +713,46 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               <Aperture className="size-5" />
             </RailButton>
           )}
+          {canTweak && (
+            <RailButton
+              label="Info"
+              ariaLabel="Información técnica de la cámara"
+              pressed={infoOpen}
+              onClick={() => setInfoOpen((v) => !v)}
+            >
+              <Info className="size-5" />
+            </RailButton>
+          )}
         </div>
       )}
+
+      {/* Q7: a crop of the frame is less sharp than the lens's own zoom; say so while it's on. */}
+      <AnimatePresence>
+        {showCamera && camReady && view.digital && (
+          <motion.p
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={jelly}
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-[calc(max(14px,env(safe-area-inset-top))+104px)] z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[12px] font-bold text-kin-300"
+          >
+            Zoom digital: menos nitidez
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {infoOpen && (
+          <InfoPanel
+            track={cam.track()}
+            format={camReady ? plannedFormat() : null}
+            mode="Lienzo (cada fotograma se redibuja)"
+            last={lastStats}
+            onClose={() => setInfoOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* What the take will sound like. */}
       {phase === 'idle' && camReady && sound !== 'pending' && (
@@ -861,6 +929,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             <p className="tabular text-[12px] text-washi/75">
               {formatTime(seconds)} · {(take.file.size / 1_048_576).toFixed(1).replace('.', ',')} MB
               {saved ? ' · guardado' : ''}
+              {' · '}
+              <button
+                type="button"
+                onClick={() => setInfoOpen(true)}
+                className="inline-flex min-h-11 items-center font-bold text-kin-300 underline-offset-2 hover:underline"
+              >
+                Detalles
+              </button>
             </p>
             <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2 landscape:flex-col landscape:items-stretch">
               <Button onClick={() => void save()}>

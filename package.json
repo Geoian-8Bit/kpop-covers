@@ -12,9 +12,11 @@
     "preview": "pnpm --filter @coverscape/web preview",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:test": "node supabase/tests/local/run.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2"
   }

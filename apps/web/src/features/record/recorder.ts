@@ -1,23 +1,45 @@
-import type { Video } from '@coverscape/shared';
-
-/** MP4 first: it plays everywhere and saves to the camera roll. Older Android Chrome falls back to WebM. */
-const MIME_CANDIDATES = [
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-  'video/mp4;codecs=avc1,mp4a.40.2',
-  'video/mp4;codecs=avc1,opus',
-  'video/mp4',
-  'video/webm;codecs=vp9,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm',
-];
-
-function pickMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return '';
-  return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
-}
+import {
+  isHevcMime,
+  mimeCandidates,
+  pickMime,
+  targetVideoBitrate,
+  type RecordCodec,
+  type RecordQuality,
+  type Video,
+} from '@coverscape/shared';
 
 export function canRecord(): boolean {
   return typeof MediaRecorder !== 'undefined';
+}
+
+/** What a take will be recorded with: the picture's size and rate plus the chosen quality and format. */
+export interface RecordPlan {
+  width: number;
+  height: number;
+  fps: number;
+  quality: RecordQuality;
+  codec: RecordCodec;
+}
+
+export interface RecordFormat {
+  /** '' when the browser picks (no candidate was accepted). */
+  mimeType: string;
+  videoBitsPerSecond: number;
+  audioBitsPerSecond: number;
+}
+
+/**
+ * Best format this browser records for the plan: HEVC (if allowed and available), else H.264 High at the right
+ * level, Baseline as a last MP4, WebM only when there's no MP4 at all; the bitrate follows the quality table.
+ */
+export function chooseFormat(plan: RecordPlan): RecordFormat {
+  const supported = (t: string) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t);
+  const mimeType = pickMime(mimeCandidates(plan), supported);
+  return {
+    mimeType,
+    videoBitsPerSecond: targetVideoBitrate({ ...plan, hevc: isHevcMime(mimeType) }),
+    audioBitsPerSecond: 160_000,
+  };
 }
 
 /**
@@ -34,6 +56,8 @@ export interface TakeRecorder {
   /** Drops the take without waiting for the file. */
   cancel(): void;
   seconds(): number;
+  /** The type the browser really records (known once started). */
+  mimeType(): string;
 }
 
 /** How long the browser gets to hand over the last piece of the file after stopping. */
@@ -42,16 +66,20 @@ const FINISH_TIMEOUT_MS = 8000;
 /** `onDead`: the browser stopped the recorder by itself (encoder error, capture ended in the background). */
 export function createTakeRecorder(
   tracks: MediaStreamTrack[],
-  pixels: number,
+  format: RecordFormat,
   onDead: () => void,
 ): TakeRecorder {
-  const mimeType = pickMimeType();
-  // ~0.1 bits per pixel per frame: ~6 Mbps at 1080p30, crisp for fast moves and light on a phone's memory.
-  const videoBitsPerSecond = Math.round(Math.min(8_000_000, Math.max(2_500_000, pixels * 30 * 0.1)));
-  const rec = new MediaRecorder(
-    new MediaStream(tracks),
-    mimeType ? { mimeType, videoBitsPerSecond, audioBitsPerSecond: 160_000 } : { videoBitsPerSecond },
-  );
+  const { mimeType, videoBitsPerSecond, audioBitsPerSecond } = format;
+  let rec: MediaRecorder;
+  try {
+    rec = new MediaRecorder(
+      new MediaStream(tracks),
+      mimeType ? { mimeType, videoBitsPerSecond, audioBitsPerSecond } : { videoBitsPerSecond },
+    );
+  } catch {
+    // A type the check accepted but the encoder refuses for this picture (e.g. a level): let the browser pick.
+    rec = new MediaRecorder(new MediaStream(tracks), { videoBitsPerSecond });
+  }
   const chunks: Blob[] = [];
   rec.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
@@ -117,6 +145,9 @@ export function createTakeRecorder(
       hold();
       rec.ondataavailable = null;
       if (rec.state !== 'inactive') rec.stop();
+    },
+    mimeType() {
+      return rec.mimeType || mimeType;
     },
     seconds() {
       return (total + (since != null ? performance.now() - since : 0)) / 1000;

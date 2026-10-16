@@ -24,6 +24,8 @@ export interface CameraView {
   lenses: BackLenses;
   /** Width / height of the picture: below 1 is vertical. */
   aspect: number;
+  /** The picture is a crop of the frame (no lens zoom here): less sharp, the recorder says so (Q7). */
+  digital: boolean;
 }
 
 /** Zoom without a lens zoom: a crop of the recorded frame, kept to what still looks sharp. */
@@ -39,6 +41,7 @@ const INITIAL: CameraView = {
   torch: false,
   lenses: { ids: [], ultra: null },
   aspect: 9 / 16,
+  digital: false,
 };
 
 export const formatZoom = (z: number) => `${(Math.round(z * 10) / 10).toString().replace('.', ',')}×`;
@@ -93,6 +96,7 @@ export function useCamera(open: boolean, onLost: () => void) {
       // Land on the asked zoom with this lens's own numbers (state from the old lens is not used).
       const scale = onUltra ? 0.5 : 1;
       let zoom = scale * (abilities.zoom ? abilities.zoomNow : 1);
+      let digital = false;
       compositor.current?.setZoom(1);
       if (Math.abs(zoomAfter - zoom) > 0.01) {
         if (abilities.zoom) {
@@ -103,6 +107,7 @@ export function useCamera(open: boolean, onLost: () => void) {
           const z = Math.min(onUltra ? 1.9 : DIGITAL_MAX, Math.max(1, zoomAfter / scale));
           compositor.current?.setZoom(z);
           zoom = z * scale;
+          digital = z > 1.001;
         }
       }
       setView((v) => ({
@@ -115,6 +120,7 @@ export function useCamera(open: boolean, onLost: () => void) {
         zoom,
         torchAvailable: abilities.torch,
         torch: false,
+        digital,
       }));
       t?.addEventListener('ended', () => {
         // Another app took the camera, or the system stopped it: stop the take there, offer to try again.
@@ -199,12 +205,12 @@ export function useCamera(open: boolean, onLost: () => void) {
     if (v.lensZoom) {
       const z = Math.min(v.lensZoom.max, Math.max(v.lensZoom.min, value / scale));
       void applyTrack(track(), { zoom: z });
-      setView((s) => ({ ...s, zoom: z * scale }));
+      setView((s) => ({ ...s, zoom: z * scale, digital: false }));
     } else {
       // Digital: the ultra-wide crops up to just under 1×, where the main lens takes over.
       const z = Math.min(ultra ? 1.9 : DIGITAL_MAX, Math.max(1, value / scale));
       compositor.current?.setZoom(z);
-      setView((s) => ({ ...s, zoom: z * scale }));
+      setView((s) => ({ ...s, zoom: z * scale, digital: z > 1.001 }));
     }
   }, []);
 
@@ -312,6 +318,8 @@ export function useCamera(open: boolean, onLost: () => void) {
   };
 
   return {
+    /** The live camera track (for the «i» panel and the camera controls). */
+    track,
     source,
     host,
     compositor,
