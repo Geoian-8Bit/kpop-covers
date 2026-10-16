@@ -40,7 +40,15 @@ import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
-import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useUploadToCloud, useVideo } from '@/data/videos';
+import {
+  isStaleCopy,
+  markLocalCopy,
+  signedVideoUrl,
+  useLinkLocalFile,
+  useUpdateVideo,
+  useUploadToCloud,
+  useVideo,
+} from '@/data/videos';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
@@ -100,10 +108,12 @@ export function StudioPage() {
   useEffect(() => () => usePlayer.getState().reset(), [videoId]);
   // F1: the stage this device last used for this video (YouTube by default, the file only if still linked).
   const linkedFile = video.data ? hasLinkedFile(video.data) : false;
+  const loaded = video.data != null;
   useEffect(() => {
     if (!videoId) return;
+    if (loaded && !linkedFile) rememberStage(videoId, 'youtube'); // removed on another phone: forget «Archivo»
     usePlayer.setState({ stage: linkedFile ? readStage(videoId) : 'youtube' });
-  }, [videoId, linkedFile]);
+  }, [videoId, linkedFile, loaded]);
   // Remember this video as the last one opened on this device (the library leads with it).
   useEffect(() => {
     if (videoId) markOpened(videoId);
@@ -356,8 +366,11 @@ function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileS
       const blob = await loadLocalVideo(video.id);
       if (cancelled) return;
       // F1: a copy left from a file that was since replaced (another size) is not this video's file any more.
-      const stale = blob && video.source === 'youtube' && video.file_size != null && blob.size !== video.file_size;
-      if (stale) await deleteLocalVideo(video.id).catch(() => undefined);
+      const stale = blob != null && isStaleCopy(video);
+      if (stale) {
+        await deleteLocalVideo(video.id).catch(() => undefined);
+        markLocalCopy(video.id, null);
+      }
       if (blob && !stale) {
         objectUrl = URL.createObjectURL(blob);
         setState({ status: 'ready', url: objectUrl, local: blob });
@@ -378,7 +391,7 @@ function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileS
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [video.id, video.source, video.storage_path, video.file_size, reloadKey, enabled]);
+  }, [video.id, video.source, video.storage_path, video.file_name, video.file_size, reloadKey, enabled]);
 
   return state;
 }
@@ -390,7 +403,7 @@ function StageSwitch({ video }: { video: Video }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3 sm:mb-3">
       <Segmented
-        size="sm"
+        size="md"
         label="Qué se reproduce"
         layoutId={`stage-${video.id}`}
         value={stage}
@@ -437,7 +450,9 @@ function MediaStage({
   const link = useLinkLocalFile();
   const upload = useUploadToCloud();
   /** Only on this device (the upload failed or was too big): offer to send it to the group from here. */
-  const localOnly = playsFile && !video.storage_path && file.status === 'ready' && file.local != null;
+  // Uploaded videos only: a YouTube entry's file reaches the cloud through the link panel (described and synced).
+  const localOnly =
+    video.source === 'upload' && !video.storage_path && file.status === 'ready' && file.local != null;
 
   async function sendToCloud() {
     if (file.status !== 'ready' || !file.local || upload.isPending) return;

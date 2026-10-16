@@ -206,6 +206,23 @@ begin
   raise notice 'PASS a linked file''s data is locked (the offset can still be re-synced)';
 end $$;
 
+-- Round 2: a file that only lives on one phone (> 50 MB) can't be described over either; removing it first can.
+do $$
+declare ok boolean := false;
+begin
+  insert into public.videos (id, crew_id, title, source, youtube_id)
+  values ('0b0b0b0b-0000-4000-8000-0000000000a5', (select private.default_group()), 'Prueba solo local', 'youtube', 'zzTestLink5');
+  update public.videos set file_name = 'grande.mp4', file_size = 90000000 where id = '0b0b0b0b-0000-4000-8000-0000000000a5';
+  begin
+    update public.videos set file_name = 'otro.mp4', file_size = 5 where id = '0b0b0b0b-0000-4000-8000-0000000000a5';
+  exception when others then ok := sqlerrm = 'file_locked';
+  end;
+  if not ok then raise exception 'FAIL a phone-only linked file was described over'; end if;
+  update public.videos set file_name = null, file_size = null where id = '0b0b0b0b-0000-4000-8000-0000000000a5';
+  update public.videos set file_name = 'nuevo.mp4', file_size = 7 where id = '0b0b0b0b-0000-4000-8000-0000000000a5';
+  raise notice 'PASS a phone-only file is locked too; remove-then-link still works';
+end $$;
+
 -- An uploaded video's path can't carry the replacement suffix.
 do $$
 declare ok boolean := false;

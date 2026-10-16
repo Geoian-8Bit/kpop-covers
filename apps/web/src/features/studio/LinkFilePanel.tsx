@@ -17,6 +17,7 @@ import {
   signedVideoUrl,
   uploadFailureMessage,
   useLinkVideoFile,
+  useRestoreVideoFile,
   useUnlinkVideoFile,
   useUpdateVideo,
 } from '@/data/videos';
@@ -56,6 +57,7 @@ export function LinkFilePanel({
   const toast = useToast();
   const link = useLinkVideoFile();
   const unlink = useUnlinkVideoFile();
+  const restore = useRestoreVideoFile();
   const update = useUpdateVideo();
   const input = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>({ kind: 'start' });
@@ -87,12 +89,21 @@ export function LinkFilePanel({
     setStep({ kind: 'linking' });
     try {
       let target = video;
-      if (replacing.current && hasLinkedFile(video)) {
-        target = await unlink.mutateAsync(video);
+      const previous = replacing.current && hasLinkedFile(video) ? video : null;
+      if (previous) {
+        target = await unlink.mutateAsync({ video: previous, keepLocal: true });
+        usePlayer.getState().setStage('youtube');
         rememberStage(video.id, 'youtube');
       }
       replacing.current = false;
-      const result = await link.mutateAsync({ video: target, file, duration });
+      let result;
+      try {
+        result = await link.mutateAsync({ video: target, file, duration });
+      } catch (err) {
+        // The new file couldn't be linked: the group keeps the one it had (still in the cloud / on this phone).
+        if (previous) await restore.mutateAsync(previous).catch(() => undefined);
+        throw err;
+      }
       if (!result.synced && result.uploadFailure) toast(uploadFailureMessage(result.uploadFailure), 'info');
       startSync(URL.createObjectURL(file), true);
     } catch (err) {
@@ -148,7 +159,7 @@ export function LinkFilePanel({
       description={
         step.kind === 'sync'
           ? 'Marca el mismo momento en los dos (por ejemplo, el primer golpe de la canción). Se hace una vez y vale para todo el grupo.'
-          : 'El mismo vídeo descargado por tu cuenta: misma entrada, mismos clips, notas y tomas. Lo usan el superpuesto, el zoom y el seguimiento.'
+          : 'El mismo vídeo descargado por tu cuenta: misma entrada, mismos clips, notas y tomas, sin anuncios ni esperas.'
       }
       busy={step.kind === 'linking' || unlink.isPending}
     >
