@@ -1,4 +1,4 @@
-import type { RecordCodec, RecordQuality, ResolutionChoice } from '@coverscape/shared';
+import type { ClapSensitivity, RecordCodec, RecordQuality, ResolutionChoice } from '@coverscape/shared';
 import { create } from 'zustand';
 import type { Facing } from './camera';
 
@@ -24,6 +24,8 @@ export interface RecordSettings {
   info: boolean;
   /** Q5: record the camera picture as it comes when possible, or always redraw it on a canvas. */
   mode: 'auto' | 'canvas';
+  /** F7: how loud the double clap that starts a take must be (low for rooms with echo or noise). */
+  clapSensitivity: ClapSensitivity;
 }
 
 export const DEFAULT_RECORD_SETTINGS: RecordSettings = {
@@ -39,6 +41,7 @@ export const DEFAULT_RECORD_SETTINGS: RecordSettings = {
   level: false,
   info: false,
   mode: 'auto',
+  clapSensitivity: 'medium',
 };
 
 const KEY = 'oneshoot.record.v1';
@@ -56,6 +59,7 @@ const ALLOWED: { [K in keyof RecordSettings]: readonly RecordSettings[K][] } = {
   level: [true, false],
   info: [true, false],
   mode: ['auto', 'canvas'],
+  clapSensitivity: ['low', 'medium', 'high'],
 };
 
 /** Keeps only known values: an old or hand-edited entry falls back to the default, key by key. */

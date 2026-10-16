@@ -35,7 +35,7 @@ const GROUPS: Group[] = [
   { id: 'quality', title: 'Calidad', glyph: '質', keys: ['quality'] },
   { id: 'size', title: 'Tamaño', glyph: '寸', keys: ['resolution', 'fps'] },
   { id: 'format', title: 'Formato', glyph: '式', keys: ['codec', 'mode'] },
-  { id: 'sound', title: 'Sonido', glyph: '音', keys: ['sound', 'micChannels'] },
+  { id: 'sound', title: 'Sonido', glyph: '音', keys: ['sound', 'micChannels', 'clapSensitivity'] },
   { id: 'view', title: 'Visor', glyph: '眼', keys: ['startCamera', 'grid', 'level', 'info'] },
 ];
 

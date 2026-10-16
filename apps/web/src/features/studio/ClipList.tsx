@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { CLIP_SWATCH, useDeleteClip, useUpdateClip } from '@/data/clips';
+import { AddToBagButton } from '@/features/bags/AddToBagButton';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
@@ -136,6 +137,8 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                     >
                       <Pin className={cn('size-4', clip.is_pinned && 'fill-shu-500 text-shu-500')} />
                     </motion.button>
+
+                    <AddToBagButton className="size-9" target={{ kind: 'clips', clipId: clip.id, label: clip.name }} />
 
                     <motion.button
                       type="button"

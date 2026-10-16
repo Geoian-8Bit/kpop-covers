@@ -20,6 +20,8 @@ export interface YTPlayer {
   setPlaybackRate(rate: number): void;
   getPlaybackRate(): number;
   getAvailablePlaybackRates(): number[];
+  mute?(): void;
+  unMute?(): void;
   getVideoData?(): { title?: string; author?: string; video_id?: string };
   destroy(): void;
 }

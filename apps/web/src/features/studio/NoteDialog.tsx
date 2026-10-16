@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { currentMemberId, useMembers } from '@/data/members';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/data/notes';
+import { categoryLabel, isValidSketch, noteStatus } from '@/features/review/reviewRules';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 
@@ -60,7 +61,7 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
     try {
       if (note) {
         if (text !== note.body) {
-          await update.mutateAsync({ note, body: text });
+          await update.mutateAsync({ note, patch: { body: text } });
           toast('Nota actualizada', 'success');
         }
       } else {
@@ -139,6 +140,25 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
                   {idea}
                 </button>
               ))}
+            </div>
+          )}
+          {note?.take_id && (
+            // F6 · a note left on a take, shown here to its recipient.
+            <div className="mt-3 rounded-[10px] border border-line p-3 text-[13px] leading-snug text-washi-muted">
+              <p>
+                Nota sobre una toma
+                {categoryLabel(note.category) ? ` · ${categoryLabel(note.category)}` : ''} ·{' '}
+                <span className={noteStatus(note) === 'done' ? 'text-rokusho' : 'text-kin-300'}>
+                  {noteStatus(note) === 'done' ? 'Resuelta' : 'Pendiente'}
+                </span>
+              </p>
+              {isValidSketch(note.sketch) && (
+                <img
+                  src={note.sketch}
+                  alt="Dibujo sobre el fotograma de la toma"
+                  className="mt-2 w-full max-w-[320px] rounded-[8px] border border-line"
+                />
+              )}
             </div>
           )}
           {error && (

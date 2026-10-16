@@ -128,4 +128,13 @@ describe('MOMENTS registry', () => {
   it('recommends «onda» for separating voice and music (F17)', () => {
     expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'voice-split')).toBe('onda');
   });
+
+  it('recommends «biombo» for comparing a take with the original (F5)', () => {
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'review-compare')).toBe('biombo');
+  });
+
+  it('recommends «omikuji» for drawing from a bag (F13) and «marquesina» for the Random Play Dance screen (F14)', () => {
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'bag-draw')).toBe('omikuji');
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'random-play')).toBe('marquesina');
+  });
 });

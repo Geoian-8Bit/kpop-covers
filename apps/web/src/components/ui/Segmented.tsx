@@ -7,6 +7,8 @@ export interface SegmentedOption<T extends string | number> {
   value: T;
   label: ReactNode;
   ariaLabel?: string;
+  /** Shown but not choosable: it stays focusable and a tap calls `onDisabled` (to say why). */
+  disabled?: boolean;
 }
 
 interface SegmentedProps<T extends string | number> {
@@ -18,6 +20,8 @@ interface SegmentedProps<T extends string | number> {
   label: string;
   size?: 'sm' | 'md';
   className?: string;
+  /** A disabled option was tapped. */
+  onDisabled?: (value: T) => void;
 }
 
 /** Radio group: a washi-paper tab springs between options. */
@@ -29,6 +33,7 @@ export function Segmented<T extends string | number>({
   label,
   size = 'md',
   className,
+  onDisabled,
 }: SegmentedProps<T>) {
   return (
     <div
@@ -45,13 +50,15 @@ export function Segmented<T extends string | number>({
             role="radio"
             aria-checked={active}
             aria-label={option.ariaLabel}
-            onClick={() => onChange(option.value)}
+            aria-disabled={option.disabled || undefined}
+            onClick={() => (option.disabled ? onDisabled?.(option.value) : onChange(option.value))}
             whileTap={{ scale: 0.88 }}
             transition={jelly}
             className={cn(
               'relative isolate shrink-0 rounded-[8px] font-medium transition-colors duration-200',
               size === 'sm' ? 'h-8 px-2.5 text-[13px]' : 'h-9 px-4 text-sm',
               active ? 'font-bold text-sumi-900' : 'text-washi-muted hover:text-washi',
+              option.disabled && 'cursor-not-allowed opacity-45 hover:text-washi-muted',
             )}
           >
             {active && (

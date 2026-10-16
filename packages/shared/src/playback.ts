@@ -24,7 +24,7 @@ export function stepSpeed(current: number, direction: 1 | -1): number {
 }
 
 export function formatSpeed(value: number): string {
-  return `${Number(value.toFixed(2))}×`;
+  return `${String(Number(value.toFixed(2))).replace(".", ",")}×`;
 }
 
 export interface LoopRange {

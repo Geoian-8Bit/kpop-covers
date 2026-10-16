@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { Library, LogOut, MoreVertical, Plus, Settings } from 'lucide-react';
+import { Library, LogOut, MoreVertical, Plus, Settings, Shuffle } from 'lucide-react';
 import {
   lazy,
   Suspense,
@@ -26,6 +26,14 @@ import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
 import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
+import { BagIcon } from '@/features/bags/BagIcon';
+
+/** Main sections: the library, the bags to draw from (F13) and Random Play Dance (F14). */
+const MAIN_NAV: { to: string; end?: boolean; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
+  { to: '/', end: true, label: 'Biblioteca', Icon: Library },
+  { to: '/bolsas', label: 'Bolsas', Icon: BagIcon },
+  { to: '/rpd', label: 'Random Play Dance', Icon: Shuffle },
+];
 
 // Not in the entry chunk: warmed while idle and on hover/press of the add buttons, so the first open is instant.
 const AddVideoDialog = lazy(() => loadAddVideoDialog().then((m) => ({ default: m.AddVideoDialog })));
@@ -138,33 +146,36 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
         </Button>
       </div>
 
-      <nav aria-label="Principal" className="mt-6 px-3">
-        <NavLink
-          to="/"
-          end
-          onClick={guardNav}
-          className={({ isActive }) =>
-            cn(
-              'relative flex h-11 items-center gap-3 rounded-[10px] px-3 text-[15px] font-bold transition-colors',
-              isActive
-                ? 'bg-washi/[0.07] text-washi'
-                : 'text-washi-muted hover:bg-washi/[0.04] hover:text-washi',
-            )
-          }
-        >
-          {({ isActive }) => (
-            <>
-              {isActive && (
-                <motion.span
-                  layoutId="rail-active"
-                  transition={jelly}
-                  className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-shu-500"
-                />
-              )}
-              <Library className="size-4.5" /> Biblioteca
-            </>
-          )}
-        </NavLink>
+      <nav aria-label="Principal" className="mt-6 space-y-0.5 px-3">
+        {MAIN_NAV.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            onClick={guardNav}
+            className={({ isActive }) =>
+              cn(
+                'relative flex h-11 items-center gap-3 rounded-[10px] px-3 text-[15px] font-bold transition-colors',
+                isActive
+                  ? 'bg-washi/[0.07] text-washi'
+                  : 'text-washi-muted hover:bg-washi/[0.04] hover:text-washi',
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                {isActive && (
+                  <motion.span
+                    layoutId="rail-active"
+                    transition={jelly}
+                    className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-shu-500"
+                  />
+                )}
+                <item.Icon className="size-4.5" /> {item.label}
+              </>
+            )}
+          </NavLink>
+        ))}
       </nav>
 
       <div className="mt-7 flex min-h-0 flex-1 flex-col">
@@ -344,6 +355,28 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       <div className="my-1 h-px bg-line" />
                     </>
                   )}
+                  {MAIN_NAV.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      role="menuitem"
+                      to={item.to}
+                      end={item.end}
+                      onClick={(e) => {
+                        guardNav(e);
+                        setMenuOpen(false);
+                      }}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-bold transition-colors hover:bg-washi/[0.06] hover:text-washi',
+                          isActive ? 'bg-washi/[0.07] text-washi' : 'text-washi-muted',
+                        )
+                      }
+                    >
+                      <item.Icon className="size-4" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                  <div className="my-1 h-px bg-line" />
                   <InstallAppButton compact className="mb-1" />
                   <WhoButton onPick={() => setMenuOpen(false)} />
                   <Link

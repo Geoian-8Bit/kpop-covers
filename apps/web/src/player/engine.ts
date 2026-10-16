@@ -16,6 +16,8 @@ export interface PlayerEngine {
   isPlaying?(): boolean;
   getDuration(): number;
   setRate(rate: number): void;
+  /** Silence or sound the media (F5: the review plays two at once and only one is heard). */
+  setMuted?(muted: boolean): void;
   /**
    * The song's own audio as a track, for recording dance videos with the original sound. Only media
    * files can offer it; the YouTube player is a cross-origin iframe whose audio the page can't reach.
@@ -105,6 +107,9 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
     setRate: (rate) => {
       el.defaultPlaybackRate = rate;
       el.playbackRate = rate;
+    },
+    setMuted: (muted) => {
+      el.muted = muted;
     },
     captureAudio: () => {
       const media = el as CapturableMedia;
@@ -260,6 +265,10 @@ export function createYouTubeEngine(
       return raw + Math.min((now - lastAt) / 1000, 0.6) * player.getPlaybackRate();
     },
     getDuration: () => player.getDuration() ?? 0,
+    setMuted: (muted) => {
+      if (muted) player.mute?.();
+      else player.unMute?.();
+    },
     setRate: (rate) => {
       player.setPlaybackRate(rate);
       clearTimeout(rateCheck);

@@ -20,7 +20,7 @@ describe('speed helpers', () => {
   });
 
   it('formats speed', () => {
-    expect(formatSpeed(0.75)).toBe('0.75×');
+    expect(formatSpeed(0.75)).toBe('0,75×');
     expect(formatSpeed(1)).toBe('1×');
   });
 });

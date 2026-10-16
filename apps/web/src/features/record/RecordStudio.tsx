@@ -95,6 +95,8 @@ import {
   type TakeRecorder,
 } from './recorder';
 import { formatZoom, useCamera } from './useCamera';
+import { ClapArm } from './clap/ClapArm';
+import { createListeningContext } from './clap/clapListener';
 
 /**
  * idle → (countdown) → arming (waiting for the song to really start) → recording ⇄ paused → finishing → review.
@@ -182,7 +184,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [kept, setKept] = useState(false);
   const saveTake = useSaveTake();
   const members = useMembers();
-  const [confirm, setConfirm] = useState<'close' | 'again' | 'discard' | 'leftover' | null>(null);
+  const [confirm, setConfirm] = useState<'close' | 'again' | 'discard' | 'leftover' | 'rearm' | null>(null);
   const [sound, setSound] = useState<SoundSource>('pending');
   const [notice, setNotice] = useState('');
   /** F3 · What «Guardar» did, shown in the review (an error stays until the next try). */
@@ -243,6 +245,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
   const restore = useRef<{ loopEnabled: boolean; loopAll: boolean } | null>(null);
   const sharing = useRef(false);
+  /**
+   * F7 · Armed for a double clap: the analysis context and the microphone track (null while it is asked for).
+   * `clapRes` holds what must be freed on disarming; `fromClap` marks the take started by a clap («Armar otra vez»).
+   */
+  const [clap, setClap] = useState<{ ctx: AudioContext | null; track: MediaStreamTrack | null } | null>(null);
+  const clapRes = useRef<{ ctx: AudioContext | null; track: MediaStreamTrack | null } | null>(null);
+  const clapFiring = useRef(false);
+  const fromClap = useRef(false);
+  const clapVariant = useDesignVariant('clap-arm');
 
   const unsaved = phase === 'paused' || (phase === 'review' && take != null && !saved && !kept);
   const rolling =
@@ -438,6 +449,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       session.current++;
       document.body.style.overflow = overflow;
       clearTimers();
+      disarmClap();
       recorder.current?.cancel();
       recorder.current = null;
       dropUnusedSink();
@@ -1022,6 +1034,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         clipId: fromNow === 'range' ? p.activeClipId : null,
       };
       heatWarned.current = false;
+      fromClap.current = clapFiring.current;
+      clapFiring.current = false;
       setSpan(s);
       setSeconds(0);
       p.pause();
@@ -1117,6 +1131,94 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     return () => window.removeEventListener('beforeunload', warn);
   }, [rolling, unsaved]);
 
+  // ───────────── F7 · Armed for a double clap ─────────────
+  /** Arms: the microphone is asked for now if the take doesn't already use it (songs from a file don't). */
+  function armClap() {
+    if (phaseRef.current !== 'idle' || clapRes.current || !supported || view.status !== 'ready') return;
+    setNotice('');
+    setSettingsOpen(false);
+    setImageOpen(false);
+    setInfoOpen(false);
+    unlockAudio();
+    // Made inside the tap: Safari only lets audio start in one.
+    const ctx = createListeningContext();
+    if (!ctx) {
+      setNotice('Este navegador no puede escuchar el micrófono: graba con el botón.');
+      return;
+    }
+    const res: { ctx: AudioContext | null; track: MediaStreamTrack | null } = { ctx, track: null };
+    clapRes.current = res;
+    setClap({ ctx, track: null });
+    const id = session.current;
+    const live = micTrack.current?.readyState === 'live' ? micTrack.current : null;
+    // The take's own microphone is copied (stopping the copy leaves the take's alone).
+    void (live ? Promise.resolve(live.clone()) : openMic('mono')).then((track) => {
+      if (id !== session.current || clapRes.current !== res) {
+        track?.stop();
+        return;
+      }
+      if (!track) {
+        disarmClap();
+        setNotice(
+          'Para oír el aplauso hace falta el micrófono, y no hay permiso o no está disponible. Permítelo en el navegador o graba con el botón.',
+        );
+        return;
+      }
+      res.track = track;
+      setClap({ ctx, track });
+    });
+  }
+
+  /** Stops listening and frees the microphone copy and the analysis. */
+  function disarmClap() {
+    const res = clapRes.current;
+    clapRes.current = null;
+    res?.track?.stop();
+    if (res?.ctx && res.ctx.state !== 'closed') void res.ctx.close().catch(() => undefined);
+    setClap(null);
+  }
+
+  /** The double clap: the take starts exactly as with the shutter (same count-in, span and saved sync). */
+  function clapFired() {
+    disarmClap();
+    if (phaseRef.current !== 'idle') return;
+    if (view.status !== 'ready' || !cam.source.current?.videoWidth) {
+      setNotice('La cámara no está lista: no se ha podido empezar. Vuelve a armar.');
+      return;
+    }
+    clapFiring.current = true;
+    shutter();
+    clapFiring.current = false;
+  }
+
+  /** From the review: back to waiting for a clap (asking first when the take would be lost). */
+  function armAgain() {
+    if (keepingRef.current) return;
+    if (!(saved || kept)) {
+      setConfirm('rearm');
+      return;
+    }
+    again();
+    phaseRef.current = 'idle';
+    armClap();
+  }
+
+  // Armed only while nothing else runs: a take started another way (a key on the shutter behind the overlay, the
+  // recovery of a leftover) disarms, so the microphone and its analysis are never left open.
+  useEffect(() => {
+    if (clap && phase !== 'idle') disarmClap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, clap != null]);
+
+  // Back while armed disarms (the studio stays open).
+  useEffect(() => {
+    if (!clap) return;
+    const onPop = () => disarmClap();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clap != null]);
+
   function requestClose() {
     const now = phaseRef.current;
     if (now === 'finishing' || keepingRef.current) return;
@@ -1126,7 +1228,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }
 
   // Back / swipe-back: closes the studio, or asks first when a take would be lost.
-  useBackToClose(open, onClose, rolling || unsaved);
+  useBackToClose(open, onClose, rolling || unsaved || clap != null);
   const requestCloseRef = useRef(requestClose);
   requestCloseRef.current = requestClose;
   const confirmRef = useRef(confirm);
@@ -1230,6 +1332,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     }
     discardTake();
     if (action === 'close') onClose();
+    if (action === 'rearm') {
+      phaseRef.current = 'idle';
+      armClap();
+    }
   }
 
   async function save() {
@@ -1314,6 +1420,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     });
     setSeconds(-1);
     setLastStats(null);
+    fromClap.current = false;
     replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id, found.meta.videoId);
     reviewTiming.current = found.meta.timing ?? null;
     if (reviewTake.current && found.meta.noSpace) reviewTake.current.noSpace = true;
@@ -1771,6 +1878,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
           <div className="flex items-center justify-center gap-10 landscape:flex-col-reverse landscape:gap-6">
             <div className="grid size-14 place-items-center">
+              {/* F7: arm, and the take starts with a double clap from wherever the dancer stands. */}
+              {phase === 'idle' && camReady && supported && (
+                <RailButton
+                  label="Armar"
+                  ariaLabel="Armar: empezar a grabar con un doble aplauso"
+                  pressed={clap != null}
+                  onClick={armClap}
+                >
+                  <span aria-hidden className="font-display text-[19px] font-extrabold leading-none">
+                    拍
+                  </span>
+                </RailButton>
+              )}
               {phase === 'paused' && (
                 <RailButton
                   label="Borrar"
@@ -1857,6 +1977,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               <Button variant="secondary" disabled={keeping} onClick={() => (saved || kept ? again() : setConfirm('again'))}>
                 <RefreshCw className="size-4" /> Repetir
               </Button>
+              {fromClap.current && (
+                <Button variant="secondary" disabled={keeping} onClick={armAgain}>
+                  <span aria-hidden className="font-display text-[15px] font-extrabold leading-none">
+                    拍
+                  </span>
+                  Armar otra vez
+                </Button>
+              )}
             </div>
             <div aria-live="polite" className="w-full max-w-md empty:hidden">
               {(keepMsg ?? (notice ? { text: notice, error: false } : null)) && (
@@ -1878,6 +2006,26 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           </div>
         </div>
       )}
+
+      {/* F7 · Armed: waiting for the double clap, over the camera. */}
+      <AnimatePresence>
+        {clap && phase === 'idle' && (
+          <ClapArm
+            key="clap"
+            variant={clapVariant}
+            ctx={clap.ctx}
+            track={clap.track}
+            sensitivity={settings.clapSensitivity}
+            onSensitivity={(clapSensitivity) => settings.set({ clapSensitivity })}
+            onFire={clapFired}
+            onCancel={disarmClap}
+            onTimeout={() => {
+              disarmClap();
+              setNotice('No ha llegado la señal en 3 minutos: se ha desarmado. Pulsa «Armar» para esperar otra vez.');
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Inside the studio (above it), not a page Dialog: the studio covers every layer below it. */}
       <AnimatePresence>

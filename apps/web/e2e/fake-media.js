@@ -70,11 +70,22 @@
     }
     return dst.stream.getAudioTracks()[0].clone();
   };
+  let base = 0.02;
   window.__fakeClap = () => {
     if (!ac) return;
+    void ac.resume();
     const t = ac.currentTime;
     gain.gain.setValueAtTime(1, t);
-    gain.gain.setValueAtTime(0.02, t + 0.04);
+    gain.gain.setValueAtTime(base, t + 0.04);
+  };
+  // F7 tests: two claps `gapMs` apart (0.2–0.8 s fires the armed recorder), and the room's background level.
+  window.__fakeDoubleClap = (gapMs = 400) => {
+    window.__fakeClap();
+    setTimeout(window.__fakeClap, gapMs);
+  };
+  window.__fakeMicLevel = (level) => {
+    base = level;
+    if (ac) gain.gain.setValueAtTime(level, ac.currentTime);
   };
 
   const md = navigator.mediaDevices;

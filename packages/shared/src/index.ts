@@ -5,4 +5,5 @@ export * from './domain';
 export * from './recording';
 export * from './linking';
 export * from './review';
+export * from './clap';
 export type { Database, Json, Tables, TablesInsert, TablesUpdate } from './database.types';

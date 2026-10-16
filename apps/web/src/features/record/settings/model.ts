@@ -24,6 +24,7 @@ export type FieldKey =
   | 'startCamera'
   | 'sound'
   | 'micChannels'
+  | 'clapSensitivity'
   | 'grid'
   | 'level'
   | 'info';
@@ -74,6 +75,7 @@ export interface Fields {
   startCamera: ChoiceField;
   sound: ChoiceField;
   micChannels: ChoiceField;
+  clapSensitivity: ChoiceField;
   grid: SwitchField;
   level: SwitchField;
   info: SwitchField;
@@ -86,6 +88,14 @@ const QUALITY_HELP: Record<RecordSettings['quality'], string> = {
   high: '1080p, a 60 si la cámara puede. Unos 135 MB por minuto.',
   max: '4K si se puede, a 30 fps. Unos 300 MB por minuto; calienta el móvil.',
   auto: 'Lo mejor que este móvil graba sin cortes.',
+};
+
+export const CLAP_LABEL: Record<RecordSettings['clapSensitivity'], string> = { low: 'Baja', medium: 'Media', high: 'Alta' };
+
+const CLAP_HELP: Record<RecordSettings['clapSensitivity'], string> = {
+  low: 'Solo palmadas fuertes y claras: para salas con eco o ruido.',
+  medium: 'Dos palmadas normales a unos metros del móvil.',
+  high: 'Oye palmadas suaves o lejanas; en una sala ruidosa puede saltar sola.',
 };
 
 const RES_RANK: Record<Exclude<ResolutionChoice, 'auto'>, number> = { '720p': 0, '1080p': 1, '1440p': 2, '4k': 3 };
@@ -265,6 +275,21 @@ export function useSettingsFields({
         { value: 'stereo', label: 'Estéreo' },
       ],
       select: (v) => patch({ micChannels: v as RecordSettings['micChannels'] }),
+    },
+    clapSensitivity: {
+      kind: 'choice',
+      key: 'clapSensitivity',
+      label: 'Aplauso',
+      glyph: '拍',
+      help: `Sensibilidad para empezar con un doble aplauso. ${CLAP_HELP[s.clapSensitivity]}`,
+      display: CLAP_LABEL[s.clapSensitivity],
+      value: s.clapSensitivity,
+      options: (['low', 'medium', 'high'] as const).map((c) => ({
+        value: c,
+        label: CLAP_LABEL[c],
+        ariaLabel: `Sensibilidad ${CLAP_LABEL[c].toLowerCase()}`,
+      })),
+      select: (v) => patch({ clapSensitivity: v as RecordSettings['clapSensitivity'] }),
     },
     grid: {
       kind: 'switch',

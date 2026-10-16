@@ -44,6 +44,12 @@ export function friendlyError(error: unknown): string {
   if (/shared_file_missing/.test(message)) return 'La copia no llegó a la nube. Vuelve a pulsar «Compartir».';
   if (/shared_path_locked/.test(message)) return 'Esta toma ya está compartida.';
   if (/takes_one_best_key/.test(message)) return 'Otro móvil acaba de cambiar la estrella. Vuelve a intentarlo.';
+  if (/notes_category_check/.test(message)) return 'Esa categoría de nota no existe. Elige otra.';
+  if (/notes_sketch_shape/.test(message)) return 'El dibujo no cabe en la nota. Prueba con menos trazos.';
+  if (/notes_status_check/.test(message)) return 'Ese estado de nota no existe.';
+  if (/notes_take_seconds_range/.test(message)) return 'Ese momento queda fuera de la toma.';
+  if (/takes_sync_adjust_range/.test(message)) return 'El ajuste fino va de −0,3 a +0,3 s.';
+  if (/takes_fit_range/.test(message)) return 'Ese encaje se sale de los límites. Pulsa «Recolocar».';
   if (/video .* not found/i.test(message)) return 'Este vídeo ya no está en la biblioteca.';
   if (/PGRST116|0 rows|JSON object requested/i.test(message)) return 'Esto ya no existe: otro móvil lo ha borrado.';
   // Never show raw database text (constraint names, policies…) to the group.

@@ -24,6 +24,18 @@ export function isMemberColor(value: string): value is MemberColor {
 /** A recorded take (F3): the row is shared; the video lives on the phone that recorded it (or, shared, in the cloud). */
 export type Take = Tables<'takes'>;
 
+/** F13 · Bags to draw from: songs, clips or people; «se queda» (keep) or «se quita» (remove) when drawn. */
+export type BagKind = 'songs' | 'clips' | 'people';
+export type DrawMode = 'keep' | 'remove';
+export type Bag = Omit<Tables<'bags'>, 'kind' | 'draw_mode'> & { kind: BagKind; draw_mode: DrawMode };
+export type BagItem = Tables<'bag_items'>;
+export type BagDraw = Tables<'bag_draws'>;
+
+/** F14 · A saved Random Play Dance round; «after»: the title shows once the clip sounds (modo adivinar). */
+export type TitleMode = 'before' | 'after';
+export type Track = Omit<Tables<'tracks'>, 'title_mode'> & { title_mode: TitleMode };
+export type TrackItem = Tables<'track_items'>;
+
 /** A YouTube entry with its own file attached (F1). */
 export function hasLinkedFile(video: Pick<Tables<'videos'>, 'source' | 'file_name'>): boolean {
   return video.source === 'youtube' && Boolean(video.file_name);
