@@ -82,11 +82,16 @@ if (silent && typeof window !== 'undefined') {
   let readyHandler: (() => void) | undefined;
   Object.defineProperty(window, 'onYouTubeIframeAPIReady', {
     configurable: true,
+    // The wrapper captures the handler of the moment: the app chains to whatever was there before, so a wrapper
+    // that read the variable later would call itself forever.
     get() {
-      return () => {
-        wrapYT();
-        readyHandler?.();
-      };
+      const handler = readyHandler;
+      return handler
+        ? () => {
+            wrapYT();
+            handler();
+          }
+        : undefined;
     },
     set(fn: (() => void) | undefined) {
       readyHandler = fn;
