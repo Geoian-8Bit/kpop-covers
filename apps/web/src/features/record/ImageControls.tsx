@@ -62,7 +62,7 @@ export function ImageControls({
       exit={{ opacity: 0, y: 12, scale: 0.98 }}
       transition={soft}
       onPointerDown={(e) => e.stopPropagation()}
-      className="paper-raised absolute inset-x-3 bottom-[calc(max(18px,env(safe-area-inset-bottom))+150px)] z-40 mx-auto max-w-sm rounded-[16px] p-4 text-washi landscape:bottom-auto landscape:left-auto landscape:right-[calc(max(16px,env(safe-area-inset-right))+120px)] landscape:top-[max(12px,env(safe-area-inset-top))] landscape:w-80"
+      className="paper-raised absolute inset-x-3 bottom-[calc(max(18px,env(safe-area-inset-bottom))+150px)] z-40 mx-auto max-w-sm rounded-[16px] p-4 text-washi landscape:bottom-auto landscape:left-auto landscape:right-[calc(max(16px,env(safe-area-inset-right))+120px)] landscape:top-[max(12px,env(safe-area-inset-top))] landscape:w-80 max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain landscape:max-h-[calc(100dvh-24px)]"
     >
       <header className="flex items-center gap-2">
         <h2 className="flex-1 font-display text-[17px] font-bold">Imagen</h2>

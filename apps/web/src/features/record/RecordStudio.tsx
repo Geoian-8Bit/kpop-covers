@@ -257,15 +257,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
    * under the recorder. The screen's rotation is locked for the take (possible in the installed app / full
    * screen); where it can't be, the take goes through the canvas, which copes with a turned phone.
    */
-  const orientation = useRef<{ pending: boolean; locked: boolean; ready: Promise<unknown> }>({
+  const orientation = useRef<{ pending: boolean; locked: boolean; tried: boolean; ready: Promise<unknown> }>({
     pending: false,
     locked: false,
+    tried: false,
     ready: Promise.resolve(),
   });
   function lockForDirect() {
-    const state = { pending: false, locked: false, ready: Promise.resolve() as Promise<unknown> };
+    const state = { pending: false, locked: false, tried: true, ready: Promise.resolve() as Promise<unknown> };
     orientation.current = state;
-    if (!directPossible()) return;
+    if (!directPossible()) {
+      setTakeKind('canvas');
+      return;
+    }
     const o = screen.orientation as ScreenOrientation & { lock?: (type: string) => Promise<void> };
     if (!o?.lock) {
       setTakeKind('canvas');
@@ -274,8 +278,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     state.pending = true;
     state.ready = o.lock(o.type).then(
       () => {
-        state.locked = true;
         state.pending = false;
+        // Cancelled or closed meanwhile: give the rotation back at once.
+        if (orientation.current !== state) {
+          try {
+            screen.orientation?.unlock?.();
+          } catch {
+            /* not locked */
+          }
+          return;
+        }
+        state.locked = true;
       },
       () => {
         state.pending = false;
@@ -440,11 +453,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const hasImageControls = Boolean(
     trackInfo && (trackInfo.exposureCompensation || canWhiteBalance(trackInfo) || canLock(trackInfo)),
   );
-  // Another camera starts with its own automatic settings.
+  // Every (re)opened camera starts on automatic (another lens, new settings, back from another app): the controls
+  // say so, and a hold that was on is reported as gone.
+  const imageRef = useRef(image);
+  imageRef.current = image;
   useEffect(() => {
+    if (view.status !== 'starting') return;
+    if (imageRef.current.locked) setNotice('La cámara se ha reiniciado: el enfoque y la luz vuelven a automático.');
     setImage(IMAGE_DEFAULT);
     setFocusMark(null);
-  }, [view.deviceId, view.facing]);
+  }, [view.status]);
   // A tap's ring fades; a lock's ring stays.
   useEffect(() => {
     if (!focusMark || image.locked) return;
@@ -708,7 +726,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       void written?.discard();
       // Nothing came out of a recorder that ran: this phone's encoder can't do that format, use the next one.
       const failed = takeFormat.current?.mimeType;
-      if (failed && rec.pieces() === 0 && rec.seconds() > 0) {
+      if (failed && rec.pieces() === 0 && rec.seconds() > 2) {
         markFormatBad(failed);
         setNotice('Este formato no funciona en este móvil. Vuelve a grabar: se usará otro.');
       } else setNotice('No se ha grabado nada. Prueba otra vez.');
@@ -841,7 +859,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setPhase('arming');
     phaseRef.current = 'arming';
     // A new take needs its place on the phone first (a few ms): the song waits for it.
-    // A direct take also waits for the screen's rotation lock (see lockForDirect).
+    // A direct take also waits for the screen's rotation lock, asked for now, once the phone is in place.
+    if (!recorder.current && !orientation.current.tried) lockForDirect();
     if (!recorder.current && (!sink.current || orientation.current.pending)) {
       if (!sinkReady.current) prepareSink();
       void Promise.all([sinkReady.current!, orientation.current.ready]).then(
@@ -927,9 +946,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function shutter() {
     const now = phaseRef.current;
     if (now === 'idle') {
-      if (view.status !== 'ready' || !(directPossible() || frameReady())) return;
+      if (view.status !== 'ready' || !cam.source.current?.videoWidth) return;
       setNotice('');
-      lockForDirect();
+      // A take that can't be direct (iPhone, canvas forced, digital zoom) starts drawing the canvas now, during
+      // the count-in; the rotation lock for a direct take is asked for when the count-in ends (go).
+      orientation.current = { pending: false, locked: false, tried: false, ready: Promise.resolve() };
+      if (!directPossible()) setTakeKind('canvas');
       const s = songSpan();
       spanRef.current = s;
       heatWarned.current = false;
@@ -1673,7 +1695,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             {phase === 'idle' && camReady
               ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · espacio para ${minutesPhrase(spaceMinutes)}` : ''}`
               : phase === 'paused'
-                ? 'En pausa · toca para seguir o ✓ para terminar'
+                ? 'En pausa · toca para seguir o «Listo» para terminar'
                 : phase === 'countdown'
                   ? 'Toca para cancelar'
                   : ''}

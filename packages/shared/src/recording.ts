@@ -229,6 +229,8 @@ export interface StoredTakeState {
   locked: boolean;
   /** The meta could be read but the pieces couldn't (a transient error). */
   unreadable?: boolean;
+  /** Saved in the app's «Tomas» (F3): it's the take's home now, never cleaned up on its own. */
+  kept?: boolean;
 }
 
 /** A saved take keeps its working copy this long: a download of a big file may still be reading it. */
@@ -243,7 +245,7 @@ const UNREADABLE_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
  * saved recently, or maybe still starting) or delete it (saved long enough ago, or empty and old).
  */
 export function leftoverAction(take: StoredTakeState, now: number): 'offer' | 'keep' | 'delete' {
-  if (take.locked) return 'keep';
+  if (take.locked || take.kept) return 'keep';
   const started = Date.parse(take.startedAt);
   const age = Number.isFinite(started) ? now - started : Number.POSITIVE_INFINITY;
   if (take.unreadable) return age > UNREADABLE_GIVE_UP_MS ? 'delete' : 'keep';

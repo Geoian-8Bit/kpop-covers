@@ -32,6 +32,8 @@ export interface TakeMeta {
   savedAt: string | null;
   /** The phone ran out of space during the take: its download may fail too, so it's never cleaned up alone. */
   noSpace?: boolean;
+  /** Saved in the app's «Tomas» (F3): this folder is the take's home on this phone. */
+  kept?: boolean;
 }
 
 export interface TakeSink {
@@ -126,6 +128,7 @@ async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
     startedAt: String(raw.startedAt ?? ''),
     savedAt: raw.savedAt ?? (raw.saved ? raw.startedAt ?? null : null),
     noSpace: Boolean(raw.noSpace),
+    kept: Boolean(raw.kept),
   };
 }
 
@@ -285,7 +288,10 @@ export async function listLeftovers(): Promise<Leftover[]> {
       } catch (err) {
         unreadable = !(err instanceof DOMException && err.name === 'NotFoundError');
       }
-      const action = leftoverAction({ startedAt: meta.startedAt, savedAt: meta.savedAt, bytes: size, locked, unreadable }, now);
+      const action = leftoverAction(
+        { startedAt: meta.startedAt, savedAt: meta.savedAt, bytes: size, locked, unreadable, kept: meta.kept },
+        now,
+      );
       if (action === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
       else if (action === 'offer') out.push({ meta: { ...meta, id }, size });
     }
@@ -317,6 +323,56 @@ export async function markTakeSaved(id: string): Promise<void> {
     await writeFile(dir, META, JSON.stringify({ ...meta, id, savedAt: new Date().toISOString() }));
   } catch {
     /* already gone */
+  }
+}
+
+// ───────────── F3 · takes kept in the app ─────────────
+
+/** «Guardar»: the take stays on this phone as part of the app's «Tomas» (never cleaned up on its own). */
+export async function keepTake(id: string): Promise<boolean> {
+  const root = await rootDir();
+  if (!root) return false;
+  try {
+    const dir = await root.getDirectoryHandle(id);
+    const meta = await readMeta(dir);
+    await writeFile(dir, META, JSON.stringify({ ...meta, id, kept: true }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Ids of the takes kept on this phone. */
+export async function listKeptTakes(): Promise<Set<string>> {
+  const root = await rootDir();
+  const out = new Set<string>();
+  if (!root) return out;
+  try {
+    for (const id of await names(root)) {
+      try {
+        const meta = await readMeta(await root.getDirectoryHandle(id));
+        if (meta.kept) out.add(id);
+      } catch {
+        /* not a take folder */
+      }
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return out;
+}
+
+/** A kept take's video, as one disk-backed Blob (null if it isn't on this phone). */
+export async function loadKeptTake(id: string): Promise<Blob | null> {
+  const root = await rootDir();
+  if (!root) return null;
+  try {
+    const dir = await root.getDirectoryHandle(id);
+    const meta = await readMeta(dir);
+    const blob = await readPieces(dir, meta.mimeType || 'video/webm');
+    return blob.size ? blob : null;
+  } catch {
+    return null;
   }
 }
 

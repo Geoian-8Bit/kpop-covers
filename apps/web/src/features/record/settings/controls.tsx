@@ -113,7 +113,8 @@ export function Choice({
             onClick={() => {
               // A choice this phone can't make doesn't move: it shakes its head (the reason is written below).
               if (option.disabled) setShake(option.value);
-              else field.select(option.value);
+              // The option shown as chosen may be an effective value (e.g. 30 when 60 isn't possible): leave the stored one.
+              else if (!active) field.select(option.value);
             }}
             whileTap={option.disabled ? undefined : { scale: 0.9 }}
             animate={shake === option.value && !reduce ? { x: [0, -5, 5, -3, 3, 0] } : { x: 0 }}

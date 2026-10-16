@@ -216,14 +216,19 @@ export async function lockFocusExposure(track: MediaStreamTrack | undefined, loc
   const now = (track?.getSettings?.() ?? {}) as Record<string, unknown>;
   const set: Advanced = {};
   if (lock) {
-    if (info.focusModes.includes('manual') && typeof now.focusDistance === 'number') {
+    // single-shot measures once (at the point just tapped) and then holds: what a lock means. Manual values read
+    // right after a refocus could still be the old ones, so they are only the fallback.
+    if (info.focusModes.includes('single-shot')) set.focusMode = 'single-shot';
+    else if (info.focusModes.includes('manual') && typeof now.focusDistance === 'number') {
       set.focusMode = 'manual';
       set.focusDistance = now.focusDistance;
-    } else if (info.focusModes.includes('single-shot')) set.focusMode = 'single-shot';
-    if (info.exposureModes.includes('manual') && typeof now.exposureTime === 'number') {
+    }
+    if (info.exposureModes.includes('single-shot')) set.exposureMode = 'single-shot';
+    else if (info.exposureModes.includes('manual') && typeof now.exposureTime === 'number') {
       set.exposureMode = 'manual';
       set.exposureTime = now.exposureTime;
-    } else if (info.exposureModes.includes('single-shot')) set.exposureMode = 'single-shot';
+      if (typeof now.iso === 'number') set.iso = now.iso;
+    }
   } else {
     if (info.focusModes.includes('continuous')) set.focusMode = 'continuous';
     if (info.exposureModes.includes('continuous')) set.exposureMode = 'continuous';

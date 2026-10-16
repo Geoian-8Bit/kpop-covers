@@ -138,7 +138,7 @@ export interface TakeRecorder {
 }
 
 /** A working encoder hands over its first 1-second piece well within this. */
-const NO_DATA_MS = 3500;
+const NO_DATA_MS = 7000;
 
 /** How long the browser gets to hand over the last piece of the file after stopping. */
 const FINISH_TIMEOUT_MS = 8000;
@@ -184,6 +184,16 @@ export function createTakeRecorder(
       run();
       // An encoder that accepted the format but produces nothing: after a few seconds without a single piece,
       // treat the recorder as dead (the take ends empty and the format is skipped from then on).
+      // First ask for whatever is buffered (some MP4 muxers group fragments), then judge.
+      setTimeout(() => {
+        if (pieces === 0 && rec.state === 'recording') {
+          try {
+            rec.requestData();
+          } catch {
+            /* stopped meanwhile */
+          }
+        }
+      }, NO_DATA_MS / 2);
       setTimeout(() => {
         if (pieces === 0 && rec.state === 'recording') died();
       }, NO_DATA_MS);
