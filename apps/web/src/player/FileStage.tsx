@@ -1,18 +1,26 @@
 import { useEffect, useRef } from 'react';
-import { createMediaEngine } from './engine';
+import { createMediaEngine, withOffset } from './engine';
 import { hasRange, usePlayer } from './store';
 
-/** HTML5 <video> backed stage for uploaded files (any speed between 0.25× and 2×). */
-export function FileStage({ src }: { src: string }) {
+/**
+ * HTML5 <video> backed stage for uploaded files (any speed between 0.25× and 2×), and for the file linked to a
+ * YouTube entry (F1), played on the YouTube timeline through its offset.
+ */
+export function FileStage({ src, offset = 0 }: { src: string; offset?: number }) {
   const ref = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const engine = createMediaEngine(el);
+    const engine = withOffset(createMediaEngine(el), offset);
     const { sync, attach, detach } = usePlayer.getState();
 
     const onMeta = () => {
+      // A linked file opens on the song's moment, not at its own second 0 (which may be before the song starts).
+      if (offset) {
+        const { pendingSeek, time } = usePlayer.getState();
+        if (pendingSeek == null) engine.seek(time);
+      }
       attach(engine);
       sync({ duration: engine.getDuration() });
     };
@@ -64,7 +72,7 @@ export function FileStage({ src }: { src: string }) {
       el.pause();
       detach(engine);
     };
-  }, [src]);
+  }, [src, offset]);
 
   return (
     <video

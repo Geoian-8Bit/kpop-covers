@@ -25,6 +25,7 @@ import { ButtonSkin } from './ui/ButtonSkin';
 import { Logo } from './Logo';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
+import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
 
 // Not in the entry chunk: warmed while idle and on hover/press of the add buttons, so the first open is instant.
 const AddVideoDialog = lazy(() => loadAddVideoDialog().then((m) => ({ default: m.AddVideoDialog })));
@@ -113,6 +114,7 @@ export function AppShell() {
       </div>
       {/* One help dialog for every install button, outside the phone menu so closing the menu can't take it down. */}
       <InstallAppHelp />
+      <WhoPromptHost />
     </div>
   );
 }
@@ -219,6 +221,7 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
 
       <div className="px-4 pb-3">
         <InstallAppButton compact />
+        <WhoButton className="mt-1" />
         <NavLink
           to="/ajustes"
           onClick={guardNav}
@@ -342,6 +345,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                     </>
                   )}
                   <InstallAppButton compact className="mb-1" />
+                  <WhoButton onPick={() => setMenuOpen(false)} />
                   <Link
                     role="menuitem"
                     to="/ajustes"

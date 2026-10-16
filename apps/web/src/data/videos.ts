@@ -44,6 +44,7 @@ function patchListedVideo(queryClient: QueryClient, video: Video) {
             artist: video.artist,
             thumbnail_url: video.thumbnail_url,
             duration_seconds: video.duration_seconds,
+            file_name: video.file_name,
           }
         : v,
     ),
@@ -206,6 +207,13 @@ export function useLinkLocalFile() {
   return useMutation({
     mutationFn: async ({ video, file }: { video: Video; file: File }) => {
       const local = await keepLocalCopy(video.id, file);
+      if (video.source === 'youtube') {
+        // F1: this phone's own copy of the group's linked file. It is never uploaded as the group's file (that
+        // goes through the link panel, which describes and syncs it); it's marked as a copy of today's file.
+        if (!local) throw new FriendlyError(NO_SPACE);
+        markLocalCopy(video.id, fileIdentity(video));
+        return;
+      }
       if (!video.storage_path) {
         const upload = await uploadToGroup(video.crew_id, video.id, file);
         if (upload.ok) await update.mutateAsync({ id: video.id, patch: { storage_path: upload.path } });
@@ -229,6 +237,153 @@ export function useUploadToCloud() {
       if (!upload.ok) throw new FriendlyError(`No se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
       return update.mutateAsync({ id: video.id, patch: { storage_path: upload.path } });
     },
+  });
+}
+
+/**
+ * F1 · Attach the file of a YouTube entry: kept on this device, and in the group's cloud when it fits (≤ 50 MB).
+ * The cloud name always carries a fresh suffix (`<group>/<video>--<suffix>.<ext>`): a removed or replaced file
+ * stays in the bucket (only the admin deletes), so a new one can never reuse its name.
+ */
+export interface LinkFileResult {
+  video: Video;
+  synced: boolean;
+  uploadFailure?: UploadFailure;
+}
+
+export function useLinkVideoFile() {
+  const update = useUpdateVideo();
+  return useMutation({
+    mutationFn: async ({
+      video,
+      file,
+      duration,
+    }: {
+      video: Video;
+      file: File;
+      duration: number | null;
+    }): Promise<LinkFileResult> => {
+      // The cached entry may be stale: another phone may have linked a file meanwhile. Never write over it.
+      const fresh = await backend.getVideo(video.id);
+      if (!fresh) throw new FriendlyError('Este vídeo ya no está en la biblioteca.');
+      // In the cloud or only on someone's phone (> 50 MB): either way it's the group's file now.
+      if (fresh.storage_path || fresh.file_name) {
+        throw new FriendlyError('Otro móvil ya ha vinculado un archivo a este vídeo. Cierra y vuelve a abrirlo para verlo.');
+      }
+      let upload: UploadResult = { ok: false, reason: 'too-big' };
+      if (file.size <= MAX_CLOUD_UPLOAD_BYTES) {
+        const suffix = Math.random().toString(36).slice(2, 8);
+        upload = await backend.uploadFile(`${video.crew_id}/${video.id}--${suffix}.${fileExtension(file.name)}`, file);
+      }
+      // The cloud said no (a file appeared meanwhile, or the video's file limit): nothing is written.
+      if (!upload.ok && upload.reason === 'denied') {
+        throw new FriendlyError(
+          'La nube no ha aceptado el archivo: puede que otro móvil acabe de vincular uno, o que este vídeo ya haya tenido 5 archivos (el administrador puede limpiar los antiguos).',
+        );
+      }
+      const local = await keepLocalCopy(video.id, file);
+      if (!upload.ok && !local) {
+        throw new FriendlyError(`${NO_SPACE} Tampoco se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
+      }
+      const updated = await update.mutateAsync({
+        id: video.id,
+        patch: {
+          file_name: file.name.slice(0, 255),
+          file_size: file.size,
+          file_duration_seconds: duration ? round3(duration) : null,
+          // A new file starts unsynced: the dancer marks the same moment in both right after.
+          file_offset_seconds: 0,
+          ...(upload.ok ? { storage_path: upload.path } : {}),
+        },
+      });
+      if (local) markLocalCopy(video.id, fileIdentity(updated));
+      return upload.ok ? { video: updated, synced: true } : { video: updated, synced: false, uploadFailure: upload.reason };
+    },
+  });
+}
+
+/** Which group file a YouTube entry describes now (a device copy remembers the one it was made for). */
+export function fileIdentity(video: Pick<Video, 'file_name' | 'file_size'>): string {
+  return `${video.file_name ?? ''}|${video.file_size ?? ''}`;
+}
+
+const COPY_KEY = 'oneshoot.localcopy.v1';
+
+function copies(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(COPY_KEY) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+/** This device's copy of a YouTube entry's file was made for the group file `identity`. */
+export function markLocalCopy(videoId: string, identity: string | null): void {
+  try {
+    const all = copies();
+    if (identity) all[videoId] = identity;
+    else delete all[videoId];
+    localStorage.setItem(COPY_KEY, JSON.stringify(all));
+  } catch {
+    /* this visit only */
+  }
+}
+
+/**
+ * True when this device's copy belongs to a file the group no longer uses (replaced or removed on another phone).
+ * Copies made before this was tracked have no mark and are trusted.
+ */
+export function isStaleCopy(video: Pick<Video, 'id' | 'source' | 'file_name' | 'file_size'>): boolean {
+  if (video.source !== 'youtube') return false;
+  const mark = copies()[video.id];
+  return mark != null && mark !== fileIdentity(video);
+}
+
+/** F1 · «Quitar el archivo»: the entry is YouTube-only again. Clips, notes and takes stay (YouTube timeline). */
+export function useUnlinkVideoFile() {
+  const update = useUpdateVideo();
+  return useMutation({
+    /** `keepLocal`: part of «Cambiar archivo» — the device copy stays until the new file is in place. */
+    mutationFn: async (video: Video | { video: Video; keepLocal: boolean }) => {
+      const target = 'keepLocal' in video ? video.video : video;
+      const keepLocal = 'keepLocal' in video && video.keepLocal;
+      const updated = await update.mutateAsync({
+        id: target.id,
+        patch: {
+          storage_path: null,
+          file_name: null,
+          file_size: null,
+          file_offset_seconds: null,
+          file_duration_seconds: null,
+        },
+      });
+      if (!keepLocal) {
+        await deleteLocalVideo(target.id).catch(() => undefined);
+        markLocalCopy(target.id, null);
+      }
+      return updated;
+    },
+  });
+}
+
+/**
+ * Puts a YouTube entry's previous file back (a «Cambiar archivo» whose new file couldn't be linked). The old cloud
+ * file is still in the bucket and becomes its file again.
+ */
+export function useRestoreVideoFile() {
+  const update = useUpdateVideo();
+  return useMutation({
+    mutationFn: (previous: Video) =>
+      update.mutateAsync({
+        id: previous.id,
+        patch: {
+          storage_path: previous.storage_path,
+          file_name: previous.file_name,
+          file_size: previous.file_size,
+          file_offset_seconds: previous.file_offset_seconds,
+          file_duration_seconds: previous.file_duration_seconds,
+        },
+      }),
   });
 }
 

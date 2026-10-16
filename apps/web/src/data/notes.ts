@@ -22,6 +22,8 @@ export interface NewNote {
   crew_id: string;
   at_seconds: number;
   body: string;
+  /** F2: who wrote it (null = «Sin nombre»). */
+  author_member_id?: string | null;
 }
 
 export function useCreateNote() {

@@ -1,6 +1,7 @@
 import {
   formatSpeed,
   formatTime,
+  hasLinkedFile,
   round3,
   SPEED_PRESETS,
   youTubeWatchUrl,
@@ -29,16 +30,26 @@ import {
   Youtube,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
+import { askWho } from '@/data/members';
+import { readStage, rememberStage } from '@/lib/stagePref';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
-import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useUploadToCloud, useVideo } from '@/data/videos';
-import { loadLocalVideo } from '@/lib/localVideos';
+import {
+  isStaleCopy,
+  markLocalCopy,
+  signedVideoUrl,
+  useLinkLocalFile,
+  useUpdateVideo,
+  useUploadToCloud,
+  useVideo,
+} from '@/data/videos';
+import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -52,6 +63,8 @@ import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { RecordStudio } from '@/features/record/RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
+import { LinkFilePanel } from './LinkFilePanel';
+import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline, useNoteAlert } from './Timeline';
 import { GapPicker, PlayerBar, useLongPress } from './Transport';
@@ -71,6 +84,18 @@ export function StudioPage() {
   const notes = useNotes(videoId);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [recording, setRecording] = useState(false);
+  const [linking, setLinking] = useState(false);
+  // F1: arriving from «Añadir vídeo» with this video's file: open the link panel with it.
+  const location = useLocation();
+  const navigateTo = useNavigate();
+  const [incomingFile, setIncomingFile] = useState<File | null>(null);
+  useEffect(() => {
+    const state = location.state as { linkFile?: File } | null;
+    if (!(state?.linkFile instanceof File)) return;
+    setIncomingFile(state.linkFile);
+    setLinking(true);
+    navigateTo(location.pathname + location.search, { replace: true, state: null });
+  }, [location, navigateTo]);
   const [params, setParams] = useSearchParams();
   const clipParam = params.get('clip');
   const ready = usePlayer((s) => s.ready);
@@ -81,6 +106,14 @@ export function StudioPage() {
   // Reset only on cleanup: child stages attach their engine in effects that run *before* this
   // parent effect, so resetting on mount could wipe a freshly attached engine.
   useEffect(() => () => usePlayer.getState().reset(), [videoId]);
+  // F1: the stage this device last used for this video (YouTube by default, the file only if still linked).
+  const linkedFile = video.data ? hasLinkedFile(video.data) : false;
+  const loaded = video.data != null;
+  useEffect(() => {
+    if (!videoId) return;
+    if (loaded && !linkedFile) rememberStage(videoId, 'youtube'); // removed on another phone: forget «Archivo»
+    usePlayer.setState({ stage: linkedFile ? readStage(videoId) : 'youtube' });
+  }, [videoId, linkedFile, loaded]);
   // Remember this video as the last one opened on this device (the library leads with it).
   useEffect(() => {
     if (videoId) markOpened(videoId);
@@ -95,7 +128,11 @@ export function StudioPage() {
   }, [toast]);
   const openHelp = useCallback(() => setHelp(true), []);
   // A new note belongs to the moment the button is pressed, even if the song keeps playing.
-  const addNote = useCallback(() => setNoteTarget({ note: null, at: usePlayer.getState().time }), []);
+  // F2: the first note (or take) without a name suggests «¿Quién eres?» once; the action goes on either way.
+  const addNote = useCallback(() => {
+    const at = usePlayer.getState().time;
+    askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () => setNoteTarget({ note: null, at }));
+  }, []);
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
   useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording });
 
@@ -146,7 +183,9 @@ export function StudioPage() {
   // First time a file/stream reports its length, remember it for the library cards.
   const current = video.data;
   useEffect(() => {
-    if (current && duration > 0 && !current.duration_seconds) {
+    // Only the stage that IS this entry: a linked file's own length is not the YouTube video's (F1).
+    const fromFile = current?.source === 'youtube' && usePlayer.getState().stage === 'file';
+    if (current && duration > 0 && !current.duration_seconds && !fromFile) {
       patchVideo({ id: current.id, patch: { duration_seconds: round3(duration) } });
     }
   }, [current, duration, patchVideo]);
@@ -238,7 +277,20 @@ export function StudioPage() {
           >
             <Keyboard className="size-5" />
           </Button>
-          <Button size="sm" aria-label="Grabar baile con la canción" onClick={() => setRecording(true)} disabled={!ready}>
+          {current.source === 'youtube' && (
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={hasLinkedFile(current) ? 'Archivo de este vídeo' : 'Añadir el archivo de este vídeo'}
+              onClick={() => setLinking(true)}
+            >
+              <FileVideo className="size-4" />
+              <span className="max-sm:sr-only">{hasLinkedFile(current) ? 'Archivo' : 'Añadir archivo'}</span>
+            </Button>
+          )}
+          <Button size="sm" aria-label="Grabar baile con la canción" onClick={() => askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () => setRecording(true))}
+            disabled={!ready}
+          >
             <VideoIcon className="size-4" />
             <span className="max-sm:sr-only">Grabar</span>
           </Button>
@@ -249,6 +301,7 @@ export function StudioPage() {
           <div className="min-w-0">
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
+              {hasLinkedFile(current) && <StageSwitch video={current} />}
               <MediaStage video={current} clips={clips.data ?? []} notes={notes.data ?? NO_NOTES} onClipSelect={tapClipLine} />
             </div>
             <Timeline
@@ -281,6 +334,17 @@ export function StudioPage() {
       />
       <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
       <RecordStudio open={recording} onClose={() => setRecording(false)} video={current} />
+      {current.source === 'youtube' && (
+        <LinkFilePanel
+          open={linking}
+          onClose={() => {
+            setLinking(false);
+            setIncomingFile(null);
+          }}
+          video={current}
+          initialFile={incomingFile}
+        />
+      )}
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
     </Page>
   );
@@ -289,11 +353,11 @@ export function StudioPage() {
 /** `local`: the device copy the picture plays from, when there is one (it can be sent to the cloud). */
 type FileSource = { status: 'loading' } | { status: 'missing' } | { status: 'ready'; url: string; local?: Blob };
 
-function useFileSource(video: Video, reloadKey: number): FileSource {
+function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileSource {
   const [state, setState] = useState<FileSource>({ status: 'loading' });
 
   useEffect(() => {
-    if (video.source !== 'upload') return;
+    if (!enabled) return;
     let cancelled = false;
     let objectUrl: string | null = null;
     setState({ status: 'loading' });
@@ -301,7 +365,13 @@ function useFileSource(video: Video, reloadKey: number): FileSource {
     void (async () => {
       const blob = await loadLocalVideo(video.id);
       if (cancelled) return;
-      if (blob) {
+      // F1: a copy left from a file that was since replaced (another size) is not this video's file any more.
+      const stale = blob != null && isStaleCopy(video);
+      if (stale) {
+        await deleteLocalVideo(video.id).catch(() => undefined);
+        markLocalCopy(video.id, null);
+      }
+      if (blob && !stale) {
         objectUrl = URL.createObjectURL(blob);
         setState({ status: 'ready', url: objectUrl, local: blob });
         return;
@@ -321,9 +391,36 @@ function useFileSource(video: Video, reloadKey: number): FileSource {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [video.id, video.source, video.storage_path, reloadKey]);
+  }, [video.id, video.source, video.storage_path, video.file_name, video.file_size, reloadKey, enabled]);
 
   return state;
+}
+
+
+/** F1 · «YouTube | Archivo» for a YouTube entry with its own file. */
+function StageSwitch({ video }: { video: Video }) {
+  const stage = usePlayer((s) => s.stage);
+  return (
+    <div className="mb-2 flex items-center justify-between gap-3 sm:mb-3">
+      <Segmented
+        size="md"
+        label="Qué se reproduce"
+        layoutId={`stage-${video.id}`}
+        value={stage}
+        onChange={(next) => {
+          usePlayer.getState().setStage(next);
+          rememberStage(video.id, next);
+        }}
+        options={[
+          { value: 'youtube', label: 'YouTube' },
+          { value: 'file', label: 'Archivo' },
+        ]}
+      />
+      <span className="truncate text-[12px] text-washi-subtle">
+        {stage === 'file' ? (video.file_name ?? '') : 'El archivo: mismos clips y notas, sin anuncios ni esperas'}
+      </span>
+    </div>
+  );
 }
 
 function MediaStage({
@@ -346,11 +443,16 @@ function MediaStage({
   const counting = usePlayer((s) => s.countdownEndsAt != null);
   const recentToggle = useRecentToggle(playing);
   const [reloadKey, setReloadKey] = useState(0);
-  const file = useFileSource(video, reloadKey);
+  const stage = usePlayer((s) => s.stage);
+  /** Uploaded videos play their file; a YouTube entry plays its linked file when «Archivo» is chosen (F1). */
+  const playsFile = video.source === 'upload' || (stage === 'file' && hasLinkedFile(video));
+  const file = useFileSource(video, reloadKey, playsFile);
   const link = useLinkLocalFile();
   const upload = useUploadToCloud();
   /** Only on this device (the upload failed or was too big): offer to send it to the group from here. */
-  const localOnly = video.source === 'upload' && !video.storage_path && file.status === 'ready' && file.local != null;
+  // Uploaded videos only: a YouTube entry's file reaches the cloud through the link panel (described and synced).
+  const localOnly =
+    video.source === 'upload' && !video.storage_path && file.status === 'ready' && file.local != null;
 
   async function sendToCloud() {
     if (file.status !== 'ready' || !file.local || upload.isPending) return;
@@ -365,7 +467,7 @@ function MediaStage({
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
 
-  const missing = video.source === 'upload' && file.status === 'missing';
+  const missing = playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -478,10 +580,13 @@ function MediaStage({
           animate={{ scaleX: mirrored ? -1 : 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
         >
-          {video.source === 'youtube' && video.youtube_id ? (
+          {!playsFile && video.youtube_id ? (
             <YouTubeStage key={reloadKey} videoId={video.youtube_id} />
           ) : file.status === 'ready' ? (
-            <FileStage src={file.url} />
+            <FileStage
+              src={file.url}
+              offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
+            />
           ) : null}
         </motion.div>
 

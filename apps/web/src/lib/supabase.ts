@@ -12,6 +12,8 @@ export const supabase = createClient<Database>(url ?? 'http://localhost', key ??
 });
 
 export const VIDEO_BUCKET = 'videos';
+/** F3: shared takes (reduced 720p copies), private like the videos. */
+export const TAKE_BUCKET = 'takes';
 
 /** An error whose message is already Spanish copy for the group: `friendlyError` shows it as is. */
 export class FriendlyError extends Error {}
@@ -32,6 +34,10 @@ export function friendlyError(error: unknown): string {
   if (/videos_crew_youtube_key/.test(message)) return 'Ese vídeo ya está en la biblioteca.';
   if (/clips_video_range_key/.test(message)) return 'Ya hay un clip guardado con este mismo tramo.';
   if (/notes_video_at_body_key/.test(message)) return 'Esa nota ya está guardada.';
+  if (/members_crew_name_key/.test(message)) return 'Ya hay alguien con ese nombre en el grupo.';
+  if (/members_cap_reached/.test(message)) return 'El grupo ya tiene el máximo de miembros.';
+  if (/storage_path_locked/.test(message)) return 'Ese archivo no se puede cambiar.';
+  if (/file_locked/.test(message)) return 'Otro móvil ya ha vinculado un archivo a este vídeo. Cierra y vuelve a abrirlo para verlo.';
   if (/videos_cap_reached|clips_cap_reached|notes_cap_reached/.test(message)) return 'La biblioteca está llena. Borra algo antes de añadir más.';
   if (/bulk_delete_blocked/.test(message)) return 'Solo se puede borrar de uno en uno.';
   // Never show raw database text (constraint names, policies…) to the group.

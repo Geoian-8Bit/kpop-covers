@@ -3,6 +3,7 @@ import {
   formatDuration,
   MAX_CLOUD_UPLOAD_BYTES,
   parseYouTubeId,
+  similarTitles,
   youTubeThumbnail,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
@@ -83,6 +84,13 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
   const searchAbort = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [probe, setProbe] = useState<Probe | null>(null);
+  /** F1: YouTube entries (without a file yet) whose title looks like this file's name. */
+  const sameSong = file
+    ? similarTitles(
+        file.name,
+        (library.data ?? []).filter((v) => v.source === 'youtube' && !v.file_name),
+      )
+    : [];
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -445,6 +453,44 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                     ? 'Pesa más de 50 MB: se guarda solo en este dispositivo. El resto del grupo podrá vincular su propia copia del archivo.'
                     : 'Se sube a la nube del grupo y también queda guardado en este dispositivo.'}
                 </p>
+              )}
+
+              {/* F1: the file of a YouTube video already in the library joins that entry instead of a new, empty one. */}
+              {file && sameSong.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={soft}
+                  className="rounded-[12px] border border-kin-400/45 bg-sumi-950/50 p-3"
+                >
+                  <p className="text-[14px] font-bold text-washi">¿Es el archivo de uno de estos vídeos?</p>
+                  <p className="mt-0.5 text-[13px] leading-snug text-washi-muted">
+                    Se vincula a su entrada (mismos clips, notas y tomas) en vez de crear otra vacía.
+                  </p>
+                  <ul className="mt-2 space-y-1.5">
+                    {sameSong.map((v) => (
+                      <li key={v.id}>
+                        <motion.button
+                          type="button"
+                          whileTap={{ scale: 0.97 }}
+                          transition={jelly}
+                          onClick={() => {
+                            navigate(`/v/${v.id}`, { state: { linkFile: file } });
+                            onClose();
+                          }}
+                          className="flex min-h-12 w-full items-center gap-3 rounded-[10px] bg-sumi-800 px-3 text-left hover:bg-sumi-700"
+                        >
+                          {v.thumbnail_url && <img src={v.thumbnail_url} alt="" className="h-9 w-16 shrink-0 rounded-[6px] object-cover" />}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14px] font-bold">{v.title}</span>
+                            {v.artist && <span className="block truncate text-[12px] text-washi-subtle">{v.artist}</span>}
+                          </span>
+                          <span className="shrink-0 text-[12px] font-bold text-kin-300">Vincular</span>
+                        </motion.button>
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
               )}
             </motion.div>
           )}
