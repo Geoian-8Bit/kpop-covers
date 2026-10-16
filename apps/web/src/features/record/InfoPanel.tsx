@@ -1,10 +1,12 @@
 import { describeMime, formatMbps, formatTime, measuredBitrate } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Segmented } from '@/components/ui/Segmented';
 import { soft } from '@/lib/motion';
 import { listCameras, readTrackInfo, type TrackInfo } from './camera';
 import type { RecordFormat } from './recorder';
+import { useRecordSettings } from './settings';
 
 /** What the last take really came out as (size ÷ duration says whether the bitrate was respected). */
 export interface TakeStats {
@@ -56,6 +58,27 @@ export function InfoPanel({
 }) {
   const [info, setInfo] = useState<TrackInfo | null>(() => readTrackInfo(track));
   const [cameras, setCameras] = useState<string[]>([]);
+  const codec = useRecordSettings((s) => s.codec);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // A dialog like the others: focus inside, Escape closes it (and only it).
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCloseRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      previous?.focus?.();
+    };
+  }, []);
 
   // Settings change after a lens switch or a zoom: read again while the panel is open.
   useEffect(() => {
@@ -70,13 +93,14 @@ export function InfoPanel({
   return (
     <motion.aside
       role="dialog"
+      aria-modal="true"
       aria-label="Información técnica"
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={soft}
       onPointerDown={(e) => e.stopPropagation()}
-      className="absolute inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] top-[calc(max(14px,env(safe-area-inset-top))+60px)] z-40 mx-auto flex max-w-md flex-col overflow-hidden rounded-[16px] border border-line-strong bg-sumi-900/95 text-washi shadow-[0_24px_48px_-20px_rgb(0_0_0/0.95)] landscape:inset-y-3 landscape:left-auto landscape:right-3 landscape:w-96"
+      className="paper-raised absolute inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] top-[calc(max(14px,env(safe-area-inset-top))+60px)] z-40 mx-auto flex max-w-md flex-col overflow-hidden rounded-[16px] text-washi landscape:inset-y-[max(12px,env(safe-area-inset-top))] landscape:left-auto landscape:right-[max(12px,env(safe-area-inset-right))] landscape:w-96"
     >
       <header className="flex items-center gap-3 border-b border-rule px-4 py-3">
         <span className="grid size-8 place-items-center rounded-full border border-kin-400/60 font-display text-[15px] font-bold text-kin-300">
@@ -84,6 +108,7 @@ export function InfoPanel({
         </span>
         <h2 className="flex-1 font-display text-[17px] font-bold">Información técnica</h2>
         <button
+          ref={closeRef}
           type="button"
           aria-label="Cerrar la información"
           onClick={onClose}
@@ -113,7 +138,10 @@ export function InfoPanel({
               />
               <Row k="Linterna" v={yes(info.torch)} />
               <Row k="Enfoque" v={info.focusModes.length ? info.focusModes.join(', ') : 'no'} />
-              <Row k="Tocar para enfocar" v={yes(info.pointsOfInterest)} />
+              <Row
+                k="Tocar para enfocar"
+                v={info.pointsOfInterest && info.focusModes.length ? 'sí' : info.pointsOfInterest ? 'solo el navegador' : 'no'}
+              />
               <Row k="Exposición" v={info.exposureModes.length ? info.exposureModes.join(', ') : 'no'} />
               <Row
                 k="Compensación"
@@ -131,6 +159,24 @@ export function InfoPanel({
         </Section>
 
         <Section title="Grabación">
+          <div className="flex items-center justify-between gap-3 py-1.5">
+            <span className="text-washi-muted">Formato preferido</span>
+            <Segmented
+              size="sm"
+              label="Formato preferido"
+              layoutId="info-codec"
+              value={codec}
+              onChange={(next) => useRecordSettings.getState().set({ codec: next })}
+              options={[
+                { value: 'auto', label: 'Automático' },
+                { value: 'h264', label: 'Compatible' },
+              ]}
+            />
+          </div>
+          <p className="pb-1 text-[12px] text-washi-subtle">
+            Automático usa HEVC si el móvil puede (mitad de tamaño); Compatible graba siempre H.264, que se ve en
+            cualquier ordenador.
+          </p>
           <Row k="Formato" v={format ? describeMime(format.mimeType) : '—'} />
           <Row k="Compresión pedida" v={format ? formatMbps(format.videoBitsPerSecond) : '—'} />
           <Row k="Sonido" v={format ? `${Math.round(format.audioBitsPerSecond / 1000)} kbps` : '—'} />
@@ -144,8 +190,11 @@ export function InfoPanel({
             <>
               <Row k="Duración" v={formatTime(last.seconds)} />
               <Row k="Tamaño" v={`${(last.bytes / 1_048_576).toFixed(1).replace('.', ',')} MB`} />
-              <Row k="Formato real" v={describeMime(last.mimeType)} />
-              <Row k="Compresión real" v={`${formatMbps(lastBps)} (pedida ${formatMbps(last.requestedBps)})`} />
+              <Row k="Formato declarado" v={describeMime(last.mimeType)} />
+              <Row
+                k="Compresión real (total)"
+                v={`${formatMbps(lastBps)} · vídeo pedido ${formatMbps(last.requestedBps)}`}
+              />
               <Row
                 k="Fotogramas perdidos"
                 v={last.dropped == null ? 'sin medir' : `${last.dropped} de ${Math.round(last.expected)}`}

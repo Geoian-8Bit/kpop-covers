@@ -1,3 +1,5 @@
+import { belowRequested } from '@coverscape/shared';
+
 /**
  * Camera and microphone access for the recording studio. Picture and sound are asked for separately:
  * switching lens or flipping the camera restarts only the picture, never the sound under a take.
@@ -14,10 +16,21 @@ export interface CameraAbilities {
   torch: boolean;
 }
 
-/** Landscape numbers on purpose: phones then pick a real video mode and turn it to how they're held. */
-const SIZE = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+/** Size and rate to ask for. Landscape numbers on purpose: phones pick a real mode and turn it as held. */
+export interface CameraWant {
+  width: number;
+  height: number;
+  fps: 30 | 60;
+}
 
-export async function openCamera(facing: Facing, deviceId: string | null): Promise<MediaStream> {
+const sizeOf = (want: CameraWant, fps = want.fps) => ({
+  width: { ideal: want.width },
+  height: { ideal: want.height },
+  frameRate: { ideal: fps },
+});
+
+export async function openCamera(facing: Facing, deviceId: string | null, want: CameraWant): Promise<MediaStream> {
+  const SIZE = sizeOf(want);
   const base: MediaTrackConstraints = deviceId
     ? { deviceId: { exact: deviceId }, ...SIZE }
     : { facingMode: { ideal: facing }, ...SIZE };
@@ -49,6 +62,29 @@ export async function openMic(): Promise<MediaStreamTrack | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Q3/Q4: a camera asked for 1080p60 may trade the size for the rate (720p60). The plan prefers the size:
+ * ask again at 30 fps for the same picture. Resolves with what the camera ends up giving.
+ */
+export async function settleCameraMode(
+  track: MediaStreamTrack | undefined,
+  want: CameraWant,
+): Promise<{ width: number; height: number; fps: number }> {
+  const read = () => {
+    const s = track?.getSettings?.() ?? {};
+    return { width: s.width ?? 0, height: s.height ?? 0, fps: s.frameRate ?? 0 };
+  };
+  const got = read();
+  if (!track || want.fps !== 60 || !got.width) return got;
+  if (!belowRequested(got, want)) return got;
+  try {
+    await track.applyConstraints(sizeOf(want, 30));
+  } catch {
+    /* keep what we had */
+  }
+  return read();
 }
 
 export function readAbilities(track: MediaStreamTrack | undefined): CameraAbilities {

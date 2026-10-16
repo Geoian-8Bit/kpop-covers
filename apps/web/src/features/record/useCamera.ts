@@ -1,3 +1,4 @@
+import { cameraRequest } from '@coverscape/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   applyTrack,
@@ -5,10 +6,12 @@ import {
   listBackLenses,
   openCamera,
   readAbilities,
+  settleCameraMode,
   type BackLenses,
   type Facing,
 } from './camera';
 import { createCompositor, type Compositor } from './compositor';
+import { initialFacing, recordSettings, useRecordSettings } from './settings';
 
 export interface CameraView {
   status: 'starting' | 'ready' | 'error';
@@ -26,6 +29,10 @@ export interface CameraView {
   aspect: number;
   /** The picture is a crop of the frame (no lens zoom here): less sharp, the recorder says so (Q7). */
   digital: boolean;
+  /** What the camera really gives (Q3/Q4); null until open. */
+  mode: { width: number; height: number; fps: number } | null;
+  /** The frame rate asked for, to tell when the camera stayed at 30. */
+  wantFps: 30 | 60;
 }
 
 /** Zoom without a lens zoom: a crop of the recorded frame, kept to what still looks sharp. */
@@ -42,6 +49,8 @@ const INITIAL: CameraView = {
   lenses: { ids: [], ultra: null },
   aspect: 9 / 16,
   digital: false,
+  mode: null,
+  wantFps: 30,
 };
 
 export const formatZoom = (z: number) => `${(Math.round(z * 10) / 10).toString().replace('.', ',')}×`;
@@ -64,6 +73,11 @@ export function useCamera(open: boolean, onLost: () => void) {
   viewRef.current = view;
 
   const track = () => stream.current?.getVideoTracks()[0];
+  /** False during a direct take: zoom only through the lens. */
+  const digitalAllowed = useRef(true);
+  const setDigitalAllowed = useCallback((allowed: boolean) => {
+    digitalAllowed.current = allowed;
+  }, []);
 
   const stopStream = () => {
     stream.current?.getTracks().forEach((t) => t.stop());
@@ -77,11 +91,19 @@ export function useCamera(open: boolean, onLost: () => void) {
     stopStream();
     setView((v) => ({ ...v, status: 'starting', facing, torch: false }));
     try {
-      const next = await openCamera(facing, deviceId);
+      const want = cameraRequest(recordSettings());
+      const next = await openCamera(facing, deviceId, want);
       if (id !== session.current) {
         next.getTracks().forEach((t) => t.stop());
         return;
       }
+      // Q3/Q4: the size first; 60 fps only when it doesn't cost resolution.
+      const mode = await settleCameraMode(next.getVideoTracks()[0], want);
+      if (id !== session.current) {
+        next.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      compositor.current?.setFps(mode.fps);
       stream.current = next;
       const video = source.current;
       if (video) {
@@ -121,6 +143,8 @@ export function useCamera(open: boolean, onLost: () => void) {
         torchAvailable: abilities.torch,
         torch: false,
         digital,
+        mode,
+        wantFps: want.fps,
       }));
       t?.addEventListener('ended', () => {
         // Another app took the camera, or the system stopped it: stop the take there, offer to try again.
@@ -145,10 +169,10 @@ export function useCamera(open: boolean, onLost: () => void) {
     }
   }, []);
 
-  // Open: the front camera, like TikTok. Close: let go of everything.
+  // Open: the camera chosen in the settings (back by default, the phone's best, Q8). Close: let go of everything.
   useEffect(() => {
     if (!open) return;
-    void start('user');
+    void start(initialFacing(recordSettings()));
     return () => {
       session.current++;
       stopStream();
@@ -200,6 +224,8 @@ export function useCamera(open: boolean, onLost: () => void) {
   /** Continuous zoom (pinch): never changes lens, so it is safe mid-take. */
   const setZoom = useCallback((value: number) => {
     const v = viewRef.current;
+    // A direct take records the camera as it comes: a digital crop would only change the preview.
+    if (!v.lensZoom && !digitalAllowed.current) return;
     const ultra = v.facing === 'environment' && v.deviceId != null && v.deviceId === v.lenses.ultra;
     const scale = ultra ? 0.5 : 1;
     if (v.lensZoom) {
@@ -261,8 +287,23 @@ export function useCamera(open: boolean, onLost: () => void) {
   }, [start]);
 
   const flip = useCallback(() => {
-    void start(viewRef.current.facing === 'user' ? 'environment' : 'user');
+    const next: Facing = viewRef.current.facing === 'user' ? 'environment' : 'user';
+    useRecordSettings.getState().set({ lastFacing: next });
+    void start(next);
   }, [start]);
+
+  // A new resolution, rate or quality in the settings reopens the camera with it (settings only open between takes).
+  const quality = useRecordSettings((s) => s.quality);
+  const resolution = useRecordSettings((s) => s.resolution);
+  const fps = useRecordSettings((s) => s.fps);
+  const modeKey = `${quality}|${resolution}|${fps}`;
+  const lastModeKey = useRef(modeKey);
+  useEffect(() => {
+    if (lastModeKey.current === modeKey) return;
+    lastModeKey.current = modeKey;
+    const v = viewRef.current;
+    if (open && v.status !== 'starting') void start(v.facing, v.deviceId, v.zoom);
+  }, [modeKey, open, start]);
 
   const retry = useCallback(() => {
     void start(viewRef.current.facing, viewRef.current.deviceId);
@@ -320,6 +361,7 @@ export function useCamera(open: boolean, onLost: () => void) {
   return {
     /** The live camera track (for the «i» panel and the camera controls). */
     track,
+    setDigitalAllowed,
     source,
     host,
     compositor,

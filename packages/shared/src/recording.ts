@@ -56,24 +56,41 @@ export function targetVideoBitrate(opts: {
 /** AAC in MP4 takes 256 kbps without trouble (S1); Opus/WebM gets the same. */
 export const AUDIO_BITS_PER_SECOND = 256_000;
 
-/** H.264 level for the picture size and rate (High profile, `avc1.64LL`). */
+/** H.264 levels (Annex A): max macroblocks per frame and per second. */
+const H264_LEVELS: { hex: string; frame: number; rate: number }[] = [
+  { hex: '28', frame: 8_192, rate: 245_760 }, // 4.0
+  { hex: '2A', frame: 8_704, rate: 522_240 }, // 4.2
+  { hex: '32', frame: 22_080, rate: 589_824 }, // 5.0
+  { hex: '33', frame: 36_864, rate: 983_040 }, // 5.1
+  { hex: '34', frame: 36_864, rate: 2_073_600 }, // 5.2
+];
+
+/** H.264 level for the picture size and rate (High profile, `avc1.64LL`): the lowest that fits both. */
 export function h264Level(width: number, height: number, fps: number): string {
-  const rate = width * height * Math.max(1, fps);
-  // Max luma samples per second: 4.0 ≈ 62.9M · 4.2 ≈ 133.7M · 5.0 ≈ 150.9M · 5.1 ≈ 251.7M · 5.2 ≈ 530.8M.
-  if (rate <= 62_914_560 && Math.max(width, height) <= 2048) return '28'; // 4.0
-  if (rate <= 133_693_440 && Math.max(width, height) <= 2048) return '2A'; // 4.2
-  if (rate <= 150_994_944) return '32'; // 5.0
-  if (rate <= 251_658_240) return '33'; // 5.1
-  return '34'; // 5.2
+  const frame = Math.ceil(width / 16) * Math.ceil(height / 16);
+  const rate = frame * Math.max(1, fps);
+  // Each side is also capped at sqrt(8 × max frame size) macroblocks.
+  const side = Math.max(Math.ceil(width / 16), Math.ceil(height / 16));
+  const level = H264_LEVELS.find((l) => frame <= l.frame && rate <= l.rate && side * side <= 8 * l.frame);
+  return (level ?? H264_LEVELS[H264_LEVELS.length - 1]!).hex;
 }
 
-/** HEVC Main level (`L` value = level × 30). */
+/** HEVC levels (Annex A): max luma samples per picture and per second; `L` value = level × 30. */
+const HEVC_LEVELS: { l: number; picture: number; rate: number }[] = [
+  { l: 120, picture: 2_228_224, rate: 66_846_720 }, // 4.0
+  { l: 123, picture: 2_228_224, rate: 133_693_440 }, // 4.1
+  { l: 150, picture: 8_912_896, rate: 267_386_880 }, // 5.0
+  { l: 153, picture: 8_912_896, rate: 534_773_760 }, // 5.1
+  { l: 156, picture: 8_912_896, rate: 1_069_547_520 }, // 5.2
+];
+
+/** HEVC Main level for the picture: the lowest whose picture size, side length and sample rate fit. */
 export function hevcLevel(width: number, height: number, fps: number): number {
-  const rate = width * height * Math.max(1, fps);
-  if (rate <= 66_846_720 && Math.max(width, height) <= 2048) return 120; // 4.0
-  if (rate <= 133_693_440 && Math.max(width, height) <= 2048) return 123; // 4.1
-  if (rate <= 267_386_880) return 150; // 5.0 (4K30)
-  return 153; // 5.1 (4K60)
+  const picture = width * height;
+  const rate = picture * Math.max(1, fps);
+  const side = Math.max(width, height);
+  const level = HEVC_LEVELS.find((l) => picture <= l.picture && rate <= l.rate && side * side <= 8 * l.picture);
+  return (level ?? HEVC_LEVELS[HEVC_LEVELS.length - 1]!).l;
 }
 
 /**
@@ -183,8 +200,93 @@ export function tooManyDrops(dropped: number | null, expected: number): boolean 
   return dropped >= 12 && dropped / expected > 0.05;
 }
 
+/** A take on the phone's storage, as the recorder's clean-up sees it (R1). */
+export interface StoredTakeState {
+  /** ISO time the take started. */
+  startedAt: string;
+  /** ISO time it was downloaded or shared, null if never. */
+  savedAt: string | null;
+  /** Bytes written. */
+  bytes: number;
+  /** Another window of the app is still using it (recording or reviewing it). */
+  locked: boolean;
+  /** The meta could be read but the pieces couldn't (a transient error). */
+  unreadable?: boolean;
+}
+
+/** A saved take keeps its working copy this long: a download of a big file may still be reading it. */
+export const SAVED_GRACE_MS = 10 * 60_000;
+/** Empty or unreadable takes younger than this may still be starting in another window. */
+const YOUNG_MS = 2 * 60_000;
+/** Unreadable takes are retried; after this long they are given up. */
+const UNREADABLE_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * What to do with a take found on the phone's storage: offer it back (never saved), leave it alone (in use,
+ * saved recently, or maybe still starting) or delete it (saved long enough ago, or empty and old).
+ */
+export function leftoverAction(take: StoredTakeState, now: number): 'offer' | 'keep' | 'delete' {
+  if (take.locked) return 'keep';
+  const started = Date.parse(take.startedAt);
+  const age = Number.isFinite(started) ? now - started : Number.POSITIVE_INFINITY;
+  if (take.unreadable) return age > UNREADABLE_GIVE_UP_MS ? 'delete' : 'keep';
+  if (take.bytes <= 0) return age > YOUNG_MS ? 'delete' : 'keep';
+  if (take.savedAt) {
+    const saved = Date.parse(take.savedAt);
+    return Number.isFinite(saved) && now - saved < SAVED_GRACE_MS ? 'keep' : 'delete';
+  }
+  return 'offer';
+}
+
+/** "unos 12 min" / "menos de 1 min" for the space line (R2). */
+export function minutesPhrase(minutes: number): string {
+  return minutes < 1 ? 'menos de 1 min' : `unos ${minutes} min`;
+}
+
 /** Long takes at Máxima heat the phone (R3): warn past this many minutes. */
 export const HEAT_WARN_MINUTES = 6;
+
+/** Resolution choice in the recorder's settings (A1). */
+export type ResolutionChoice = 'auto' | '4k' | '1440p' | '1080p' | '720p';
+
+const LONG_SIDE: Record<Exclude<ResolutionChoice, 'auto'>, [number, number]> = {
+  '4k': [3840, 2160],
+  '1440p': [2560, 1440],
+  '1080p': [1920, 1080],
+  '720p': [1280, 720],
+};
+
+const CLASS_RANK: Record<ResolutionClass, number> = { '720p': 0, '1080p': 1, '1440p': 2, '4k': 3 };
+
+/**
+ * What to ask the camera for (landscape numbers: phones turn them to how they're held). Auto follows the
+ * quality: Ahorro → 720p30, Alta/Auto → 1080p at 60 when allowed, Máxima → 4K at 30 (plan §8).
+ */
+export function cameraRequest(opts: {
+  quality: RecordQuality;
+  resolution: ResolutionChoice;
+  fps: 30 | 60;
+}): { width: number; height: number; fps: 30 | 60 } {
+  let res: Exclude<ResolutionChoice, 'auto'>;
+  let fps: 30 | 60 = opts.fps;
+  if (opts.resolution !== 'auto') res = opts.resolution;
+  else if (opts.quality === 'saver') {
+    res = '720p';
+    fps = 30;
+  } else if (opts.quality === 'max') {
+    res = '4k';
+    fps = 30;
+  } else res = '1080p';
+  // 4K at 60 is beyond what the browser gives (plan §9): 4K is always asked at 30.
+  if (res === '4k') fps = 30;
+  const [width, height] = LONG_SIDE[res];
+  return { width, height, fps };
+}
+
+/** True when the camera gave a smaller picture than asked (e.g. it traded size for 60 fps). */
+export function belowRequested(actual: { width: number; height: number }, wanted: { width: number; height: number }): boolean {
+  return CLASS_RANK[resolutionClass(actual.width, actual.height)] < CLASS_RANK[resolutionClass(wanted.width, wanted.height)];
+}
 
 export function resolutionLabel(width: number, height: number): string {
   const cls = resolutionClass(width, height);

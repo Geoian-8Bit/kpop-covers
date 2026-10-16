@@ -1,4 +1,17 @@
-import { clamp, formatTime, LOW_SPACE_MINUTES, minutesLeft, type Video } from '@coverscape/shared';
+import {
+  clamp,
+  formatTime,
+  LOW_SPACE_MINUTES,
+  minutesLeft,
+  minutesPhrase,
+  SAVED_GRACE_MS,
+  droppedFrames,
+  tooManyDrops,
+  QUALITY_LABEL,
+  resolutionLabel,
+  type Video,
+} from '@coverscape/shared';
+import { recordSettings, useRecordSettings } from './settings';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Aperture,
@@ -30,14 +43,17 @@ import { jelly, soft } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 import { openMic } from './camera';
-import { canRecordCanvas } from './compositor';
+import { canRecordCanvas, createFrameMeter, watchPresentedFrames, type FrameMeter } from './compositor';
 import { InfoPanel, type TakeStats } from './InfoPanel';
 import {
   createTakeSink,
   forgetTake,
   freeSpace,
+  holdTake,
   listLeftovers,
+  loadLeftover,
   markTakeSaved,
+  releaseTake,
   type Leftover,
   type TakeSink,
 } from './takeStore';
@@ -48,6 +64,7 @@ import {
   chooseFormat,
   createTakeRecorder,
   downloadFile,
+  markFormatBad,
   shareFile,
   takeFileName,
   type RecordFormat,
@@ -98,6 +115,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const cameraLost = useRef<() => void>(() => undefined);
   const cam = useCamera(open, () => cameraLost.current());
   const { view } = cam;
+  const settings = useRecordSettings();
   const [phase, setPhase] = useState<Phase>('idle');
   const [timer, setTimer] = useState<TimerSeconds>(readTimer);
   const [from, setFrom] = useState<From>('start');
@@ -106,7 +124,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [seconds, setSeconds] = useState(0);
   const [take, setTake] = useState<Take | null>(null);
   const [saved, setSaved] = useState(false);
-  const [confirm, setConfirm] = useState<'close' | 'again' | 'discard' | null>(null);
+  const [confirm, setConfirm] = useState<'close' | 'again' | 'discard' | 'leftover' | null>(null);
   const [sound, setSound] = useState<SoundSource>('pending');
   const [notice, setNotice] = useState('');
   const [hereAt, setHereAt] = useState(0);
@@ -118,9 +136,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const sink = useRef<TakeSink | null>(null);
   const sinkReady = useRef<Promise<TakeSink> | null>(null);
   /** The disk copy behind the take under review, and whether it was saved somewhere. */
-  const reviewTake = useRef<{ id: string; saved: boolean } | null>(null);
+  const reviewTake = useRef<{ id: string; saved: boolean; noSpace: boolean } | null>(null);
+  /** How the current take gets its picture (Q5): the camera's own track or the redrawn canvas. */
+  const [takeKind, setTakeKind] = useState<'direct' | 'canvas' | null>(null);
+  /** The camera track and picture size a direct take started with: it can only go on with the same ones. */
+  const direct = useRef<{ track: MediaStreamTrack; width: number; height: number } | null>(null);
+  const stopPresented = useRef<() => void>(() => undefined);
+  /** Frames that reached the take while it rolled (R4). */
+  const meter = useRef<FrameMeter | null>(null);
   /** A take of this song left on the phone by an app that closed mid-take (R1). */
   const [leftover, setLeftover] = useState<Leftover | null>(null);
+  const [leftoverCount, setLeftoverCount] = useState(0);
   /** Free space on the phone for the app (R2), null while unknown. */
   const [free, setFree] = useState<number | null>(null);
   const loopRange = usePlayer((s) => (hasRange(s.loop) ? { start: s.loop.start, end: s.loop.end } : null));
@@ -155,11 +181,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const replaceTake = (next: Take | null, diskId: string | null = null) => {
     if (takeUrl.current) URL.revokeObjectURL(takeUrl.current);
     takeUrl.current = next?.url ?? null;
-    // The take we leave: a saved one stays marked on disk (cleaned on the next open, after any download has
-    // read it); an unsaved one the dancer moved on from is deleted now.
+    // The take we leave: a saved one keeps its copy a while (a download may still be reading it), then goes;
+    // an unsaved one the dancer moved on from (they confirmed) is deleted now.
     const old = reviewTake.current;
-    if (old && old.id !== diskId && !old.saved) void forgetTake(old.id);
-    reviewTake.current = diskId ? { id: diskId, saved: false } : null;
+    if (old && old.id !== diskId) {
+      if (old.noSpace) releaseTake(old.id); // stays on offer: its download may have failed on a full phone
+      else if (old.saved) {
+        releaseTake(old.id);
+        const id = old.id;
+        setTimeout(() => void forgetTake(id), SAVED_GRACE_MS);
+      } else void forgetTake(old.id);
+    }
+    if (diskId) holdTake(diskId);
+    reviewTake.current = diskId ? { id: diskId, saved: false, noSpace: false } : null;
     setTake(next);
     setSaved(false);
   };
@@ -208,7 +242,23 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     canvasStream.current?.getTracks().forEach((t) => t.stop());
     canvasStream.current = null;
     cam.compositor.current?.lock(false);
+    // A direct take recorded the camera's own track: it stays open for the preview.
+    stopPresented.current();
+    stopPresented.current = () => undefined;
+    direct.current = null;
+    setTakeKind(null);
   };
+
+  /** Q5: the camera's picture can be recorded as it comes (no digital crop, canvas not forced in settings). */
+  function directPossible(): boolean {
+    const t = cam.track();
+    return (
+      settings.mode === 'auto' &&
+      !view.digital &&
+      t?.readyState === 'live' &&
+      (cam.source.current?.videoWidth ?? 0) > 0
+    );
+  }
 
   // Open: the song is set up for recording (no loops), the sound source chosen, the screen kept awake.
   useEffect(() => {
@@ -225,13 +275,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setNotice('');
     replaceTake(null);
     setLeftover(null);
-    // A take of this song the app didn't get to finish or save last time (R1).
+    // Takes the app didn't get to save last time (R1): this song's first, else the newest of any song. Space is
+    // measured after the clean-up, which may have freed some.
     void listLeftovers().then((list) => {
       if (id !== session.current) return;
-      setLeftover(list.find((l) => l.meta.videoId === video.id) ?? null);
-    });
-    void freeSpace().then((bytes) => {
-      if (id === session.current) setFree(bytes);
+      setLeftover(list.find((l) => l.meta.videoId === video.id) ?? list[0] ?? null);
+      setLeftoverCount(list.length);
+      void freeSpace().then((bytes) => {
+        if (id === session.current) setFree(bytes);
+      });
     });
 
     // The song's own sound when the source allows it; otherwise the microphone hears the speaker.
@@ -282,20 +334,56 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         }));
       replaceTake(null);
       setConfirm(null);
+      setInfoOpen(false);
+      setLastStats(null);
       setPhase('idle');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  /** The canvas is the picture only for a digital zoom, when forced in the settings, or during a canvas take. */
+  const usesCanvas = settings.mode === 'canvas' || view.digital || takeKind === 'canvas';
+  /**
+   * A direct take records this camera's own track: it can't switch camera or lens, crop digitally, or change
+   * shape until it ends (the canvas take can, which is why it exists).
+   */
+  const canChangeCamera = (phase === 'idle' || phase === 'paused') && takeKind !== 'direct';
+  const { setDigitalAllowed } = cam;
+  useEffect(() => setDigitalAllowed(takeKind !== 'direct'), [setDigitalAllowed, takeKind]);
+
   // Reviewing: nothing redraws the hidden camera frame, and the song stays quiet under the take's own sound.
   useEffect(() => {
-    cam.compositor.current?.freeze(phase === 'review');
+    // Q5: the canvas only draws when it is the picture (digital zoom, canvas forced, or a canvas take).
+    cam.compositor.current?.freeze(phase === 'review' || !usesCanvas);
     if (!open || phase !== 'review') return;
     usePlayer.getState().pause();
     return usePlayer.subscribe((s) => {
       if (s.playing) s.pause();
     });
-  }, [open, phase, cam.compositor]);
+  }, [open, phase, cam.compositor, usesCanvas]);
+
+  // Back between takes: the space left changed (a take was written, saved or deleted).
+  useEffect(() => {
+    if (!open || phase !== 'idle') return;
+    let live = true;
+    void freeSpace().then((bytes) => {
+      if (live) setFree(bytes);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, phase]);
+
+  // Q4: 60 fps was asked for but this camera stays at 30 at this size: say it once per camera.
+  const told30 = useRef<string | null>(null);
+  useEffect(() => {
+    const m = view.mode;
+    if (!open || view.status !== 'ready' || !m || view.wantFps !== 60 || m.fps >= 45) return;
+    const key = `${view.deviceId}|${m.width}x${m.height}`;
+    if (told30.current === key) return;
+    told30.current = key;
+    setNotice(`Esta cámara no da 60 fps en ${resolutionLabel(m.width, m.height)}: graba a ${Math.round(m.fps)}.`);
+  }, [open, view.status, view.mode, view.wantFps, view.deviceId]);
 
   // Notices fade on their own.
   useEffect(() => {
@@ -309,6 +397,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     usePlayer.getState().pause();
     if (recorder.current) {
       recorder.current.pause();
+      meter.current?.hold();
       setSeconds(recorder.current.seconds());
       setPhase('paused');
     } else {
@@ -317,6 +406,22 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A direct take only goes on with the same camera and picture shape: a turned phone pauses it.
+  useEffect(() => {
+    const src = cam.source.current;
+    if (takeKind !== 'direct' || !src) return;
+    const onResize = () => {
+      const d = direct.current;
+      if (!d || (src.videoWidth === d.width && src.videoHeight === d.height)) return;
+      if (['countdown', 'arming', 'recording'].includes(phaseRef.current)) {
+        pausePart();
+        setNotice('Has girado el móvil: ponlo como al empezar para seguir, o termina la toma con ✓.');
+      }
+    };
+    src.addEventListener('resize', onResize);
+    return () => src.removeEventListener('resize', onResize);
+  }, [takeKind, cam.source, pausePart]);
 
   cameraLost.current = () => {
     if (!['countdown', 'arming', 'recording'].includes(phaseRef.current)) return;
@@ -335,12 +440,21 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     sinkReady.current = null;
     usePlayer.getState().pause();
     setSeconds(rec.seconds());
+    // R4: frames the take got against what the camera's rate promises for the time recorded.
+    meter.current?.hold();
+    const got = meter.current?.value() ?? 0;
+    meter.current = null;
+    const expected = rec.seconds() * (cam.track()?.getSettings?.().frameRate || 30);
+    const dropped = got > 0 ? droppedFrames({ expected, delivered: got }) : null;
     setPhase('finishing');
     const blob = await rec.finish();
     releasePicture();
     if (id !== session.current) return;
     if (!blob.size) {
       void written?.discard();
+      // Nothing came out of a recorder that ran: this phone's encoder can't do that format, use the next one.
+      const failed = takeFormat.current?.mimeType;
+      if (failed && rec.seconds() > 1.5) markFormatBad(failed);
       setNotice('No se ha grabado nada. Prueba otra vez.');
       setPhase('idle');
       return;
@@ -351,10 +465,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       seconds: rec.seconds(),
       mimeType: blob.type || rec.mimeType(),
       requestedBps: takeFormat.current?.videoBitsPerSecond ?? 0,
-      dropped: null,
-      expected: 0,
+      dropped,
+      expected,
     });
+    if (tooManyDrops(dropped, expected)) {
+      const now = recordSettings();
+      setNotice(
+        now.fps === 60 || now.quality === 'max'
+          ? 'Se han perdido fotogramas: para la próxima prueba 30 fps o calidad Alta.'
+          : 'Se han perdido fotogramas: cierra otras apps y vuelve a probar.',
+      );
+    }
     replaceTake({ url: URL.createObjectURL(file), file }, written?.where === 'disk' ? written.id : null);
+    if (reviewTake.current && written?.failed()) reviewTake.current.noSpace = true;
     setPhase('review');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video]);
@@ -367,25 +490,54 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       const compositor = cam.compositor.current;
       if (!compositor) return pausePart();
       try {
-        compositor.lock(true);
-        const picture = compositor.stream(30);
-        canvasStream.current = picture;
+        // Q5: the camera's own picture when nothing needs redrawing (no digital zoom, canvas not forced);
+        // otherwise the canvas, which can also follow a flipped camera or a turned phone mid-take.
+        let videoTracks: MediaStreamTrack[];
+        const camTrack = cam.track();
+        const src = cam.source.current;
+        if (directPossible() && camTrack && src) {
+          videoTracks = [camTrack];
+          direct.current = { track: camTrack, width: src.videoWidth, height: src.videoHeight };
+          const presented = watchPresentedFrames(src);
+          stopPresented.current = presented.stop;
+          meter.current = createFrameMeter(presented.count);
+          setTakeKind('direct');
+        } else {
+          compositor.lock(true);
+          const picture = compositor.stream();
+          canvasStream.current = picture;
+          videoTracks = picture.getVideoTracks();
+          meter.current = createFrameMeter(() => compositor.counts().drawn);
+          setTakeKind('canvas');
+        }
         // The song's sound if it's still there, else the microphone; say so when there's neither.
         const audio = [songTrack.current, micTrack.current].find((t) => t?.readyState === 'live') ?? null;
         if (!audio && sound !== 'none') setNotice('No llega el sonido: esta toma se graba sin audio.');
-        const tracks = [...picture.getVideoTracks(), ...(audio ? [audio] : [])];
-        const format = plannedFormat();
-        takeFormat.current = format;
+        const tracks = [...videoTracks, ...(audio ? [audio] : [])];
         const target = sink.current;
         if (!target) throw new Error('no sink');
-        const rec = createTakeRecorder(tracks, format, target, () => {
-          // The browser stopped recording by itself: keep what exists rather than filming nothing.
-          if (recorder.current !== rec) return;
-          setNotice('La grabación se ha cortado. Te dejo lo grabado hasta ahí.');
-          void finish();
-        });
+        // A format the browser claims but whose encoder refuses to start: remember it and try the next one.
+        let rec: TakeRecorder | null = null;
+        for (let attempt = 0; attempt < 6 && !rec; attempt++) {
+          const format = plannedFormat();
+          takeFormat.current = format;
+          try {
+            const next: TakeRecorder = createTakeRecorder(tracks, format, target, () => {
+              // The browser stopped recording by itself: keep what exists rather than filming nothing.
+              if (recorder.current !== next) return;
+              setNotice('La grabación se ha cortado. Te dejo lo grabado hasta ahí.');
+              void finish();
+            });
+            next.start();
+            rec = next;
+          } catch (err) {
+            if (!format.mimeType) throw err;
+            markFormatBad(format.mimeType);
+          }
+        }
+        if (!rec) throw new Error('no format');
         recorder.current = rec;
-        rec.start();
+        target.setMimeType(rec.mimeType());
         if (audio) {
           // Sound lost mid-take (headphones out, Bluetooth gone): pause rather than go on silent.
           const onEnded = () => {
@@ -409,6 +561,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       void finish();
       return;
     }
+    meter.current?.run();
     setPhase('recording');
   };
 
@@ -479,20 +632,30 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     return { start: 0, end };
   }
 
-  /** Format for the picture as it is now (canvas size, 30 fps capture). */
+  /** The camera's real rate, rounded to what the recording asks for (30 or 60). */
+  function captureFps(): 30 | 60 {
+    return (view.mode?.fps ?? 30) >= 45 ? 60 : 30;
+  }
+
+  /** Format for the picture as it is now (canvas size, the camera's rate, the chosen quality). */
   function plannedFormat(): RecordFormat {
+    // The picture's real size: the camera's mode (the canvas has the same size, once it has drawn a frame).
     const canvas = cam.compositor.current?.canvas;
+    const src = cam.source.current;
+    const width = src?.videoWidth || view.mode?.width || (canvas && canvas.width > 2 ? canvas.width : 1920);
+    const height = src?.videoHeight || view.mode?.height || (canvas && canvas.height > 2 ? canvas.height : 1080);
     return chooseFormat({
-      width: canvas?.width ?? 1920,
-      height: canvas?.height ?? 1080,
-      fps: 30,
-      quality: 'auto',
-      codec: 'auto',
+      width,
+      height,
+      fps: captureFps(),
+      quality: settings.quality,
+      codec: settings.codec,
     });
   }
 
   /** The camera has drawn at least one frame (the canvas starts at 2×2). */
   function frameReady() {
+    if (directPossible()) return true;
     return (cam.compositor.current?.canvas.width ?? 0) > 2;
   }
 
@@ -518,6 +681,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       pausePart();
     } else if (now === 'paused') {
       if (view.status !== 'ready') return;
+      const d = direct.current;
+      if (d) {
+        if (cam.track() !== d.track) {
+          setNotice('La cámara se ha reiniciado: esta toma no puede seguir. Termínala con ✓.');
+          return;
+        }
+        const src = cam.source.current;
+        if (src && (src.videoWidth !== d.width || src.videoHeight !== d.height)) {
+          setNotice('Pon el móvil como al empezar la toma para seguir grabando, o termínala con ✓.');
+          return;
+        }
+      }
       countIn('paused');
     }
   }
@@ -608,15 +783,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setPhase('idle');
   }
 
-  /** The take reached the phone (download or share): it's safe, its working copy is not offered back. */
+  /**
+   * The take was handed to the phone (download or share). Its working copy stops being offered back, unless the
+   * take ended because the phone was full: then the download may well have failed too, so it stays on offer.
+   */
   function takeKept() {
     setSaved(true);
     const disk = reviewTake.current;
     if (disk && !disk.saved) {
       disk.saved = true;
-      void markTakeSaved(disk.id);
+      if (!disk.noSpace) void markTakeSaved(disk.id);
     }
-    if (leftover && disk?.id === leftover.meta.id) setLeftover(null);
   }
 
   function discardTake() {
@@ -632,6 +809,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function confirmDiscard() {
     const action = confirm;
     setConfirm(null);
+    if (action === 'leftover') {
+      dropLeftover();
+      return;
+    }
     discardTake();
     if (action === 'close') onClose();
   }
@@ -690,7 +871,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const vertical = view.aspect < 1;
   // What the next take will use; asked again only when the camera or its shape changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const nextFormat = useMemo(() => (camReady ? plannedFormat() : null), [camReady, view.aspect, view.deviceId]);
+  const nextFormat = useMemo(
+    () => (camReady ? plannedFormat() : null),
+    [camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality],
+  );
   const spaceMinutes =
     free != null && nextFormat
       ? minutesLeft(free, nextFormat.videoBitsPerSecond + nextFormat.audioBitsPerSecond)
@@ -700,10 +884,21 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   async function recoverLeftover() {
     const found = leftover;
     if (!found) return;
+    const id = session.current;
+    const blob = await loadLeftover(found.meta);
+    if (id !== session.current) return;
     setLeftover(null);
-    const type = found.blob.type || found.meta.mimeType || 'video/webm';
-    const file = new File([found.blob], takeFileName(video, type), { type });
+    setLeftoverCount((n) => Math.max(0, n - 1));
+    if (!blob) {
+      setNotice('Esa toma ya no está en el móvil.');
+      return;
+    }
+    const type = blob.type || 'video/webm';
+    const file = new File([blob], takeFileName({ ...video, title: found.meta.title || video.title }, type, found.meta.startedAt), {
+      type,
+    });
     setSeconds(-1);
+    setLastStats(null);
     replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id);
     setPhase('review');
   }
@@ -711,7 +906,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function dropLeftover() {
     const found = leftover;
     setLeftover(null);
-    if (found) void forgetTake(found.meta.id);
+    setLeftoverCount((n) => Math.max(0, n - 1));
+    if (found) void forgetTake(found.meta.id).then(() => freeSpace().then(setFree));
   }
 
   if (!open) return null;
@@ -723,15 +919,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       aria-modal="true"
       aria-label="Grabar baile"
     >
-      {/* The raw camera: only the source of the frame below (kept in the page so it keeps decoding). */}
+      {/* The live camera, exactly what a direct take records (Q5); mirrored on screen only for the front camera. */}
       <video
         ref={cam.source}
         autoPlay
         muted
         playsInline
-        className="pointer-events-none absolute inset-0 size-full opacity-0"
+        className={cn(
+          'pointer-events-none absolute inset-0 size-full object-contain',
+          view.facing === 'user' && '-scale-x-100',
+          !showCamera && 'invisible',
+        )}
       />
-      {/* The recorded frame itself, mirrored on screen only for the front camera. Pinch zooms. */}
+      {/* The redrawn frame, on top when it is the picture (digital zoom or a canvas take). Pinch zooms. */}
       <div
         ref={cam.host}
         {...cam.pinchHandlers}
@@ -740,6 +940,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           'absolute inset-0 touch-none',
           view.facing === 'user' && '-scale-x-100',
           !showCamera && 'invisible',
+          !usesCanvas && '[&>canvas]:opacity-0',
         )}
       />
 
@@ -783,13 +984,27 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             </span>
           )}
         </div>
-        <span aria-hidden className="size-11 shrink-0" />
+        {/* What the take will be: size · rate · quality (A1: a tap opens the settings). */}
+        <span className="flex h-11 min-w-11 shrink-0 items-center justify-end">
+          {view.mode && camReady && phase !== 'review' && (
+            <span
+              className={cn(
+                'tabular rounded-full bg-black/45 px-2.5 py-1 font-mono text-[11px] font-bold',
+                view.wantFps === 60 && view.mode.fps < 45 ? 'text-kin-300' : 'text-washi/90',
+              )}
+            >
+              {resolutionLabel(view.mode.width, view.mode.height)} · {Math.round(view.mode.fps)} ·{' '}
+              {QUALITY_LABEL[settings.quality]}
+            </span>
+          )}
+        </span>
       </div>
 
       {/* Tools rail, like TikTok's: right side upright, left side when the phone is turned. */}
       {showCamera && camReady && (canTweak || phase === 'recording') && (
-        <div className="absolute right-[max(10px,env(safe-area-inset-right))] top-[calc(max(14px,env(safe-area-inset-top))+64px)] z-10 flex flex-col gap-3 landscape:left-[max(10px,env(safe-area-inset-left))] landscape:right-auto">
-          {canTweak && (
+        <div className="absolute right-[max(10px,env(safe-area-inset-right))] top-[calc(max(14px,env(safe-area-inset-top))+64px)] z-10 flex flex-col gap-3 landscape:bottom-[max(10px,env(safe-area-inset-bottom))] landscape:left-[max(10px,env(safe-area-inset-left))] landscape:right-auto landscape:flex-wrap landscape:content-start landscape:gap-x-2 landscape:gap-y-2">
+          {/* Turned phones are ~360 px tall: the rail wraps into a second column instead of running off. */}
+          {canChangeCamera && (
             <RailButton label="Girar" ariaLabel="Girar la cámara" onClick={cam.flip}>
               <SwitchCamera className="size-5" />
             </RailButton>
@@ -828,7 +1043,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               )}
             </RailButton>
           )}
-          {canTweak && cam.lensCycle && (
+          {canChangeCamera && cam.lensCycle && (
             <RailButton
               label={`Lente ${(view.deviceId ? view.lenses.ids.indexOf(view.deviceId) : 0) + 1}/${view.lenses.ids.length}`}
               ariaLabel="Cambiar de lente"
@@ -841,7 +1056,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             <RailButton
               label="Info"
               ariaLabel="Información técnica de la cámara"
-              pressed={infoOpen}
+              expanded={infoOpen}
               onClick={() => setInfoOpen((v) => !v)}
             >
               <Info className="size-5" />
@@ -850,28 +1065,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         </div>
       )}
 
-      {/* Q7: a crop of the frame is less sharp than the lens's own zoom; say so while it's on. */}
       <AnimatePresence>
-        {showCamera && camReady && view.digital && (
-          <motion.p
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={jelly}
-            role="status"
-            className="pointer-events-none absolute left-1/2 top-[calc(max(14px,env(safe-area-inset-top))+104px)] z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[12px] font-bold text-kin-300"
-          >
-            Zoom digital: menos nitidez
-          </motion.p>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {infoOpen && (
+        {infoOpen && !confirm && (
           <InfoPanel
             track={cam.track()}
             format={nextFormat}
-            mode="Lienzo (cada fotograma se redibuja)"
+            mode={
+              (takeKind ?? (usesCanvas ? 'canvas' : 'direct')) === 'direct'
+                ? 'Directa (la imagen de la cámara tal cual)'
+                : 'Lienzo (cada fotograma se redibuja)'
+            }
             last={lastStats}
             onClose={() => setInfoOpen(false)}
           />
@@ -970,21 +1173,23 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={soft}
-              role="region"
+              role="status"
               aria-label="Toma sin guardar"
-              className="w-full max-w-sm rounded-[14px] border border-kin-400/45 bg-sumi-900/92 p-3 text-[13px] leading-snug landscape:absolute landscape:bottom-[max(16px,env(safe-area-inset-bottom))] landscape:right-[max(16px,env(safe-area-inset-right))] landscape:w-80"
+              className="w-full max-w-sm rounded-[14px] border border-kin-400/45 bg-sumi-900/95 p-3 text-[13px] leading-snug landscape:absolute landscape:bottom-[max(16px,env(safe-area-inset-bottom))] landscape:right-[max(16px,env(safe-area-inset-right))] landscape:z-20 landscape:w-80"
             >
-              <p className="font-bold text-washi">Hay una toma sin guardar de esta canción</p>
+              <p className="font-bold text-washi">
+                {leftover.meta.videoId === video.id
+                  ? 'Hay una toma sin guardar de esta canción'
+                  : `Hay una toma sin guardar de «${leftover.meta.title || 'otra canción'}»`}
+              </p>
               <p className="mt-0.5 text-washi-muted">
                 Del {new Date(leftover.meta.startedAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}{' '}
-                · {(leftover.blob.size / 1_048_576).toFixed(1).replace('.', ',')} MB. La app se cerró antes de
-                guardarla.
+                · {(leftover.size / 1_048_576).toFixed(1).replace('.', ',')} MB. No llegó a guardarse en el móvil.
+                {leftoverCount > 1 && ` Hay ${leftoverCount} en total.`}
               </p>
-              <div className="mt-2.5 flex gap-2">
-                <Button size="sm" onClick={() => void recoverLeftover()}>
-                  Recuperar
-                </Button>
-                <Button size="sm" variant="ghost" onClick={dropLeftover}>
+              <div className="mt-2.5 flex gap-3">
+                <Button onClick={() => void recoverLeftover()}>Recuperar</Button>
+                <Button variant="ghost" onClick={() => setConfirm('leftover')}>
                   Descartar
                 </Button>
               </div>
@@ -994,12 +1199,28 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           {phase === 'idle' && camReady && lowSpace && (
             <p
               role="status"
-              className="max-w-sm rounded-[10px] bg-shu-500/90 px-3 py-2 text-center text-[13px] font-bold leading-snug text-washi"
+              className="max-w-sm rounded-[10px] border border-shu-400/70 bg-enji-700/95 px-3 py-2 text-center text-[13px] font-bold leading-snug text-washi"
             >
-              Queda poco espacio en el móvil: unos {spaceMinutes} min en esta calidad. Libera espacio o baja la
-              calidad.
+              Queda poco espacio en el móvil: {minutesPhrase(spaceMinutes ?? 0)} de grabación en esta calidad.
+              Libera espacio antes de una toma larga.
             </p>
           )}
+
+          {/* Q7: a crop of the frame is less sharp than the lens's own zoom; say so while it's on. */}
+          <AnimatePresence>
+            {camReady && view.digital && (
+              <motion.p
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={soft}
+                role="status"
+                className="pointer-events-none rounded-full bg-sumi-900/90 px-3 py-1 text-[12px] font-bold text-washi"
+              >
+                Zoom digital: menos nitidez
+              </motion.p>
+            )}
+          </AnimatePresence>
 
           {camReady && (canTweak || phase === 'recording') && (
             <div
@@ -1017,7 +1238,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                       type="button"
                       aria-pressed={active}
                       aria-label={`Zoom ${formatZoom(z)}`}
-                      onClick={() => cam.pickZoom(z, canTweak)}
+                      onClick={() => cam.pickZoom(z, canChangeCamera)}
                       className={cn(
                         'tabular grid size-10 place-items-center rounded-full font-mono text-[12px] font-bold transition-colors',
                         active ? 'bg-washi text-sumi-900' : 'text-washi/90',
@@ -1064,7 +1285,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
           <p className="tabular min-h-4 text-center text-[12px] text-washi/75 landscape:hidden">
             {phase === 'idle' && camReady
-              ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · ~${spaceMinutes} min libres` : ''}`
+              ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · espacio para ${minutesPhrase(spaceMinutes)}` : ''}`
               : phase === 'paused'
                 ? 'En pausa · toca para seguir o ✓ para terminar'
                 : phase === 'countdown'
@@ -1140,12 +1361,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                 id="record-discard-title"
                 className="font-display text-[22px] font-bold leading-tight text-washi"
               >
-                ¿Descartar la toma?
+                {confirm === 'leftover' ? '¿Descartar la toma sin guardar?' : '¿Descartar la toma?'}
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-washi-muted">
-                {phase === 'review'
-                  ? 'Aún no la has guardado en el móvil. Si la descartas, se pierde.'
-                  : 'Lo grabado hasta ahora se pierde.'}
+                {confirm === 'leftover'
+                  ? 'Se borra de este móvil y no se puede recuperar.'
+                  : phase === 'review'
+                    ? 'Aún no la has guardado en el móvil. Si la descartas, se pierde.'
+                    : 'Lo grabado hasta ahora se pierde.'}
               </p>
               <div className="mt-5 flex justify-end gap-2">
                 <Button variant="ghost" autoFocus onClick={() => setConfirm(null)}>
@@ -1168,6 +1391,7 @@ function RailButton({
   label,
   ariaLabel,
   pressed,
+  expanded,
   tone = 'dark',
   onClick,
   children,
@@ -1175,6 +1399,8 @@ function RailButton({
   label: string;
   ariaLabel?: string;
   pressed?: boolean;
+  /** For a button that opens a panel. */
+  expanded?: boolean;
   /** The take's main action (finish): a washi disc instead of a smoked one. */
   tone?: 'dark' | 'light';
   onClick: () => void;
@@ -1185,6 +1411,7 @@ function RailButton({
       type="button"
       aria-label={ariaLabel ?? label}
       aria-pressed={pressed}
+      aria-expanded={expanded}
       onClick={onClick}
       whileTap={{ scale: 0.86 }}
       transition={jelly}
@@ -1195,7 +1422,7 @@ function RailButton({
           'grid size-11 place-items-center rounded-full',
           tone === 'light'
             ? 'bg-washi text-sumi-900 shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)]'
-            : pressed
+            : pressed || expanded
               ? 'bg-kin-300 text-sumi-900'
               : 'bg-black/45',
         )}

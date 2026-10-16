@@ -30,17 +30,59 @@ export interface RecordFormat {
 }
 
 /**
+ * Types the browser said it could record but whose encoder then failed on this phone (an empty take, or a
+ * recorder that refused to start). Remembered per device, so the next take goes straight to the next format.
+ */
+const BAD_KEY = 'oneshoot.record.badTypes';
+
+function badTypes(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(BAD_KEY) ?? '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export function markFormatBad(mimeType: string): void {
+  if (!mimeType) return;
+  const bad = badTypes();
+  bad.add(mimeType);
+  try {
+    localStorage.setItem(BAD_KEY, JSON.stringify([...bad]));
+  } catch {
+    /* for this visit only */
+  }
+  remembered.clear();
+}
+
+/** isTypeSupported answers once per plan (it's asked on every render of the recorder otherwise). */
+const remembered = new Map<string, RecordFormat>();
+
+function recorderOptions(format: RecordFormat): MediaRecorderOptions {
+  const { mimeType, videoBitsPerSecond, audioBitsPerSecond } = format;
+  return mimeType ? { mimeType, videoBitsPerSecond, audioBitsPerSecond } : { videoBitsPerSecond, audioBitsPerSecond };
+}
+
+/**
  * Best format this browser records for the plan: HEVC (if allowed and available), else H.264 High at the right
  * level, Baseline as a last MP4, WebM only when there's no MP4 at all; the bitrate follows the quality table.
+ * Types that already failed on this phone are skipped.
  */
 export function chooseFormat(plan: RecordPlan): RecordFormat {
-  const supported = (t: string) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t);
+  const key = `${plan.width}x${plan.height}@${plan.fps}|${plan.quality}|${plan.codec}`;
+  const known = remembered.get(key);
+  if (known) return known;
+  const bad = badTypes();
+  const supported = (t: string) =>
+    !bad.has(t) && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t);
   const mimeType = pickMime(mimeCandidates(plan), supported);
-  return {
+  const format = {
     mimeType,
     videoBitsPerSecond: targetVideoBitrate({ ...plan, hevc: isHevcMime(mimeType) }),
     audioBitsPerSecond: 160_000,
   };
+  remembered.set(key, format);
+  return format;
 }
 
 /**
@@ -72,17 +114,9 @@ export function createTakeRecorder(
   sink: TakeSink,
   onDead: () => void,
 ): TakeRecorder {
-  const { mimeType, videoBitsPerSecond, audioBitsPerSecond } = format;
-  let rec: MediaRecorder;
-  try {
-    rec = new MediaRecorder(
-      new MediaStream(tracks),
-      mimeType ? { mimeType, videoBitsPerSecond, audioBitsPerSecond } : { videoBitsPerSecond },
-    );
-  } catch {
-    // A type the check accepted but the encoder refuses for this picture (e.g. a level): let the browser pick.
-    rec = new MediaRecorder(new MediaStream(tracks), { videoBitsPerSecond });
-  }
+  const { mimeType } = format;
+  // Throws when the browser refuses these options: the caller marks the type bad and tries the next one.
+  const rec = new MediaRecorder(new MediaStream(tracks), recorderOptions(format));
   rec.ondataavailable = (e) => {
     if (e.data.size > 0) sink.write(e.data);
   };
@@ -111,6 +145,12 @@ export function createTakeRecorder(
     },
     pause() {
       if (rec.state !== 'recording') return;
+      // Hand over what's buffered: if the phone kills the app while paused, it's already on disk.
+      try {
+        rec.requestData();
+      } catch {
+        /* not recording any more */
+      }
       rec.pause();
       hold();
     },
@@ -158,7 +198,7 @@ export function createTakeRecorder(
   };
 }
 
-export function takeFileName(video: Video, type: string): string {
+export function takeFileName(video: Pick<Video, 'title'>, type: string, at?: string): string {
   const slug = video.title
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
@@ -166,7 +206,8 @@ export function takeFileName(video: Video, type: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 40)
     .toLowerCase();
-  const d = new Date();
+  const when = at ? new Date(at) : new Date();
+  const d = Number.isNaN(when.getTime()) ? new Date() : when;
   const two = (n: number) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
   return `one-shoot-${slug || 'ensayo'}-${stamp}.${type.includes('mp4') ? 'mp4' : 'webm'}`;

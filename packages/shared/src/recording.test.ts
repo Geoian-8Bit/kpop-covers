@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  belowRequested,
+  cameraRequest,
   describeMime,
   droppedFrames,
   formatMbps,
   h264Level,
   hevcLevel,
+  leftoverAction,
   measuredBitrate,
+  minutesPhrase,
   mimeCandidates,
   minutesLeft,
   pickMime,
@@ -34,7 +38,7 @@ describe('targetVideoBitrate', () => {
     expect(targetVideoBitrate({ width: 1920, height: 1080, fps: 30, quality: 'max', hevc: true })).toBe(10_400_000);
   });
 
-  it('treats 50+ fps as 60 and 24–30 as 30', () => {
+  it('treats 45+ fps as 60 and 24–30 as 30', () => {
     expect(targetVideoBitrate({ width: 1920, height: 1080, fps: 59.94, quality: 'high' })).toBe(18_000_000);
     expect(targetVideoBitrate({ width: 1920, height: 1080, fps: 24, quality: 'high' })).toBe(12_000_000);
   });
@@ -64,6 +68,16 @@ describe('codec levels', () => {
     expect(hevcLevel(1920, 1080, 60)).toBe(123);
     expect(hevcLevel(3840, 2160, 30)).toBe(150);
     expect(hevcLevel(3840, 2160, 60)).toBe(153);
+  });
+
+  it('checks the frame size too, not only the rate (4:3 and vertical pictures)', () => {
+    // 1920×1440 is 10 800 macroblocks: over 4.x's 8 192 per frame, so 5.0 even at 30 fps.
+    expect(h264Level(1920, 1440, 30)).toBe('32');
+    expect(h264Level(1440, 1920, 30)).toBe('32');
+    expect(h264Level(1080, 1920, 60)).toBe('2A');
+    // 2.76 M luma samples per picture: over level 4's 2.23 M.
+    expect(hevcLevel(1920, 1440, 30)).toBe(150);
+    expect(hevcLevel(2160, 3840, 30)).toBe(150);
   });
 });
 
@@ -123,6 +137,60 @@ describe('sizes and space', () => {
     expect(minutesLeft(1_000_000_000, 16_000_000)).toBe(7);
     expect(minutesLeft(0, 16_000_000)).toBe(0);
     expect(minutesLeft(Number.NaN, 16_000_000)).toBe(0);
+  });
+});
+
+describe('cameraRequest', () => {
+  it('auto follows the quality', () => {
+    expect(cameraRequest({ quality: 'auto', resolution: 'auto', fps: 60 })).toEqual({ width: 1920, height: 1080, fps: 60 });
+    expect(cameraRequest({ quality: 'high', resolution: 'auto', fps: 30 })).toEqual({ width: 1920, height: 1080, fps: 30 });
+    expect(cameraRequest({ quality: 'saver', resolution: 'auto', fps: 60 })).toEqual({ width: 1280, height: 720, fps: 30 });
+    expect(cameraRequest({ quality: 'max', resolution: 'auto', fps: 60 })).toEqual({ width: 3840, height: 2160, fps: 30 });
+  });
+
+  it('an explicit resolution wins, and 4K is never asked at 60', () => {
+    expect(cameraRequest({ quality: 'saver', resolution: '1440p', fps: 60 })).toEqual({ width: 2560, height: 1440, fps: 60 });
+    expect(cameraRequest({ quality: 'high', resolution: '4k', fps: 60 })).toEqual({ width: 3840, height: 2160, fps: 30 });
+  });
+
+  it('detects a camera that gave less than asked, whatever the orientation', () => {
+    expect(belowRequested({ width: 720, height: 1280 }, { width: 1920, height: 1080 })).toBe(true);
+    expect(belowRequested({ width: 1080, height: 1920 }, { width: 1920, height: 1080 })).toBe(false);
+    expect(belowRequested({ width: 3840, height: 2160 }, { width: 1920, height: 1080 })).toBe(false);
+  });
+});
+
+describe('leftoverAction', () => {
+  const now = Date.parse('2026-10-16T18:00:00Z');
+  const base = { startedAt: '2026-10-16T17:00:00Z', savedAt: null, bytes: 5_000_000, locked: false };
+
+  it('offers a take that was never saved', () => {
+    expect(leftoverAction(base, now)).toBe('offer');
+  });
+
+  it('never touches a take another window is using', () => {
+    expect(leftoverAction({ ...base, locked: true, bytes: 0 }, now)).toBe('keep');
+    expect(leftoverAction({ ...base, locked: true, savedAt: '2026-10-01T00:00:00Z' }, now)).toBe('keep');
+  });
+
+  it('keeps a saved take for a while (a download may still read it), then deletes it', () => {
+    expect(leftoverAction({ ...base, savedAt: '2026-10-16T17:55:00Z' }, now)).toBe('keep');
+    expect(leftoverAction({ ...base, savedAt: '2026-10-16T17:40:00Z' }, now)).toBe('delete');
+  });
+
+  it('deletes empty takes only once they are old enough not to be starting elsewhere', () => {
+    expect(leftoverAction({ ...base, bytes: 0, startedAt: '2026-10-16T17:59:30Z' }, now)).toBe('keep');
+    expect(leftoverAction({ ...base, bytes: 0 }, now)).toBe('delete');
+  });
+
+  it('keeps unreadable takes to retry, gives up after a week', () => {
+    expect(leftoverAction({ ...base, unreadable: true }, now)).toBe('keep');
+    expect(leftoverAction({ ...base, unreadable: true, startedAt: '2026-10-01T00:00:00Z' }, now)).toBe('delete');
+  });
+
+  it('phrases the minutes left', () => {
+    expect(minutesPhrase(0)).toBe('menos de 1 min');
+    expect(minutesPhrase(12)).toBe('unos 12 min');
   });
 });
 
