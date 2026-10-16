@@ -35,8 +35,8 @@ export function RoundOptionsFields({ value, onChange, count, idPrefix }: RoundOp
               variant="ghost"
               size="icon"
               aria-label="Uno menos"
-              disabled={value.count <= 1}
-              onClick={() => set({ count: Math.max(1, value.count - 1) })}
+              disabled={Math.min(value.count, max) <= 1}
+              onClick={() => set({ count: Math.max(1, Math.min(value.count, max) - 1) })}
             >
               <Minus className="size-4" />
             </Button>

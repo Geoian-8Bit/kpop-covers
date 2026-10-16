@@ -89,11 +89,46 @@ export function RpdPlayPage() {
       </Shell>
     );
   }
-  return <RoundRunner key={draft.clipIds.join(',')} draft={draft} all={clips.data} />;
+  return <RoundRunner key={`${draft.mix ?? 0}:${draft.clipIds.join(',')}`} draft={draft} all={clips.data} />;
+}
+
+/**
+ * The round covers the whole app: everything outside it is made inert (keyboard and screen readers stay inside;
+ * Tab can't reach the navigation hidden underneath) and restored on leaving.
+ */
+function useInertOutside(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const touched: HTMLElement[] = [];
+    let node: HTMLElement | null = ref.current;
+    while (node && node.parentElement && node !== document.body) {
+      for (const sibling of Array.from(node.parentElement.children)) {
+        if (sibling !== node && sibling instanceof HTMLElement && !sibling.inert) {
+          sibling.inert = true;
+          touched.push(sibling);
+        }
+      }
+      node = node.parentElement;
+    }
+    return () => {
+      for (const el of touched) el.inert = false;
+    };
+  }, [ref]);
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950">{children}</div>;
+  const ref = useRef<HTMLDivElement>(null);
+  useInertOutside(ref);
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Random Play Dance"
+      className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950"
+    >
+      {children}
+    </div>
+  );
 }
 
 function toCard(entry: Entry): PlayCard | null {
@@ -141,6 +176,7 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   );
   const [saving, setSaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  useInertOutside(rootRef);
   const fullscreen = useFullscreen(rootRef);
 
   useLoopController();
@@ -305,7 +341,7 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
     (mix: boolean) => {
       if (mix) {
         const order = spreadBy(shuffle(draft.clipIds), (id) => byId.get(id)?.video_id ?? id);
-        setRoundDraft({ ...draft, clipIds: order });
+        setRoundDraft({ ...draft, clipIds: order, mix: (draft.mix ?? 0) + 1 });
         return; // a new list remounts the runner
       }
       unlockAudio();
@@ -354,7 +390,13 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   const unavailable = entries.length - total;
 
   return (
-    <div ref={rootRef} className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950">
+    <div
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Random Play Dance"
+      className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950"
+    >
       <div className="mx-auto flex min-h-full w-full max-w-[min(1500px,max(560px,calc((100dvh-460px)*16/9)))] min-w-0 flex-col px-3 pb-4 pt-2 sm:px-5 sm:pt-3 [@media(max-aspect-ratio:4/3)]:max-w-[1500px]">
         <div className="mb-2 flex items-center gap-2">
           <Button variant="ghost" size="sm" className="h-11 px-2.5" onClick={() => navigate('/rpd')}>
@@ -432,7 +474,7 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
                       {total === 0 ? (
                         <p className="mt-4 text-sm text-enji-300">Ninguno de estos clips está disponible.</p>
                       ) : (
-                        <Button size="lg" className="mt-6 w-full" onClick={start}>
+                        <Button size="lg" className="mt-6 w-full" onClick={start} autoFocus>
                           <Play aria-hidden className="size-5" /> Empezar
                         </Button>
                       )}

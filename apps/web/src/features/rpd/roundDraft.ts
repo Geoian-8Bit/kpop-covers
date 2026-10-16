@@ -12,6 +12,8 @@ export interface RoundDraft {
   trackId: string | null;
   /** Where the clips came from, to say it on screen («Bolsa “Calentar”», «Pista …»). */
   from: string;
+  /** Bumped by «Volver a mezclar»: the round starts over even when the new order happens to be the same. */
+  mix?: number;
 }
 
 const KEY = 'oneshoot.rpd.round.v1';
@@ -25,6 +27,7 @@ function read(): RoundDraft | null {
       options: sanitizeOptions(raw.options),
       trackId: typeof raw.trackId === 'string' ? raw.trackId : null,
       from: typeof raw.from === 'string' ? raw.from : '',
+      mix: typeof raw.mix === 'number' && Number.isFinite(raw.mix) ? raw.mix : 0,
     };
   } catch {
     return null;
