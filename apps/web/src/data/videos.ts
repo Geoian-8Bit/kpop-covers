@@ -44,6 +44,7 @@ function patchListedVideo(queryClient: QueryClient, video: Video) {
             artist: video.artist,
             thumbnail_url: video.thumbnail_url,
             duration_seconds: video.duration_seconds,
+            file_name: video.file_name,
           }
         : v,
     ),
@@ -228,6 +229,75 @@ export function useUploadToCloud() {
       const upload = await uploadToGroup(video.crew_id, video.id, file);
       if (!upload.ok) throw new FriendlyError(`No se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
       return update.mutateAsync({ id: video.id, patch: { storage_path: upload.path } });
+    },
+  });
+}
+
+/**
+ * F1 · Attach the file of a YouTube entry: kept on this device, and in the group's cloud when it fits (≤ 50 MB).
+ * The cloud name always carries a fresh suffix (`<group>/<video>--<suffix>.<ext>`): a removed or replaced file
+ * stays in the bucket (only the admin deletes), so a new one can never reuse its name.
+ */
+export interface LinkFileResult {
+  video: Video;
+  synced: boolean;
+  uploadFailure?: UploadFailure;
+}
+
+export function useLinkVideoFile() {
+  const update = useUpdateVideo();
+  return useMutation({
+    mutationFn: async ({
+      video,
+      file,
+      duration,
+    }: {
+      video: Video;
+      file: File;
+      duration: number | null;
+    }): Promise<LinkFileResult> => {
+      const local = await keepLocalCopy(video.id, file);
+      let upload: UploadResult = { ok: false, reason: 'too-big' };
+      if (file.size <= MAX_CLOUD_UPLOAD_BYTES) {
+        const suffix = Math.random().toString(36).slice(2, 8);
+        upload = await backend.uploadFile(`${video.crew_id}/${video.id}--${suffix}.${fileExtension(file.name)}`, file);
+      }
+      if (!upload.ok && !local) {
+        throw new FriendlyError(`${NO_SPACE} Tampoco se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
+      }
+      const updated = await update.mutateAsync({
+        id: video.id,
+        patch: {
+          file_name: file.name.slice(0, 255),
+          file_size: file.size,
+          file_duration_seconds: duration ? round3(duration) : null,
+          // A new file starts unsynced: the dancer marks the same moment in both right after.
+          file_offset_seconds: 0,
+          ...(upload.ok ? { storage_path: upload.path } : {}),
+        },
+      });
+      return upload.ok ? { video: updated, synced: true } : { video: updated, synced: false, uploadFailure: upload.reason };
+    },
+  });
+}
+
+/** F1 · «Quitar el archivo»: the entry is YouTube-only again. Clips, notes and takes stay (YouTube timeline). */
+export function useUnlinkVideoFile() {
+  const update = useUpdateVideo();
+  return useMutation({
+    mutationFn: async (video: Video) => {
+      const updated = await update.mutateAsync({
+        id: video.id,
+        patch: {
+          storage_path: null,
+          file_name: null,
+          file_size: null,
+          file_offset_seconds: null,
+          file_duration_seconds: null,
+        },
+      });
+      await deleteLocalVideo(video.id).catch(() => undefined);
+      return updated;
     },
   });
 }

@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { currentMemberId, useMembers } from '@/data/members';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/data/notes';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
@@ -20,6 +21,7 @@ export interface NoteTarget {
 export function NoteDialog({ target, onClose, video }: { target: NoteTarget | null; onClose: () => void; video: Video }) {
   const create = useCreateNote();
   const update = useUpdateNote();
+  const members = useMembers();
   const remove = useDeleteNote();
   const toast = useToast();
   const [body, setBody] = useState('');
@@ -62,7 +64,14 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
           toast('Nota actualizada', 'success');
         }
       } else {
-        await create.mutateAsync({ video_id: video.id, crew_id: video.crew_id, at_seconds: target.at, body: text });
+        await create.mutateAsync({
+          video_id: video.id,
+          crew_id: video.crew_id,
+          at_seconds: target.at,
+          body: text,
+          // F2: signed by whoever this device says it is («Sin nombre» otherwise).
+          author_member_id: currentMemberId(members.data),
+        });
         toast(`Nota en ${formatTime(target.at)}`, 'success');
       }
       onClose();

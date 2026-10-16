@@ -38,6 +38,14 @@ interface PlayerState extends PlayerStatus {
   /** performance.now() of the last scrub release; the engine clock is distrusted briefly after it. */
   scrubEndedAt: number;
   activeClipId: string | null;
+  /**
+   * F1 · What plays a YouTube entry that has its own file: the YouTube player (default) or the file. Uploaded
+   * videos always play their file.
+   */
+  stage: 'youtube' | 'file';
+  /** Where to land once the other stage's engine attaches (switching keeps the moment). */
+  pendingSeek: number | null;
+  setStage(stage: 'youtube' | 'file'): void;
 
   attach(engine: PlayerEngine): void;
   detach(engine: PlayerEngine): void;
@@ -179,9 +187,28 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   scrubbing: false,
   scrubEndedAt: 0,
 
+  stage: 'youtube',
+  pendingSeek: null,
+
+  setStage(stage) {
+    if (get().stage === stage) return;
+    get().engine?.pause();
+    // The moment carries over: the new engine lands there when it attaches (same timeline, see withOffset).
+    set({ stage, pendingSeek: get().time, playing: false, buffering: false, countdownEndsAt: null });
+  },
+
   attach(engine) {
     engine.setRate(get().rate);
-    set({ engine, ready: true, error: null, duration: engine.getDuration() || get().duration });
+    const { pendingSeek } = get();
+    if (pendingSeek != null) engine.seek(pendingSeek);
+    set({
+      engine,
+      ready: true,
+      error: null,
+      duration: engine.getDuration() || get().duration,
+      pendingSeek: null,
+      ...(pendingSeek != null ? { time: pendingSeek } : {}),
+    });
   },
 
   detach(engine) {
@@ -203,6 +230,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       loop: emptyLoop,
       countdownEndsAt: null,
       activeClipId: null,
+      stage: 'youtube',
+      pendingSeek: null,
     });
   },
 

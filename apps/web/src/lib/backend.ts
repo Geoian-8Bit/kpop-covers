@@ -1,4 +1,14 @@
-import type { Clip, Crew, Note, Profile, TablesInsert, TablesUpdate, Video } from '@coverscape/shared';
+import type {
+  Clip,
+  Crew,
+  Member,
+  MemberColor,
+  Note,
+  Profile,
+  TablesInsert,
+  TablesUpdate,
+  Video,
+} from '@coverscape/shared';
 import { supabase, VIDEO_BUCKET } from './supabase';
 
 /**
@@ -12,11 +22,21 @@ export const DEMO_USER_ID = '00000000-0000-4000-8000-000000000001';
 export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
 export type ClipWithVideo = Clip & { video: ClipVideo | null };
 
-/** Only what the library cards and the add dialog read: no file metadata, no audit columns. */
-const LIBRARY_COLUMNS = 'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at';
+/** Only what the library cards and the add dialog read (file_name: «con archivo», F1); no audit columns. */
+const LIBRARY_COLUMNS =
+  'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at, file_name';
 export type LibraryVideo = Pick<
   Video,
-  'id' | 'crew_id' | 'title' | 'artist' | 'source' | 'youtube_id' | 'thumbnail_url' | 'duration_seconds' | 'created_at'
+  | 'id'
+  | 'crew_id'
+  | 'title'
+  | 'artist'
+  | 'source'
+  | 'youtube_id'
+  | 'thumbnail_url'
+  | 'duration_seconds'
+  | 'created_at'
+  | 'file_name'
 >;
 export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
 
@@ -59,6 +79,12 @@ export interface Backend {
    */
   uploadFile(path: string, file: File): Promise<UploadResult>;
   signedUrl(path: string): Promise<string | null>;
+  /** F2 · the group's members (name + colour), oldest first. */
+  listMembers(): Promise<Member[]>;
+  insertMember(row: { id?: string; name: string; color: MemberColor }): Promise<Member>;
+  updateMember(id: string, patch: { name?: string; color?: MemberColor }): Promise<Member>;
+  /** Archives (the delete trigger keeps the row). */
+  deleteMember(id: string): Promise<void>;
 }
 
 // ───────────────────────────── Supabase ─────────────────────────────
@@ -163,6 +189,31 @@ const supabaseBackend: Backend = {
     const { data, error } = await supabase.storage.from(VIDEO_BUCKET).createSignedUrl(path, 6 * 60 * 60);
     return error ? null : data.signedUrl;
   },
+  async listMembers() {
+    const { data, error } = await supabase.from('members').select('*').order('created_at');
+    if (error) throw error;
+    return data as Member[];
+  },
+  async insertMember(row) {
+    // crew_id is set by the database (the default group); the client's value is ignored.
+    const { data, error } = await supabase
+      .from('members')
+      .insert({ ...row, name: row.name.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Member;
+  },
+  async updateMember(id, patch) {
+    const clean = { ...patch, ...(patch.name != null ? { name: patch.name.trim() } : {}) };
+    const { data, error } = await supabase.from('members').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Member;
+  },
+  async deleteMember(id) {
+    const { error } = await supabase.from('members').delete().eq('id', id);
+    if (error) throw error;
+  },
 };
 
 // ───────────────────────────── Local demo ─────────────────────────────
@@ -174,6 +225,7 @@ interface DemoDb {
   clips: Clip[];
   /** Added later; older demo stores don't have it yet. */
   notes?: Note[];
+  members?: Member[];
 }
 
 const DEMO_KEY = 'coverscape.demo.v1';
@@ -311,6 +363,7 @@ const demoBackend: Backend = {
         created_at: now(),
         updated_at: now(),
         ...row,
+        author_member_id: row.author_member_id ?? null,
         crew_id: video?.crew_id ?? row.crew_id,
       };
       (db.notes ??= []).push(note);
@@ -329,6 +382,38 @@ const demoBackend: Backend = {
     }),
   uploadFile: () => Promise.resolve({ ok: false, reason: 'unavailable' }),
   signedUrl: () => Promise.resolve(null),
+  listMembers: () => query((db) => [...(db.members ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))),
+  insertMember: (row) =>
+    mutate((db) => {
+      const name = row.name.trim();
+      const members = (db.members ??= []);
+      if (members.some((m) => m.name.trim().toLowerCase() === name.toLowerCase())) {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "members_crew_name_key"'), {
+          code: '23505',
+        });
+      }
+      const member: Member = {
+        id: row.id ?? crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        name,
+        color: row.color,
+        created_at: now(),
+        archived_at: null,
+      };
+      members.push(member);
+      return member;
+    }),
+  updateMember: (id, patch) =>
+    mutate((db) => {
+      const member = db.members?.find((m) => m.id === id);
+      if (!member) throw new Error('not found');
+      Object.assign(member, patch, patch.name != null ? { name: patch.name.trim() } : {});
+      return member;
+    }),
+  deleteMember: (id) =>
+    mutate((db) => {
+      db.members = (db.members ?? []).filter((m) => m.id !== id);
+    }),
 };
 
 export const backend: Backend = IS_DEMO ? demoBackend : supabaseBackend;

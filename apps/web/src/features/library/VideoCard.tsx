@@ -1,4 +1,4 @@
-import { formatDuration } from '@coverscape/shared';
+import { formatDuration, hasLinkedFile } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { Film, HardDrive, Layers, Play, Youtube } from 'lucide-react';
 import { memo } from 'react';
@@ -103,6 +103,11 @@ export const VideoCard = memo(function VideoCard({
                 <HardDrive className="size-3.5 shrink-0 text-kin-300" aria-label="Archivo" />
               )}
               <span className="truncate">{video.artist || 'Artista sin especificar'}</span>
+              {hasLinkedFile(video) && (
+                <span className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-kin-300/15 px-2 py-0.5 text-[11px] font-bold text-kin-300">
+                  <HardDrive className="size-3" aria-hidden /> con archivo
+                </span>
+              )}
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1 rounded-[8px] border border-line px-2 py-1 text-xs font-medium text-washi-muted">

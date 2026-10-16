@@ -85,6 +85,23 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
   };
 }
 
+/**
+ * F1 · A linked file plays on the YouTube video's timeline: the store, clips, notes and takes all speak YouTube
+ * seconds; the file is `offset` seconds ahead (file time = YouTube time + offset).
+ */
+export function withOffset(engine: PlayerEngine, offset: number): PlayerEngine {
+  if (!offset) return engine;
+  return {
+    ...engine,
+    seek: (seconds, opts) => engine.seek(Math.max(0, seconds + offset), opts),
+    getCurrentTime: () => engine.getCurrentTime() - offset,
+    getDuration: () => {
+      const d = engine.getDuration();
+      return d > 0 ? Math.max(0, d - offset) : 0;
+    },
+  };
+}
+
 /** How long a seek target is trusted over the iframe's clock while YouTube is still loading it. */
 const SEEK_TRUST_MS = 6000;
 /** Seeks reach the iframe at most this often; the latest target always lands (trailing edge). */

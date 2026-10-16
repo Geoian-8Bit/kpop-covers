@@ -125,9 +125,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      members: {
+        Row: {
+          archived_at: string | null;
+          color: string;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          name: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          color?: string;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          name: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          color?: string;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          name?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'members_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       notes: {
         Row: {
           at_seconds: number;
+          author_member_id: string | null;
           body: string;
           created_at: string;
           archived_at: string | null;
@@ -139,6 +175,7 @@ export type Database = {
         };
         Insert: {
           at_seconds: number;
+          author_member_id?: string | null;
           body: string;
           created_at?: string;
           archived_at?: string | null;
@@ -150,6 +187,7 @@ export type Database = {
         };
         Update: {
           at_seconds?: number;
+          author_member_id?: string | null;
           body?: string;
           created_at?: string;
           archived_at?: string | null;
@@ -205,7 +243,9 @@ export type Database = {
           created_by: string | null;
           crew_id: string;
           duration_seconds: number | null;
+          file_duration_seconds: number | null;
           file_name: string | null;
+          file_offset_seconds: number | null;
           file_size: number | null;
           id: string;
           source: string;
@@ -222,7 +262,9 @@ export type Database = {
           created_by?: string | null;
           crew_id: string;
           duration_seconds?: number | null;
+          file_duration_seconds?: number | null;
           file_name?: string | null;
+          file_offset_seconds?: number | null;
           file_size?: number | null;
           id?: string;
           source: string;
@@ -239,7 +281,9 @@ export type Database = {
           created_by?: string | null;
           crew_id?: string;
           duration_seconds?: number | null;
+          file_duration_seconds?: number | null;
           file_name?: string | null;
+          file_offset_seconds?: number | null;
           file_size?: number | null;
           id?: string;
           source?: string;

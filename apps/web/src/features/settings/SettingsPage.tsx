@@ -1,6 +1,7 @@
 import { Page } from '@/components/AppShell';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { DesignLabSection } from '@/features/lab/DesignLabSection';
+import { MembersSection } from '@/features/members/MembersUI';
 
 /** Ajustes: what lives on this device and, at the end, the design lab. One sheet, like every page. */
 export function SettingsPage() {
@@ -9,7 +10,7 @@ export function SettingsPage() {
       <div className="paper mx-auto max-w-3xl rounded-[10px] sm:rounded-[12px]">
         <header className="px-5 pb-6 pt-6 sm:px-9 sm:pt-8">
           <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">Ajustes</h1>
-          <p className="mt-1 text-sm text-washi-subtle">Solo afectan a este dispositivo.</p>
+          <p className="mt-1 text-sm text-washi-subtle">Los miembros son de todo el grupo; lo demás solo afecta a este dispositivo.</p>
         </header>
 
         <section aria-labelledby="device-title" className="sep-t px-5 py-7 sm:px-9">
@@ -25,6 +26,8 @@ export function SettingsPage() {
             <p>Nada de esto lo ve el resto del grupo. Si borras los datos del navegador, se pierde.</p>
           </div>
         </section>
+
+        <MembersSection />
 
         <DesignLabSection />
       </div>
