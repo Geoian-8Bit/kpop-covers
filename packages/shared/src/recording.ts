@@ -136,6 +136,23 @@ export function pickMime(candidates: string[], isSupported: (type: string) => bo
   return '';
 }
 
+/**
+ * The encoder family behind a MIME type: when one HEVC string fails on a phone, the other HEVC strings would fail
+ * the same way, so failures are remembered per family (H.264 profiles are separate encoders' settings).
+ */
+export function codecFamily(mime: string): string {
+  if (isHevcMime(mime)) return 'hevc';
+  const avc = /avc1\.([0-9A-Fa-f]{2})/.exec(mime);
+  if (avc) {
+    const p = avc[1]!.toUpperCase();
+    return p === '64' ? 'avc-high' : p === '4D' ? 'avc-main' : p === '42' ? 'avc-baseline' : `avc-${p}`;
+  }
+  if (/avc1|h264/i.test(mime)) return 'avc';
+  if (/vp9/i.test(mime)) return 'vp9';
+  if (/vp8/i.test(mime)) return 'vp8';
+  return `type:${mime}`;
+}
+
 export function isHevcMime(mime: string): boolean {
   return /hvc1|hev1|hevc|h265/i.test(mime);
 }

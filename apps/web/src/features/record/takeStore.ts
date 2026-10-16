@@ -30,6 +30,8 @@ export interface TakeMeta {
   startedAt: string;
   /** ISO time it was downloaded or shared; null while it only exists here. */
   savedAt: string | null;
+  /** The phone ran out of space during the take: its download may fail too, so it's never cleaned up alone. */
+  noSpace?: boolean;
 }
 
 export interface TakeSink {
@@ -123,6 +125,7 @@ async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
     mimeType: String(raw.mimeType ?? ''),
     startedAt: String(raw.startedAt ?? ''),
     savedAt: raw.savedAt ?? (raw.saved ? raw.startedAt ?? null : null),
+    noSpace: Boolean(raw.noSpace),
   };
 }
 
@@ -209,6 +212,9 @@ export async function createTakeSink(
         } catch {
           failed = true;
           spill.push(piece);
+          // Best effort (the disk is full): remember it so a recovered take isn't cleaned up after a download.
+          full.noSpace = true;
+          void writeFile(dir, META, JSON.stringify(full)).catch(() => undefined);
           onError();
         }
       });

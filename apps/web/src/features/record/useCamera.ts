@@ -246,7 +246,7 @@ export function useCamera(open: boolean, onLost: () => void) {
       const v = viewRef.current;
       const lensReaches = v.lensZoom != null && v.lensZoom.min <= target + 0.01;
       if (target < 1 && !onUltra && !lensReaches) {
-        if (canSwitchLens && v.lenses.ultra) void start('environment', v.lenses.ultra);
+        if (canSwitchLens && v.lenses.ultra) void start('environment', v.lenses.ultra, target);
         return;
       }
       if (onUltra && target >= 1) {

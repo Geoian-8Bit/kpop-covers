@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Segmented } from '@/components/ui/Segmented';
 import { soft } from '@/lib/motion';
 import { listCameras, readTrackInfo, type TrackInfo } from './camera';
-import type { RecordFormat } from './recorder';
+import { clearFailedFormats, failedFamilies, type RecordFormat } from './recorder';
 import { useRecordSettings } from './settings';
 
 /** What the last take really came out as (size ÷ duration says whether the bitrate was respected). */
@@ -14,9 +14,11 @@ export interface TakeStats {
   seconds: number;
   mimeType: string;
   requestedBps: number;
-  /** Frames the camera should have given minus those recorded; null when not measured. */
+  /** Canvas takes: frames the camera delivered minus frames drawn into the take; null for direct takes. */
   dropped: number | null;
   expected: number;
+  /** Frames per second the take really got. */
+  realFps?: number | null;
 }
 
 const yes = (v: boolean) => (v ? 'sí' : 'no');
@@ -59,6 +61,7 @@ export function InfoPanel({
   const [info, setInfo] = useState<TrackInfo | null>(() => readTrackInfo(track));
   const [cameras, setCameras] = useState<string[]>([]);
   const codec = useRecordSettings((s) => s.codec);
+  const [failed, setFailed] = useState(failedFamilies);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -183,6 +186,23 @@ export function InfoPanel({
           <Row k="Imagen" v={mode} />
           <Row k="HEVC disponible" v={yes(HEVC_PROBES.some(supportsType))} />
           <Row k="H.264 High disponible" v={yes(supportsType('video/mp4;codecs=avc1.640028,mp4a.40.2'))} />
+          {failed.length > 0 && (
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="text-washi-muted">
+                Formatos que fallaron aquí: <span className="font-mono text-[12px] text-washi">{failed.join(', ')}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearFailedFormats();
+                  setFailed([]);
+                }}
+                className="min-h-11 shrink-0 rounded-[8px] px-2 text-[13px] font-bold text-kin-300 hover:bg-washi/10"
+              >
+                Volver a probar
+              </button>
+            </div>
+          )}
         </Section>
 
         <Section title="Última toma">
@@ -196,8 +216,12 @@ export function InfoPanel({
                 v={`${formatMbps(lastBps)} · vídeo pedido ${formatMbps(last.requestedBps)}`}
               />
               <Row
+                k="Fotogramas por segundo"
+                v={last.realFps ? `${String(Math.round(last.realFps * 10) / 10).replace('.', ',')} fps` : 'sin medir'}
+              />
+              <Row
                 k="Fotogramas perdidos"
-                v={last.dropped == null ? 'sin medir' : `${last.dropped} de ${Math.round(last.expected)}`}
+                v={last.dropped == null ? 'no aplica (imagen directa)' : `${last.dropped} de ${Math.round(last.expected)}`}
               />
             </>
           ) : (

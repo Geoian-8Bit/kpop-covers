@@ -16,6 +16,7 @@ import { ToastProvider } from '@/providers/ToastProvider';
 // Route-level splitting: the library is the landing page, the studio and legal pages load on demand.
 const StudioPage = lazy(() => loadStudioPage().then((m) => ({ default: m.StudioPage })));
 const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const SettingsPage = lazy(() => import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,6 +100,14 @@ export function App() {
                         element={
                           <Suspense fallback={<Splash />}>
                             <StudioPage />
+                          </Suspense>
+                        }
+                      />
+                      <Route
+                        path="/ajustes"
+                        element={
+                          <Suspense fallback={<Splash />}>
+                            <SettingsPage />
                           </Suspense>
                         }
                       />

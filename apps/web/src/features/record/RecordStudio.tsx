@@ -6,12 +6,17 @@ import {
   minutesPhrase,
   SAVED_GRACE_MS,
   droppedFrames,
+  HEAT_WARN_MINUTES,
   tooManyDrops,
   QUALITY_LABEL,
   resolutionLabel,
   type Video,
 } from '@coverscape/shared';
 import { recordSettings, useRecordSettings } from './settings';
+import { GridOverlay } from './settings/GridOverlay';
+import { LevelIndicator } from './settings/LevelIndicator';
+import { RecorderSettingsSheet } from './settings/RecorderSettingsSheet';
+import { useDesignVariant } from '@/features/lab/designLab';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Aperture,
@@ -20,6 +25,7 @@ import {
   Info,
   Locate,
   Lock,
+  Settings2,
   SunMedium,
   Mic,
   MicOff,
@@ -76,6 +82,7 @@ import {
   chooseFormat,
   createTakeRecorder,
   downloadFile,
+  badVersion,
   markFormatBad,
   shareFile,
   takeFileName,
@@ -141,6 +148,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [notice, setNotice] = useState('');
   const [hereAt, setHereAt] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** R3: the heat notice was shown for this take. */
+  const heatWarned = useRef(false);
   const [lastStats, setLastStats] = useState<TakeStats | null>(null);
   /** The format the current take is being recorded with (for the «i» panel's "pedida"). */
   const takeFormat = useRef<RecordFormat | null>(null);
@@ -155,7 +164,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const direct = useRef<{ track: MediaStreamTrack; width: number; height: number } | null>(null);
   const stopPresented = useRef<() => void>(() => undefined);
   /** Frames that reached the take while it rolled (R4). */
-  const meter = useRef<FrameMeter | null>(null);
+  const meter = useRef<{ drawn: FrameMeter; delivered: FrameMeter | null } | null>(null);
   /** A take of this song left on the phone by an app that closed mid-take (R1). */
   const [leftover, setLeftover] = useState<Leftover | null>(null);
   const [leftoverCount, setLeftoverCount] = useState(0);
@@ -197,12 +206,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     // an unsaved one the dancer moved on from (they confirmed) is deleted now.
     const old = reviewTake.current;
     if (old && old.id !== diskId) {
-      if (old.noSpace) releaseTake(old.id); // stays on offer: its download may have failed on a full phone
-      else if (old.saved) {
+      // Not saved: the dancer confirmed discarding it. Saved on a full phone: stays on offer (the download may
+      // have failed). Saved: kept a while for the download, then deleted.
+      if (!old.saved) void forgetTake(old.id);
+      else if (old.noSpace) releaseTake(old.id);
+      else {
         releaseTake(old.id);
         const id = old.id;
         setTimeout(() => void forgetTake(id), SAVED_GRACE_MS);
-      } else void forgetTake(old.id);
+      }
     }
     if (diskId) holdTake(diskId);
     reviewTake.current = diskId ? { id: diskId, saved: false, noSpace: false } : null;
@@ -236,7 +248,52 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     sinkReady.current = null;
     sink.current = null;
     void pending?.then((s) => s.discard());
+    unlockOrientation();
+    setTakeKind(null);
   };
+
+  /**
+   * Q5 · A direct take records the camera's own frames: turning the phone mid-take would change their size
+   * under the recorder. The screen's rotation is locked for the take (possible in the installed app / full
+   * screen); where it can't be, the take goes through the canvas, which copes with a turned phone.
+   */
+  const orientation = useRef<{ pending: boolean; locked: boolean; ready: Promise<unknown> }>({
+    pending: false,
+    locked: false,
+    ready: Promise.resolve(),
+  });
+  function lockForDirect() {
+    const state = { pending: false, locked: false, ready: Promise.resolve() as Promise<unknown> };
+    orientation.current = state;
+    if (!directPossible()) return;
+    const o = screen.orientation as ScreenOrientation & { lock?: (type: string) => Promise<void> };
+    if (!o?.lock) {
+      setTakeKind('canvas');
+      return;
+    }
+    state.pending = true;
+    state.ready = o.lock(o.type).then(
+      () => {
+        state.locked = true;
+        state.pending = false;
+      },
+      () => {
+        state.pending = false;
+        // Prepare the canvas now (it starts drawing) so the take can roll through it.
+        if (orientation.current === state) setTakeKind('canvas');
+      },
+    );
+  }
+  function unlockOrientation() {
+    const state = orientation.current;
+    if (!state.locked) return;
+    state.locked = false;
+    try {
+      screen.orientation?.unlock?.();
+    } catch {
+      /* not locked any more */
+    }
+  }
 
   const clearTimers = () => {
     timers.current.forEach(clearTimeout);
@@ -258,6 +315,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     stopPresented.current();
     stopPresented.current = () => undefined;
     direct.current = null;
+    unlockOrientation();
     setTakeKind(null);
   };
 
@@ -265,6 +323,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function directPossible(): boolean {
     const t = cam.track();
     return (
+      // iPhones save a camera's own track lying on its side: they always go through the canvas.
+      !IS_IOS &&
       settings.mode === 'auto' &&
       !view.digital &&
       t?.readyState === 'live' &&
@@ -515,6 +575,22 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
    * shape until it ends (the canvas take can, which is why it exists).
    */
   const canChangeCamera = (phase === 'idle' || phase === 'paused') && takeKind !== 'direct';
+
+  // ───────────── A1 · recorder settings ─────────────
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsVariant = useDesignVariant('record-settings');
+  /** Settings reopen the camera and change the format: only between takes. */
+  const settingsAllowed = phase === 'idle' && !recorder.current;
+  const summary = view.mode
+    ? `${resolutionLabel(view.mode.width, view.mode.height)} · ${Math.round(view.mode.fps)} · ${QUALITY_LABEL[settings.quality]}`
+    : QUALITY_LABEL[settings.quality];
+  useEffect(() => {
+    if (!settingsAllowed) setSettingsOpen(false);
+  }, [settingsAllowed]);
+  const explainDirectLock = () =>
+    setNotice(
+      'Esta toma graba la imagen de la cámara tal cual: no puede cambiar de cámara a mitad. Termínala con «Listo», o elige «Siempre lienzo» en los ajustes del grabador.',
+    );
   const { setDigitalAllowed } = cam;
   useEffect(() => setDigitalAllowed(takeKind !== 'direct'), [setDigitalAllowed, takeKind]);
 
@@ -564,7 +640,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     usePlayer.getState().pause();
     if (recorder.current) {
       recorder.current.pause();
-      meter.current?.hold();
+      meter.current?.drawn.hold();
+      meter.current?.delivered?.hold();
       setSeconds(recorder.current.seconds());
       setPhase('paused');
     } else {
@@ -583,7 +660,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (!d || (src.videoWidth === d.width && src.videoHeight === d.height)) return;
       if (['countdown', 'arming', 'recording'].includes(phaseRef.current)) {
         pausePart();
-        setNotice('Has girado el móvil: ponlo como al empezar para seguir, o termina la toma con ✓.');
+        setNotice('Has girado el móvil: ponlo como al empezar para seguir, o termina la toma con «Listo».');
       }
     };
     src.addEventListener('resize', onResize);
@@ -607,22 +684,34 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     sinkReady.current = null;
     usePlayer.getState().pause();
     setSeconds(rec.seconds());
-    // R4: frames the take got against what the camera's rate promises for the time recorded.
-    meter.current?.hold();
-    const got = meter.current?.value() ?? 0;
+    // R4. Canvas take: frames the camera delivered vs frames drawn into the take (the page couldn't keep up).
+    // Direct take: the recorder gets every camera frame; what's worth knowing is the real rate (less light →
+    // fewer frames per second on many phones), not "losses".
+    const m = meter.current;
     meter.current = null;
-    const expected = rec.seconds() * (cam.track()?.getSettings?.().frameRate || 30);
-    const dropped = got > 0 ? droppedFrames({ expected, delivered: got }) : null;
+    m?.drawn.hold();
+    m?.delivered?.hold();
+    const drawnFrames = m?.drawn.value() ?? 0;
+    const deliveredFrames = m?.delivered?.value() ?? 0;
+    const expected = m?.delivered ? deliveredFrames : 0;
+    const dropped = m?.delivered && deliveredFrames > 0 ? droppedFrames({ expected, delivered: drawnFrames }) : null;
+    const realFps = rec.seconds() > 0 && drawnFrames > 0 ? drawnFrames / rec.seconds() : null;
     setPhase('finishing');
     const blob = await rec.finish();
     releasePicture();
-    if (id !== session.current) return;
+    if (id !== session.current) {
+      // The recorder closed meanwhile: the take stays on disk, offered next time (not locked by this window).
+      if (written) releaseTake(written.id);
+      return;
+    }
     if (!blob.size) {
       void written?.discard();
       // Nothing came out of a recorder that ran: this phone's encoder can't do that format, use the next one.
       const failed = takeFormat.current?.mimeType;
-      if (failed && rec.seconds() > 1.5) markFormatBad(failed);
-      setNotice('No se ha grabado nada. Prueba otra vez.');
+      if (failed && rec.pieces() === 0 && rec.seconds() > 0) {
+        markFormatBad(failed);
+        setNotice('Este formato no funciona en este móvil. Vuelve a grabar: se usará otro.');
+      } else setNotice('No se ha grabado nada. Prueba otra vez.');
       setPhase('idle');
       return;
     }
@@ -634,12 +723,13 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       requestedBps: takeFormat.current?.videoBitsPerSecond ?? 0,
       dropped,
       expected,
+      realFps,
     });
     if (tooManyDrops(dropped, expected)) {
       const now = recordSettings();
       setNotice(
         now.fps === 60 || now.quality === 'max'
-          ? 'Se han perdido fotogramas: para la próxima prueba 30 fps o calidad Alta.'
+          ? 'Se han perdido fotogramas: prueba 30 fps o calidad Alta en los ajustes del grabador.'
           : 'Se han perdido fotogramas: cierra otras apps y vuelve a probar.',
       );
     }
@@ -662,19 +752,23 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         let videoTracks: MediaStreamTrack[];
         const camTrack = cam.track();
         const src = cam.source.current;
-        if (directPossible() && camTrack && src) {
+        // Direct only with the rotation locked: a turned phone would change the frame size under the recorder.
+        if (directPossible() && orientation.current.locked && camTrack && src) {
           videoTracks = [camTrack];
           direct.current = { track: camTrack, width: src.videoWidth, height: src.videoHeight };
           const presented = watchPresentedFrames(src);
           stopPresented.current = presented.stop;
-          meter.current = createFrameMeter(presented.count);
+          meter.current = { drawn: createFrameMeter(presented.count), delivered: null };
           setTakeKind('direct');
         } else {
           compositor.lock(true);
           const picture = compositor.stream();
           canvasStream.current = picture;
           videoTracks = picture.getVideoTracks();
-          meter.current = createFrameMeter(() => compositor.counts().drawn);
+          meter.current = {
+            drawn: createFrameMeter(() => compositor.counts().drawn),
+            delivered: createFrameMeter(() => compositor.counts().delivered),
+          };
           setTakeKind('canvas');
         }
         // The song's sound if it's still there, else the microphone; say so when there's neither.
@@ -698,7 +792,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             next.start();
             rec = next;
           } catch (err) {
-            if (!format.mimeType) throw err;
+            // Only a refused format is remembered; any other error is not the format's fault.
+            const refused = err instanceof DOMException && err.name === 'NotSupportedError';
+            if (!format.mimeType || !refused) throw err;
             markFormatBad(format.mimeType);
           }
         }
@@ -728,7 +824,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       void finish();
       return;
     }
-    meter.current?.run();
+    meter.current?.drawn.run();
+    meter.current?.delivered?.run();
     setPhase('recording');
   };
 
@@ -744,9 +841,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setPhase('arming');
     phaseRef.current = 'arming';
     // A new take needs its place on the phone first (a few ms): the song waits for it.
-    if (!recorder.current && !sink.current) {
+    // A direct take also waits for the screen's rotation lock (see lockForDirect).
+    if (!recorder.current && (!sink.current || orientation.current.pending)) {
       if (!sinkReady.current) prepareSink();
-      void sinkReady.current!.then(
+      void Promise.all([sinkReady.current!, orientation.current.ready]).then(
         () => {
           if (id === session.current && phaseRef.current === 'arming') go();
         },
@@ -822,17 +920,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   /** The camera has drawn at least one frame (the canvas starts at 2×2). */
   function frameReady() {
-    if (directPossible()) return true;
+    if (directPossible() && orientation.current.locked) return true;
     return (cam.compositor.current?.canvas.width ?? 0) > 2;
   }
 
   function shutter() {
     const now = phaseRef.current;
     if (now === 'idle') {
-      if (view.status !== 'ready' || !frameReady()) return;
+      if (view.status !== 'ready' || !(directPossible() || frameReady())) return;
       setNotice('');
+      lockForDirect();
       const s = songSpan();
       spanRef.current = s;
+      heatWarned.current = false;
       setSpan(s);
       setSeconds(0);
       const p = usePlayer.getState();
@@ -851,12 +951,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       const d = direct.current;
       if (d) {
         if (cam.track() !== d.track) {
-          setNotice('La cámara se ha reiniciado: esta toma no puede seguir. Termínala con ✓.');
+          setNotice('La cámara se ha reiniciado: esta toma no puede seguir. Termínala con «Listo».');
           return;
         }
         const src = cam.source.current;
         if (src && (src.videoWidth !== d.width || src.videoHeight !== d.height)) {
-          setNotice('Pon el móvil como al empezar la toma para seguir grabando, o termínala con ✓.');
+          setNotice('Pon el móvil como al empezar la toma para seguir grabando, o termínala con «Listo».');
           return;
         }
       }
@@ -877,7 +977,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (near(s.time)) void finish();
     });
     const clock = setInterval(() => {
-      setSeconds(recorder.current?.seconds() ?? 0);
+      const recorded = recorder.current?.seconds() ?? 0;
+      setSeconds(recorded);
+      // R3: long takes at the heaviest settings heat the phone; say so once per take.
+      const now = recordSettings();
+      const heavy = now.quality === 'max' || (view.mode?.width ?? 0) * (view.mode?.height ?? 0) > 2560 * 1440;
+      if (heavy && !heatWarned.current && recorded > HEAT_WARN_MINUTES * 60) {
+        heatWarned.current = true;
+        setNotice(
+          `Llevas más de ${HEAT_WARN_MINUTES} min en calidad Máxima: el móvil se calienta. Para tomas largas, mejor Alta.`,
+        );
+      }
       const s = usePlayer.getState();
       if (s.playing) {
         quietSince = 0;
@@ -895,7 +1005,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       unsubscribe();
       clearInterval(clock);
     };
-  }, [phase, finish, pausePart]);
+  }, [phase, finish, pausePart, view.mode]);
 
   // Leaving the app mid-take pauses it (phones stop the camera in the background).
   useEffect(() => {
@@ -957,10 +1067,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   function takeKept() {
     setSaved(true);
     const disk = reviewTake.current;
-    if (disk && !disk.saved) {
-      disk.saved = true;
-      if (!disk.noSpace) void markTakeSaved(disk.id);
-    }
+    if (!disk || disk.saved) return;
+    disk.saved = true;
+    const size = take?.file.size ?? 0;
+    // The download is a second copy: on a phone without room for it, it may well fail. Then the app's copy
+    // stays (offered again next time) instead of being cleaned up.
+    void freeSpace().then((bytes) => {
+      if (disk.noSpace || (bytes != null && bytes < size * 1.1)) {
+        disk.noSpace = true;
+        setNotice('El móvil va justo de espacio: comprueba que la toma está en Descargas. La app guarda su copia hasta que la descartes.');
+      } else void markTakeSaved(disk.id);
+    });
   }
 
   function discardTake() {
@@ -1040,7 +1157,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nextFormat = useMemo(
     () => (camReady ? plannedFormat() : null),
-    [camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality],
+    [camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality, badVersion],
   );
   const spaceMinutes =
     free != null && nextFormat
@@ -1067,6 +1184,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setSeconds(-1);
     setLastStats(null);
     replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id);
+    if (reviewTake.current && found.meta.noSpace) reviewTake.current.noSpace = true;
     setPhase('review');
   }
 
@@ -1154,15 +1272,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         {/* What the take will be: size · rate · quality (A1: a tap opens the settings). */}
         <span className="flex h-11 min-w-11 shrink-0 items-center justify-end">
           {view.mode && camReady && phase !== 'review' && (
-            <span
+            <button
+              type="button"
+              disabled={!settingsAllowed}
+              onClick={() => setSettingsOpen(true)}
+              aria-label={`Ajustes del grabador: ${summary}`}
               className={cn(
-                'tabular rounded-full bg-black/45 px-2.5 py-1 font-mono text-[11px] font-bold',
+                'tabular min-h-9 rounded-full bg-black/45 px-2.5 py-1 font-mono text-[11px] font-bold enabled:active:scale-95',
                 view.wantFps === 60 && view.mode.fps < 45 ? 'text-kin-300' : 'text-washi/90',
               )}
             >
-              {resolutionLabel(view.mode.width, view.mode.height)} · {Math.round(view.mode.fps)} ·{' '}
-              {QUALITY_LABEL[settings.quality]}
-            </span>
+              {summary}
+            </button>
           )}
         </span>
       </div>
@@ -1171,8 +1292,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       {showCamera && camReady && (canTweak || phase === 'recording') && (
         <div className="absolute right-[max(10px,env(safe-area-inset-right))] top-[calc(max(14px,env(safe-area-inset-top))+64px)] z-10 flex flex-col gap-3 landscape:bottom-[max(10px,env(safe-area-inset-bottom))] landscape:left-[max(10px,env(safe-area-inset-left))] landscape:right-auto landscape:flex-wrap landscape:content-start landscape:gap-x-2 landscape:gap-y-2">
           {/* Turned phones are ~360 px tall: the rail wraps into a second column instead of running off. */}
-          {canChangeCamera && (
-            <RailButton label="Girar" ariaLabel="Girar la cámara" onClick={cam.flip}>
+          {canTweak && (
+            <RailButton label="Girar" ariaLabel="Girar la cámara" muted={!canChangeCamera} onClick={canChangeCamera ? cam.flip : explainDirectLock}>
               <SwitchCamera className="size-5" />
             </RailButton>
           )}
@@ -1210,11 +1331,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               )}
             </RailButton>
           )}
-          {canChangeCamera && cam.lensCycle && (
+          {canTweak && cam.lensCycle && (
             <RailButton
               label={`Lente ${(view.deviceId ? view.lenses.ids.indexOf(view.deviceId) : 0) + 1}/${view.lenses.ids.length}`}
               ariaLabel="Cambiar de lente"
-              onClick={cam.nextLens}
+              muted={!canChangeCamera}
+              onClick={canChangeCamera ? cam.nextLens : explainDirectLock}
             >
               <Aperture className="size-5" />
             </RailButton>
@@ -1232,7 +1354,21 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               <SunMedium className="size-5" />
             </RailButton>
           )}
-          {canTweak && (
+          {settingsAllowed && (
+            <RailButton
+              label="Ajustes"
+              ariaLabel="Ajustes del grabador"
+              expanded={settingsOpen}
+              onClick={() => {
+                setInfoOpen(false);
+                setImageOpen(false);
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings2 className="size-5" />
+            </RailButton>
+          )}
+          {canTweak && settings.info && (
             <RailButton
               label="Info"
               ariaLabel="Información técnica de la cámara"
@@ -1282,6 +1418,24 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           />
         )}
       </AnimatePresence>
+
+      {/* A1: grid of thirds and level, over the live picture only. */}
+      {showCamera && camReady && settings.grid && (
+        <GridOverlay aspect={view.aspect} className="pointer-events-none absolute inset-0 z-[5]" />
+      )}
+      {showCamera && camReady && settings.level && <LevelIndicator className="pointer-events-none absolute inset-0 z-[5]" />}
+
+      <RecorderSettingsSheet
+        variant={settingsVariant}
+        open={settingsOpen && settingsAllowed && !confirm}
+        onClose={() => setSettingsOpen(false)}
+        maxSize={
+          trackInfo?.maxWidth && trackInfo.maxHeight ? { width: trackInfo.maxWidth, height: trackInfo.maxHeight } : null
+        }
+        maxFps={trackInfo?.maxFrameRate ?? null}
+        songPossible={songPossible}
+        summary={summary}
+      />
 
       <AnimatePresence>
         {infoOpen && !confirm && (
@@ -1624,6 +1778,7 @@ function RailButton({
   ariaLabel,
   pressed,
   expanded,
+  muted,
   tone = 'dark',
   onClick,
   children,
@@ -1633,6 +1788,8 @@ function RailButton({
   pressed?: boolean;
   /** For a button that opens a panel. */
   expanded?: boolean;
+  /** Shown but not available right now (its tap explains why). */
+  muted?: boolean;
   /** The take's main action (finish): a washi disc instead of a smoked one. */
   tone?: 'dark' | 'light';
   onClick: () => void;
@@ -1644,7 +1801,9 @@ function RailButton({
       aria-label={ariaLabel ?? label}
       aria-pressed={pressed}
       aria-expanded={expanded}
+      aria-disabled={muted || undefined}
       onClick={onClick}
+      style={muted ? { opacity: 0.45 } : undefined}
       whileTap={{ scale: 0.86 }}
       transition={jelly}
       className="flex w-14 flex-col items-center gap-1"

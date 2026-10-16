@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { Library, LogOut, MoreVertical, Plus } from 'lucide-react';
+import { Library, LogOut, MoreVertical, Plus, Settings } from 'lucide-react';
 import {
   lazy,
   Suspense,
@@ -219,6 +219,18 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
 
       <div className="px-4 pb-3">
         <InstallAppButton compact />
+        <NavLink
+          to="/ajustes"
+          onClick={guardNav}
+          className={({ isActive }) =>
+            cn(
+              'mt-1 flex h-11 items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium transition-colors',
+              isActive ? 'bg-washi/[0.07] text-washi' : 'text-washi-muted hover:bg-washi/[0.04] hover:text-washi',
+            )
+          }
+        >
+          <Settings className="size-4" /> Ajustes
+        </NavLink>
         <Link
           to="/privacidad"
           onClick={guardNav}
@@ -330,6 +342,18 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                     </>
                   )}
                   <InstallAppButton compact className="mb-1" />
+                  <Link
+                    role="menuitem"
+                    to="/ajustes"
+                    onClick={(e) => {
+                      guardNav(e);
+                      setMenuOpen(false);
+                    }}
+                    className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
+                  >
+                    <Settings className="size-4" />
+                    Ajustes
+                  </Link>
                   {user && (
                     <button
                       role="menuitem"

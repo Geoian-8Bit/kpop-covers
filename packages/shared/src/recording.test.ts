@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   belowRequested,
   cameraRequest,
+  codecFamily,
   describeMime,
   droppedFrames,
   formatMbps,
@@ -110,6 +111,20 @@ describe('mimeCandidates / pickMime', () => {
       }),
     ).toBe('video/webm');
     expect(pickMime(list, () => false)).toBe('');
+  });
+});
+
+describe('codecFamily', () => {
+  it('groups the strings that share an encoder', () => {
+    expect(codecFamily('video/mp4;codecs=hvc1.1.6.L120.B0,mp4a.40.2')).toBe('hevc');
+    expect(codecFamily('video/mp4;codecs=hev1,mp4a.40.2')).toBe('hevc');
+    expect(codecFamily('video/mp4;codecs=avc1.640028,mp4a.40.2')).toBe('avc-high');
+    expect(codecFamily('video/mp4;codecs=avc1.64002A,mp4a.40.2')).toBe('avc-high');
+    expect(codecFamily('video/mp4;codecs=avc1.4D0028,mp4a.40.2')).toBe('avc-main');
+    expect(codecFamily('video/mp4;codecs=avc1.42E01E,mp4a.40.2')).toBe('avc-baseline');
+    expect(codecFamily('video/mp4;codecs=avc1,mp4a.40.2')).toBe('avc');
+    expect(codecFamily('video/webm;codecs=vp9,opus')).toBe('vp9');
+    expect(codecFamily('video/mp4')).toBe('type:video/mp4');
   });
 });
 

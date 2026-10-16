@@ -1,5 +1,6 @@
 import {
   AUDIO_BITS_PER_SECOND,
+  codecFamily,
   isHevcMime,
   mimeCandidates,
   pickMime,
@@ -34,27 +35,57 @@ export interface RecordFormat {
  * Types the browser said it could record but whose encoder then failed on this phone (an empty take, or a
  * recorder that refused to start). Remembered per device, so the next take goes straight to the next format.
  */
-const BAD_KEY = 'oneshoot.record.badTypes';
+const BAD_KEY = 'oneshoot.record.badFamilies';
+/** A browser update may fix the encoder: marks expire, and are dropped when the browser changes. */
+const BAD_TTL_MS = 30 * 24 * 60 * 60_000;
 
-function badTypes(): Set<string> {
+interface BadFormats {
+  ua: string;
+  at: number;
+  families: string[];
+}
+
+function badFamilies(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(BAD_KEY) ?? '[]') as string[]);
+    const raw = JSON.parse(localStorage.getItem(BAD_KEY) ?? 'null') as BadFormats | null;
+    if (!raw || raw.ua !== navigator.userAgent || Date.now() - raw.at > BAD_TTL_MS) return new Set();
+    return new Set(raw.families);
   } catch {
     return new Set();
   }
 }
 
+/** The encoder family of this type failed on this phone: the next take uses the next family. */
 export function markFormatBad(mimeType: string): void {
   if (!mimeType) return;
-  const bad = badTypes();
-  bad.add(mimeType);
+  const bad = badFamilies();
+  bad.add(codecFamily(mimeType));
   try {
-    localStorage.setItem(BAD_KEY, JSON.stringify([...bad]));
+    localStorage.setItem(BAD_KEY, JSON.stringify({ ua: navigator.userAgent, at: Date.now(), families: [...bad] }));
   } catch {
     /* for this visit only */
   }
   remembered.clear();
+  badVersion++;
 }
+
+/** Families skipped on this phone (shown in the «i» panel, where they can be tried again). */
+export function failedFamilies(): string[] {
+  return [...badFamilies()];
+}
+
+export function clearFailedFormats(): void {
+  try {
+    localStorage.removeItem(BAD_KEY);
+  } catch {
+    /* nothing stored */
+  }
+  remembered.clear();
+  badVersion++;
+}
+
+/** Bumped when the marks change: callers that memoise a format include it. */
+export let badVersion = 0;
 
 /** isTypeSupported answers once per plan (it's asked on every render of the recorder otherwise). */
 const remembered = new Map<string, RecordFormat>();
@@ -73,9 +104,9 @@ export function chooseFormat(plan: RecordPlan): RecordFormat {
   const key = `${plan.width}x${plan.height}@${plan.fps}|${plan.quality}|${plan.codec}`;
   const known = remembered.get(key);
   if (known) return known;
-  const bad = badTypes();
+  const bad = badFamilies();
   const supported = (t: string) =>
-    !bad.has(t) && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t);
+    !bad.has(codecFamily(t)) && typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t);
   const mimeType = pickMime(mimeCandidates(plan), supported);
   const format = {
     mimeType,
@@ -102,7 +133,12 @@ export interface TakeRecorder {
   seconds(): number;
   /** The type the browser really records (known once started). */
   mimeType(): string;
+  /** Pieces the encoder has handed over (0 = it never produced anything). */
+  pieces(): number;
 }
+
+/** A working encoder hands over its first 1-second piece well within this. */
+const NO_DATA_MS = 3500;
 
 /** How long the browser gets to hand over the last piece of the file after stopping. */
 const FINISH_TIMEOUT_MS = 8000;
@@ -118,8 +154,11 @@ export function createTakeRecorder(
   const { mimeType } = format;
   // Throws when the browser refuses these options: the caller marks the type bad and tries the next one.
   const rec = new MediaRecorder(new MediaStream(tracks), recorderOptions(format));
+  let pieces = 0;
   rec.ondataavailable = (e) => {
-    if (e.data.size > 0) sink.write(e.data);
+    if (e.data.size === 0) return;
+    pieces++;
+    sink.write(e.data);
   };
   let total = 0;
   let since: number | null = null;
@@ -143,6 +182,11 @@ export function createTakeRecorder(
     start() {
       rec.start(1000);
       run();
+      // An encoder that accepted the format but produces nothing: after a few seconds without a single piece,
+      // treat the recorder as dead (the take ends empty and the format is skipped from then on).
+      setTimeout(() => {
+        if (pieces === 0 && rec.state === 'recording') died();
+      }, NO_DATA_MS);
     },
     pause() {
       if (rec.state !== 'recording') return;
@@ -193,6 +237,7 @@ export function createTakeRecorder(
     mimeType() {
       return rec.mimeType || mimeType;
     },
+    pieces: () => pieces,
     seconds() {
       return (total + (since != null ? performance.now() - since : 0)) / 1000;
     },
