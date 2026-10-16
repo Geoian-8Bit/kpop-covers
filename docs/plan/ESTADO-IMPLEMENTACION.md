@@ -9,7 +9,7 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | --- | --- | --- | --- |
 | Grabación | Pasos 1–6 (Q1–Q8, C1–C5, S1–S3, R1–R5, A1) | **Hecha y desplegada** (16-10 17:33) | Falta probar en los Samsung (apartado 2) |
 | Ideas | F1 Archivo vinculado · F2 Quién es quién | **Hechas y desplegadas** (16-10 18:13) | 3 rondas de revisión; migraciones aplicadas en Supabase |
-| Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | En la rama, en revisión | «Guardar» en el grabador probado en el navegador; falta revisión y su migración |
+| Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | **Hechas y desplegadas** (16-10 19:14) | 2 rondas de revisión; migración `takes` aplicada |
 | Ideas | F5–F10 | No empezadas | |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
 | Grupo | F11–F16 | No empezadas | |
@@ -49,6 +49,22 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
     deja el anterior.
 18. **Duplicados:** al añadir un vídeo con un título parecido a otro de la biblioteca, sale «¿Es la misma
     canción?». Las tarjetas con archivo llevan la marca «con archivo».
+
+### Ideas · F3, F4 y F17 (en producción)
+
+19. **Guardar una toma (F3).** Graba una toma → en el repaso, «Guardar en «Tomas»». Debe salir «Guardada en «Tomas»
+    de esta canción». Cierra el grabador y abre la pestaña «Tomas» del estudio: está ahí con quién, cuándo, desde qué
+    segundo y a qué velocidad. Recarga la página: sigue ahí y se reproduce. Sin red, «Guardar» avisa y se puede
+    reintentar.
+20. **Filtros y descarga:** filtra por persona, clip y fecha; «Descargar» desde la lista (en iPhone abre la hoja
+    para guardarla en Fotos).
+21. **Mejor toma (F4):** la estrella marca una por persona y tramo; aparece primera; «Limpiar» borra las que no
+    tienen estrella.
+22. **Compartir con el grupo:** «Compartir» hace una copia de 720p (≤ 50 MB) y la sube. En otro móvil se ve «En la
+    nube» y se puede reproducir y descargar. El medidor «Nube del grupo» enseña el espacio real (vídeos y tomas).
+23. **Voz y música (F17):** con un vídeo de archivo, la fila «Voz y música» del estudio: «Todo», «Sin voz» (baja
+    la voz del centro; sale en mono) y «Voz» (el centro al frente). Con YouTube la fila explica que no se puede.
+    Graba con «Sin voz»: el grabador dice «Con la canción sin voz» y la toma suena así.
 
 ### Grabación · pasos 3 a 6
 
@@ -114,7 +130,10 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 
 **El resto**
 
-_(ninguna todavía)_
+2. **Borrar una toma compartida no libera espacio en la nube.** La regla del repositorio es «borrar = archivar» y el
+   cliente nunca borra archivos del bucket; la especificación de F3 decía «Borrarla la quita de la nube». Se ha
+   hecho: deja de verse y de poder leerse, pero el archivo sigue ocupando hasta que el administrador lo purgue. El
+   medidor cuenta ese espacio. ¿Queréis una forma de purgar desde la app (solo para un administrador)?
 
 ## 5. PENDIENTES
 
@@ -126,6 +145,13 @@ _(ninguna todavía)_
   a un cliente manipulado (3); «Volver a sincronizar» compara tamaños (3); las marcas de copia local no se limpian
   nunca (2). De rondas anteriores: R5 (4), R6 (3), R7 (3), consulta de administrador para limpiar archivos viejos
   del bucket (BD2), selector YouTube|Archivo de 36 px.
+- F3/F4/F17 (ronda 2, todos < 6): faltan tests automáticos de `takeStore`, `useSaveTake`, `shareTake`, motor y
+  almacén (5); tras un error dudoso al guardar se deshace la marca sin comprobar si la fila llegó (3); una carpeta
+  con datos ilegibles y trozos ya no se borra pero tampoco se ofrece (3); `friendlyError` reconoce «0 filas» por
+  texto (2); `DEPLOY.md` sin la receta de purga de tomas archivadas (2). De ronda 1: tomas huérfanas en un móvil si
+  otra persona las borra (5), sin conexión con datos en caché (5), subida de «Compartir» sin cancelar (5), aviso de
+  que Safari borra datos tras 7 días (5), «Voz» no aísla del todo la voz (5, textos ajustados), accesibilidad de
+  chips y selector de fecha (4).
 
 ## 6. Migraciones
 
@@ -149,12 +175,22 @@ Auth, que es un ajuste del panel y no se toca; dos políticas de lectura en `cre
 **Tipos:** regenerados desde el proyecto real y comparados con `database.types.ts`: coinciden. Diferencia
 intencionada: en `members` el `crew_id` es opcional al insertar porque lo pone el servidor.
 
+**Fase 2 (16-10 19:09):** `20261016010000_takes`: tabla `takes`, bucket privado `takes` (50 MB, solo vídeo),
+compartir solo con el archivo subido (tamaño real), una mejor toma por persona y tramo, tope de 1 GiB entre vídeos
+y tomas, función `storage_usage()` para el medidor. Aplicada y verificada (13 PASS en producción, todo revertido;
+después 0 tomas, 0 objetos). Copia previa: `~/one-shoot-backups/20261016-1907-fase2/backup.json` (incluye la
+definición anterior de `archive_row`). Vuelta atrás: `rollback-fase2.sql` en la misma carpeta (quita el acceso a
+las tomas y repone `archive_row`; la tabla y el bucket se quedan, vacíos). Advisors: nuevos avisos 0028/0029 por
+`public.storage_usage()`, intencionados (solo devuelve tres números, la app la necesita sin login); índices de
+`takes` sin usar todavía. Tipos regenerados: coinciden.
+
 ## 7. Laboratorio de diseño
 
 Ajustes → «Mostrar laboratorio de diseño». Cada momento clave tiene sus variantes con una demostración en vivo.
 
 | Momento | Variantes | Recomendada y por qué |
 | --- | --- | --- |
+| F17 · Separar voz y música | **La ola partida** (la ola se parte en voz bermellón y música índigo) · **Puertas correderas** (dos puertas de washi tapan lo que se quita) · **Capas de grabado** (tres planchas de ukiyo-e apiladas) | **La ola partida**: enseña de un vistazo qué suena sin tapar la ola de la canción |
 | A1 · Panel de ajustes del grabador | **Bandeja de laca** (hoja inferior con celdas bento) · **Abanico** (varillas de un sensu que se despliegan) · **Makimono** (rollo de washi que se desenrolla) | **Bandeja**: la más rápida de leer y tocar con el móvil en la mano; las otras dos son más vistosas pero esconden opciones tras un gesto |
 
 ## 8. Revisiones
@@ -165,8 +201,11 @@ Ajustes → «Mostrar laboratorio de diseño». Cada momento clave tiene sus var
 
 | Grabación pasos 2–6 | 3 | Ronda 3: 🔴 9 «el iPhone no grababa» (lienzo congelado) | Todo lo ≥6 |
 | F1 · F2 | 3 | Ronda 1: 🔴 7 vincular encima de otro archivo, 🔴 cambio no atómico · Ronda 2: 🔴 7 al quinto cambio se perdía el archivo, 6 copia propia borrada, 6 archivo solo-móvil pisable · Ronda 3: ninguno ≥6 | Todo lo ≥6; lo <6 en PENDIENTES |
+| F3 · F4 · F17 | 2 | Ronda 1: 🔴 9 «Guardar» sin aviso en el repaso, 🔴 8/7 toma «compartida» sin archivo, 🔴 7 vídeo congelado con el audio suspendido, 🔴 7 «Sin voz» mudo en mono, 7 «Guardar» sin reintento, 6 tope de 1 GB solo en la app, 6 `meta.json` pisable, 6 contextos de audio sin cerrar, 6 grabador sin decir el modo · Ronda 2: ninguno ≥6 | Todo lo ≥6 y varios menores; lo <6 en PENDIENTES |
 
 Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
 [rendimiento y diseño](revisiones/grabacion-paso1-ronda-1-rendimiento-diseno.md) ·
 [F1/F2 ronda 1 BD](revisiones/F1-F2-ronda-1-bd-seguridad.md) · [F1/F2 ronda 1 cliente](revisiones/F1-F2-ronda-1-cliente.md) ·
-[F1/F2 ronda 2](revisiones/F1-F2-ronda-2.md) · [F1/F2 ronda 3](revisiones/F1-F2-ronda-3.md)
+[F1/F2 ronda 2](revisiones/F1-F2-ronda-2.md) · [F1/F2 ronda 3](revisiones/F1-F2-ronda-3.md) ·
+[F3/F4/F17 ronda 1 BD](revisiones/F3-F4-F17-ronda-1-bd.md) · [cliente](revisiones/F3-F4-F17-ronda-1-cliente-tomas.md) ·
+[voz](revisiones/F3-F4-F17-ronda-1-voz.md) · [ronda 2](revisiones/F3-F4-F17-ronda-2.md)
