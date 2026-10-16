@@ -218,7 +218,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [leftoverCount, setLeftoverCount] = useState(0);
   /** Free space on the phone for the app (R2), null while unknown. */
   const [free, setFree] = useState<number | null>(null);
-  const loopRange = usePlayer((s) => (hasRange(s.loop) ? { start: s.loop.start, end: s.loop.end } : null));
+  // Select the (stable) loop object: a selector that builds a new object on every call loops forever (zustand 5).
+  const playerLoop = usePlayer((s) => s.loop);
+  const loopRange = hasRange(playerLoop) ? { start: playerLoop.start, end: playerLoop.end } : null;
   const rate = usePlayer((s) => s.rate);
 
   const phaseRef = useRef(phase);
