@@ -183,6 +183,11 @@ describe('leftoverAction', () => {
     expect(leftoverAction(base, now)).toBe('offer');
   });
 
+  it('never touches a take saved in the app (F3), whatever its age', () => {
+    expect(leftoverAction({ ...base, kept: true, savedAt: '2026-01-01T00:00:00Z' }, now)).toBe('keep');
+    expect(leftoverAction({ ...base, kept: true }, now)).toBe('keep');
+  });
+
   it('never touches a take another window is using', () => {
     expect(leftoverAction({ ...base, locked: true, bytes: 0 }, now)).toBe('keep');
     expect(leftoverAction({ ...base, locked: true, savedAt: '2026-10-01T00:00:00Z' }, now)).toBe('keep');

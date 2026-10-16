@@ -302,7 +302,8 @@ export function useCamera(open: boolean, onLost: () => void) {
     if (lastModeKey.current === modeKey) return;
     lastModeKey.current = modeKey;
     const v = viewRef.current;
-    if (open && v.status !== 'starting') void start(v.facing, v.deviceId, v.zoom);
+    // Even mid-reopen: the newer request wins (the session counter drops the older camera).
+    if (open) void start(v.facing, v.deviceId, v.zoom);
   }, [modeKey, open, start]);
 
   const retry = useCallback(() => {
