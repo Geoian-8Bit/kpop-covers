@@ -38,7 +38,9 @@ export function bagError(error: unknown): string {
   if (/track_item_invalid/.test(message)) return 'Uno de los clips ya no existe.';
   if (/bags_name_check|tracks_name_check/.test(message)) return 'El nombre no puede quedar vacío.';
   if (/tracks_pause_seconds_check/.test(message)) return 'La pausa va de 0 a 5 segundos.';
-  if (/(bags|bag_items|tracks|track_items)_cap_reached|row_cap/.test(message))
+  if (/track_items_position_check/.test(message)) return 'Una pista admite hasta 1000 clips.';
+  if (/bag_draw_direct/.test(message)) return 'El historial solo se escribe al sacar.';
+  if (/(bags|bag_items|bag_draws|tracks|track_items)_cap_reached|row_cap/.test(message))
     return 'Se ha llegado al máximo. Borra algo antes.';
   return friendlyError(error);
 }
@@ -211,14 +213,15 @@ export function useSetDrawRemoved() {
 /** Display line for an item: its title and a smaller line under it. */
 export function itemTitle(item: BagItemView): { title: string; sub: string } {
   if (item.video) return { title: item.video.title, sub: item.video.artist || 'Artista sin especificar' };
+  if (item.wish) return { title: item.wish.title, sub: item.wish.artist || 'De la lista de deseos' };
   if (item.clip) return { title: item.clip.name, sub: item.clip.video?.title ?? '' };
   if (item.member) return { title: item.member.name, sub: 'Del grupo' };
   return { title: 'No disponible', sub: '' };
 }
 
 /** What an item points at, as an id (for «already in this bag»). */
-export function itemRef(item: Pick<BagItemView, 'video_id' | 'clip_id' | 'member_id'>): string {
-  return item.video_id ?? item.clip_id ?? item.member_id ?? '';
+export function itemRef(item: Pick<BagItemView, 'video_id' | 'clip_id' | 'member_id' | 'wish_id'>): string {
+  return item.video_id ?? item.clip_id ?? item.member_id ?? item.wish_id ?? '';
 }
 
 export function bagsOfKind(bags: BagWithCount[] | undefined, kind: BagKind): BagWithCount[] {

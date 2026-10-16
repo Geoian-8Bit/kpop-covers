@@ -15,6 +15,8 @@
   `takes`; notas sobre la toma), `plan_fase3_checks.sql` (50 PASS locales en total), tipos y demo actualizados.
   Siguiente: pantalla de repaso F5 (apilado / superpuesto, 3 variantes de laboratorio) y notas F6.
 - Regla del usuario: cada despliegue = versión funcional de todo lo implementado.
+- Regla del usuario: **todas las pruebas en silencio** (también producción): el demo está silenciado con
+  `apps/web/src/lib/devSilence.ts`; en producción, página en blanco y navegar con un script que silencia todo.
 
 ## Hecho
 
@@ -31,12 +33,23 @@
 | 2026-10-16 17:33 | Grabación con calidad máxima, pasos 1–6 | `650b974` | https://kpop-covers-hiyrnba2h-geoian-s-projects.vercel.app (`dpl_Dpa2Mf3tD5FFgR22vwsQ2DdiTMxn`) | ninguna |
 | 2026-10-16 18:13 | Ideas fase 1: F1 + F2 | `52f81ba` | https://kpop-covers-rghqkj915-geoian-s-projects.vercel.app (`dpl_BcJX7f2PhTi7q2DsRc3kcYtZYxVP`) | 000000, 000100, 000200 |
 | 2026-10-16 19:14 | Ideas fase 2: F3 + F4 + F17 | `1cc0a11` | https://kpop-covers-1i1owoysn-geoian-s-projects.vercel.app (`dpl_4uG9sufPgtrPpJVnUAQ6vXDeTuss`) | 010000 (takes) |
+| 2026-10-16 21:49 | **Arreglo urgente**: abrir un clip colgaba el estudio | `0a005cc` | https://kpop-covers-9xqdd74qd-geoian-s-projects.vercel.app (`dpl_Cwp2GZC2hzfztUY91Lfs2k9TiJxr`) | ninguna |
+| 2026-10-16 21:58 | Fase 3 (F5, F6) + F7 + B1 (F13, F14) | `dfcb9e3` | https://kpop-covers-6lpf2hi7o-geoian-s-projects.vercel.app (`dpl_VYFfFjLRDHJyKtEvvmM4CNJW9yz3`) | 020000, 030000, 035000 |
 
 Fase 1: por error se lanzó `vercel --prod` dos veces seguidas desde el mismo commit (dos despliegues idénticos,
 el segundo es el activo). Comprobado en un contexto limpio: Ajustes muestra «Miembros del grupo» (0), el estudio
 carga vídeo, clips y notas con el botón «Añadir archivo»; todas las peticiones a Supabase 200, sin errores.
 Fase 2: en un contexto limpio, la pestaña «Tomas» carga (`takes` 200), el medidor llama a `storage_usage` (200, 0 B
 de 1 GB) y la fila «Voz y música» explica que con YouTube no se puede. Sin crear datos.
+
+**Arreglo urgente (21:49):** comprobando producción vi que abrir un clip (`/v/…?clip=…`) mostraba «Algo se ha
+torcido» (React #185, bucle de renderizado). Venía del grabador: un selector de zustand creaba un objeto nuevo en
+cada lectura y, con el bucle A–B puesto, el estudio entraba en bucle. Estaba desde el commit de partida. Se desplegó
+solo esa corrección (2 líneas) y se comprobó que el clip se aplica sin errores.
+
+**Fase 3 + F7 + B1 (21:58):** comprobado en un contexto limpio y silenciado: /bolsas carga, el estudio con clip no
+falla, la pestaña Tomas responde. Las comprobaciones de BD pasaron en producción (5 de fase 3 y 10 de B1, todo
+revertido; después 0 bolsas, 0 sorteos, 0 pistas).
 
 ## Siguiente
 

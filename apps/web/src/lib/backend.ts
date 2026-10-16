@@ -12,6 +12,9 @@ import type {
 } from '@coverscape/shared';
 import { supabase, TAKE_BUCKET, VIDEO_BUCKET } from './supabase';
 import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from '@coverscape/shared';
+import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
+import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coverscape/shared';
+import type { FollowKeyframe, FollowPath, FollowSource } from '@coverscape/shared';
 import { drawOrder } from '@/features/bags/drawRules';
 
 /**
@@ -47,6 +50,24 @@ export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
 /** 'exists': a file with that name is already there (a take's earlier upload that went through). */
 export type UploadFailure = 'too-big' | 'type' | 'network' | 'denied' | 'unavailable' | 'exists';
 export type UploadResult = { ok: true; path: string } | { ok: false; reason: UploadFailure };
+
+/**
+ * Every row of a list, page by page: the server answers at most 1000 rows per request, so a longer list would be
+ * cut short without a word (review round 1). `page(from, to)` must order by a unique key so pages don't overlap.
+ */
+async function fetchAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[]> {
+  const size = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += size) {
+    const { data, error } = await page(from, from + size - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < size) return out;
+  }
+}
 
 function uploadFailure(error: unknown): UploadFailure {
   const e = (error ?? {}) as { name?: string; status?: number; statusCode?: string; code?: string; message?: string };
@@ -415,6 +436,10 @@ const demoBackend: Backend = {
         created_by: DEMO_USER_ID,
         archived_at: null,
         created_at: now(),
+        // F9 · Same defaults as the database: no zoom.
+        zoom_scale: 1,
+        zoom_x: 0.5,
+        zoom_y: 0.5,
         ...row,
         crew_id: video?.crew_id ?? row.crew_id,
       } as Clip;
@@ -581,13 +606,20 @@ export type BagItemClip = Pick<
 > & { video: ClipVideo | null };
 export type BagItemMember = Pick<Member, 'id' | 'name' | 'color'>;
 /** A bag item with what it points at (songs, clips or people; archived ones never come back). */
-export type BagItemView = BagItem & { video: BagItemVideo | null; clip: BagItemClip | null; member: BagItemMember | null };
+/** F12: a bag of songs also takes wishes from the list (not in the library yet). */
+export type BagItemWish = Pick<Wish, 'id' | 'title' | 'artist' | 'thumbnail_url' | 'youtube_id' | 'added_video_id'>;
+export type BagItemView = BagItem & {
+  video: BagItemVideo | null;
+  clip: BagItemClip | null;
+  member: BagItemMember | null;
+  wish: BagItemWish | null;
+};
 export type TrackWithCount = Track & { items: number };
 /** A track's clip; `clip` is null when it was archived (shown as «no disponible», skipped when playing). */
 export type TrackItemView = TrackItem & { clip: ClipWithVideo | null };
 export type NewBag = { name: string; kind: BagKind; draw_mode: DrawMode; no_repeat: boolean };
 export type BagPatch = Partial<Pick<Bag, 'name' | 'draw_mode' | 'no_repeat'>>;
-export type NewBagItem = { bag_id: string; video_id?: string; clip_id?: string; member_id?: string };
+export type NewBagItem = { bag_id: string; video_id?: string; clip_id?: string; member_id?: string; wish_id?: string };
 export type TrackOptionsRow = Pick<Track, 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>;
 export type TrackPatch = Partial<Pick<Track, 'name' | 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>>;
 
@@ -631,7 +663,7 @@ const CLIP_VIDEO_COLUMNS = 'id, title, artist, source, youtube_id';
 const BAG_ITEM_SELECT =
   `*, video:videos(id, title, artist, thumbnail_url, source, youtube_id), ` +
   `clip:clips(id, name, video_id, start_seconds, end_seconds, speed, mirrored, color, video:videos(${CLIP_VIDEO_COLUMNS})), ` +
-  `member:members(id, name, color)`;
+  `member:members(id, name, color), wish:wishes(id, title, artist, thumbnail_url, youtube_id, added_video_id)`;
 
 const supabaseBags: BagsBackend = {
   async listBags() {
@@ -663,9 +695,9 @@ const supabaseBags: BagsBackend = {
     if (error) throw error;
   },
   async listBagItems(bagId) {
-    const { data, error } = await supabase.from('bag_items').select(BAG_ITEM_SELECT).eq('bag_id', bagId).order('created_at');
-    if (error) throw error;
-    return data as unknown as BagItemView[];
+    return fetchAll<BagItemView>((from, to) =>
+      supabase.from('bag_items').select(BAG_ITEM_SELECT).eq('bag_id', bagId).order('created_at').order('id').range(from, to),
+    );
   },
   async insertBagItem(row) {
     const { data, error } = await supabase.from('bag_items').insert(row).select().single();
@@ -717,12 +749,14 @@ const supabaseBags: BagsBackend = {
     if (draw.item_id) await supabaseBags.setBagItemOut(draw.item_id, removed);
   },
   async listAllClips() {
-    const { data, error } = await supabase
-      .from('clips')
-      .select(`*, video:videos(${CLIP_VIDEO_COLUMNS})`)
-      .order('created_at');
-    if (error) throw error;
-    return data as unknown as ClipWithVideo[];
+    return fetchAll<ClipWithVideo>((from, to) =>
+      supabase
+        .from('clips')
+        .select(`*, video:videos(${CLIP_VIDEO_COLUMNS})`)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    );
   },
   async listTracks() {
     const { data, error } = await supabase
@@ -816,7 +850,16 @@ function demoItemView(db: BagsDemoDb, item: BagItem): BagItemView | null {
   const clip = item.clip_id ? db.clips.find((c) => c.id === item.clip_id) : null;
   const clipVideo = clip ? db.videos.find((v) => v.id === clip.video_id) : null;
   const member = item.member_id ? (db.members ?? []).find((m) => m.id === item.member_id) : null;
-  if ((item.video_id && !video) || (item.clip_id && (!clip || !clipVideo)) || (item.member_id && !member)) return null;
+  const wish = item.wish_id
+    ? ((db as { wishes?: Wish[] }).wishes ?? []).find((w) => w.id === item.wish_id && w.archived_at == null)
+    : null;
+  if (
+    (item.video_id && !video) ||
+    (item.clip_id && (!clip || !clipVideo)) ||
+    (item.member_id && !member) ||
+    (item.wish_id && !wish)
+  )
+    return null;
   return {
     ...item,
     video: video
@@ -850,6 +893,16 @@ function demoItemView(db: BagsDemoDb, item: BagItem): BagItemView | null {
           }
         : null,
     member: member ? { id: member.id, name: member.name, color: member.color } : null,
+    wish: wish
+      ? {
+          id: wish.id,
+          title: wish.title,
+          artist: wish.artist,
+          thumbnail_url: wish.thumbnail_url,
+          youtube_id: wish.youtube_id,
+          added_video_id: wish.added_video_id,
+        }
+      : null,
   };
 }
 
@@ -924,15 +977,18 @@ const demoBags: BagsBackend = {
       const db = raw as BagsDemoDb;
       const bag = db.bags?.find((b) => b.id === row.bag_id);
       if (!bag) throw demoError('bag_not_found');
-      const refs = [row.video_id, row.clip_id, row.member_id].filter(Boolean);
+      const refs = [row.video_id, row.clip_id, row.member_id, row.wish_id].filter(Boolean);
       const ok =
         refs.length === 1 &&
         ((bag.kind === 'songs' && row.video_id && db.videos.some((v) => v.id === row.video_id)) ||
+          (bag.kind === 'songs' &&
+            row.wish_id &&
+            ((db as { wishes?: Wish[] }).wishes ?? []).some((w) => w.id === row.wish_id && w.archived_at == null)) ||
           (bag.kind === 'clips' && row.clip_id && db.clips.some((c) => c.id === row.clip_id)) ||
           (bag.kind === 'people' && row.member_id && (db.members ?? []).some((m) => m.id === row.member_id)));
       if (!ok) throw demoError('bag_item_invalid');
       const ref = refs[0];
-      if (liveBagItems(db, bag.id).some((i) => (i.video_id ?? i.clip_id ?? i.member_id) === ref)) {
+      if (liveBagItems(db, bag.id).some((i) => (i.video_id ?? i.clip_id ?? i.member_id ?? i.wish_id) === ref)) {
         throw demoError('duplicate key value violates unique constraint "bag_items_once_key"', '23505');
       }
       const item: BagItem = {
@@ -942,6 +998,7 @@ const demoBags: BagsBackend = {
         video_id: row.video_id ?? null,
         clip_id: row.clip_id ?? null,
         member_id: row.member_id ?? null,
+        wish_id: row.wish_id ?? null,
         removed_at: null,
         created_at: now(),
         archived_at: null,
@@ -986,7 +1043,7 @@ const demoBags: BagsBackend = {
       return picked.map((item) => {
         const view = demoItemView(db, item)!;
         const label =
-          view.video?.title ?? (view.clip ? `${view.clip.name} · ${view.clip.video?.title ?? ''}` : view.member?.name) ?? '—';
+          view.video?.title ?? view.wish?.title ?? (view.clip ? `${view.clip.name} · ${view.clip.video?.title ?? ''}` : view.member?.name) ?? '—';
         const draw: BagDraw = {
           id: crypto.randomUUID(),
           crew_id: bag.crew_id,
@@ -1126,3 +1183,899 @@ const demoBags: BagsBackend = {
 };
 
 export const bagsBackend: BagsBackend = IS_DEMO ? demoBags : supabaseBags;
+
+// ───────────────────────────── F12 wish list · F11 polls ─────────────────────────────
+
+/** What the app may change on a wish (the database grants exactly these columns). */
+export type WishPatch = Partial<
+  Pick<Wish, 'title' | 'artist' | 'members_count' | 'difficulty' | 'comment' | 'added_video_id'>
+>;
+export type NewWish = Pick<Wish, 'youtube_id' | 'title'> &
+  Partial<Pick<Wish, 'artist' | 'thumbnail_url' | 'members_count' | 'difficulty' | 'comment' | 'proposed_by_member_id'>>;
+/** Granted columns of a poll. Closing = closed_at (once); the winner only at that moment, and only an option. */
+export type PollPatch = Partial<
+  Pick<Poll, 'title' | 'results_live' | 'anonymous' | 'closes_at' | 'closed_at' | 'winner_wish_id'>
+>;
+export type CloseResolve = 'auto' | 'pick' | 'none';
+export interface CloseResult {
+  status: 'closed' | 'tie';
+  winner: string | null;
+  /** The leaders (wish ids) when it is a tie. */
+  tied: string[];
+}
+export type NewPoll = Pick<Poll, 'title' | 'vote_type' | 'results_live' | 'anonymous' | 'closes_at'> & {
+  created_by_member_id: string | null;
+  parent_poll_id: string | null;
+};
+
+/**
+ * F12 · the wish list («Me apunto» included) and F11 · its votes. Shared by the group; deleting archives. Votes
+ * only go in through `cast_vote()` (one ballot per person, replaced while the poll is open; empty = withdraw).
+ */
+export interface WishesBackend {
+  listWishes(): Promise<Wish[]>;
+  insertWish(row: NewWish): Promise<Wish>;
+  updateWish(id: string, patch: WishPatch): Promise<Wish>;
+  deleteWish(id: string): Promise<void>;
+  listInterest(): Promise<WishInterest[]>;
+  addInterest(wishId: string, memberId: string): Promise<WishInterest>;
+  removeInterest(id: string): Promise<void>;
+  listPolls(): Promise<Poll[]>;
+  listPollOptions(): Promise<PollOption[]>;
+  /** Live votes of these polls only (a poll's page asks for its own; the list for the closed ones it shows). */
+  listPollVotes(pollIds: string[]): Promise<PollVote[]>;
+  /**
+   * Closes on the server with the votes as they are at that moment (`close_poll`): 'auto' closes with a clear
+   * winner (or none if nobody voted) and answers 'tie' without closing; 'pick' closes with one of the tied leaders;
+   * 'none' closes without a winner (a second round follows). An already closed poll answers with its winner.
+   */
+  closePoll(pollId: string, resolve: CloseResolve, winnerWishId?: string | null): Promise<CloseResult>;
+  /** The poll and its options (the wishes that take part); a poll left without options is archived again. */
+  insertPoll(row: NewPoll, wishIds: string[]): Promise<Poll>;
+  updatePoll(id: string, patch: PollPatch): Promise<Poll>;
+  deletePoll(id: string): Promise<void>;
+  /** Replaces this person's ballot (ranking: the order of the array). Returns how many options it holds. */
+  castVote(pollId: string, memberId: string, optionIds: string[]): Promise<number>;
+}
+
+const supabaseWishes: WishesBackend = {
+  async listWishes() {
+    const { data, error } = await supabase.from('wishes').select('*').order('created_at');
+    if (error) throw error;
+    return data as Wish[];
+  },
+  async insertWish(row) {
+    // crew_id comes from the database (the default group).
+    const { data, error } = await supabase
+      .from('wishes')
+      .insert({ ...row, title: row.title.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Wish;
+  },
+  async updateWish(id, patch) {
+    const clean = patch.title != null ? { ...patch, title: patch.title.trim() } : patch;
+    const { data, error } = await supabase.from('wishes').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Wish;
+  },
+  async deleteWish(id) {
+    const { error } = await supabase.from('wishes').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async listInterest() {
+    return fetchAll<WishInterest>((from, to) =>
+      supabase.from('wish_interest').select('*').order('created_at').order('id').range(from, to),
+    );
+  },
+  async addInterest(wishId, memberId) {
+    const { data, error } = await supabase
+      .from('wish_interest')
+      .insert({ wish_id: wishId, member_id: memberId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  async removeInterest(id) {
+    const { error } = await supabase.from('wish_interest').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async listPolls() {
+    const { data, error } = await supabase.from('polls').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as Poll[];
+  },
+  async listPollOptions() {
+    return fetchAll<PollOption>((from, to) =>
+      supabase.from('poll_options').select('*').order('created_at').order('id').range(from, to),
+    );
+  },
+  async listPollVotes(pollIds) {
+    if (!pollIds.length) return [];
+    return fetchAll<PollVote>((from, to) =>
+      supabase
+        .from('poll_votes')
+        .select('*')
+        .in('poll_id', pollIds)
+        .is('archived_at', null)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    );
+  },
+  async closePoll(pollId, resolve, winnerWishId = null) {
+    const { data, error } = await supabase.rpc('close_poll', { p_poll: pollId, p_resolve: resolve, p_winner: winnerWishId });
+    if (error) throw error;
+    const r = (data ?? {}) as Partial<CloseResult>;
+    return { status: r.status === 'tie' ? 'tie' : 'closed', winner: r.winner ?? null, tied: r.tied ?? [] };
+  },
+  async insertPoll(row, wishIds) {
+    const { data, error } = await supabase
+      .from('polls')
+      .insert({ ...row, title: row.title.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    const poll = data as Poll;
+    const { error: optionsError } = await supabase
+      .from('poll_options')
+      .insert(wishIds.map((wish_id) => ({ poll_id: poll.id, wish_id })));
+    if (optionsError) {
+      // A vote without its candidates is no use: archive it and report the failure.
+      await supabase.from('polls').delete().eq('id', poll.id);
+      throw optionsError;
+    }
+    return poll;
+  },
+  async updatePoll(id, patch) {
+    const clean = patch.title != null ? { ...patch, title: patch.title.trim() } : patch;
+    const { data, error } = await supabase.from('polls').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Poll;
+  },
+  async deletePoll(id) {
+    const { error } = await supabase.from('polls').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async castVote(pollId, memberId, optionIds) {
+    const { data, error } = await supabase.rpc('cast_vote', { p_poll: pollId, p_member: memberId, p_options: optionIds });
+    if (error) throw error;
+    return Number(data) || 0;
+  },
+};
+
+// Demo twin: the same rules as the database (one live entry per video, «Me apunto» once, close once with a winner
+// among the options, cast_vote's checks). Archived rows stay with archived_at and are hidden, as with RLS.
+
+type WishesDemoDb = DemoDb & {
+  wishes?: Wish[];
+  wish_interest?: WishInterest[];
+  polls?: Poll[];
+  poll_options?: PollOption[];
+  poll_votes?: PollVote[];
+};
+
+const isLive = <T extends { archived_at: string | null }>(row: T) => row.archived_at == null;
+const memberExists = (db: WishesDemoDb, id: string | null | undefined) =>
+  Boolean(id && (db.members ?? []).some((m) => m.id === id));
+
+function checkWish(row: Partial<Wish>) {
+  if (row.title != null && (row.title.trim().length < 1 || row.title.trim().length > 200)) {
+    throw demoError('wishes_title_check', '23514');
+  }
+  if (row.artist != null && row.artist.length > 120) throw demoError('wishes_artist_check', '23514');
+  if (row.comment != null && row.comment.length > 300) throw demoError('wishes_comment_check', '23514');
+  if (row.members_count != null && !(row.members_count >= 1 && row.members_count <= 30)) {
+    throw demoError('wishes_members_count_check', '23514');
+  }
+  if (row.difficulty != null && !['facil', 'media', 'dificil'].includes(row.difficulty)) {
+    throw demoError('wishes_difficulty_check', '23514');
+  }
+}
+
+/** The leaders of a poll right now (twin of the count inside close_poll). */
+function demoLeaders(db: WishesDemoDb, poll: Poll): { ids: string[]; top: number } {
+  const liveWish = new Set((db.wishes ?? []).filter(isLive).map((w) => w.id));
+  const options = (db.poll_options ?? []).filter((o) => isLive(o) && o.poll_id === poll.id && liveWish.has(o.wish_id));
+  const n = options.length;
+  const score = new Map(options.map((o) => [o.wish_id, 0]));
+  for (const v of db.poll_votes ?? []) {
+    if (!isLive(v) || v.poll_id !== poll.id) continue;
+    const option = options.find((o) => o.id === v.option_id);
+    if (!option) continue;
+    score.set(option.wish_id, score.get(option.wish_id)! + (poll.vote_type === 'ranking' ? n - (v.rank ?? n) + 1 : 1));
+  }
+  const top = Math.max(0, ...score.values());
+  return { ids: [...score].filter(([, s]) => s === top).map(([id]) => id).sort(), top };
+}
+
+const demoWishes: WishesBackend = {
+  listWishes: () =>
+    query((raw) =>
+      ((raw as WishesDemoDb).wishes ?? []).filter(isLive).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    ),
+  insertWish: async (row) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      if (!/^[A-Za-z0-9_-]{11}$/.test(row.youtube_id)) throw demoError('wishes_youtube_id_check', '23514');
+      checkWish(row);
+      const wishes = (db.wishes ??= []);
+      if (wishes.some((w) => isLive(w) && w.added_video_id == null && w.youtube_id === row.youtube_id)) {
+        throw demoError('duplicate key value violates unique constraint "wishes_crew_youtube_key"', '23505');
+      }
+      const wish: Wish = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        youtube_id: row.youtube_id,
+        title: row.title.trim(),
+        artist: row.artist ?? null,
+        thumbnail_url: row.thumbnail_url ?? null,
+        members_count: row.members_count ?? null,
+        difficulty: row.difficulty ?? null,
+        comment: row.comment ?? null,
+        proposed_by_member_id: memberExists(db, row.proposed_by_member_id) ? row.proposed_by_member_id! : null,
+        added_video_id: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      wishes.push(wish);
+      return wish;
+    }),
+  updateWish: async (id, patch) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      const wish = db.wishes?.find((w) => w.id === id && isLive(w));
+      if (!wish) throw demoError('PGRST116 0 rows');
+      checkWish(patch);
+      if (patch.added_video_id && !db.videos.some((v) => v.id === patch.added_video_id)) {
+        throw demoError('wish_video_invalid');
+      }
+      Object.assign(wish, patch, patch.title != null ? { title: patch.title.trim() } : {});
+      return wish;
+    }),
+  deleteWish: async (id) =>
+    mutate((raw) => {
+      const wish = (raw as WishesDemoDb).wishes?.find((w) => w.id === id);
+      if (wish && isLive(wish)) wish.archived_at = now();
+    }),
+  listInterest: () =>
+    query((raw) => {
+      const db = raw as WishesDemoDb;
+      const live = new Set((db.wishes ?? []).filter(isLive).map((w) => w.id));
+      return (db.wish_interest ?? [])
+        .filter((i) => isLive(i) && live.has(i.wish_id) && memberExists(db, i.member_id))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }),
+  addInterest: async (wishId, memberId) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      if (!db.wishes?.some((w) => w.id === wishId && isLive(w)) || !memberExists(db, memberId)) {
+        throw demoError('wish_interest_invalid');
+      }
+      const rows = (db.wish_interest ??= []);
+      if (rows.some((i) => isLive(i) && i.wish_id === wishId && i.member_id === memberId)) {
+        throw demoError('duplicate key value violates unique constraint "wish_interest_once_key"', '23505');
+      }
+      const row: WishInterest = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        wish_id: wishId,
+        member_id: memberId,
+        created_at: now(),
+        archived_at: null,
+      };
+      rows.push(row);
+      return row;
+    }),
+  removeInterest: async (id) =>
+    mutate((raw) => {
+      const row = (raw as WishesDemoDb).wish_interest?.find((i) => i.id === id);
+      if (row && isLive(row)) row.archived_at = now();
+    }),
+  listPolls: () =>
+    query((raw) =>
+      ((raw as WishesDemoDb).polls ?? []).filter(isLive).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    ),
+  listPollOptions: () =>
+    query((raw) => {
+      const db = raw as WishesDemoDb;
+      const live = new Set((db.polls ?? []).filter(isLive).map((p) => p.id));
+      return (db.poll_options ?? []).filter((o) => isLive(o) && live.has(o.poll_id));
+    }),
+  listPollVotes: (pollIds) =>
+    query((raw) => {
+      const db = raw as WishesDemoDb;
+      const wanted = new Set(pollIds);
+      const live = new Set((db.polls ?? []).filter((p) => isLive(p) && wanted.has(p.id)).map((p) => p.id));
+      return (db.poll_votes ?? []).filter((v) => isLive(v) && live.has(v.poll_id));
+    }),
+  closePoll: async (pollId, resolve, winnerWishId = null) =>
+    mutate((raw): CloseResult => {
+      // Twin of close_poll(): counts the live candidates (wish not deleted) with the votes as they are now.
+      const db = raw as WishesDemoDb;
+      const poll = db.polls?.find((p) => p.id === pollId && isLive(p));
+      if (!poll) throw demoError('poll_not_found');
+      if (poll.closed_at != null) return { status: 'closed', winner: poll.winner_wish_id, tied: [] };
+      const leaders = demoLeaders(db, poll);
+      const close = (winner: string | null) => {
+        poll.closed_at = now();
+        poll.winner_wish_id = winner;
+      };
+      if (resolve === 'none') {
+        close(null);
+        return { status: 'closed', winner: null, tied: leaders.ids };
+      }
+      if (resolve === 'pick') {
+        if (!winnerWishId || !leaders.ids.includes(winnerWishId)) throw demoError('poll_winner_invalid');
+        close(winnerWishId);
+        return { status: 'closed', winner: winnerWishId, tied: leaders.ids };
+      }
+      if (!leaders.ids.length || leaders.top === 0) {
+        close(null);
+        return { status: 'closed', winner: null, tied: [] };
+      }
+      if (leaders.ids.length > 1) return { status: 'tie', winner: null, tied: leaders.ids };
+      close(leaders.ids[0]!);
+      return { status: 'closed', winner: leaders.ids[0]!, tied: [] };
+    }),
+  insertPoll: async (row, wishIds) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      const title = row.title.trim();
+      if (title.length < 1 || title.length > 80) throw demoError('polls_title_check', '23514');
+      if (!['single', 'multi', 'ranking'].includes(row.vote_type)) throw demoError('polls_vote_type_check', '23514');
+      const liveWishIds = new Set((db.wishes ?? []).filter(isLive).map((w) => w.id));
+      if (wishIds.some((id) => !liveWishIds.has(id))) throw demoError('poll_option_invalid');
+      if (new Set(wishIds).size !== wishIds.length) {
+        throw demoError('duplicate key value violates unique constraint "poll_options_once_key"', '23505');
+      }
+      const poll: Poll = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        title,
+        vote_type: row.vote_type,
+        results_live: row.results_live,
+        anonymous: row.anonymous,
+        closes_at: row.closes_at,
+        closed_at: null,
+        winner_wish_id: null,
+        parent_poll_id: row.parent_poll_id && db.polls?.some((p) => p.id === row.parent_poll_id) ? row.parent_poll_id : null,
+        created_by_member_id: memberExists(db, row.created_by_member_id) ? row.created_by_member_id : null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.polls ??= []).push(poll);
+      const options = (db.poll_options ??= []);
+      for (const wish_id of wishIds) {
+        options.push({ id: crypto.randomUUID(), crew_id: poll.crew_id, poll_id: poll.id, wish_id, created_at: now(), archived_at: null });
+      }
+      return poll;
+    }),
+  updatePoll: async (id, patch) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      const poll = db.polls?.find((p) => p.id === id && isLive(p));
+      if (!poll) throw demoError('PGRST116 0 rows');
+      const next = { ...poll, ...patch };
+      // Twin of guard_poll_update(): closed once; then frozen; the winner only while closing, and an option.
+      if (poll.closed_at != null) {
+        if (
+          next.closed_at !== poll.closed_at ||
+          next.winner_wish_id !== poll.winner_wish_id ||
+          next.closes_at !== poll.closes_at ||
+          next.anonymous !== poll.anonymous ||
+          next.results_live !== poll.results_live
+        ) {
+          throw demoError('poll_closed');
+        }
+      } else if (poll.closes_at != null && Date.parse(poll.closes_at) <= Date.now() && next.closes_at !== poll.closes_at) {
+        throw demoError('poll_closed');
+      } else if (next.closed_at != null) {
+        next.closed_at = now();
+      }
+      if (next.winner_wish_id != null && next.winner_wish_id !== poll.winner_wish_id) {
+        const isOption = (db.poll_options ?? []).some((o) => isLive(o) && o.poll_id === id && o.wish_id === next.winner_wish_id);
+        if (next.closed_at == null || !isOption) throw demoError('poll_winner_invalid');
+      }
+      if (next.title.trim().length < 1 || next.title.trim().length > 80) throw demoError('polls_title_check', '23514');
+      Object.assign(poll, next, { title: next.title.trim() });
+      return poll;
+    }),
+  deletePoll: async (id) =>
+    mutate((raw) => {
+      const db = raw as WishesDemoDb;
+      const poll = db.polls?.find((p) => p.id === id);
+      if (!poll || !isLive(poll)) return;
+      poll.archived_at = now();
+      for (const o of db.poll_options ?? []) if (o.poll_id === id && isLive(o)) o.archived_at = now();
+    }),
+  castVote: async (pollId, memberId, optionIds) =>
+    mutate((raw) => {
+      // Twin of cast_vote().
+      const db = raw as WishesDemoDb;
+      const poll = db.polls?.find((p) => p.id === pollId && isLive(p));
+      if (!poll) throw demoError('poll_not_found');
+      if (poll.closed_at != null || (poll.closes_at != null && Date.parse(poll.closes_at) <= Date.now())) {
+        throw demoError('poll_closed');
+      }
+      if (!memberExists(db, memberId)) throw demoError('vote_member_invalid');
+      const valid = new Set(
+        (db.poll_options ?? []).filter((o) => isLive(o) && o.poll_id === pollId).map((o) => o.id),
+      );
+      if (new Set(optionIds.filter((id) => valid.has(id))).size !== optionIds.length) {
+        throw demoError('vote_options_invalid');
+      }
+      if (poll.vote_type === 'single' && optionIds.length > 1) throw demoError('vote_options_invalid');
+      const votes = (db.poll_votes ??= []);
+      for (const v of votes) if (v.poll_id === pollId && v.member_id === memberId && isLive(v)) v.archived_at = now();
+      // A candidate whose wish was deleted meanwhile is skipped; the ranks of the rest close up.
+      const liveWish = new Set((db.wishes ?? []).filter(isLive).map((w) => w.id));
+      const kept = optionIds.filter((id) => {
+        const option = db.poll_options?.find((o) => o.id === id);
+        return option != null && liveWish.has(option.wish_id);
+      });
+      kept.forEach((option_id, i) => {
+        votes.push({
+          id: crypto.randomUUID(),
+          crew_id: poll.crew_id,
+          poll_id: pollId,
+          option_id,
+          member_id: memberId,
+          rank: poll.vote_type === 'ranking' ? i + 1 : null,
+          created_at: now(),
+          archived_at: null,
+        });
+      });
+      return optionIds.length;
+    }),
+};
+
+export const wishesBackend: WishesBackend = IS_DEMO ? demoWishes : supabaseWishes;
+
+// ───────────────────────────── F16 events · F15 reactions ─────────────────────────────
+
+export type EventWithCount = CrewEvent & { songs: number };
+export type EventSongVideo = Pick<Video, 'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id'>;
+/** A song of the repertoire with its video (a song archived from the library never comes back). */
+export type EventSongView = EventSong & { video: EventSongVideo | null };
+/** The granted columns of an event: name, starts_at, place. */
+export type NewEvent = Pick<CrewEvent, 'name' | 'starts_at' | 'place'>;
+export type EventPatch = Partial<NewEvent>;
+export type NewReaction = { take_id: string; member_id: string | null; emoji: ReactionEmoji };
+
+/**
+ * F16 · events and their repertoire, F15 · reactions on shared takes. Shared by the group; deleting archives.
+ * Only granted columns are written: events (name, starts_at, place), event_songs (position); reactions are only
+ * added or removed. The database checks the rest (the song is in the library, the take is shared…).
+ */
+export interface EventsBackend {
+  listEvents(): Promise<EventWithCount[]>;
+  getEvent(id: string): Promise<CrewEvent | null>;
+  insertEvent(row: NewEvent): Promise<CrewEvent>;
+  updateEvent(id: string, patch: EventPatch): Promise<CrewEvent>;
+  deleteEvent(id: string): Promise<void>;
+  listEventSongs(eventId: string): Promise<EventSongView[]>;
+  insertEventSongs(eventId: string, videoIds: string[], positions: number[]): Promise<EventSong[]>;
+  deleteEventSong(id: string): Promise<void>;
+  setEventSongPositions(patches: { id: string; position: number }[]): Promise<void>;
+  /** The reactions on the takes of one song, oldest first. */
+  listReactions(videoId: string): Promise<TakeReaction[]>;
+  addReaction(row: NewReaction): Promise<TakeReaction>;
+  removeReaction(id: string): Promise<void>;
+}
+
+const EVENT_SONG_SELECT = '*, video:videos(id, title, artist, thumbnail_url, source, youtube_id)';
+
+const supabaseEvents: EventsBackend = {
+  async listEvents() {
+    const { data, error } = await supabase.from('events').select('*, event_songs(count)').order('starts_at');
+    if (error) throw error;
+    return (data as unknown as (CrewEvent & { event_songs: { count: number }[] })[]).map(({ event_songs, ...event }) => ({
+      ...event,
+      songs: event_songs[0]?.count ?? 0,
+    }));
+  },
+  async getEvent(id) {
+    const { data, error } = await supabase.from('events').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  },
+  async insertEvent(row) {
+    // crew_id comes from the database (the default group).
+    const { data, error } = await supabase
+      .from('events')
+      .insert({ ...row, name: row.name.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  async updateEvent(id, patch) {
+    const clean = patch.name != null ? { ...patch, name: patch.name.trim() } : patch;
+    const { data, error } = await supabase.from('events').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async deleteEvent(id) {
+    const { error } = await supabase.from('events').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async listEventSongs(eventId) {
+    const { data, error } = await supabase
+      .from('event_songs')
+      .select(EVENT_SONG_SELECT)
+      .eq('event_id', eventId)
+      .order('position')
+      .order('created_at');
+    if (error) throw error;
+    return data as unknown as EventSongView[];
+  },
+  async insertEventSongs(eventId, videoIds, positions) {
+    if (!videoIds.length) return [];
+    const rows = videoIds.map((video_id, i) => ({ event_id: eventId, video_id, position: positions[i] ?? i }));
+    const { data, error } = await supabase.from('event_songs').insert(rows).select();
+    if (error) throw error;
+    return data;
+  },
+  async deleteEventSong(id) {
+    const { error } = await supabase.from('event_songs').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async setEventSongPositions(patches) {
+    const results = await Promise.all(
+      patches.map(({ id, position }) => supabase.from('event_songs').update({ position }).eq('id', id)),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) throw failed.error;
+  },
+  async listReactions(videoId) {
+    const rows = await fetchAll<TakeReaction & { take: unknown }>((from, to) =>
+      supabase
+        .from('take_reactions')
+        .select('id, crew_id, take_id, member_id, emoji, created_at, archived_at, take:takes!inner(video_id)')
+        .eq('take.video_id', videoId)
+        .order('created_at')
+        .order('id')
+        .range(from, to),
+    );
+    return rows.map(({ take: _take, ...row }) => row);
+  },
+  async addReaction(row) {
+    const { data, error } = await supabase.from('take_reactions').insert(row).select().single();
+    if (error) throw error;
+    return data as TakeReaction;
+  },
+  async removeReaction(id) {
+    const { error } = await supabase.from('take_reactions').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// Demo twin: the same rules as the database (name 1–80, place ≤ 120, a song once per event and only from the
+// library, positions 0–999, reactions only on shared takes, one of each per person or «sin nombre», known emoji).
+
+type EventsDemoDb = DemoDb & {
+  events?: CrewEvent[];
+  event_songs?: EventSong[];
+  take_reactions?: TakeReaction[];
+};
+
+const DEMO_EMOJIS = ['🔥', '👏', '💯', '😂'];
+
+function checkEventRow(row: Partial<NewEvent>) {
+  if (row.name != null && (row.name.trim().length < 1 || row.name.trim().length > 80)) {
+    throw demoError('new row for relation "events" violates check constraint "events_name_check"', '23514');
+  }
+  if (row.place != null && row.place.length > 120) {
+    throw demoError('new row for relation "events" violates check constraint "events_place_check"', '23514');
+  }
+  if (row.starts_at !== undefined && (row.starts_at == null || Number.isNaN(Date.parse(row.starts_at)))) {
+    throw demoError('invalid input syntax for type timestamp with time zone', '22007');
+  }
+}
+
+const liveEvent = (db: EventsDemoDb, id: string) => (db.events ?? []).find((e) => e.id === id && isLive(e));
+
+function demoSongView(db: EventsDemoDb, song: EventSong): EventSongView | null {
+  const video = db.videos.find((v) => v.id === song.video_id);
+  if (!video || !isLive(song) || !liveEvent(db, song.event_id)) return null;
+  return {
+    ...song,
+    video: {
+      id: video.id,
+      title: video.title,
+      artist: video.artist,
+      thumbnail_url: video.thumbnail_url,
+      source: video.source,
+      youtube_id: video.youtube_id,
+    },
+  };
+}
+
+const demoEvents: EventsBackend = {
+  listEvents: () =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      return (db.events ?? [])
+        .filter(isLive)
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+        .map((event) => ({
+          ...event,
+          songs: (db.event_songs ?? []).filter((s) => s.event_id === event.id && demoSongView(db, s)).length,
+        }));
+    }),
+  getEvent: (id) => query((raw) => liveEvent(raw as EventsDemoDb, id) ?? null),
+  insertEvent: async (row) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      checkEventRow(row);
+      const event: CrewEvent = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        name: row.name.trim(),
+        starts_at: new Date(row.starts_at).toISOString(),
+        place: row.place ?? null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.events ??= []).push(event);
+      return event;
+    }),
+  updateEvent: async (id, patch) =>
+    mutate((raw) => {
+      const event = liveEvent(raw as EventsDemoDb, id);
+      if (!event) throw demoError('PGRST116 0 rows');
+      checkEventRow(patch);
+      Object.assign(
+        event,
+        patch,
+        patch.name != null ? { name: patch.name.trim() } : {},
+        patch.starts_at != null ? { starts_at: new Date(patch.starts_at).toISOString() } : {},
+      );
+      return event;
+    }),
+  deleteEvent: async (id) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      const event = liveEvent(db, id);
+      if (!event) return;
+      event.archived_at = now();
+      for (const s of db.event_songs ?? []) if (s.event_id === id && isLive(s)) s.archived_at = now();
+    }),
+  listEventSongs: (eventId) =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      return (db.event_songs ?? [])
+        .filter((s) => s.event_id === eventId)
+        .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at))
+        .map((s) => demoSongView(db, s))
+        .filter((s): s is EventSongView => s != null);
+    }),
+  insertEventSongs: async (eventId, videoIds, positions) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      const event = liveEvent(db, eventId);
+      if (!event) throw demoError('event_not_found');
+      const songs = (db.event_songs ??= []);
+      const rows = videoIds.map((video_id, i): EventSong => {
+        if (!db.videos.some((v) => v.id === video_id)) throw demoError('event_song_invalid');
+        const position = positions[i] ?? i;
+        if (!(position >= 0 && position <= 999)) {
+          throw demoError('new row for relation "event_songs" violates check constraint "event_songs_position_check"', '23514');
+        }
+        return {
+          id: crypto.randomUUID(),
+          crew_id: event.crew_id,
+          event_id: eventId,
+          video_id,
+          position,
+          created_at: now(),
+          archived_at: null,
+        };
+      });
+      // All or nothing, like one insert statement.
+      const taken = new Set(songs.filter((s) => s.event_id === eventId && isLive(s)).map((s) => s.video_id));
+      for (const row of rows) {
+        if (taken.has(row.video_id)) {
+          throw demoError('duplicate key value violates unique constraint "event_songs_once_key"', '23505');
+        }
+        taken.add(row.video_id);
+      }
+      songs.push(...rows);
+      return rows;
+    }),
+  deleteEventSong: async (id) =>
+    mutate((raw) => {
+      const song = (raw as EventsDemoDb).event_songs?.find((s) => s.id === id);
+      if (song && isLive(song)) song.archived_at = now();
+    }),
+  setEventSongPositions: async (patches) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      for (const { id, position } of patches) {
+        if (!(position >= 0 && position <= 999)) {
+          throw demoError('new row for relation "event_songs" violates check constraint "event_songs_position_check"', '23514');
+        }
+        const song = db.event_songs?.find((s) => s.id === id && isLive(s));
+        if (song && !liveEvent(db, song.event_id)) throw demoError('event_not_found');
+        if (song) song.position = position;
+      }
+    }),
+  listReactions: (videoId) =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      const takes = new Set((db.takes ?? []).filter((t) => t.video_id === videoId && t.archived_at == null).map((t) => t.id));
+      return (db.take_reactions ?? [])
+        .filter((r) => isLive(r) && takes.has(r.take_id))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }),
+  addReaction: async (row) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      if (!DEMO_EMOJIS.includes(row.emoji)) {
+        throw demoError('new row for relation "take_reactions" violates check constraint "take_reactions_emoji_check"', '23514');
+      }
+      const take = (db.takes ?? []).find((t) => t.id === row.take_id && t.archived_at == null && t.shared_path != null);
+      if (!take) throw demoError('reaction_take_invalid');
+      const member = row.member_id && (db.members ?? []).some((m) => m.id === row.member_id) ? row.member_id : null;
+      const reactions = (db.take_reactions ??= []);
+      if (reactions.some((r) => isLive(r) && r.take_id === take.id && r.member_id === member && r.emoji === row.emoji)) {
+        throw demoError('duplicate key value violates unique constraint "take_reactions_once_key"', '23505');
+      }
+      const reaction: TakeReaction = {
+        id: crypto.randomUUID(),
+        crew_id: take.crew_id,
+        take_id: take.id,
+        member_id: member,
+        emoji: row.emoji,
+        created_at: now(),
+        archived_at: null,
+      };
+      reactions.push(reaction);
+      return reaction;
+    }),
+  removeReaction: async (id) =>
+    mutate((raw) => {
+      const reaction = (raw as EventsDemoDb).take_reactions?.find((r) => r.id === id);
+      if (reaction && isLive(reaction)) reaction.archived_at = now();
+    }),
+};
+
+export const eventsBackend: EventsBackend = IS_DEMO ? demoEvents : supabaseEvents;
+
+// ───────────────────────────── F10 · follow a dancer ─────────────────────────────
+
+/** A new «recorrido»: the group shares it (crew_id comes from the video, in the database). */
+export type NewFollowPath = {
+  video_id: string;
+  label: string;
+  member_id: string | null;
+  source: FollowSource;
+  model: string | null;
+  keyframes: FollowKeyframe[];
+};
+/** The granted columns: label, member_id, keyframes, model, source. */
+export type FollowPathPatch = Partial<Pick<NewFollowPath, 'label' | 'member_id' | 'keyframes' | 'model' | 'source'>>;
+
+/**
+ * F10 · Where one dancer is over time, computed once on a device (or placed by hand) and shared: everyone else
+ * uses it without recomputing. Only text travels (the keyframes); the video is never sent anywhere.
+ */
+export interface FollowBackend {
+  listFollowPaths(videoId: string): Promise<FollowPath[]>;
+  insertFollowPath(row: NewFollowPath): Promise<FollowPath>;
+  updateFollowPath(id: string, patch: FollowPathPatch): Promise<FollowPath>;
+  deleteFollowPath(id: string): Promise<void>;
+}
+
+const FOLLOW_COLUMNS = 'id, crew_id, video_id, label, member_id, source, model, keyframes, created_at, updated_at, archived_at';
+
+const supabaseFollow: FollowBackend = {
+  async listFollowPaths(videoId) {
+    const { data, error } = await supabase
+      .from('follow_paths')
+      .select(FOLLOW_COLUMNS)
+      .eq('video_id', videoId)
+      .order('created_at');
+    if (error) throw error;
+    return data as unknown as FollowPath[];
+  },
+  async insertFollowPath(row) {
+    const { data, error } = await supabase
+      .from('follow_paths')
+      .insert({ ...row, label: row.label.trim() })
+      .select(FOLLOW_COLUMNS)
+      .single();
+    if (error) throw error;
+    return data as unknown as FollowPath;
+  },
+  async updateFollowPath(id, patch) {
+    const clean = patch.label != null ? { ...patch, label: patch.label.trim() } : patch;
+    const { data, error } = await supabase.from('follow_paths').update(clean).eq('id', id).select(FOLLOW_COLUMNS).single();
+    if (error) throw error;
+    return data as unknown as FollowPath;
+  },
+  async deleteFollowPath(id) {
+    const { error } = await supabase.from('follow_paths').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// Demo twin: the same rules as the database (label 1–40, source auto|manual, model ≤ 60, keyframes an array under
+// 600 KB, the member must be a live member or becomes null, 500 paths per group, deleting archives).
+
+type FollowDemoDb = DemoDb & { follow_paths?: FollowPath[] };
+
+function checkFollowRow(row: FollowPathPatch) {
+  if (row.label != null && (row.label.trim().length < 1 || row.label.trim().length > 40)) {
+    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_label_check"', '23514');
+  }
+  if (row.source != null && row.source !== 'auto' && row.source !== 'manual') {
+    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_source_check"', '23514');
+  }
+  if (row.model != null && row.model.length > 60) {
+    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_model_check"', '23514');
+  }
+  if (row.keyframes !== undefined && (!Array.isArray(row.keyframes) || JSON.stringify(row.keyframes).length > 600_000)) {
+    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_keyframes_shape"', '23514');
+  }
+}
+
+const demoFollow: FollowBackend = {
+  listFollowPaths: (videoId) =>
+    query((raw) => {
+      const db = raw as FollowDemoDb;
+      if (!db.videos.some((v) => v.id === videoId)) return [];
+      return (db.follow_paths ?? [])
+        .filter((p) => p.video_id === videoId && isLive(p))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }),
+  insertFollowPath: async (row) =>
+    mutate((raw) => {
+      const db = raw as FollowDemoDb;
+      checkFollowRow(row);
+      const video = db.videos.find((v) => v.id === row.video_id);
+      if (!video) throw demoError(`video ${row.video_id} not found`);
+      const paths = (db.follow_paths ??= []);
+      if (paths.filter(isLive).length >= 500) throw demoError('row_cap');
+      const path: FollowPath = {
+        id: crypto.randomUUID(),
+        crew_id: video.crew_id,
+        video_id: video.id,
+        label: row.label.trim(),
+        member_id: row.member_id && (db.members ?? []).some((m) => m.id === row.member_id && m.archived_at == null) ? row.member_id : null,
+        source: row.source,
+        model: row.model,
+        keyframes: row.keyframes,
+        created_at: now(),
+        updated_at: now(),
+        archived_at: null,
+      };
+      paths.push(path);
+      return path;
+    }),
+  updateFollowPath: async (id, patch) =>
+    mutate((raw) => {
+      const db = raw as FollowDemoDb;
+      const path = db.follow_paths?.find((p) => p.id === id && isLive(p));
+      if (!path) throw demoError('PGRST116 0 rows');
+      checkFollowRow(patch);
+      Object.assign(path, patch, patch.label != null ? { label: patch.label.trim() } : {}, { updated_at: now() });
+      if (patch.member_id !== undefined && path.member_id && !(db.members ?? []).some((m) => m.id === path.member_id && m.archived_at == null)) {
+        path.member_id = null;
+      }
+      return path;
+    }),
+  deleteFollowPath: async (id) =>
+    mutate((raw) => {
+      const db = raw as FollowDemoDb;
+      const path = db.follow_paths?.find((p) => p.id === id && isLive(p));
+      if (!path) return;
+      // Archived, like the database: a clip that followed it keeps the id and simply opens without following.
+      path.archived_at = now();
+    }),
+};
+
+export const followBackend: FollowBackend = IS_DEMO ? demoFollow : supabaseFollow;

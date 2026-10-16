@@ -79,10 +79,27 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // The pose models' code (~1 MB) is only for whoever uses F10 or the lab: cached when first used instead.
+        globIgnores: ['**/pose-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            // F10 · 5.5 · Pose models (MoveNet weights, MediaPipe's WASM and model): downloaded the first time they
+            // are used, then kept, so following a dancer again doesn't download them again.
+            urlPattern: ({ url, sameOrigin }) =>
+              (sameOrigin && /^\/assets\/pose-[^/]+\.js$/.test(url.pathname)) ||
+              url.origin === 'https://tfhub.dev' ||
+              (url.origin === 'https://storage.googleapis.com' && url.pathname.startsWith('/mediapipe-models/')) ||
+              (url.origin === 'https://cdn.jsdelivr.net' && url.pathname.startsWith('/npm/@mediapipe/tasks-vision@')),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pose-models',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true },
+            },
+          },
           {
             urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'CacheFirst',
@@ -104,7 +121,11 @@ export default defineConfig(({ mode }) => {
     }),
   ],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // F10 · pose-detection imports the legacy BlazePose script for a runtime we never use (MoveNet only).
+      '@mediapipe/pose': fileURLToPath(new URL('./src/features/pose/mediapipePoseStub.ts', import.meta.url)),
+    },
   },
   server: { port: 5173 },
   build: {
@@ -121,6 +142,9 @@ export default defineConfig(({ mode }) => {
           if (pkg.startsWith('@supabase/')) return 'supabase';
           if (pkg.startsWith('@tanstack/')) return 'query';
           if (pkg.startsWith('lucide-react/')) return 'icons';
+          // F10 · 5.5 · Pose models' code: only loaded when used, and kept out of the offline precache (below).
+          if (/^@tensorflow(-models)?\//.test(pkg)) return 'pose-tf';
+          if (pkg.startsWith('@mediapipe/')) return 'pose-mediapipe';
         },
       },
     },

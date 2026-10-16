@@ -1,6 +1,6 @@
 import { formatSpeed, formatTime, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { FlipHorizontal2, Pin, Plus, Repeat, Trash2 } from 'lucide-react';
+import { FlipHorizontal2, Pin, Plus, Repeat, Trash2, ZoomIn } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
+import { clipHasZoom, zoomLabel, zoomOfClip } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
 
 interface ClipListProps {
@@ -121,7 +122,10 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                           {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
                           <span className="text-washi-subtle">·</span>
                           {formatSpeed(clip.speed)}
-                          {clip.mirrored && <FlipHorizontal2 className="size-3 text-ai-300" aria-label="espejo" />}
+                          {clip.mirrored && <FlipHorizontal2 className="size-3 shrink-0 text-ai-300" aria-label="espejo" />}
+                          {clipHasZoom(clip) && (
+                            <ZoomIn className="size-3 shrink-0 text-kin-300" aria-label={`ampliado ${zoomLabel(zoomOfClip(clip))}`} />
+                          )}
                         </span>
                       </span>
                     </button>

@@ -1,6 +1,7 @@
 import { Page } from '@/components/AppShell';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { DesignLabSection } from '@/features/lab/DesignLabSection';
+import { PoseLabSection } from '@/features/pose/PoseLabSection';
 import { MembersSection } from '@/features/members/MembersUI';
 
 /** Ajustes: what lives on this device and, at the end, the design lab. One sheet, like every page. */
@@ -30,6 +31,8 @@ export function SettingsPage() {
         <MembersSection />
 
         <DesignLabSection />
+
+        <PoseLabSection />
       </div>
     </Page>
   );

@@ -23,6 +23,12 @@ const BagPage = lazy(() => import('@/features/bags/BagPage').then((m) => ({ defa
 const RpdPage = lazy(() => import('@/features/rpd/RpdPage').then((m) => ({ default: m.RpdPage })));
 const TrackPage = lazy(() => import('@/features/rpd/TrackPage').then((m) => ({ default: m.TrackPage })));
 const RpdPlayPage = lazy(() => import('@/features/rpd/RpdPlayPage').then((m) => ({ default: m.RpdPlayPage })));
+// F12 wish list and F11 votes («Próxima cover»).
+const WishesPage = lazy(() => import('@/features/wishes/WishesPage').then((m) => ({ default: m.WishesPage })));
+const PollPage = lazy(() => import('@/features/wishes/PollPage').then((m) => ({ default: m.PollPage })));
+// F16 events (countdown and repertoire).
+const EventsPage = lazy(() => import('@/features/events/EventsPage').then((m) => ({ default: m.EventsPage })));
+const EventPage = lazy(() => import('@/features/events/EventPage').then((m) => ({ default: m.EventPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -124,6 +130,10 @@ export function App() {
                           ['/rpd', <RpdPage key="rpd" />],
                           ['/rpd/pista/:trackId', <TrackPage key="track" />],
                           ['/rpd/jugar', <RpdPlayPage key="play" />],
+                          ['/deseos', <WishesPage key="wishes" />],
+                          ['/deseos/votacion/:pollId', <PollPage key="poll" />],
+                          ['/eventos', <EventsPage key="events" />],
+                          ['/eventos/:eventId', <EventPage key="event" />],
                         ] as const
                       ).map(([path, page]) => (
                         <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />

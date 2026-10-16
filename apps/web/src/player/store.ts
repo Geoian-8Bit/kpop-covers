@@ -10,6 +10,7 @@ import {
 import { create } from 'zustand';
 import type { VoiceMode } from '@/features/voice/voiceRules';
 import type { PlayerEngine } from './engine';
+import { clampZoom, NO_ZOOM, zoomOfClip, type Zoom } from './zoom';
 
 export interface LoopState {
   start: number | null;
@@ -23,6 +24,12 @@ export interface ClipSettings {
   end_seconds: number;
   speed: number;
   mirrored: boolean;
+  /** F9 · Saved zoom (older rows and lists without the columns: the whole video). */
+  zoom_scale?: number;
+  zoom_x?: number;
+  zoom_y?: number;
+  /** F10 · The dancer the clip follows (its zoom glides with them). */
+  follow_path_id?: string | null;
 }
 
 interface PlayerStatus {
@@ -99,6 +106,18 @@ interface PlayerState extends PlayerStatus {
   applyClip(clip: ClipSettings, opts?: { autoplay?: boolean }): boolean;
   setActiveClip(id: string | null): void;
   setScrubbing(scrubbing: boolean): void;
+  /**
+   * F9 · Zoom over the video, in the picture's own fractions (see player/zoom.ts). Only a file shows it (YouTube's
+   * player is never altered); a clip opens with its saved zoom.
+   */
+  zoom: Zoom;
+  setZoom(zoom: Zoom): void;
+  /**
+   * F10 · The «recorrido» being followed (null: nobody): while set, the zoom follows that dancer (features/follow
+   * drives it from the path; moving the zoom by hand stops following). A clip opens following its dancer.
+   */
+  followPathId: string | null;
+  setFollowPath(id: string | null): void;
 }
 
 const MIRROR_KEY = 'coverscape.mirrored';
@@ -198,6 +217,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   activeClipId: null,
   scrubbing: false,
   scrubEndedAt: 0,
+  zoom: NO_ZOOM,
 
   stage: 'youtube',
   pendingSeek: null,
@@ -255,6 +275,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       stage: 'youtube',
       pendingSeek: null,
       voiceMode: 'original',
+      zoom: NO_ZOOM,
+      followPathId: null,
     });
   },
 
@@ -407,6 +429,10 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       loop: { ...range, enabled: true },
       activeClipId: clip.id,
       countdownEndsAt: null,
+      // F9 · The clip opens as it was saved: zoomed in, or the whole video.
+      zoom: zoomOfClip(clip),
+      // F10 · …and following its dancer, when it was saved «siguiendo a X».
+      followPathId: clip.follow_path_id ?? null,
     });
     get().seek(range.start);
     if (autoplay) get().play();
@@ -431,6 +457,15 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   setActiveClip(id) {
     set({ activeClipId: id });
+  },
+
+  setZoom(zoom) {
+    set({ zoom: clampZoom(zoom) });
+  },
+
+  followPathId: null,
+  setFollowPath(id) {
+    if (get().followPathId !== id) set({ followPathId: id });
   },
 }));
 
@@ -475,6 +510,13 @@ interface ReviewState extends ReviewStatus {
   audio: ReviewAudio;
   mirrorTake: boolean;
   mirrorOriginal: boolean;
+  /**
+   * F9 · Zoom over each one, in its picture's own fractions (player/zoom.ts). «Apilado»: each panel its own;
+   * «Superpuesto»: the take's zoom takes in both (the original keeps its fit over the take).
+   */
+  zoomTake: Zoom;
+  zoomOriginal: Zoom;
+  setZoom(which: 'take' | 'original', zoom: Zoom): void;
 
   /** A take opens: fresh state (the screen registers its two engines right after). */
   begin(opts: { timing: ReviewTiming; duration: number; mirrored: boolean }): void;
@@ -548,6 +590,12 @@ export const useReview = create<ReviewState>()((set, get) => ({
   audio: 'take',
   mirrorTake: false,
   mirrorOriginal: false,
+  zoomTake: NO_ZOOM,
+  zoomOriginal: NO_ZOOM,
+
+  setZoom(which, zoom) {
+    set(which === 'take' ? { zoomTake: clampZoom(zoom) } : { zoomOriginal: clampZoom(zoom) });
+  },
 
   begin({ timing, duration, mirrored }) {
     set({
@@ -561,6 +609,8 @@ export const useReview = create<ReviewState>()((set, get) => ({
       // As it was practised: an original watched in a mirror, and the take seen as in a mirror too.
       mirrorTake: mirrored,
       mirrorOriginal: mirrored,
+      zoomTake: NO_ZOOM,
+      zoomOriginal: NO_ZOOM,
     });
   },
 

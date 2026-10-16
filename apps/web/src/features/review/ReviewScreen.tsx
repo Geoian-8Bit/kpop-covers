@@ -1,7 +1,19 @@
-import { clamp, clampAdjust, hasLinkedFile, round3, songTimeAt, type Clip, type Note, type Video } from '@coverscape/shared';
+import {
+  clamp,
+  clampAdjust,
+  formatTime,
+  hasLinkedFile,
+  MIN_LOOP_LENGTH,
+  round3,
+  songTimeAt,
+  takeRangeToSong,
+  type Clip,
+  type Note,
+  type Video,
+} from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { FileVideo, TriangleAlert, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { BookmarkPlus, FileVideo, TriangleAlert, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
@@ -11,11 +23,12 @@ import { useCreateNote, useDeleteNote, useNotes, useUpdateNote } from '@/data/no
 import { useUpdateTakeReview, type TakeItem, type TakeReviewPatch } from '@/data/takes';
 import { useDesignVariant } from '@/features/lab/designLab';
 import { useFileSource } from '@/features/studio/fileSource';
+import { SaveClipDialog, type ClipDraft } from '@/features/studio/SaveClipDialog';
 import { takeDateLabel } from '@/features/takes/takeRules';
 import { soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { useBackToClose } from '@/lib/useBackToClose';
-import { useReview } from '@/player/store';
+import { hasRange, useReview } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { CompareStage } from './CompareStage';
 import { ReviewSettings, ReviewTimeline, ReviewTransport } from './ReviewControls';
@@ -220,6 +233,41 @@ export function ReviewScreen({
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const loop = useReview((s) => s.loop);
+  const activeClipId = useReview((s) => s.activeClipId);
+  // F9 · The zooms are read by the stage (ReviewCompareStage) and the dialog: a gesture never repaints this screen.
+
+  // ── F9 · Zoom: the take always (a file of this phone or the cloud); the original only as a file. ──
+  const canZoomOriginal = source === 'file';
+  /** «Superpuesto»: the fingers fit the original over the take, or zoom both. */
+  const [overlayGesture, setOverlayGesture] = useState<'fit' | 'zoom'>('fit');
+  const zoomHintAt = useRef(0);
+  const onZoomUnavailable = useCallback(() => {
+    const now = performance.now();
+    if (now - zoomHintAt.current < 4000) return;
+    zoomHintAt.current = now;
+    toast('El original es de YouTube: vincula el archivo del vídeo para ampliarlo.', 'info');
+  }, [toast]);
+
+  // ── F8 · A range marked on the take, saved as a clip of the song: it serves in every take and in practice. ──
+  const [savingClip, setSavingClip] = useState(false);
+  const [clipDraft, setClipDraft] = useState<ClipDraft | null>(null);
+  const openSaveRange = useCallback(() => {
+    const r = useReview.getState();
+    if (!hasRange(r.loop)) {
+      toast('Marca A y B en la toma primero', 'info');
+      return;
+    }
+    const song = takeRangeToSong({ songStart: timing.songStart, speed: timing.speed, adjust }, r.loop);
+    if (song.end - song.start < MIN_LOOP_LENGTH) {
+      toast('El tramo es demasiado corto para un clip', 'info');
+      return;
+    }
+    r.pause();
+    // The take's speed and mirror: the range is practised as it was danced.
+    setClipDraft({ start: song.start, end: song.end, speed: timing.speed, mirrored: take.mirrored });
+    setSavingClip(true);
+  }, [adjust, take.mirrored, timing.songStart, timing.speed, toast]);
 
   useEffect(() => {
     let last = useReview.getState().time;
@@ -321,7 +369,7 @@ export function ReviewScreen({
   }
 
   const close = useCallback(() => onClose(), [onClose]);
-  useBackToClose(true, close, composer != null);
+  useBackToClose(true, close, composer != null || savingClip);
 
   // ── Focus, page scroll and keys ──
   useEffect(() => {
@@ -367,7 +415,8 @@ export function ReviewScreen({
       if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
       const onControl = target?.closest('[role="slider"], [role="separator"], [role="radiogroup"], [role="group"], input[type="range"]');
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (key.startsWith('Arrow') && onControl) return;
+      // A zoom panel moves its view with the arrows itself (when zoomed); on a whole picture they still seek.
+      if (key.startsWith('Arrow') && onControl && !onControl.hasAttribute('data-zoom-panel')) return;
       if (key === ' ' && target?.closest('[role="radio"], [role="switch"], input')) return;
       if (key === ' ' && target?.closest('button, a[href]')) {
         swallowSpaceUp = true;
@@ -470,6 +519,8 @@ export function ReviewScreen({
     hasOriginal: source === 'file' || source === 'youtube',
     practisedMirrored: take.mirrored,
     clips: inTake,
+    canZoomOriginal,
+    onSaveRange: openSaveRange,
   } as const;
 
   return createPortal(
@@ -517,7 +568,7 @@ export function ReviewScreen({
       <div className="flex min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
-            <CompareStage
+            <ReviewCompareStage
               variant={variant}
               mode={mode}
               prefs={prefs}
@@ -531,6 +582,11 @@ export function ReviewScreen({
               takeExtra={sketch}
               onTap={() => useReview.getState().togglePlay()}
               labels={{ take: 'Toma', original: 'Original' }}
+              canZoomOriginal={canZoomOriginal}
+              onZoom={(which, z) => useReview.getState().setZoom(which, z)}
+              onZoomUnavailable={onZoomUnavailable}
+              overlayGesture={overlayGesture}
+              onOverlayGesture={setOverlayGesture}
             />
             {!takeReady && !takeError && (
               <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
@@ -586,6 +642,17 @@ export function ReviewScreen({
           </div>
           <footer className="shrink-0 border-t border-line-strong bg-sumi-900 px-3 pb-[max(6px,env(safe-area-inset-bottom))] sm:px-5">
             <ReviewTimeline notes={notes} openNoteId={openNoteId} onNote={showNote} />
+            {hasRange(loop) && !activeClipId && (
+              // Short landscape phones keep the stage: there the button lives in the review settings.
+              <div className="mx-auto flex max-w-xl items-center justify-between gap-2 [@media(max-height:480px)]:hidden">
+                <span className="tabular truncate font-mono text-[12px] text-washi-muted">
+                  A–B {formatTime(loop.start, { tenths: true })}–{formatTime(loop.end, { tenths: true })}
+                </span>
+                <Button variant="secondary" size="sm" className="min-h-11" onClick={openSaveRange}>
+                  <BookmarkPlus className="size-4" /> Guardar como clip
+                </Button>
+              </div>
+            )}
             <ReviewTransport
               onNote={newNote}
               settingsOpen={settingsOpen}
@@ -599,6 +666,16 @@ export function ReviewScreen({
         </aside>
       </div>
 
+      <SaveClipDialog
+        open={savingClip}
+        onClose={() => setSavingClip(false)}
+        video={video}
+        clipCount={clips.length}
+        draft={clipDraft}
+        zoomFrom={mode === 'stacked' && canZoomOriginal ? 'review-original' : null}
+        description="Un tramo de la canción: sirve en todas las tomas y en la práctica. Se guarda con la velocidad y el espejo de esta toma."
+        onSaved={(clip) => useReview.setState({ activeClipId: clip.id })}
+      />
       <TakeNoteComposer
         draft={composer}
         mirrored={mirrorTake}
@@ -611,6 +688,13 @@ export function ReviewScreen({
     </motion.div>,
     document.body,
   );
+}
+
+/** F9 · The stage with the review's zooms, read here so a pinch or a wheel turn repaints only the stage. */
+function ReviewCompareStage(props: Omit<ComponentProps<typeof CompareStage>, 'zoomTake' | 'zoomOriginal'>) {
+  const zoomTake = useReview((s) => s.zoomTake);
+  const zoomOriginal = useReview((s) => s.zoomOriginal);
+  return <CompareStage {...props} zoomTake={zoomTake} zoomOriginal={zoomOriginal} />;
 }
 
 function trapFocus(event: KeyboardEvent, root: HTMLElement | null) {
