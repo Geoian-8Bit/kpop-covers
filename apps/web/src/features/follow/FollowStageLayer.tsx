@@ -21,7 +21,7 @@ import {
   type Candidate,
   type FollowPick,
 } from './followPath';
-import { followUi, jobPercent, useFollowUi, type PickMode } from './followUi';
+import { followUi, jobPercent, takeFollowOpener, useFollowUi, type PickMode } from './followUi';
 import { registerFollowStage, stageVideo, useFollowActions } from './useFollowActions';
 
 /**
@@ -229,11 +229,45 @@ function PickOverlay({
     };
   }, [findPeople]);
 
-  // Escape cancels; space doesn't play the song while choosing (ahead of the studio's own shortcuts).
+  // Focus goes into the picker (on «Cancelar») and back to the button that opened it when it closes (unless the
+  // name dialog takes it).
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    return () => {
+      setTimeout(() => {
+        // Still choosing (the picker came back, as React does in development): nothing to give back yet.
+        if (useFollowUi.getState().picking) return;
+        if (document.querySelector('[role="dialog"]')) return;
+        const back = takeFollowOpener();
+        const target =
+          back && back.isConnected && !back.matches(':disabled')
+            ? back
+            : document.querySelector<HTMLElement>('[data-follow-cancel]');
+        target?.focus();
+      }, 60);
+    };
+  }, []);
+
+  // Escape cancels; space and k don't play the song while choosing (ahead of the studio's own shortcuts). Only for
+  // keys meant for the picker: never in a field, a dialog, with modifiers, or with the focus elsewhere on the page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' && e.key !== ' ' && e.key !== 'k') return;
-      if (e.key === ' ' && (e.target as HTMLElement | null)?.closest('button')) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="dialog"]',
+        )
+      )
+        return;
+      const inPicker =
+        target === document.body ||
+        target === document.documentElement ||
+        (target != null && layer.current?.contains(target));
+      if (!inPicker) return;
+      if (e.key === ' ' && target?.closest('button')) return;
       e.stopImmediatePropagation();
       e.preventDefault();
       if (e.key === 'Escape') followUi.pick(null);
@@ -307,6 +341,9 @@ function PickOverlay({
   return (
     <div
       ref={layer}
+      role="group"
+      aria-label="Elegir bailarín"
+      aria-describedby="follow-pick-help"
       className="absolute inset-0 z-[35] cursor-crosshair touch-none bg-sumi-950/40"
       onPointerDown={(e) => {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -332,6 +369,7 @@ function PickOverlay({
       {/* The text lets the finger through (drawing can start under it); only Cancelar takes taps. */}
       <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex items-start gap-2">
         <p
+          id="follow-pick-help"
           role="status"
           className="min-w-0 flex-1 rounded-[10px] bg-sumi-950/85 px-3 py-2 text-[12px] leading-snug text-washi sm:text-[13px]"
         >
@@ -349,6 +387,7 @@ function PickOverlay({
           )}
         </p>
         <button
+          ref={cancelRef}
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => followUi.pick(null)}

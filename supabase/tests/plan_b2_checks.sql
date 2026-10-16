@@ -218,6 +218,21 @@ begin
   end if;
   raise notice 'PASS close_poll counts on the server, reports ties and only accepts a tied leader';
 end $$;
+insert into public.polls (id, title, vote_type) values ('0f0f0f0f-0000-4000-8000-000000000070', 'Clara', 'multi');
+insert into public.poll_options (id, poll_id, wish_id) values
+  ('0f0f0f0f-0000-4000-8000-000000000071', '0f0f0f0f-0000-4000-8000-000000000070', '0f0f0f0f-0000-4000-8000-000000000002'),
+  ('0f0f0f0f-0000-4000-8000-000000000072', '0f0f0f0f-0000-4000-8000-000000000070', '0f0f0f0f-0000-4000-8000-000000000003');
+do $$
+declare r json;
+begin
+  perform public.cast_vote('0f0f0f0f-0000-4000-8000-000000000070', '0f0f0f0f-0000-4000-8000-0000000000b1',
+    array['0f0f0f0f-0000-4000-8000-000000000072']::uuid[]);
+  r := public.close_poll('0f0f0f0f-0000-4000-8000-000000000070');
+  if r->>'status' <> 'closed' or (r->>'winner')::uuid <> '0f0f0f0f-0000-4000-8000-000000000003' then
+    raise exception 'FAIL one vote against none was not a clear win: %', r;
+  end if;
+  raise notice 'PASS a candidate with no votes scores zero';
+end $$;
 
 -- «Añadir a la biblioteca»: the wish leaves the list (and the same video can be wished again later).
 insert into public.videos (id, crew_id, title, source, youtube_id)

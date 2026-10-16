@@ -40,7 +40,7 @@ export function PrivacyPage() {
         </header>
         <div className="px-5 pb-6 sm:px-8">
           <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">Privacidad y condiciones</h1>
-          <p className="mt-1 text-sm text-washi-subtle">Última actualización: 13 de octubre de 2026</p>
+          <p className="mt-1 text-sm text-washi-subtle">Última actualización: 16 de octubre de 2026</p>
         </div>
 
         <Section title="Qué es One Shoot">
@@ -72,6 +72,15 @@ export function PrivacyPage() {
             Las tipografías se cargan desde Google Fonts. Al abrir la app, tu navegador se conecta a los servidores de
             Google, que reciben tu dirección IP. Consulta la{' '}
             <Ext href={GOOGLE_PRIVACY}>Política de privacidad de Google</Ext>.
+          </p>
+          <p>
+            La primera vez que usas «Seguir a un bailarín» o la prueba de análisis de postura (en Ajustes), tu navegador
+            descarga los modelos de IA desde jsDelivr (cdn.jsdelivr.net), TensorFlow Hub y Kaggle (tfhub.dev,
+            kaggle.com) y Google Cloud Storage (storage.googleapis.com). Esos servidores reciben tu dirección IP, como
+            con cualquier descarga, y Kaggle puede poner una cookie de sesión al redirigir la descarga. No se les envía
+            nada tuyo: el vídeo se analiza en tu dispositivo y no se sube; del seguimiento solo se guarda en la app el
+            recorrido (el nombre que le pongas y las posiciones, como texto), y los resultados de la prueba se quedan en
+            tu dispositivo.
           </p>
         </Section>
 

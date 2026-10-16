@@ -490,8 +490,24 @@ function simplify(kfs: readonly FollowKeyframe[], tol: number, maxGap: number): 
 }
 
 /**
- * Ready to save: rounded (time to 1/100 s, boxes to 1/1000 of the frame), points that a straight line already
- * gives dropped, and coarser and coarser until it fits `maxBytes` (well under the database's 600 KB).
+ * Manual mode, ready to save: only rounded and one per moment. Every point stays (a person placed it, and there are
+ * few), even one that lies on the line between its neighbours.
+ */
+export function cleanManualKeyframes(kfs: readonly FollowKeyframe[]): FollowKeyframe[] {
+  return normalizeKeyframes(
+    kfs
+      .map((k) => fitKeyframe(k))
+      .map(
+        (k) =>
+          [round(k[0], 2), round(k[1], 3), round(k[2], 3), round(k[3], 3), round(k[4], 3)] as FollowKeyframe,
+      ),
+  );
+}
+
+/**
+ * Ready to save an analysed path: rounded (time to 1/100 s, boxes to 1/1000 of the frame), points that a straight
+ * line already gives dropped, and coarser and coarser until it fits `maxBytes` (well under the database's 600 KB).
+ * Not for manual paths (see cleanManualKeyframes).
  */
 export function compressKeyframes(
   kfs: readonly FollowKeyframe[],

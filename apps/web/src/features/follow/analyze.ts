@@ -72,6 +72,28 @@ const throwIfAborted = (signal: AbortSignal) => {
   if (signal.aborted) throw new DOMException('Cancelado', 'AbortError');
 };
 
+/**
+ * Waits for `work` unless `signal` aborts first: then rejects at once with AbortError (a model download can't be
+ * stopped, but it carries on in the background and stays cached for next time).
+ */
+export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('Cancelado', 'AbortError'));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new DOMException('Cancelado', 'AbortError'));
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', abort);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** People in a MoveNet result as boxes of the picture (MoveNet's boxes are already 0…1). */
 export function candidatesOf(
   poses: readonly MoveNetPose[],
@@ -223,8 +245,7 @@ async function passSeeking(p: Pass): Promise<Sample[]> {
 export async function analyzeFollow(req: AnalyzeRequest): Promise<AnalyzeResult> {
   const t0 = performance.now();
   req.onProgress({ phase: 'model', done: 0, total: 1 });
-  const model = await loadMoveNet('webgl');
-  throwIfAborted(req.signal);
+  const model = await untilAborted(loadMoveNet('webgl'), req.signal);
   req.onProgress({ phase: 'video', done: 0, total: 1 });
   let video: HTMLVideoElement;
   try {

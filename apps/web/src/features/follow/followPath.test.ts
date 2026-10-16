@@ -4,6 +4,7 @@ import {
   associate,
   boxAt,
   boxFromDrag,
+  cleanManualKeyframes,
   compressKeyframes,
   createFollower,
   estimateBytes,
@@ -406,5 +407,19 @@ describe('on real MoveNet detections', () => {
     expect(both.seen).toBeLessThan(both.frames);
     const ahead = followAround(frames, 6, chosen, false);
     expect(ahead.keyframes[0]![0]).toBe(6);
+  });
+});
+
+describe('manual points are never dropped', () => {
+  it('three equal boxes at 0, 2 and 4 s stay three (an analysed path would drop the middle one)', () => {
+    const same = box(0.4, 0.3);
+    let kfs = cleanManualKeyframes(upsertKeyframe([], 0, same));
+    kfs = cleanManualKeyframes(upsertKeyframe(kfs, 2, same));
+    kfs = cleanManualKeyframes(upsertKeyframe(kfs, 4, same));
+    expect(kfs.map((k) => k[0])).toEqual([0, 2, 4]);
+    expect(compressKeyframes(kfs)).toHaveLength(2);
+    expect(cleanManualKeyframes([[1.23456, 0.4444444, 0.3, 0.1, 0.4]])).toEqual([
+      [1.23, 0.444, 0.3, 0.1, 0.4],
+    ]);
   });
 });

@@ -7,6 +7,7 @@ import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { analyzeFollow, FollowError } from './analyze';
 import {
+  cleanManualKeyframes,
   compressKeyframes,
   keyframe,
   spliceFrom,
@@ -167,7 +168,7 @@ export function useFollowActions(video: Video) {
       try {
         await update.mutateAsync({
           id: path.id,
-          patch: { keyframes: compressKeyframes(upsertKeyframe(path.keyframes, at, box)) },
+          patch: { keyframes: cleanManualKeyframes(upsertKeyframe(path.keyframes, at, box)) },
         });
         toast('Punto guardado', 'success');
       } catch (err) {

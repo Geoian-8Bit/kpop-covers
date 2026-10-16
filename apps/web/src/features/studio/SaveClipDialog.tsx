@@ -56,6 +56,7 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
   const offered = zoom != null && isZoomed(zoom) ? zoom : null;
   const [withZoom, setWithZoom] = useState(true);
   const [withFollow, setWithFollow] = useState(true);
+  const followWins = Boolean(follow && withFollow);
   const create = useCreateClip();
   // Always on (cached): dropping it on close would make the duplicate warning vanish mid fade-out.
   const clips = useClips(video.id);
@@ -109,7 +110,7 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
         color,
         is_pinned: pinned,
         // F9 · Opened later, the clip shows this zoom (only offered on a file; YouTube is never zoomed).
-        ...(offered && withZoom ? clipZoomColumns(offered) : {}),
+        ...(offered && withZoom && !followWins ? clipZoomColumns(offered) : {}),
         // F10 · Opened later, the clip follows this dancer.
         ...(follow && withFollow ? { follow_path_id: follow.id } : {}),
       });
@@ -203,10 +204,22 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
 
         <div className="flex flex-col gap-1">
           <ElasticToggle checked={pinned} onChange={setPinned} label="Fijar en acceso rápido" />
-          {offered && (
-            <ElasticToggle checked={withZoom} onChange={setWithZoom} label={`Guardar con el zoom (${zoomLabel(offered)})`} />
-          )}
           {follow && <ElasticToggle checked={withFollow} onChange={setWithFollow} label={`Guardar siguiendo a «${follow.label}»`} />}
+          {offered && (
+            // F10 · Following a dancer and a fixed zoom are exclusive: while following, the zoom moves with them.
+            <fieldset disabled={followWins} aria-describedby={followWins ? 'clip-zoom-why' : undefined} className={cn('contents', followWins && 'opacity-45')}>
+              <ElasticToggle
+                checked={withZoom && !followWins}
+                onChange={setWithZoom}
+                label={`Guardar con el zoom (${zoomLabel(offered)})`}
+              />
+            </fieldset>
+          )}
+          {offered && followWins && (
+            <p id="clip-zoom-why" className="text-[12px] leading-snug text-washi-subtle">
+              Al seguir a «{follow!.label}» el zoom va con el bailarín: no se guarda un zoom fijo.
+            </p>
+          )}
         </div>
 
         {duplicate && (

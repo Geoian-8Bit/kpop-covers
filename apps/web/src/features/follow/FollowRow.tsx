@@ -15,8 +15,16 @@ import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { NO_ZOOM } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
-import { compressKeyframes, FOLLOW_LABEL_MAX, removeKeyframeNear } from './followPath';
-import { followUi, jobPercent, useFollowUi, type FollowDraft, type PickMode } from './followUi';
+import { cleanManualKeyframes, FOLLOW_LABEL_MAX, removeKeyframeNear } from './followPath';
+import {
+  followUi,
+  jobMilestone,
+  jobPercent,
+  rememberFollowOpener,
+  useFollowUi,
+  type FollowDraft,
+  type PickMode,
+} from './followUi';
 import { useFollowActions } from './useFollowActions';
 
 /** The followed path of this song as SaveClipDialog wants it («Guardar clip siguiendo a X»). */
@@ -55,6 +63,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
   );
 
   function startPicking(mode: PickMode) {
+    rememberFollowOpener(document.activeElement);
     usePlayer.getState().pause();
     followUi.pick(mode);
   }
@@ -85,7 +94,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
       await update.mutateAsync({
         id: selected.id,
         patch: {
-          keyframes: compressKeyframes(removeKeyframeNear(selected.keyframes, usePlayer.getState().time)),
+          keyframes: cleanManualKeyframes(removeKeyframeNear(selected.keyframes, usePlayer.getState().time)),
         },
       });
       toast('Punto quitado', 'success');
@@ -212,6 +221,10 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
           ))}
       </div>
 
+      {/* Read out only at milestones (each phase, every 25 %), not at every percent. */}
+      <p className="sr-only" aria-live="polite">
+        {job ? jobMilestone(job) : ''}
+      </p>
       <AnimatePresence initial={false}>
         {job && (
           <motion.div
@@ -224,7 +237,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
           >
             <div className="mt-2.5 flex items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="mb-1 truncate text-[13px] text-washi" aria-live="polite">
+                <p className="mb-1 truncate text-[13px] text-washi" aria-hidden>
                   {job.phase === 'model'
                     ? 'Preparando el modelo…'
                     : job.phase === 'video'
@@ -252,6 +265,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
               <Button
                 variant="secondary"
                 className="min-h-11"
+                data-follow-cancel
                 disabled={job.phase === 'saving'}
                 onClick={() => job.abort.abort()}
               >

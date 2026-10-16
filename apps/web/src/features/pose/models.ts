@@ -12,7 +12,7 @@
 import type { Pose, PoseDetector } from '@tensorflow-models/pose-detection';
 import type { PoseLandmarker } from '@mediapipe/tasks-vision';
 
-/** Keep in step with package.json (the WASM files come from the CDN for this exact version). */
+/** Keep in step with package.json and the CSP path in vercel.json (the WASM comes from the CDN for this exact version). */
 export const MEDIAPIPE_VERSION = '0.10.35';
 const MEDIAPIPE_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
 const MEDIAPIPE_MODEL =

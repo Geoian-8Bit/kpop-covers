@@ -66,3 +66,23 @@ export function jobPercent(job: Pick<FollowJob, 'phase' | 'done' | 'total'>): nu
   if (job.phase !== 'frames' || job.total <= 0) return 0;
   return Math.min(99, Math.floor((job.done / job.total) * 100));
 }
+
+/** The button that opened the picker: focus goes back to it when the picker closes. */
+let opener: HTMLElement | null = null;
+export function rememberFollowOpener(el: Element | null): void {
+  opener = el instanceof HTMLElement ? el : null;
+}
+export function takeFollowOpener(): HTMLElement | null {
+  const el = opener;
+  opener = null;
+  return el;
+}
+
+/** What a screen reader hears about the analysis: each phase, and the progress only every 25 %. */
+export function jobMilestone(job: Pick<FollowJob, 'phase' | 'done' | 'total' | 'label' | 'pathId'>): string {
+  if (job.phase === 'model') return 'Preparando el modelo…';
+  if (job.phase === 'video') return 'Abriendo el vídeo…';
+  if (job.phase === 'saving') return 'Guardando el recorrido…';
+  const step = Math.floor(jobPercent(job) / 25) * 25;
+  return `${job.pathId ? 'Recalculando' : 'Analizando'} a «${job.label}»: ${step} %`;
+}
