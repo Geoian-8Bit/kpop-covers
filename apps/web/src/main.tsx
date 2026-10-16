@@ -1,3 +1,5 @@
+// Local demo only: no sound at all while tests run (does nothing in production).
+import './lib/devSilence';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
