@@ -170,7 +170,7 @@ export interface SaveTakeVars extends Omit<SaveTakeInput, 'videoId' | 'mimeType'
 
 const isDuplicate = (err: unknown) => {
   const e = err as { code?: string; message?: string } | null;
-  return e?.code === '23505' || /takes_pkey|duplicate key/i.test(e?.message ?? '');
+  return /takes_pkey/.test(e?.message ?? '') || (e?.code === '23505' && !/takes_one_best_key/.test(e?.message ?? ''));
 };
 
 /**

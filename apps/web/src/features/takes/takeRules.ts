@@ -307,9 +307,13 @@ export function quotaState(usedBytes: number): QuotaState {
   return { used, ratio: Math.min(1, ratio), warn: ratio >= SHARE.warnRatio, full: ratio >= 1 };
 }
 
-/** Would sharing a copy of `bytes` go past the group's 1 GB? */
+/**
+ * Would sharing a copy of `bytes` go past the group's 1 GB? Same rule as the database: an upload needs room for a
+ * whole 50 MB file, so the copy isn't made for nothing.
+ */
 export function wouldOverflow(usedBytes: number, bytes: number): boolean {
-  return Math.max(0, usedBytes || 0) + Math.max(0, bytes) > SHARE.quotaBytes;
+  const used = Math.max(0, usedBytes || 0);
+  return used >= SHARE.quotaBytes - SHARE.maxBytes || used + Math.max(0, bytes) > SHARE.quotaBytes;
 }
 
 // ───────────── Labels ─────────────

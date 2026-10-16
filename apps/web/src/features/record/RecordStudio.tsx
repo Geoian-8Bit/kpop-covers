@@ -148,10 +148,17 @@ function probeVideo(url: string): Promise<{ duration: number; width: number | nu
       el.removeAttribute('src');
       el.load();
     };
-    const timer = setTimeout(finish, 3000);
+    const timer = setTimeout(finish, 4000);
     el.preload = 'metadata';
     el.muted = true;
-    el.onloadedmetadata = finish;
+    el.onloadedmetadata = () => {
+      if (Number.isFinite(el.duration) && el.duration > 0) return finish();
+      // Recorded WebMs don't say their length: seeking far makes the browser find the end.
+      el.ondurationchange = () => {
+        if (Number.isFinite(el.duration) && el.duration > 0) finish();
+      };
+      el.currentTime = 1e101;
+    };
     el.onerror = finish;
     el.src = url;
   });
@@ -180,6 +187,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [notice, setNotice] = useState('');
   /** F3 · What «Guardar» did, shown in the review (an error stays until the next try). */
   const [keepMsg, setKeepMsg] = useState<{ text: string; error: boolean } | null>(null);
+  /** «Guardar» in flight (reading the file, then the row): no «Repetir» or closing meanwhile. */
+  const [keeping, setKeeping] = useState(false);
+  const keepingRef = useRef(false);
+  keepingRef.current = keeping;
   const [hereAt, setHereAt] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
   /** R3: the heat notice was shown for this take. */
@@ -1106,7 +1117,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   function requestClose() {
     const now = phaseRef.current;
-    if (now === 'finishing') return;
+    if (now === 'finishing' || keepingRef.current) return;
     if (now === 'countdown' || now === 'arming' || now === 'recording') pausePart();
     if (recorder.current || (now === 'review' && take && !saved && !kept)) setConfirm('close');
     else onClose();
@@ -1146,7 +1157,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const canKeep = reviewTake.current != null && reviewTake.current.videoId === video.id;
   async function keepInApp() {
     const disk = reviewTake.current;
-    if (!take || !disk || disk.kept || saveTake.isPending) return;
+    if (!take || !disk || disk.kept || keepingRef.current) return;
+    keepingRef.current = true;
+    setKeeping(true);
     const timing = reviewTiming.current;
     setKeepMsg(null);
     // No «¿Quién eres?» here (it would open under the recorder): unnamed takes can be claimed later in «Tomas».
@@ -1176,7 +1189,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       })
       .catch((err: unknown) => {
         if (reviewTake.current === disk) setKeepMsg({ text: friendlyError(err), error: true });
-      });
+      })
+      .finally(() => setKeeping(false));
   }
 
   function takeKept() {
@@ -1824,7 +1838,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             </p>
             <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2 landscape:flex-col landscape:items-stretch">
               {canKeep && (
-                <Button onClick={() => void keepInApp()} loading={saveTake.isPending} disabled={kept}>
+                <Button onClick={() => void keepInApp()} loading={keeping} disabled={kept}>
                   {kept ? <Check className="size-4" /> : <Library className="size-4" />}
                   {kept ? 'En «Tomas»' : 'Guardar en «Tomas»'}
                 </Button>
@@ -1838,7 +1852,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                   <Share className="size-4" /> Compartir
                 </Button>
               )}
-              <Button variant="secondary" onClick={() => (saved || kept ? again() : setConfirm('again'))}>
+              <Button variant="secondary" disabled={keeping} onClick={() => (saved || kept ? again() : setConfirm('again'))}>
                 <RefreshCw className="size-4" /> Repetir
               </Button>
             </div>
