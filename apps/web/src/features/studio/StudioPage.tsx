@@ -33,6 +33,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
 import { askWho } from '@/data/members';
+import { readStage, rememberStage } from '@/lib/stagePref';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
@@ -40,7 +41,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
 import { signedVideoUrl, useLinkLocalFile, useUpdateVideo, useUploadToCloud, useVideo } from '@/data/videos';
-import { loadLocalVideo } from '@/lib/localVideos';
+import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -172,7 +173,9 @@ export function StudioPage() {
   // First time a file/stream reports its length, remember it for the library cards.
   const current = video.data;
   useEffect(() => {
-    if (current && duration > 0 && !current.duration_seconds) {
+    // Only the stage that IS this entry: a linked file's own length is not the YouTube video's (F1).
+    const fromFile = current?.source === 'youtube' && usePlayer.getState().stage === 'file';
+    if (current && duration > 0 && !current.duration_seconds && !fromFile) {
       patchVideo({ id: current.id, patch: { duration_seconds: round3(duration) } });
     }
   }, [current, duration, patchVideo]);
@@ -352,7 +355,10 @@ function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileS
     void (async () => {
       const blob = await loadLocalVideo(video.id);
       if (cancelled) return;
-      if (blob) {
+      // F1: a copy left from a file that was since replaced (another size) is not this video's file any more.
+      const stale = blob && video.source === 'youtube' && video.file_size != null && blob.size !== video.file_size;
+      if (stale) await deleteLocalVideo(video.id).catch(() => undefined);
+      if (blob && !stale) {
         objectUrl = URL.createObjectURL(blob);
         setState({ status: 'ready', url: objectUrl, local: blob });
         return;
@@ -372,31 +378,11 @@ function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileS
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [video.id, video.storage_path, reloadKey, enabled]);
+  }, [video.id, video.source, video.storage_path, video.file_size, reloadKey, enabled]);
 
   return state;
 }
 
-/** F1 · The stage each linked YouTube entry was last watched on, per device (YouTube by default). */
-const STAGE_KEY = 'oneshoot.stage.v1';
-function readStage(videoId: string): 'youtube' | 'file' {
-  try {
-    const all = JSON.parse(localStorage.getItem(STAGE_KEY) ?? '{}') as Record<string, string>;
-    return all[videoId] === 'file' ? 'file' : 'youtube';
-  } catch {
-    return 'youtube';
-  }
-}
-function rememberStage(videoId: string, stage: 'youtube' | 'file') {
-  try {
-    const all = JSON.parse(localStorage.getItem(STAGE_KEY) ?? '{}') as Record<string, string>;
-    if (stage === 'file') all[videoId] = 'file';
-    else delete all[videoId];
-    localStorage.setItem(STAGE_KEY, JSON.stringify(all));
-  } catch {
-    /* this visit only */
-  }
-}
 
 /** F1 · «YouTube | Archivo» for a YouTube entry with its own file. */
 function StageSwitch({ video }: { video: Video }) {
@@ -418,7 +404,7 @@ function StageSwitch({ video }: { video: Video }) {
         ]}
       />
       <span className="truncate text-[12px] text-washi-subtle">
-        {stage === 'file' ? `${video.file_name ?? ''}` : 'El archivo permite superpuesto, zoom y seguimiento'}
+        {stage === 'file' ? (video.file_name ?? '') : 'El archivo: mismos clips y notas, sin anuncios ni esperas'}
       </span>
     </div>
   );

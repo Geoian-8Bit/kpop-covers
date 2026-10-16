@@ -7,12 +7,21 @@
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
-## Ahora (2026-10-16 ~18:40)
+## Ahora (2026-10-16 ~19:40)
 
-- Grabación paso 6 (A1 ajustes + R3 calor + laboratorio de diseño): un subagente crea las 3 variantes del panel
-  (`features/record/settings/`); el laboratorio y `/ajustes` ya están hechos (sin commit aún). Falta integrar el
-  panel en `RecordStudio.tsx`, R3 (aviso de calor), revisar y cerrar.
-- Correcciones de la ronda 2 (pasos 1–2) y ronda 1 (pasos 3–4) aplicadas en el árbol de trabajo, sin commit.
+- Grabación pasos 1–6 TERMINADOS en b59550e (verde en worktree limpio `C:\Users\iangi\oneshoot-check`).
+  Revisiones en marcha: pasos 5–6 + laboratorio (ronda 1) y verificación de correcciones (ronda 3).
+  Cuando acaben y se corrija lo ≥6: **cierre de fase grabación** = llevar a `main` SOLO hasta b59550e (+ commits
+  de corrección de grabación, por cherry-pick si van después de 9ad9fd7), push, `vercel --prod` DESDE LA RAÍZ.
+- **Grabación DESPLEGADA** (main 650b974, 17:33). main = b59550e + cherry-pick de 058e4bf. Worktree limpio de main
+  en `C:\Users\iangi\oneshoot-check` (con `.vercel` copiado de la raíz): construir y desplegar desde ahí.
+- Ideas fase 1 (F1+F2) en 9ad9fd7 (rama). Revisión BD hecha: 🔴7 corregido sin commit (migración nueva
+  `20261016000100_linked_file_guard.sql`, cliente releer fila antes de vincular, «Cambiar archivo» elige primero);
+  40 PASS locales. Revisión de cliente de F1/F2 EN MARCHA. Luego: corregir, commit, ronda 2, aplicar migraciones
+  fase 1 (000000 + 000100) en Supabase con copia previa, regenerar tipos, merge a main, desplegar.
+- Ideas fase 2: migración `20261016010000_takes.sql` + `plan_fase2_checks.sql` escritas (37 PASS locales).
+  Falta UI de F3/F4 y F17.
+- Regla del usuario: cada despliegue = versión funcional de todo lo implementado.
 
 ## Hecho
 
@@ -25,7 +34,13 @@
 
 ## Desplegado
 
-_(nada todavía)_
+| Fecha y hora | Fase | Commit en main | Despliegue | Migraciones |
+| --- | --- | --- | --- | --- |
+| 2026-10-16 17:33 | Grabación con calidad máxima, pasos 1–6 | `650b974` | https://kpop-covers-hiyrnba2h-geoian-s-projects.vercel.app (`dpl_Dpa2Mf3tD5FFgR22vwsQ2DdiTMxn`) | ninguna |
+
+Comprobado: estado «Ready», https://kpop-covers.vercel.app responde 200 y en un navegador limpio carga la versión
+nueva (Ajustes + laboratorio) con los datos reales. Un navegador con una versión muy antigua en caché ve la vieja
+hasta que el service worker se actualiza (sale el aviso de actualización fuera del estudio).
 
 ## Siguiente
 

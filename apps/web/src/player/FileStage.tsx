@@ -16,6 +16,11 @@ export function FileStage({ src, offset = 0 }: { src: string; offset?: number })
     const { sync, attach, detach } = usePlayer.getState();
 
     const onMeta = () => {
+      // A linked file opens on the song's moment, not at its own second 0 (which may be before the song starts).
+      if (offset) {
+        const { pendingSeek, time } = usePlayer.getState();
+        if (pendingSeek == null) engine.seek(time);
+      }
       attach(engine);
       sync({ duration: engine.getDuration() });
     };

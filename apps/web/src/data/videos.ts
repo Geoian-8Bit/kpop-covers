@@ -256,12 +256,22 @@ export function useLinkVideoFile() {
       file: File;
       duration: number | null;
     }): Promise<LinkFileResult> => {
-      const local = await keepLocalCopy(video.id, file);
+      // The cached entry may be stale: another phone may have linked a file meanwhile. Never write over it.
+      const fresh = await backend.getVideo(video.id);
+      if (!fresh) throw new FriendlyError('Este vídeo ya no está en la biblioteca.');
+      if (fresh.storage_path) {
+        throw new FriendlyError('Otro móvil ya ha vinculado un archivo a este vídeo. Cierra y vuelve a abrirlo para verlo.');
+      }
       let upload: UploadResult = { ok: false, reason: 'too-big' };
       if (file.size <= MAX_CLOUD_UPLOAD_BYTES) {
         const suffix = Math.random().toString(36).slice(2, 8);
         upload = await backend.uploadFile(`${video.crew_id}/${video.id}--${suffix}.${fileExtension(file.name)}`, file);
       }
+      // The cloud said no (a file appeared meanwhile, or the video's file limit): nothing is written.
+      if (!upload.ok && upload.reason === 'denied') {
+        throw new FriendlyError('La nube no ha aceptado el archivo. Cierra y vuelve a abrir el vídeo, y prueba otra vez.');
+      }
+      const local = await keepLocalCopy(video.id, file);
       if (!upload.ok && !local) {
         throw new FriendlyError(`${NO_SPACE} Tampoco se pudo subir a la nube: ${UPLOAD_FAILURE_REASON[upload.reason]}.`);
       }

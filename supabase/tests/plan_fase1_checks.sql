@@ -189,5 +189,64 @@ begin
   raise notice 'PASS notes store their author';
 end $$;
 
+-- Round-1 review: a linked cloud file's description can't be rewritten over it (stale second phone).
+do $$
+declare ok boolean := false;
+begin
+  if (select storage_path from public.videos where id = '0b0b0b0b-0000-4000-8000-0000000000a1') is null then
+    raise notice 'INCONCLUSIVE file lock (no cloud file was attached above)';
+    return;
+  end if;
+  begin
+    update public.videos set file_name = 'otro.mp4', file_size = 5 where id = '0b0b0b0b-0000-4000-8000-0000000000a1';
+  exception when others then ok := sqlerrm = 'file_locked';
+  end;
+  if not ok then raise exception 'FAIL file data rewritten while a cloud file is attached'; end if;
+  update public.videos set file_offset_seconds = 0.5 where id = '0b0b0b0b-0000-4000-8000-0000000000a1';
+  raise notice 'PASS a linked file''s data is locked (the offset can still be re-synced)';
+end $$;
+
+-- An uploaded video's path can't carry the replacement suffix.
+do $$
+declare ok boolean := false;
+begin
+  insert into public.videos (id, crew_id, title, source, file_name)
+  values ('0b0b0b0b-0000-4000-8000-0000000000a3', (select private.default_group()), 'Prueba sufijo', 'upload', 'y.mp4');
+  begin
+    update public.videos
+    set storage_path = (select private.default_group())::text || '/0b0b0b0b-0000-4000-8000-0000000000a3--x1.mp4'
+    where id = '0b0b0b0b-0000-4000-8000-0000000000a3';
+  exception when check_violation then ok := true;
+  end;
+  if not ok then raise exception 'FAIL an uploaded video''s path accepted a suffix'; end if;
+  raise notice 'PASS uploaded videos keep the plain file name';
+end $$;
+
+-- At most 5 cloud files ever for a YouTube entry (removed ones stay in the bucket).
+do $$
+declare
+  v_crew text := (select private.default_group())::text;
+  v_vid  text := '0b0b0b0b-0000-4000-8000-0000000000a4';
+  ok boolean := false;
+  i int;
+begin
+  insert into public.videos (id, crew_id, title, source, youtube_id)
+  values (v_vid::uuid, v_crew::uuid, 'Prueba tope archivos', 'youtube', 'zzTestLink4');
+  begin
+    for i in 1..5 loop
+      insert into storage.objects (bucket_id, name) values ('videos', v_crew || '/' || v_vid || '--n' || i || '.mp4');
+    end loop;
+  exception when others then
+    raise notice 'INCONCLUSIVE file cap (direct insert into storage.objects failed: %)', sqlerrm;
+    return;
+  end;
+  begin
+    insert into storage.objects (bucket_id, name) values ('videos', v_crew || '/' || v_vid || '--n6.mp4');
+  exception when insufficient_privilege then ok := true;
+  end;
+  if not ok then raise exception 'FAIL a sixth file for the same YouTube entry was accepted'; end if;
+  raise notice 'PASS a YouTube entry can''t pile up more than 5 files';
+end $$;
+
 reset role;
 rollback;

@@ -26,6 +26,7 @@ import { jelly, soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
+import { rememberStage } from '@/lib/stagePref';
 
 type Step =
   | { kind: 'start' }
@@ -67,6 +68,7 @@ export function LinkFilePanel({
     if (!open) return;
     setStep({ kind: 'start' });
     setConfirm(null);
+    replacing.current = false;
     if (initialFile) void onPick(initialFile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
@@ -84,20 +86,32 @@ export function LinkFilePanel({
   async function doLink(file: File, duration: number | null) {
     setStep({ kind: 'linking' });
     try {
-      const result = await link.mutateAsync({ video, file, duration });
+      let target = video;
+      if (replacing.current && hasLinkedFile(video)) {
+        target = await unlink.mutateAsync(video);
+        rememberStage(video.id, 'youtube');
+      }
+      replacing.current = false;
+      const result = await link.mutateAsync({ video: target, file, duration });
       if (!result.synced && result.uploadFailure) toast(uploadFailureMessage(result.uploadFailure), 'info');
-      setStep({ kind: 'sync', url: URL.createObjectURL(file), revoke: true });
+      startSync(URL.createObjectURL(file), true);
     } catch (err) {
       toast(friendlyError(err), 'error');
       setStep({ kind: 'start' });
     }
   }
 
+  /** Syncing marks a moment on YouTube: the studio's player must be the YouTube one, never the file. */
+  function startSync(url: string, revoke: boolean) {
+    usePlayer.getState().setStage('youtube');
+    setStep({ kind: 'sync', url, revoke });
+  }
+
   async function resync() {
     const blob = await loadLocalVideo(video.id);
-    if (blob) return setStep({ kind: 'sync', url: URL.createObjectURL(blob), revoke: true });
+    if (blob && (!video.file_size || blob.size === video.file_size)) return startSync(URL.createObjectURL(blob), true);
     const url = video.storage_path ? await signedVideoUrl(video.storage_path) : null;
-    if (url) setStep({ kind: 'sync', url, revoke: false });
+    if (url) startSync(url, false);
     else toast('El archivo no está en este dispositivo ni en la nube. Vincula tu copia primero.', 'info');
   }
 
@@ -106,6 +120,7 @@ export function LinkFilePanel({
     try {
       await unlink.mutateAsync(video);
       usePlayer.getState().setStage('youtube');
+      rememberStage(video.id, 'youtube');
       toast('Archivo quitado: el vídeo vuelve a ser solo de YouTube', 'success');
       onClose();
     } catch (err) {
@@ -113,15 +128,15 @@ export function LinkFilePanel({
     }
   }
 
-  async function replaceFile() {
+  /**
+   * «Cambiar archivo»: the new file is chosen first (the picker must open right from the tap on iPhone) and the old
+   * one is only removed when the new one is linked, so cancelling leaves everything as it was.
+   */
+  const replacing = useRef(false);
+  function replaceFile() {
     setConfirm(null);
-    try {
-      await unlink.mutateAsync(video);
-      usePlayer.getState().setStage('youtube');
-      input.current?.click();
-    } catch (err) {
-      toast(friendlyError(err), 'error');
-    }
+    replacing.current = true;
+    input.current?.click();
   }
 
   return (
@@ -212,6 +227,11 @@ export function LinkFilePanel({
                   notas podrían no cuadrar.
                 </p>
               </div>
+            ) : !step.duration || !ytDuration ? (
+              <p className="flex items-center gap-2 text-[14px] text-washi-muted">
+                <AlertTriangle className="size-4 text-kin-300" /> No se ha podido leer la duración: compruébala al
+                sincronizar.
+              </p>
             ) : (
               <p className="flex items-center gap-2 text-[14px] text-washi-muted">
                 <Check className="size-4 text-rokusho" /> La duración coincide con la del vídeo de YouTube.

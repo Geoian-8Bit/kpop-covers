@@ -94,7 +94,8 @@ export function withOffset(engine: PlayerEngine, offset: number): PlayerEngine {
   return {
     ...engine,
     seek: (seconds, opts) => engine.seek(Math.max(0, seconds + offset), opts),
-    getCurrentTime: () => engine.getCurrentTime() - offset,
+    // Before the song's start (the file's first seconds with a positive offset) the song is at 0.
+    getCurrentTime: () => Math.max(0, engine.getCurrentTime() - offset),
     getDuration: () => {
       const d = engine.getDuration();
       return d > 0 ? Math.max(0, d - offset) : 0;
