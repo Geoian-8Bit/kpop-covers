@@ -8,8 +8,9 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Bloque | Funcionalidad | Estado | Notas |
 | --- | --- | --- | --- |
 | Grabación | Pasos 1–6 (Q1–Q8, C1–C5, S1–S3, R1–R5, A1) | **Hecha y desplegada** (16-10 17:33) | Falta probar en los Samsung (apartado 2) |
-| Ideas | F1 Archivo vinculado · F2 Quién es quién | Hechas en la rama, en revisión | Necesitan su migración; se despliegan en el cierre de la fase 1 |
-| Ideas | F3–F10, F17 | No empezadas | Migración de F3/F4 ya escrita |
+| Ideas | F1 Archivo vinculado · F2 Quién es quién | **Hechas y desplegadas** (16-10 18:13) | 3 rondas de revisión; migraciones aplicadas en Supabase |
+| Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | En la rama, en revisión | «Guardar» en el grabador probado en el navegador; falta revisión y su migración |
+| Ideas | F5–F10 | No empezadas | |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
 | Grupo | F11–F16 | No empezadas | |
 | IA | Análisis de postura | No empezada | |
@@ -34,6 +35,20 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
    canción» con su tamaño. «Recuperar» la abre en el repaso para guardarla.
 6. **Espacio.** En la línea de abajo del grabador sale «espacio para unos N min» para la calidad actual. Con el
    móvil casi lleno aparece un aviso en rojo.
+
+### Ideas · F1 y F2 (en producción)
+
+15. **Miembros (F2).** Ajustes → «Miembros del grupo» → «Añadir miembro» con nombre y color. Abajo a la izquierda
+    (o arriba en el móvil) sale «¿Quién eres?»: elige tu nombre. Se recuerda en ese móvil.
+16. **Archivo de un vídeo de YouTube (F1).** Abre una canción de YouTube → «Añadir archivo» → elige el mismo vídeo
+    descargado por tu cuenta (la app no descarga nada de YouTube). Si dura distinto, avisa. Luego «Sincronizar»:
+    reproduce los dos y pulsa en el mismo golpe de música; ajusta con ±. Desde entonces el selector
+    «YouTube | Archivo» cambia de uno a otro en el mismo punto. Hasta 50 MB se sube a la nube para todo el grupo;
+    más grande queda solo en ese móvil y los demás pueden vincular su propia copia.
+17. **Cambiar / quitar archivo:** en el mismo panel. «Cambiar» elige el nuevo antes de quitar el viejo y, si falla,
+    deja el anterior.
+18. **Duplicados:** al añadir un vídeo con un título parecido a otro de la biblioteca, sale «¿Es la misma
+    canción?». Las tarjetas con archivo llevan la marca «con archivo».
 
 ### Grabación · pasos 3 a 6
 
@@ -105,10 +120,34 @@ _(ninguna todavía)_
 
 - Pruebas en dispositivo (Samsung): todas las del apartado 2.
 - Hallazgos de revisión con nota menor de 6 sin corregir: ver apartado 8.
+- F1/F2 (ronda 3, todos < 6): si la vinculación falla justo después de guardar la copia nueva en el móvil, ese
+  móvil puede quedar con la copia equivocada (5); si la subida falla durante «Cambiar archivo», el nuevo queda solo
+  en ese móvil (5); «Quitar» y «Restaurar» no releen la ficha antes (4); el trigger de la 000200 deja algunos huecos
+  a un cliente manipulado (3); «Volver a sincronizar» compara tamaños (3); las marcas de copia local no se limpian
+  nunca (2). De rondas anteriores: R5 (4), R6 (3), R7 (3), consulta de administrador para limpiar archivos viejos
+  del bucket (BD2), selector YouTube|Archivo de 36 px.
 
 ## 6. Migraciones
 
-_(ninguna nueva todavía)_
+| Fecha | Migración | Qué hace | Estado |
+| --- | --- | --- | --- |
+| 16-10 18:08 | `20261016000000_linked_file_and_members` | Columnas de archivo vinculado (desfase, duración), reglas del bucket para el archivo de un vídeo de YouTube, tabla `members`, autor de las notas | Aplicada y verificada (19 PASS en producción, todo revertido) |
+| 16-10 18:09 | `20261016000100_linked_file_guard` | La descripción del archivo vinculado no se reescribe; máximo 5 archivos por vídeo de YouTube; nombre simple para vídeos subidos | Aplicada |
+| 16-10 18:09 | `20261016000200_linked_file_identity` | La protección anterior también para archivos que solo están en un móvil | Aplicada |
+
+**Copia de seguridad previa:** `~/one-shoot-backups/20261016-1806-fase1/backup.json` (todas las tablas de
+`public`, `storage.buckets` y `storage.objects`; 1 grupo, 3 vídeos, 3 clips, 2 notas, 0 archivos) y las
+definiciones que se cambiaron. Fuera del repositorio.
+
+**Vuelta atrás:** `~/one-shoot-backups/20261016-1806-fase1/rollback-fase1.sql` vuelve a poner las reglas
+anteriores (funciones, restricciones, permisos). No borra la tabla `members` ni las columnas nuevas (la versión
+anterior de la app las ignora). Antes de ejecutarlo, comprobar que ningún vídeo de YouTube tiene `storage_path`.
+
+**Advisors tras aplicar:** nada nuevo. Siguen los avisos que ya había (protección de contraseñas filtradas en
+Auth, que es un ajuste del panel y no se toca; dos políticas de lectura en `crews`; índices sin usar).
+
+**Tipos:** regenerados desde el proyecto real y comparados con `database.types.ts`: coinciden. Diferencia
+intencionada: en `members` el `crew_id` es opcional al insertar porque lo pone el servidor.
 
 ## 7. Laboratorio de diseño
 
@@ -124,5 +163,10 @@ Ajustes → «Mostrar laboratorio de diseño». Cada momento clave tiene sus var
 | --- | --- | --- | --- |
 | Grabación paso 1 | 1 | Ninguno 🔴. 7: formato que falla sin alternativa · 6: sin opción H.264 compatible · 6: botones cortados en horizontal · 5: panel sin Esc/foco, panel tapa el diálogo, avisos solapados, niveles H.264/HEVC en 4:3 · ≤4 varios | Todos los ≥6 y los 5 citados. Pendiente: «atrás» del móvil cierra el grabador entero con el panel abierto (4), formato real leído del archivo (5, se deja «declarado») |
 
+| Grabación pasos 2–6 | 3 | Ronda 3: 🔴 9 «el iPhone no grababa» (lienzo congelado) | Todo lo ≥6 |
+| F1 · F2 | 3 | Ronda 1: 🔴 7 vincular encima de otro archivo, 🔴 cambio no atómico · Ronda 2: 🔴 7 al quinto cambio se perdía el archivo, 6 copia propia borrada, 6 archivo solo-móvil pisable · Ronda 3: ninguno ≥6 | Todo lo ≥6; lo <6 en PENDIENTES |
+
 Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
-[rendimiento y diseño](revisiones/grabacion-paso1-ronda-1-rendimiento-diseno.md)
+[rendimiento y diseño](revisiones/grabacion-paso1-ronda-1-rendimiento-diseno.md) ·
+[F1/F2 ronda 1 BD](revisiones/F1-F2-ronda-1-bd-seguridad.md) · [F1/F2 ronda 1 cliente](revisiones/F1-F2-ronda-1-cliente.md) ·
+[F1/F2 ronda 2](revisiones/F1-F2-ronda-2.md) · [F1/F2 ronda 3](revisiones/F1-F2-ronda-3.md)
