@@ -124,4 +124,8 @@ describe('MOMENTS registry', () => {
   it('recommends «tray» for the recorder settings panel', () => {
     expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'record-settings')).toBe('tray');
   });
+
+  it('recommends «onda» for separating voice and music (F17)', () => {
+    expect(resolveVariant({ enabled: false, choices: {} }, MOMENTS, 'voice-split')).toBe('onda');
+  });
 });

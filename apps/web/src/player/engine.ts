@@ -1,3 +1,5 @@
+import { createVoiceSplit, type VoiceSplit } from '@/features/voice/voiceSplit';
+import type { VoiceMode } from '@/features/voice/voiceRules';
 import { YTState, type YTPlayer } from '@/lib/youtubeIframe';
 
 /** Thin, source-agnostic transport the player store drives. */
@@ -19,6 +21,10 @@ export interface PlayerEngine {
    * files can offer it; the YouTube player is a cross-origin iframe whose audio the page can't reach.
    */
   captureAudio?(): MediaStreamTrack | null;
+  /** F17 · Voice and music apart (files only: YouTube's sound can't be reached). False when it can't be applied. */
+  setVoiceMode?(mode: VoiceMode): boolean;
+  /** F17 · Whether the song looks mono (then «sin voz» can't separate anything). */
+  voiceInfo?(): { monoLike: boolean; settled: boolean };
 }
 
 type CapturableMedia = HTMLMediaElement & {
@@ -26,14 +32,65 @@ type CapturableMedia = HTMLMediaElement & {
   mozCaptureStream?: () => MediaStream;
 };
 
-/** Web Audio taps, one per element (an element can only be wired into Web Audio once). */
-const audioTaps = new WeakMap<HTMLMediaElement, MediaStream>();
+/**
+ * One Web Audio graph per element (an element can only be wired into Web Audio once): element → voice split (F17)
+ * → speakers, and → a recordable stream. Built on first need (a voice mode other than original, or recording when
+ * the element can't be captured directly); from then on the element only sounds through it, so the recorder must
+ * take the graph's stream (it carries the voice mode too).
+ */
+interface ElementGraph {
+  ctx: AudioContext;
+  split: VoiceSplit;
+  tap: MediaStream;
+}
+const elementGraphs = new WeakMap<HTMLMediaElement, ElementGraph>();
 /** The track handed out last, reused while live: each camera switch asks again and must not pile up captures. */
 const audioTracks = new WeakMap<HTMLMediaElement, MediaStreamTrack>();
+
+function graphFor(el: HTMLMediaElement): ElementGraph | null {
+  const known = elementGraphs.get(el);
+  if (known) return known;
+  try {
+    const ctx = new AudioContext({ latencyHint: 'playback' });
+    const source = ctx.createMediaElementSource(el);
+    const split = createVoiceSplit(ctx, source);
+    const out = ctx.createMediaStreamDestination();
+    split.output.connect(ctx.destination);
+    split.output.connect(out);
+    void ctx.resume();
+    const graph = { ctx, split, tap: out.stream };
+    elementGraphs.set(el, graph);
+    return graph;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The element left the page for good: close its audio graph (one AudioContext each; browsers cap how many can be
+ * open). Only for an unmounted element: a closed graph can't be rebuilt for the same element.
+ */
+export function releaseMediaAudio(el: HTMLMediaElement): void {
+  const graph = elementGraphs.get(el);
+  if (!graph) return;
+  elementGraphs.delete(el);
+  audioTracks.delete(el);
+  graph.split.dispose();
+  void graph.ctx.close().catch(() => undefined);
+}
+
+/** The element loads another file: forget what the mono check heard (the warning belongs to the old song). */
+export function resetMediaAudioAnalysis(el: HTMLMediaElement): void {
+  elementGraphs.get(el)?.split.resetAnalysis();
+}
 
 export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
   return {
     play: () => {
+      // A suspended graph (built outside a tap, iOS interruptions) would hold the picture still: wake it with the
+      // tap that plays.
+      const graph = elementGraphs.get(el);
+      if (graph && graph.ctx.state !== 'running') void graph.ctx.resume().catch(() => undefined);
       void el.play().catch(() => undefined);
     },
     pause: () => el.pause(),
@@ -51,6 +108,9 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
     },
     captureAudio: () => {
       const media = el as CapturableMedia;
+      // Already routed through Web Audio (voice mode in use): record what is heard, the processed sound.
+      const routed = elementGraphs.get(el);
+      if (routed) return routed.tap.getAudioTracks()[0] ?? null;
       const cached = audioTracks.get(el);
       if (cached?.readyState === 'live') return cached;
       try {
@@ -62,25 +122,23 @@ export function createMediaEngine(el: HTMLMediaElement): PlayerEngine {
       } catch {
         /* not capturable this way (e.g. Safari): fall back to Web Audio */
       }
-      try {
-        let tap = audioTaps.get(el);
-        if (!tap) {
-          // Route the element through Web Audio: to the speakers as before, and into a recordable stream.
-          const ctx = new AudioContext();
-          const source = ctx.createMediaElementSource(el);
-          const out = ctx.createMediaStreamDestination();
-          source.connect(ctx.destination);
-          source.connect(out);
-          void ctx.resume();
-          tap = out.stream;
-          audioTaps.set(el, tap);
-        }
-        const track = tap.getAudioTracks()[0] ?? null;
-        if (track) audioTracks.set(el, track);
-        return track;
-      } catch {
-        return null;
-      }
+      const graph = graphFor(el);
+      const track = graph?.tap.getAudioTracks()[0] ?? null;
+      if (track) audioTracks.set(el, track);
+      return track;
+    },
+    setVoiceMode: (mode) => {
+      // Original needs no graph; once built it stays (the element can't be unwired) and simply passes through.
+      if (mode === 'original' && !elementGraphs.has(el)) return true;
+      const graph = graphFor(el);
+      if (!graph) return false;
+      if (graph.ctx.state !== 'running') void graph.ctx.resume().catch(() => undefined);
+      graph.split.setMode(mode);
+      return true;
+    },
+    voiceInfo: () => {
+      const graph = elementGraphs.get(el);
+      return graph ? graph.split.analyse() : { monoLike: false, settled: false };
     },
   };
 }

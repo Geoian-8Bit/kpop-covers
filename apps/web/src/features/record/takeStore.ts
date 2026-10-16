@@ -34,6 +34,17 @@ export interface TakeMeta {
   noSpace?: boolean;
   /** Saved in the app's «Tomas» (F3): this folder is the take's home on this phone. */
   kept?: boolean;
+  /** What the take was synced to (F3/F5): kept here so a recovered take can still be saved to «Tomas». */
+  timing?: TakeTimingMeta;
+}
+
+/** The song moment a take starts at, its end (null: to the end), speed, mirror and clip. */
+export interface TakeTimingMeta {
+  songStart: number;
+  songEnd: number | null;
+  speed: number;
+  mirrored: boolean;
+  clipId: string | null;
 }
 
 export interface TakeSink {
@@ -129,7 +140,51 @@ async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
     savedAt: raw.savedAt ?? (raw.saved ? raw.startedAt ?? null : null),
     noSpace: Boolean(raw.noSpace),
     kept: Boolean(raw.kept),
+    timing: readTiming(raw.timing),
   };
+}
+
+function readTiming(raw: unknown): TakeTimingMeta | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const t = raw as Partial<TakeTimingMeta>;
+  const start = Number(t.songStart);
+  const speed = Number(t.speed);
+  if (!Number.isFinite(start) || !Number.isFinite(speed) || speed <= 0) return undefined;
+  const end = t.songEnd == null ? null : Number(t.songEnd);
+  return {
+    songStart: Math.max(0, start),
+    songEnd: end != null && Number.isFinite(end) && end > start ? end : null,
+    speed,
+    mirrored: Boolean(t.mirrored),
+    clipId: typeof t.clipId === 'string' ? t.clipId : null,
+  };
+}
+
+/**
+ * Meta changes of one take, one after the other (read, change, write): «Guardar» and «Descargar» tapped together
+ * must not drop each other's mark (a lost `kept` would let the cleanup delete a saved take).
+ */
+const metaQueues = new Map<string, Promise<unknown>>();
+async function patchMeta(
+  dir: FileSystemDirectoryHandle,
+  id: string,
+  patch: (meta: TakeMeta) => Partial<TakeMeta>,
+): Promise<TakeMeta> {
+  const prev = metaQueues.get(id) ?? Promise.resolve();
+  const next = prev
+    .catch(() => undefined)
+    .then(async () => {
+      const meta = await readMeta(dir);
+      const merged: TakeMeta = { ...meta, ...patch(meta), id };
+      await writeFile(dir, META, JSON.stringify(merged));
+      return merged;
+    });
+  metaQueues.set(id, next);
+  try {
+    return await next;
+  } finally {
+    if (metaQueues.get(id) === next) metaQueues.delete(id);
+  }
 }
 
 const pieceName = (n: number) => `${String(n).padStart(6, '0')}.part`;
@@ -217,7 +272,7 @@ export async function createTakeSink(
           spill.push(piece);
           // Best effort (the disk is full): remember it so a recovered take isn't cleaned up after a download.
           full.noSpace = true;
-          void writeFile(dir, META, JSON.stringify(full)).catch(() => undefined);
+          void patchMeta(dir, id, () => ({ noSpace: true })).catch(() => undefined);
           onError();
         }
       });
@@ -235,7 +290,7 @@ export async function createTakeSink(
     setMimeType(type) {
       if (!type || type === full.mimeType) return;
       full.mimeType = type;
-      void writeFile(dir, META, JSON.stringify(full)).catch(() => undefined);
+      void patchMeta(dir, id, () => ({ mimeType: type })).catch(() => undefined);
     },
     async discard() {
       gone = true;
@@ -272,13 +327,16 @@ export async function listLeftovers(): Promise<Leftover[]> {
         dir = await root.getDirectoryHandle(id);
         meta = await readMeta(dir);
       } catch {
-        // No readable meta: only an old one can be judged (a new one may still be being created).
-        if (!locked) {
+        // No readable meta: only an old one can be judged (a new one may still be being created). A folder that
+        // holds video pieces is never deleted blind: it may be a saved take whose meta got damaged.
+        if (!locked && !(await hasPieces(root, id))) {
           const empty = { startedAt: new Date(0).toISOString(), savedAt: null, bytes: 0, locked };
           if (leftoverAction(empty, now) === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
         }
         continue;
       }
+      // Kept in «Tomas»: never offered nor cleaned up here; skip reading its pieces (slow with long takes).
+      if (meta.kept) continue;
       let size = 0;
       let unreadable = false;
       try {
@@ -319,8 +377,7 @@ export async function markTakeSaved(id: string): Promise<void> {
   if (!root) return;
   try {
     const dir = await root.getDirectoryHandle(id);
-    const meta = await readMeta(dir);
-    await writeFile(dir, META, JSON.stringify({ ...meta, id, savedAt: new Date().toISOString() }));
+    await patchMeta(dir, id, () => ({ savedAt: new Date().toISOString() }));
   } catch {
     /* already gone */
   }
@@ -328,15 +385,34 @@ export async function markTakeSaved(id: string): Promise<void> {
 
 // ───────────── F3 · takes kept in the app ─────────────
 
-/** «Guardar»: the take stays on this phone as part of the app's «Tomas» (never cleaned up on its own). */
-export async function keepTake(id: string): Promise<boolean> {
+/**
+ * «Guardar»: the take stays on this phone as part of the app's «Tomas» (never cleaned up on its own). Returns its
+ * meta (when it started, its sync) or null when it can't be kept here.
+ */
+export async function keepTake(id: string): Promise<TakeMeta | null> {
+  return setKept(id, true);
+}
+
+/** Undo `keepTake` (saving the take's row failed): it goes back to being a leftover on offer / cleaned up. */
+export async function unkeepTake(id: string): Promise<void> {
+  await setKept(id, false);
+}
+
+async function setKept(id: string, kept: boolean): Promise<TakeMeta | null> {
   const root = await rootDir();
-  if (!root) return false;
+  if (!root) return null;
   try {
     const dir = await root.getDirectoryHandle(id);
-    const meta = await readMeta(dir);
-    await writeFile(dir, META, JSON.stringify({ ...meta, id, kept: true }));
-    return true;
+    const meta = await patchMeta(dir, id, () => ({ kept }));
+    return meta.kept === kept ? meta : null;
+  } catch {
+    return null;
+  }
+}
+
+async function hasPieces(root: FileSystemDirectoryHandle, id: string): Promise<boolean> {
+  try {
+    return (await names(await root.getDirectoryHandle(id))).some((n) => n.endsWith('.part'));
   } catch {
     return false;
   }

@@ -17,12 +17,16 @@ import { GridOverlay } from './settings/GridOverlay';
 import { LevelIndicator } from './settings/LevelIndicator';
 import { RecorderSettingsSheet } from './settings/RecorderSettingsSheet';
 import { useDesignVariant } from '@/features/lab/designLab';
+import { currentMemberId, useMembers } from '@/data/members';
+import { useSaveTake } from '@/data/takes';
+import { friendlyError } from '@/lib/supabase';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Aperture,
   Check,
   Download,
   Info,
+  Library,
   Locate,
   Lock,
   Settings2,
@@ -74,6 +78,7 @@ import {
   releaseTake,
   type Leftover,
   type TakeSink,
+  type TakeTimingMeta,
 } from './takeStore';
 import {
   IS_IOS,
@@ -129,6 +134,29 @@ const HEX = '24,2 43,13 43,35 24,46 5,35 5,13';
  * carries the song's own sound when the source allows it (uploaded files) and the microphone otherwise
  * (YouTube). The take goes to the phone through a download or the share sheet.
  */
+/** A finished take's own length and size, read from the file (a recovered take has no counter; the camera may have changed). */
+function probeVideo(url: string): Promise<{ duration: number; width: number | null; height: number | null }> {
+  return new Promise((resolve) => {
+    const el = document.createElement('video');
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      const duration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
+      resolve({ duration, width: el.videoWidth || null, height: el.videoHeight || null });
+      el.removeAttribute('src');
+      el.load();
+    };
+    const timer = setTimeout(finish, 3000);
+    el.preload = 'metadata';
+    el.muted = true;
+    el.onloadedmetadata = finish;
+    el.onerror = finish;
+    el.src = url;
+  });
+}
+
 export function RecordStudio({ open, onClose, video }: { open: boolean; onClose: () => void; video: Video }) {
   /** The camera went away mid-take (another app, a call): set once pausePart exists, below. */
   const cameraLost = useRef<() => void>(() => undefined);
@@ -143,9 +171,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [seconds, setSeconds] = useState(0);
   const [take, setTake] = useState<Take | null>(null);
   const [saved, setSaved] = useState(false);
+  /** F3: kept in the app's «Tomas» (the take's home on this phone). */
+  const [kept, setKept] = useState(false);
+  const saveTake = useSaveTake();
+  const members = useMembers();
   const [confirm, setConfirm] = useState<'close' | 'again' | 'discard' | 'leftover' | null>(null);
   const [sound, setSound] = useState<SoundSource>('pending');
   const [notice, setNotice] = useState('');
+  /** F3 · What «Guardar» did, shown in the review (an error stays until the next try). */
+  const [keepMsg, setKeepMsg] = useState<{ text: string; error: boolean } | null>(null);
   const [hereAt, setHereAt] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
   /** R3: the heat notice was shown for this take. */
@@ -156,8 +190,11 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   /** Where the current take is being written (R1); ready before the song starts. */
   const sink = useRef<TakeSink | null>(null);
   const sinkReady = useRef<Promise<TakeSink> | null>(null);
+  /** Sync of the take being recorded, and of the one under review (F3/F5). */
+  const takeTiming = useRef<TakeTimingMeta | null>(null);
+  const reviewTiming = useRef<TakeTimingMeta | null>(null);
   /** The disk copy behind the take under review, and whether it was saved somewhere. */
-  const reviewTake = useRef<{ id: string; saved: boolean; noSpace: boolean } | null>(null);
+  const reviewTake = useRef<{ id: string; saved: boolean; noSpace: boolean; kept: boolean; videoId: string } | null>(null);
   /** How the current take gets its picture (Q5): the camera's own track or the redrawn canvas. */
   const [takeKind, setTakeKind] = useState<'direct' | 'canvas' | null>(null);
   /** The camera track and picture size a direct take started with: it can only go on with the same ones. */
@@ -194,12 +231,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const restore = useRef<{ loopEnabled: boolean; loopAll: boolean } | null>(null);
   const sharing = useRef(false);
 
-  const unsaved = phase === 'paused' || (phase === 'review' && take != null && !saved);
+  const unsaved = phase === 'paused' || (phase === 'review' && take != null && !saved && !kept);
   const rolling =
     phase === 'countdown' || phase === 'arming' || phase === 'recording' || phase === 'finishing';
   const supported = canRecord() && canRecordCanvas();
 
-  const replaceTake = (next: Take | null, diskId: string | null = null) => {
+  const replaceTake = (next: Take | null, diskId: string | null = null, reviewVideoId: string | null = null) => {
     if (takeUrl.current) URL.revokeObjectURL(takeUrl.current);
     takeUrl.current = next?.url ?? null;
     // The take we leave: a saved one keeps its copy a while (a download may still be reading it), then goes;
@@ -208,7 +245,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (old && old.id !== diskId) {
       // Not saved: the dancer confirmed discarding it. Saved on a full phone: stays on offer (the download may
       // have failed). Saved: kept a while for the download, then deleted.
-      if (!old.saved) void forgetTake(old.id);
+      if (old.kept) releaseTake(old.id); // it lives in «Tomas» now
+      else if (!old.saved) void forgetTake(old.id);
       else if (old.noSpace) releaseTake(old.id);
       else {
         releaseTake(old.id);
@@ -217,7 +255,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       }
     }
     if (diskId) holdTake(diskId);
-    reviewTake.current = diskId ? { id: diskId, saved: false, noSpace: false } : null;
+    reviewTake.current = diskId ? { id: diskId, saved: false, noSpace: false, kept: false, videoId: reviewVideoId ?? video.id } : null;
+    setKept(false);
+    setKeepMsg(null);
     setTake(next);
     setSaved(false);
   };
@@ -227,7 +267,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (sinkReady.current) return;
     const id = session.current;
     const promise = createTakeSink(
-      { videoId: video.id, title: video.title, mimeType: plannedFormat().mimeType },
+      { videoId: video.id, title: video.title, mimeType: plannedFormat().mimeType, timing: takeTiming.current ?? undefined },
       () => {
         if (id !== session.current || !recorder.current) return;
         setNotice('El móvil se ha quedado sin espacio: la toma termina con lo grabado hasta aquí.');
@@ -417,6 +457,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
    * between takes; a take in progress keeps the sound it started with.
    */
   const songPossible = usePlayer((s) => Boolean(s.engine?.captureAudio));
+  // F17: the take records what is heard, voice mode included.
+  const voiceMode = usePlayer((s) => s.voiceMode);
+  const songSoundLabel =
+    voiceMode === 'sin-voz' ? 'la canción sin voz' : voiceMode === 'voz' ? 'la voz de la canción al frente' : 'el audio original de la canción';
   useEffect(() => {
     if (!open || recorder.current) return;
     const id = session.current;
@@ -752,6 +796,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       );
     }
     replaceTake({ url: URL.createObjectURL(file), file }, written?.where === 'disk' ? written.id : null);
+    reviewTiming.current = takeTiming.current;
     if (reviewTake.current && written?.failed()) reviewTake.current.noSpace = true;
     setPhase('review');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -953,11 +998,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       orientation.current = { pending: false, locked: false, tried: false, ready: Promise.resolve() };
       if (!directPossible()) setTakeKind('canvas');
       const s = songSpan();
+      const p = usePlayer.getState();
       spanRef.current = s;
+      // F3/F5: what the take is synced to (saved with it; recovered takes keep it too).
+      takeTiming.current = {
+        songStart: s.start,
+        songEnd: Number.isFinite(s.end) ? s.end : null,
+        speed: p.rate,
+        mirrored: p.mirrored,
+        clipId: fromNow === 'range' ? p.activeClipId : null,
+      };
       heatWarned.current = false;
       setSpan(s);
       setSeconds(0);
-      const p = usePlayer.getState();
       p.pause();
       p.seek(s.start);
       prepareSink();
@@ -1055,7 +1108,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const now = phaseRef.current;
     if (now === 'finishing') return;
     if (now === 'countdown' || now === 'arming' || now === 'recording') pausePart();
-    if (recorder.current || (now === 'review' && take && !saved)) setConfirm('close');
+    if (recorder.current || (now === 'review' && take && !saved && !kept)) setConfirm('close');
     else onClose();
   }
 
@@ -1086,6 +1139,46 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
    * The take was handed to the phone (download or share). Its working copy stops being offered back, unless the
    * take ended because the phone was full: then the download may well have failed too, so it stays on offer.
    */
+  /**
+   * F3 «Guardar»: the take joins this song's «Tomas» (on this phone; the group sees its row, and can see the video
+   * once shared). Only for takes written to the phone's storage and of this song.
+   */
+  const canKeep = reviewTake.current != null && reviewTake.current.videoId === video.id;
+  async function keepInApp() {
+    const disk = reviewTake.current;
+    if (!take || !disk || disk.kept || saveTake.isPending) return;
+    const timing = reviewTiming.current;
+    setKeepMsg(null);
+    // No «¿Quién eres?» here (it would open under the recorder): unnamed takes can be claimed later in «Tomas».
+    const probe = await probeVideo(take.url);
+    void saveTake
+      .mutateAsync({
+        id: disk.id,
+        video: { id: video.id },
+        file: take.file,
+        memberId: currentMemberId(members.data),
+        songStart: timing?.songStart ?? 0,
+        songEnd: timing?.songEnd ?? null,
+        clipId: timing?.clipId ?? null,
+        speed: timing?.speed ?? 1,
+        mirrored: timing?.mirrored ?? false,
+        durationSeconds: seconds > 0 ? seconds : probe.duration,
+        width: probe.width ?? view.mode?.width ?? null,
+        height: probe.height ?? view.mode?.height ?? null,
+        mimeType: take.file.type || null,
+        fileName: take.file.name,
+      })
+      .then(() => {
+        if (reviewTake.current !== disk) return;
+        disk.kept = true;
+        setKept(true);
+        setKeepMsg({ text: 'Guardada en «Tomas» de esta canción.', error: false });
+      })
+      .catch((err: unknown) => {
+        if (reviewTake.current === disk) setKeepMsg({ text: friendlyError(err), error: true });
+      });
+  }
+
   function takeKept() {
     setSaved(true);
     const disk = reviewTake.current;
@@ -1205,7 +1298,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     });
     setSeconds(-1);
     setLastStats(null);
-    replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id);
+    replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id, found.meta.videoId);
+    reviewTiming.current = found.meta.timing ?? null;
     if (reviewTake.current && found.meta.noSpace) reviewTake.current.noSpace = true;
     setPhase('review');
   }
@@ -1484,7 +1578,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           onClick={() => settings.set({ sound: settings.sound === 'song' ? 'mic' : 'song' })}
           aria-label={
             songPossible
-              ? `Sonido de la toma: ${sound === 'song' ? 'canción limpia' : 'micrófono'}. Toca para cambiar`
+              ? `Sonido de la toma: ${sound === 'song' ? songSoundLabel : 'micrófono'}. Toca para cambiar`
               : undefined
           }
           className="absolute inset-x-0 top-[calc(max(14px,env(safe-area-inset-top))+60px)] mx-auto flex min-h-9 w-max max-w-[calc(100vw-150px)] items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-left text-[12px] leading-snug text-washi/90 enabled:active:scale-95"
@@ -1498,7 +1592,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           )}
           <span>
             {sound === 'song'
-              ? 'Con el audio original de la canción'
+              ? `Con ${songSoundLabel}`
               : sound === 'mic'
                 ? songPossible
                   ? `Con el micro${settings.micChannels === 'stereo' ? ' (estéreo)' : ''}: se oye la sala`
@@ -1729,18 +1823,41 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               </button>
             </p>
             <div className="flex w-full max-w-md flex-wrap items-center justify-center gap-2 landscape:flex-col landscape:items-stretch">
-              <Button onClick={() => void save()}>
+              {canKeep && (
+                <Button onClick={() => void keepInApp()} loading={saveTake.isPending} disabled={kept}>
+                  {kept ? <Check className="size-4" /> : <Library className="size-4" />}
+                  {kept ? 'En «Tomas»' : 'Guardar en «Tomas»'}
+                </Button>
+              )}
+              <Button variant={canKeep ? 'secondary' : 'primary'} onClick={() => void save()}>
                 {saved ? <Check className="size-4" /> : <Download className="size-4" />}
-                {IS_IOS ? 'Guardar en Fotos' : 'Guardar en el móvil'}
+                {IS_IOS ? 'Guardar en Fotos' : 'Descargar'}
               </Button>
               {!IS_IOS && canShareFile(take.file) && (
                 <Button variant="secondary" onClick={() => void share()}>
                   <Share className="size-4" /> Compartir
                 </Button>
               )}
-              <Button variant="secondary" onClick={() => (saved ? again() : setConfirm('again'))}>
+              <Button variant="secondary" onClick={() => (saved || kept ? again() : setConfirm('again'))}>
                 <RefreshCw className="size-4" /> Repetir
               </Button>
+            </div>
+            <div aria-live="polite" className="w-full max-w-md empty:hidden">
+              {(keepMsg ?? (notice ? { text: notice, error: false } : null)) && (
+                <motion.p
+                  key={keepMsg?.text ?? notice}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={soft}
+                  role={keepMsg?.error ? 'alert' : 'status'}
+                  className={cn(
+                    'rounded-[10px] px-3 py-2 text-center text-[13px] leading-snug',
+                    keepMsg?.error ? 'bg-enji-700/70 text-enji-200' : 'bg-sumi-900/90 text-washi',
+                  )}
+                >
+                  {keepMsg?.text ?? notice}
+                </motion.p>
+              )}
             </div>
           </div>
         </div>

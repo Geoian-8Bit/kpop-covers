@@ -16,4 +16,9 @@ export const DEMOS: Record<MomentId, LazyExoticComponent<ComponentType<DemoProps
       default: m.RecorderSettingsDemo,
     })),
   ),
+  'voice-split': lazy(() =>
+    import('@/features/voice/VoiceSplitDemo').then((m) => ({
+      default: m.VoiceSplitDemo,
+    })),
+  ),
 };

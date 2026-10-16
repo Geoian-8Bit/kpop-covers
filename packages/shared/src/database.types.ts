@@ -235,6 +235,100 @@ export type Database = {
         };
         Relationships: [];
       };
+      takes: {
+        Row: {
+          archived_at: string | null;
+          clip_id: string | null;
+          created_at: string;
+          crew_id: string;
+          device_id: string | null;
+          duration_seconds: number;
+          file_name: string | null;
+          height: number | null;
+          id: string;
+          is_best: boolean;
+          member_id: string | null;
+          mime_type: string | null;
+          mirrored: boolean;
+          recorded_at: string;
+          shared_path: string | null;
+          shared_size: number | null;
+          song_end_seconds: number | null;
+          song_start_seconds: number;
+          speed: number;
+          video_id: string;
+          width: number | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          clip_id?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          device_id?: string | null;
+          duration_seconds?: number;
+          file_name?: string | null;
+          height?: number | null;
+          id: string;
+          is_best?: boolean;
+          member_id?: string | null;
+          mime_type?: string | null;
+          mirrored?: boolean;
+          recorded_at?: string;
+          shared_path?: string | null;
+          shared_size?: number | null;
+          song_end_seconds?: number | null;
+          song_start_seconds: number;
+          speed?: number;
+          video_id: string;
+          width?: number | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          clip_id?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          device_id?: string | null;
+          duration_seconds?: number;
+          file_name?: string | null;
+          height?: number | null;
+          id?: string;
+          is_best?: boolean;
+          member_id?: string | null;
+          mime_type?: string | null;
+          mirrored?: boolean;
+          recorded_at?: string;
+          shared_path?: string | null;
+          shared_size?: number | null;
+          song_end_seconds?: number | null;
+          song_start_seconds?: number;
+          speed?: number;
+          video_id?: string;
+          width?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'takes_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'takes_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'takes_clip_id_fkey';
+            columns: ['clip_id'];
+            isOneToOne: false;
+            referencedRelation: 'clips';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       videos: {
         Row: {
           artist: string | null;
@@ -308,6 +402,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      storage_usage: {
+        Args: never;
+        Returns: Json;
+      };
       join_group: {
         Args: never;
         Returns: {

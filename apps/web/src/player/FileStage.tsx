@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { createMediaEngine, withOffset } from './engine';
+import { createMediaEngine, releaseMediaAudio, resetMediaAudioAnalysis, withOffset } from './engine';
 import { hasRange, usePlayer } from './store';
 
 /**
@@ -8,6 +8,17 @@ import { hasRange, usePlayer } from './store';
  */
 export function FileStage({ src, offset = 0 }: { src: string; offset?: number }) {
   const ref = useRef<HTMLVideoElement>(null);
+
+  // F17: the voice/music graph lives as long as the element; a new file starts a new mono check.
+  useEffect(() => {
+    const el = ref.current;
+    return () => {
+      if (el) releaseMediaAudio(el);
+    };
+  }, []);
+  useEffect(() => {
+    if (ref.current) resetMediaAudioAnalysis(ref.current);
+  }, [src]);
 
   useEffect(() => {
     const el = ref.current;

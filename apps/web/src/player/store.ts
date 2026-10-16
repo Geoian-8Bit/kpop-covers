@@ -1,5 +1,6 @@
 import { clamp, clampSpeed, MIN_LOOP_LENGTH, normalizeRange, round3 } from '@coverscape/shared';
 import { create } from 'zustand';
+import type { VoiceMode } from '@/features/voice/voiceRules';
 import type { PlayerEngine } from './engine';
 
 export interface LoopState {
@@ -46,6 +47,9 @@ interface PlayerState extends PlayerStatus {
   /** Where to land once the other stage's engine attaches (switching keeps the moment). */
   pendingSeek: number | null;
   setStage(stage: 'youtube' | 'file'): void;
+  /** F17 · Voice and music apart, for files (the engine applies it; YouTube can't). */
+  voiceMode: VoiceMode;
+  setVoiceMode(mode: VoiceMode): void;
 
   attach(engine: PlayerEngine): void;
   detach(engine: PlayerEngine): void;
@@ -197,8 +201,18 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     set({ stage, pendingSeek: get().time, playing: false, buffering: false, countdownEndsAt: null });
   },
 
+  voiceMode: 'original',
+  setVoiceMode(mode) {
+    // Only what is really applied is shown: no file engine (YouTube) or no Web Audio → the whole song.
+    const applied = get().engine?.setVoiceMode?.(mode) ?? false;
+    set({ voiceMode: applied ? mode : 'original' });
+  },
+
   attach(engine) {
     engine.setRate(get().rate);
+    const wanted = get().voiceMode;
+    const voiceApplied = wanted === 'original' || (engine.setVoiceMode?.(wanted) ?? false);
+    if (!voiceApplied) set({ voiceMode: 'original' });
     const { pendingSeek } = get();
     if (pendingSeek != null) engine.seek(pendingSeek);
     set({
@@ -232,6 +246,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       activeClipId: null,
       stage: 'youtube',
       pendingSeek: null,
+      voiceMode: 'original',
     });
   },
 

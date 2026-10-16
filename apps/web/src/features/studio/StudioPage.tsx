@@ -32,7 +32,8 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
-import { askWho } from '@/data/members';
+import { askWho, useMembers } from '@/data/members';
+import { takeDateLabel } from '@/features/takes/takeRules';
 import { readStage, rememberStage } from '@/lib/stagePref';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -64,6 +65,11 @@ import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { RecordStudio } from '@/features/record/RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
+import { Dialog } from '@/components/ui/Dialog';
+import { releaseTakeUrl } from '@/data/takes';
+import { useDesignVariant } from '@/features/lab/designLab';
+import { TakesPanel, type TakeItem } from '@/features/takes/TakesPanel';
+import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
 import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline, useNoteAlert } from './Timeline';
@@ -85,6 +91,10 @@ export function StudioPage() {
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [recording, setRecording] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [sideTab, setSideTab] = useState<'clips' | 'takes'>('clips');
+  /** A take being watched (F3; the side-by-side review comes with F5). */
+  const [playingTake, setPlayingTake] = useState<{ take: TakeItem; url: string } | null>(null);
+  const members = useMembers();
   // F1: arriving from «Añadir vídeo» with this video's file: open the link panel with it.
   const location = useLocation();
   const navigateTo = useNavigate();
@@ -312,16 +322,41 @@ export function StudioPage() {
               onNoteOpen={openNote}
             />
             <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
+            <VoiceRow />
           </div>
 
-          {/* Clips column */}
+          {/* Clips | Tomas column */}
           <div className="sep-t lg:sep-l">
-            <ClipList
-              clips={clips.data ?? []}
-              loading={clips.isPending}
-              onApply={applyClip}
-              onNew={openSave}
-            />
+            <div className="px-4 pt-4 sm:px-5">
+              <Segmented
+                label="Clips o tomas"
+                layoutId={`side-${current.id}`}
+                value={sideTab}
+                onChange={setSideTab}
+                options={[
+                  { value: 'clips', label: 'Clips' },
+                  { value: 'takes', label: 'Tomas' },
+                ]}
+              />
+            </div>
+            {sideTab === 'clips' ? (
+              <ClipList
+                clips={clips.data ?? []}
+                loading={clips.isPending}
+                onApply={applyClip}
+                onNew={openSave}
+              />
+            ) : (
+              <TakesPanel
+                video={current}
+                clips={clips.data ?? []}
+                onPlay={(take, url) => {
+                  // One sound at a time: the song stops while a take plays.
+                  usePlayer.getState().pause();
+                  setPlayingTake({ take, url });
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -346,6 +381,29 @@ export function StudioPage() {
         />
       )}
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
+      <Dialog
+        open={playingTake != null}
+        onClose={() => {
+          if (playingTake) releaseTakeUrl(playingTake.url);
+          setPlayingTake(null);
+        }}
+        title={
+          playingTake
+            ? `Toma de ${members.data?.find((m) => m.id === playingTake.take.member_id)?.name ?? 'alguien sin nombre'} · ${takeDateLabel(playingTake.take.recorded_at)}`
+            : 'Toma'
+        }
+        size="lg"
+      >
+        {playingTake && (
+          <video
+            src={playingTake.url}
+            controls
+            autoPlay
+            playsInline
+            className="max-h-[70dvh] w-full rounded-[10px] bg-black object-contain"
+          />
+        )}
+      </Dialog>
     </Page>
   );
 }
@@ -396,6 +454,36 @@ function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileS
   return state;
 }
 
+
+/** F17 · Voice and music apart: on files only (YouTube's sound can't be reached). */
+function VoiceRow() {
+  const mode = usePlayer((s) => s.voiceMode);
+  const available = usePlayer((s) => Boolean(s.engine?.setVoiceMode));
+  const variant = useDesignVariant('voice-split');
+  const [monoLike, setMonoLike] = useState(false);
+  // While a split is on, ask the graph now and then whether the song is mono (then «sin voz» can't work).
+  useEffect(() => {
+    if (!available || mode === 'original') return;
+    const id = setInterval(() => {
+      const info = usePlayer.getState().engine?.voiceInfo?.();
+      if (info?.settled) setMonoLike(info.monoLike);
+    }, 600);
+    return () => clearInterval(id);
+  }, [available, mode]);
+  return (
+    <div className="sep-t px-4 py-3 sm:px-5">
+      <p className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">Voz y música</p>
+      <VoiceSplitControl
+        mode={mode}
+        onChange={(m) => usePlayer.getState().setVoiceMode(m)}
+        available={available}
+        monoLike={monoLike}
+        variant={variant}
+        compact
+      />
+    </div>
+  );
+}
 
 /** F1 · «YouTube | Archivo» for a YouTube entry with its own file. */
 function StageSwitch({ video }: { video: Video }) {
