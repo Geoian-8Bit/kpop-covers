@@ -1,4 +1,5 @@
 import {
+  AUDIO_BITS_PER_SECOND,
   isHevcMime,
   mimeCandidates,
   pickMime,
@@ -79,7 +80,7 @@ export function chooseFormat(plan: RecordPlan): RecordFormat {
   const format = {
     mimeType,
     videoBitsPerSecond: targetVideoBitrate({ ...plan, hevc: isHevcMime(mimeType) }),
-    audioBitsPerSecond: 160_000,
+    audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
   };
   remembered.set(key, format);
   return format;

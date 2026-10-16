@@ -19,6 +19,8 @@ import {
   Download,
   Info,
   Locate,
+  Lock,
+  SunMedium,
   Mic,
   MicOff,
   Music2,
@@ -42,9 +44,19 @@ import { scheduleCountIn, unlockAudio } from '@/lib/metronome';
 import { jelly, soft } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
-import { openMic } from './camera';
+import {
+  canLock,
+  canWhiteBalance,
+  focusAt,
+  lockFocusExposure,
+  openMic,
+  readTrackInfo,
+  setExposureCompensation,
+  setWhiteBalance,
+} from './camera';
 import { canRecordCanvas, createFrameMeter, watchPresentedFrames, type FrameMeter } from './compositor';
 import { InfoPanel, type TakeStats } from './InfoPanel';
+import { IMAGE_DEFAULT, ImageControls, type ImageState } from './ImageControls';
 import {
   createTakeSink,
   forgetTake,
@@ -286,22 +298,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       });
     });
 
-    // The song's own sound when the source allows it; otherwise the microphone hears the speaker.
-    const tap = p.engine?.captureAudio?.() ?? null;
-    songTrack.current = tap;
-    if (tap) setSound('song');
-    else {
-      setSound('pending');
-      void openMic().then((track) => {
-        if (id !== session.current) {
-          track?.stop();
-          return;
-        }
-        micTrack.current = track;
-        setSound(track ? 'mic' : 'none');
-      });
-    }
-
     void (navigator as WakeLockNavigator).wakeLock
       ?.request('screen')
       .then((lock) => {
@@ -335,11 +331,182 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       replaceTake(null);
       setConfirm(null);
       setInfoOpen(false);
+      setImageOpen(false);
       setLastStats(null);
       setPhase('idle');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /**
+   * The take's sound (S3): the song's own sound when the source allows it (files) and the settings ask for it,
+   * otherwise the microphone, raw and in stereo when possible (S2). Chosen again when the setting changes
+   * between takes; a take in progress keeps the sound it started with.
+   */
+  const songPossible = usePlayer((s) => Boolean(s.engine?.captureAudio));
+  useEffect(() => {
+    if (!open || recorder.current) return;
+    const id = session.current;
+    let live = true;
+    const tap =
+      settings.sound === 'song' ? (usePlayer.getState().engine?.captureAudio?.() ?? null) : null;
+    songTrack.current = tap;
+    micTrack.current?.stop();
+    micTrack.current = null;
+    if (tap) setSound('song');
+    else {
+      setSound('pending');
+      void openMic(settings.micChannels).then((track) => {
+        if (!live || id !== session.current) {
+          track?.stop();
+          return;
+        }
+        micTrack.current = track;
+        setSound(track ? 'mic' : 'none');
+      });
+    }
+    return () => {
+      live = false;
+    };
+  }, [open, settings.sound, settings.micChannels, songPossible]);
+
+  // ───────────── C1–C4 · image controls ─────────────
+  const [imageOpen, setImageOpen] = useState(false);
+  const [image, setImage] = useState<ImageState>(IMAGE_DEFAULT);
+  const [focusMark, setFocusMark] = useState<{ x: number; y: number; key: number } | null>(null);
+  /** What this camera offers (read again when the camera or its mode changes). */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const trackInfo = useMemo(() => (view.status === 'ready' ? readTrackInfo(cam.track()) : null), [view.status, view.deviceId, view.mode]);
+  const hasImageControls = Boolean(
+    trackInfo && (trackInfo.exposureCompensation || canWhiteBalance(trackInfo) || canLock(trackInfo)),
+  );
+  // Another camera starts with its own automatic settings.
+  useEffect(() => {
+    setImage(IMAGE_DEFAULT);
+    setFocusMark(null);
+  }, [view.deviceId, view.facing]);
+  // A tap's ring fades; a lock's ring stays.
+  useEffect(() => {
+    if (!focusMark || image.locked) return;
+    const t = setTimeout(() => setFocusMark(null), 1400);
+    return () => clearTimeout(t);
+  }, [focusMark, image.locked]);
+
+  /** A point on screen → 0–1 on the recorded frame (letterboxing and the front camera's mirror undone). */
+  function framePoint(clientX: number, clientY: number): { x: number; y: number } | null {
+    const host = cam.host.current;
+    const src = cam.source.current;
+    if (!host || !src?.videoWidth) return null;
+    const r = host.getBoundingClientRect();
+    const aspect = src.videoWidth / src.videoHeight;
+    const w = Math.min(r.width, r.height * aspect);
+    const h = w / aspect;
+    let x = (clientX - r.left - (r.width - w) / 2) / w;
+    const y = (clientY - r.top - (r.height - h) / 2) / h;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    if (view.facing === 'user') x = 1 - x;
+    return { x, y };
+  }
+
+  function focusHere(clientX: number, clientY: number, lock: boolean) {
+    const info = trackInfo;
+    const p = framePoint(clientX, clientY);
+    if (!info || !p) return;
+    const t = cam.track();
+    setFocusMark({ x: clientX, y: clientY, key: performance.now() });
+    void (async () => {
+      if (info.pointsOfInterest) await focusAt(t, p.x, p.y, info);
+      if (lock || image.locked) {
+        const ok = await lockFocusExposure(t, lock, info);
+        if (ok) setImage((s) => ({ ...s, locked: lock }));
+      }
+    })();
+  }
+
+  const press = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    at: number;
+    multi: boolean;
+    moved: boolean;
+    held: boolean;
+    timer?: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  const tapEnabled = view.status === 'ready' && (phase === 'idle' || phase === 'paused' || phase === 'recording');
+  /** Pinch zooms (as before); a tap focuses there (C1); a long press holds focus and light (C2). */
+  const previewHandlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      cam.pinchHandlers.onPointerDown(e);
+      const p = press.current;
+      if (p) {
+        p.multi = true;
+        clearTimeout(p.timer);
+        return;
+      }
+      if (!tapEnabled) return;
+      const next: NonNullable<typeof press.current> = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        at: performance.now(),
+        multi: false,
+        moved: false,
+        held: false,
+      };
+      press.current = next;
+      if (trackInfo && canLock(trackInfo)) {
+        next.timer = setTimeout(() => {
+          if (press.current !== next || next.multi || next.moved) return;
+          next.held = true;
+          focusHere(next.x, next.y, true);
+        }, 650);
+      }
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      cam.pinchHandlers.onPointerMove(e);
+      const p = press.current;
+      if (p && p.id === e.pointerId && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 12) {
+        p.moved = true;
+        clearTimeout(p.timer);
+      }
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      cam.pinchHandlers.onPointerUp(e);
+      const p = press.current;
+      if (!p) return;
+      if (p.id === e.pointerId) {
+        clearTimeout(p.timer);
+        if (!p.multi && !p.moved && !p.held && performance.now() - p.at < 500) focusHere(e.clientX, e.clientY, false);
+      }
+      if (cam.pinchHandlers.pointerCount() === 0) press.current = null;
+    },
+    onPointerCancel: (e: React.PointerEvent) => {
+      cam.pinchHandlers.onPointerUp(e);
+      clearTimeout(press.current?.timer);
+      if (cam.pinchHandlers.pointerCount() === 0) press.current = null;
+    },
+  };
+
+  function changeExposure(value: number) {
+    setImage((s) => ({ ...s, exposure: value }));
+    void setExposureCompensation(cam.track(), value);
+  }
+  function changeWhiteBalance(kelvin: number | null) {
+    if (!trackInfo) return;
+    const before = image.kelvin;
+    setImage((s) => ({ ...s, kelvin }));
+    void setWhiteBalance(cam.track(), kelvin, trackInfo).then((ok) => {
+      if (!ok) setImage((s) => ({ ...s, kelvin: before }));
+    });
+  }
+  function changeLock(locked: boolean) {
+    if (!trackInfo) return;
+    void lockFocusExposure(cam.track(), locked, trackInfo).then((ok) => {
+      if (ok) setImage((s) => ({ ...s, locked }));
+      if (!locked) setFocusMark(null);
+    });
+  }
 
   /** The canvas is the picture only for a digital zoom, when forced in the settings, or during a canvas take. */
   const usesCanvas = settings.mode === 'canvas' || view.digital || takeKind === 'canvas';
@@ -934,8 +1101,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       {/* The redrawn frame, on top when it is the picture (digital zoom or a canvas take). Pinch zooms. */}
       <div
         ref={cam.host}
-        {...cam.pinchHandlers}
-        onPointerCancel={cam.pinchHandlers.onPointerUp}
+        {...previewHandlers}
+        onPointerCancel={previewHandlers.onPointerCancel}
         className={cn(
           'absolute inset-0 touch-none',
           view.facing === 'user' && '-scale-x-100',
@@ -1052,18 +1219,69 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               <Aperture className="size-5" />
             </RailButton>
           )}
+          {hasImageControls && (
+            <RailButton
+              label="Imagen"
+              ariaLabel="Luz, color y enfoque"
+              expanded={imageOpen}
+              onClick={() => {
+                setInfoOpen(false);
+                setImageOpen((v) => !v);
+              }}
+            >
+              <SunMedium className="size-5" />
+            </RailButton>
+          )}
           {canTweak && (
             <RailButton
               label="Info"
               ariaLabel="Información técnica de la cámara"
               expanded={infoOpen}
-              onClick={() => setInfoOpen((v) => !v)}
+              onClick={() => {
+                setImageOpen(false);
+                setInfoOpen((v) => !v);
+              }}
             >
               <Info className="size-5" />
             </RailButton>
           )}
         </div>
       )}
+
+      {/* C1/C2: where the camera focuses and measures the light; it stays while focus and light are held. */}
+      <AnimatePresence>
+        {focusMark && showCamera && (
+          <motion.div
+            key={focusMark.key}
+            aria-hidden
+            initial={{ opacity: 0, scale: 1.45 }}
+            animate={{ opacity: image.locked ? 0.85 : 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+            transition={jelly}
+            className="pointer-events-none absolute z-20 size-[76px] -translate-x-1/2 -translate-y-1/2 rounded-[8px] border-2 border-kin-300 shadow-[0_0_0_1px_rgb(0_0_0/0.35)]"
+            style={{ left: focusMark.x, top: focusMark.y }}
+          >
+            {image.locked && (
+              <span className="absolute -top-8 left-1/2 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full bg-kin-300 px-2 py-0.5 text-[11px] font-bold text-sumi-900">
+                <Lock className="size-3" /> Enfoque y luz fijos
+              </span>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {imageOpen && trackInfo && !confirm && showCamera && (
+          <ImageControls
+            info={trackInfo}
+            state={image}
+            onExposure={changeExposure}
+            onWhiteBalance={changeWhiteBalance}
+            onLock={changeLock}
+            onClose={() => setImageOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {infoOpen && !confirm && (
@@ -1083,7 +1301,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
       {/* What the take will sound like. */}
       {phase === 'idle' && camReady && sound !== 'pending' && (
-        <p className="absolute inset-x-0 top-[calc(max(14px,env(safe-area-inset-top))+60px)] mx-auto flex w-max max-w-[calc(100vw-150px)] items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-[12px] leading-snug text-washi/90">
+        <button
+          type="button"
+          // S3: with a file the dancer chooses: the clean song or the room's sound (steps, voices).
+          disabled={!songPossible}
+          onClick={() => settings.set({ sound: settings.sound === 'song' ? 'mic' : 'song' })}
+          aria-label={
+            songPossible
+              ? `Sonido de la toma: ${sound === 'song' ? 'canción limpia' : 'micrófono'}. Toca para cambiar`
+              : undefined
+          }
+          className="absolute inset-x-0 top-[calc(max(14px,env(safe-area-inset-top))+60px)] mx-auto flex min-h-9 w-max max-w-[calc(100vw-150px)] items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-left text-[12px] leading-snug text-washi/90 enabled:active:scale-95"
+        >
           {sound === 'song' ? (
             <Music2 className="size-3.5 shrink-0 text-kin-300" />
           ) : sound === 'mic' ? (
@@ -1095,11 +1324,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             {sound === 'song'
               ? 'Con el audio original de la canción'
               : sound === 'mic'
-                ? 'YouTube no deja grabar su audio: se oye por el micro, sube el volumen'
+                ? songPossible
+                  ? `Con el micro${settings.micChannels === 'stereo' ? ' (estéreo)' : ''}: se oye la sala`
+                  : 'YouTube no deja grabar su audio: se oye por el micro, sube el volumen'
                 : 'Sin permiso para el micro: se grabará sin sonido'}
             {rate !== 1 && ` · velocidad ${String(rate).replace('.', ',')}×`}
+            {songPossible && <span className="ml-1.5 font-bold text-kin-300">Cambiar</span>}
           </span>
-        </p>
+        </button>
       )}
 
       {/* Count-in */}

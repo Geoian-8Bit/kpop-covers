@@ -356,6 +356,8 @@ export function useCamera(open: boolean, onLost: () => void) {
     onPointerUp: (e: React.PointerEvent) => {
       pinch.current.pointers.delete(e.pointerId);
     },
+    /** Fingers still on the preview. */
+    pointerCount: () => pinch.current.pointers.size,
   };
 
   return {

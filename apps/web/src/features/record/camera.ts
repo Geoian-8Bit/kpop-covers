@@ -51,11 +51,20 @@ export async function openCamera(facing: Facing, deviceId: string | null, want: 
   return navigator.mediaDevices.getUserMedia({ video: base, audio: false });
 }
 
-/** Raw microphone: music through the speaker must not be "cancelled" as if it were an echo. */
-export async function openMic(): Promise<MediaStreamTrack | null> {
+/**
+ * Raw microphone: music through the speaker must not be "cancelled" as if it were an echo, nor squashed by the
+ * automatic volume (S2). Two channels when the phone has them (Samsungs have several microphones).
+ */
+export async function openMic(channels: 'mono' | 'stereo' = 'stereo'): Promise<MediaStreamTrack | null> {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: { ideal: channels === 'stereo' ? 2 : 1 },
+        sampleRate: { ideal: 48_000 },
+      },
       video: false,
     });
     return stream.getAudioTracks()[0] ?? null;
@@ -170,6 +179,97 @@ export function applyTrack(
     .applyConstraints({ advanced: [set as MediaTrackConstraintSet] })
     .then(() => true)
     .catch(() => false);
+}
+
+// ───────────── Image controls (C1–C4): only what this camera offers is ever shown ─────────────
+
+type Advanced = MediaTrackConstraintSet & Record<string, unknown>;
+
+async function applyAdvanced(track: MediaStreamTrack | undefined, set: Advanced): Promise<boolean> {
+  if (!track || track.readyState !== 'live') return false;
+  try {
+    await track.applyConstraints({ advanced: [set] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * C1 · Focus and meter the light on a point of the picture (0–1 from the top-left of the recorded frame,
+ * not of the mirrored preview).
+ */
+export async function focusAt(track: MediaStreamTrack | undefined, x: number, y: number, info: TrackInfo): Promise<boolean> {
+  const set: Advanced = { pointsOfInterest: [{ x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }] };
+  // Continuous keeps following that point (dancers move); single-shot only where that's all there is.
+  if (info.focusModes.includes('continuous')) set.focusMode = 'continuous';
+  else if (info.focusModes.includes('single-shot')) set.focusMode = 'single-shot';
+  if (info.exposureModes.includes('continuous')) set.exposureMode = 'continuous';
+  return applyAdvanced(track, set);
+}
+
+/**
+ * C2 · Hold focus and exposure where they are for the whole take (someone walking past the camera must not
+ * make the picture "breathe"), or let them follow the scene again.
+ */
+export async function lockFocusExposure(track: MediaStreamTrack | undefined, lock: boolean, info: TrackInfo): Promise<boolean> {
+  const now = (track?.getSettings?.() ?? {}) as Record<string, unknown>;
+  const set: Advanced = {};
+  if (lock) {
+    if (info.focusModes.includes('manual') && typeof now.focusDistance === 'number') {
+      set.focusMode = 'manual';
+      set.focusDistance = now.focusDistance;
+    } else if (info.focusModes.includes('single-shot')) set.focusMode = 'single-shot';
+    if (info.exposureModes.includes('manual') && typeof now.exposureTime === 'number') {
+      set.exposureMode = 'manual';
+      set.exposureTime = now.exposureTime;
+    } else if (info.exposureModes.includes('single-shot')) set.exposureMode = 'single-shot';
+  } else {
+    if (info.focusModes.includes('continuous')) set.focusMode = 'continuous';
+    if (info.exposureModes.includes('continuous')) set.exposureMode = 'continuous';
+  }
+  if (!Object.keys(set).length) return false;
+  return applyAdvanced(track, set);
+}
+
+/** C2 is possible when the camera can hold its focus or exposure. */
+export function canLock(info: TrackInfo | null): boolean {
+  if (!info) return false;
+  return (
+    info.focusModes.some((m) => m === 'manual' || m === 'single-shot') ||
+    info.exposureModes.some((m) => m === 'manual' || m === 'single-shot')
+  );
+}
+
+/** C3 · Exposure compensation, in the camera's own steps (usually −2 to +2). */
+export function setExposureCompensation(track: MediaStreamTrack | undefined, value: number): Promise<boolean> {
+  return applyAdvanced(track, { exposureCompensation: value });
+}
+
+/** C4 · White balance presets (Kelvin), as the phone's camera app names them. Null = automatic. */
+export const WHITE_BALANCE: { label: string; kelvin: number | null }[] = [
+  { label: 'Auto', kelvin: null },
+  { label: 'Cálida', kelvin: 3000 },
+  { label: 'Fluorescente', kelvin: 4000 },
+  { label: 'Día', kelvin: 5500 },
+  { label: 'Nublado', kelvin: 6500 },
+];
+
+export function setWhiteBalance(track: MediaStreamTrack | undefined, kelvin: number | null, info: TrackInfo): Promise<boolean> {
+  if (kelvin == null) {
+    return info.whiteBalanceModes.includes('continuous')
+      ? applyAdvanced(track, { whiteBalanceMode: 'continuous' })
+      : Promise.resolve(false);
+  }
+  const range = info.colorTemperature;
+  if (!range) return Promise.resolve(false);
+  const k = Math.min(range.max, Math.max(range.min, kelvin));
+  return applyAdvanced(track, { whiteBalanceMode: 'manual', colorTemperature: k });
+}
+
+/** C4 needs a manual mode with a colour temperature range. */
+export function canWhiteBalance(info: TrackInfo | null): boolean {
+  return Boolean(info?.colorTemperature && info.whiteBalanceModes.includes('manual'));
 }
 
 export interface BackLenses {
