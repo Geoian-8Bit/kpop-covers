@@ -14,7 +14,7 @@ import {
   type SaveTakeInput,
   type TakeItem,
 } from '@/features/takes/takeRules';
-import { backend } from '@/lib/backend';
+import { backend, type TakePatch } from '@/lib/backend';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 
 /**
@@ -264,6 +264,34 @@ export function useSetBestTake() {
       if (queryClient.isMutating({ mutationKey: BEST_WRITE }) > 1) return;
       void queryClient.invalidateQueries({ queryKey: takeKeys.forVideo(take.video_id) });
     },
+  });
+}
+
+// ───────────── Review data (F5) ─────────────
+
+/** What the review saves on a take: the fine sync (±0.3 s) and how the original sits over it («Superpuesto»). */
+export type TakeReviewPatch = Pick<TakePatch, 'sync_adjust_seconds' | 'fit_scale' | 'fit_x' | 'fit_y'>;
+
+/**
+ * Saves the review's sync or fit (optimistic: the list shows it at once; on failure it goes back and the
+ * caller says so). The screen debounces: one write per settled gesture or slider.
+ */
+export function useUpdateTakeReview() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ take, patch }: { take: Pick<TakeItem, 'id' | 'video_id'>; patch: TakeReviewPatch }) =>
+      backend.updateTake(take.id, patch),
+    onMutate: async ({ take, patch }) => {
+      const key = takeKeys.forVideo(take.video_id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<TakeItem[]>(key);
+      patchCache(queryClient, take.video_id, (items) => items.map((t) => (t.id === take.id ? { ...t, ...patch } : t)));
+      return { before, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.before) queryClient.setQueryData(context.key, context.before);
+    },
+    onSuccess: (row) => patchCache(queryClient, row.video_id, (items) => merge(items, row)),
   });
 }
 

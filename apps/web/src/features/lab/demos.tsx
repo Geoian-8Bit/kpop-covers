@@ -21,4 +21,24 @@ export const DEMOS: Record<MomentId, LazyExoticComponent<ComponentType<DemoProps
       default: m.VoiceSplitDemo,
     })),
   ),
+  'clap-arm': lazy(() =>
+    import('@/features/record/clap/ClapArmDemo').then((m) => ({
+      default: m.ClapArmDemo,
+    })),
+  ),
+  'review-compare': lazy(() =>
+    import('@/features/review/ReviewCompareDemo').then((m) => ({
+      default: m.ReviewCompareDemo,
+    })),
+  ),
+  'bag-draw': lazy(() =>
+    import('@/features/bags/BagDrawDemo').then((m) => ({
+      default: m.BagDrawDemo,
+    })),
+  ),
+  'random-play': lazy(() =>
+    import('@/features/rpd/RandomPlayDemo').then((m) => ({
+      default: m.RandomPlayDemo,
+    })),
+  ),
 };

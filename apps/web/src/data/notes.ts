@@ -1,6 +1,6 @@
 import type { Note } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { backend } from '@/lib/backend';
+import { backend, type NotePatch } from '@/lib/backend';
 
 export const noteKeys = {
   forVideo: (videoId: string | undefined) => ['notes', videoId] as const,
@@ -8,7 +8,10 @@ export const noteKeys = {
 
 const byTime = (a: Note, b: Note) => a.at_seconds - b.at_seconds;
 
-/** Timed notes on a video, earliest moment first. They are the dots on the timeline wave. */
+/**
+ * Timed notes on a video, earliest moment first. They are the dots on the timeline wave; a note on a take (F6)
+ * also carries the take's moment, and shows on the song only for its recipient (`songNotes`).
+ */
 export function useNotes(videoId: string | undefined) {
   return useQuery({
     queryKey: noteKeys.forVideo(videoId),
@@ -24,6 +27,12 @@ export interface NewNote {
   body: string;
   /** F2: who wrote it (null = «Sin nombre»). */
   author_member_id?: string | null;
+  /** F6 · a note on a take: the take, its moment, and optionally category, recipient and a small drawing. */
+  take_id?: string | null;
+  take_seconds?: number | null;
+  category?: string | null;
+  for_member_id?: string | null;
+  sketch?: string | null;
 }
 
 export function useCreateNote() {
@@ -36,10 +45,24 @@ export function useCreateNote() {
   });
 }
 
+/**
+ * Edit a note: its text, or (F6) its category, recipient, drawing and «pendiente / resuelta» status.
+ * Optimistic, so a status tap flips at once; on failure the list is put back.
+ */
 export function useUpdateNote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ note, body }: { note: Note; body: string }) => backend.updateNote(note.id, { body }),
+    mutationFn: ({ note, patch }: { note: Note; patch: NotePatch }) => backend.updateNote(note.id, patch),
+    onMutate: async ({ note, patch }) => {
+      const key = noteKeys.forVideo(note.video_id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<Note[]>(key);
+      queryClient.setQueryData<Note[]>(key, (current = []) => current.map((n) => (n.id === note.id ? { ...n, ...patch } : n)));
+      return { before, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.before) queryClient.setQueryData(context.key, context.before);
+    },
     onSuccess: (note) => {
       queryClient.setQueryData<Note[]>(noteKeys.forVideo(note.video_id), (current = []) =>
         current.map((n) => (n.id === note.id ? note : n)),

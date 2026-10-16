@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Cloud,
   CloudOff,
+  Columns2,
   CloudUpload,
   Download,
   Eraser,
@@ -36,6 +37,7 @@ import {
   type TakeItem,
 } from '@/data/takes';
 import { MemberSeal } from '@/features/members/MembersUI';
+import { defaultReviewTake } from '@/features/review/reviewRules';
 import { loadKeptTake } from '@/features/record/takeStore';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
@@ -105,6 +107,7 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
   const ctx = useMemo(() => ({ deviceId: device, meId: me?.id ?? null }), [device, me?.id]);
   const unnamed = useMemo(() => unnamedHere(all, device), [all, device]);
   const cleanable = useMemo(() => cleanupCandidates(visible, ctx), [visible, ctx]);
+  const reviewTake = useMemo(() => defaultReviewTake(all, me?.id ?? null), [all, me?.id]);
 
   const memberById = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m])), [members.data]);
   const clipById = useMemo(() => new Map(clips.map((c) => [c.id, c])), [clips]);
@@ -171,6 +174,26 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
       >
         Tomas
       </SectionTitle>
+
+      {reviewTake && (
+        // F5 · «Repaso» opens the best take of whoever this device is (F4), else the newest.
+        <Button
+          variant="secondary"
+          className="mt-3 h-auto min-h-11 w-full justify-start whitespace-normal py-2 text-left"
+          loading={busy?.id === reviewTake.id && busy.action === 'play'}
+          disabled={busy != null}
+          onClick={() => void play(reviewTake)}
+          aria-label={`Repaso: comparar con el original la toma de ${memberName(reviewTake)} (${takeDateLabel(reviewTake.recorded_at)})`}
+        >
+          <Columns2 className="size-4 shrink-0 text-shu-400" />
+          <span className="min-w-0">
+            Repaso
+            <span className="block truncate text-[12px] font-medium text-washi-muted">
+              {reviewTake.is_best ? 'La mejor' : 'La última'} · {memberName(reviewTake)} · {takeDateLabel(reviewTake.recorded_at)}
+            </span>
+          </span>
+        </Button>
+      )}
 
       <CloudMeter />
 

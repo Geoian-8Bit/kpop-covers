@@ -11,6 +11,8 @@ import type {
   Video,
 } from '@coverscape/shared';
 import { supabase, TAKE_BUCKET, VIDEO_BUCKET } from './supabase';
+import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from '@coverscape/shared';
+import { drawOrder } from '@/features/bags/drawRules';
 
 /**
  * Data access behind one interface so the app can run against Supabase (normal) or against
@@ -58,6 +60,15 @@ function uploadFailure(error: unknown): UploadFailure {
   return 'denied';
 }
 
+/** What the app may change on a take (the database grants exactly these columns). F5 adds the review's sync and fit. */
+export type TakePatch = Pick<
+  TablesUpdate<'takes'>,
+  'is_best' | 'shared_path' | 'shared_size' | 'member_id' | 'clip_id' | 'sync_adjust_seconds' | 'fit_scale' | 'fit_x' | 'fit_y'
+>;
+
+/** What the app may change on a note (granted columns; a note's take and moment are set when it's written). */
+export type NotePatch = Pick<TablesUpdate<'notes'>, 'body' | 'at_seconds' | 'category' | 'for_member_id' | 'status' | 'sketch'>;
+
 export interface StorageUsage {
   takes: number;
   total: number;
@@ -78,7 +89,7 @@ export interface Backend {
   deleteClip(id: string): Promise<void>;
   listNotes(videoId: string): Promise<Note[]>;
   insertNote(row: TablesInsert<'notes'>): Promise<Note>;
-  updateNote(id: string, patch: TablesUpdate<'notes'>): Promise<Note>;
+  updateNote(id: string, patch: NotePatch): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   /**
    * Never overwrites (each name is unique per video). Failures come back typed so the UI can say why.
@@ -97,7 +108,7 @@ export interface Backend {
   insertTake(row: TablesInsert<'takes'>): Promise<Take>;
   /** One live take by id (null when it doesn't exist or was deleted). */
   getTake(id: string): Promise<Take | null>;
-  updateTake(id: string, patch: Pick<TablesUpdate<'takes'>, 'is_best' | 'shared_path' | 'shared_size' | 'member_id' | 'clip_id'>): Promise<Take>;
+  updateTake(id: string, patch: TakePatch): Promise<Take>;
   deleteTake(id: string): Promise<void>;
   uploadTakeFile(path: string, file: Blob): Promise<UploadResult>;
   signedTakeUrl(path: string): Promise<string | null>;
@@ -432,6 +443,12 @@ const demoBackend: Backend = {
         archived_at: null,
         created_at: now(),
         updated_at: now(),
+        take_id: null,
+        take_seconds: null,
+        category: null,
+        for_member_id: null,
+        status: 'open',
+        sketch: null,
         ...row,
         author_member_id: row.author_member_id ?? null,
         crew_id: video?.crew_id ?? row.crew_id,
@@ -506,6 +523,10 @@ const demoBackend: Backend = {
         song_end_seconds: null,
         speed: 1,
         width: null,
+        sync_adjust_seconds: 0,
+        fit_scale: 1,
+        fit_x: 0,
+        fit_y: 0,
         ...row,
         crew_id: video.crew_id,
         shared_path: null,
@@ -549,3 +570,559 @@ function clearOtherBest(db: DemoDb, take: Take) {
 }
 
 export const backend: Backend = IS_DEMO ? demoBackend : supabaseBackend;
+
+// ───────────────────────────── F13 bags · F14 tracks ─────────────────────────────
+
+export type BagWithCount = Bag & { items: number };
+export type BagItemVideo = Pick<Video, 'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id'>;
+export type BagItemClip = Pick<
+  Clip,
+  'id' | 'name' | 'video_id' | 'start_seconds' | 'end_seconds' | 'speed' | 'mirrored' | 'color'
+> & { video: ClipVideo | null };
+export type BagItemMember = Pick<Member, 'id' | 'name' | 'color'>;
+/** A bag item with what it points at (songs, clips or people; archived ones never come back). */
+export type BagItemView = BagItem & { video: BagItemVideo | null; clip: BagItemClip | null; member: BagItemMember | null };
+export type TrackWithCount = Track & { items: number };
+/** A track's clip; `clip` is null when it was archived (shown as «no disponible», skipped when playing). */
+export type TrackItemView = TrackItem & { clip: ClipWithVideo | null };
+export type NewBag = { name: string; kind: BagKind; draw_mode: DrawMode; no_repeat: boolean };
+export type BagPatch = Partial<Pick<Bag, 'name' | 'draw_mode' | 'no_repeat'>>;
+export type NewBagItem = { bag_id: string; video_id?: string; clip_id?: string; member_id?: string };
+export type TrackOptionsRow = Pick<Track, 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>;
+export type TrackPatch = Partial<Pick<Track, 'name' | 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>>;
+
+/**
+ * F13 · bags and F14 · tracks, shared by the group. Only the columns the database grants are ever written:
+ * bags (name, draw_mode, no_repeat), bag_items (removed_at), bag_draws (removed), tracks (name and options),
+ * track_items (position). Deleting archives. The draw itself happens on the server (`draw_from_bag`).
+ */
+export interface BagsBackend {
+  listBags(): Promise<BagWithCount[]>;
+  insertBag(row: NewBag): Promise<Bag>;
+  updateBag(id: string, patch: BagPatch): Promise<Bag>;
+  deleteBag(id: string): Promise<void>;
+  listBagItems(bagId: string): Promise<BagItemView[]>;
+  insertBagItem(row: NewBagItem): Promise<BagItem>;
+  deleteBagItem(id: string): Promise<void>;
+  /** Takes an item out of the bag (or puts it back). */
+  setBagItemOut(id: string, out: boolean): Promise<void>;
+  /** «Rellenar»: everything taken out goes back in. */
+  refillBag(bagId: string): Promise<void>;
+  /** Newest first. */
+  listBagDraws(bagId: string, limit?: number): Promise<BagDraw[]>;
+  /** Draws `count` (1–10) at random; `remove` null = the bag's mode. Empty when nothing is left. */
+  drawFromBag(bagId: string, count: number, remove: boolean | null, memberId: string | null): Promise<BagDraw[]>;
+  /** «Quitar de la bolsa» / «Devolver» after a draw: the draw's record and its item follow. */
+  setDrawRemoved(draw: Pick<BagDraw, 'id' | 'item_id'>, removed: boolean): Promise<void>;
+  /** Every live clip of the group with its song (pickers, rounds). */
+  listAllClips(): Promise<ClipWithVideo[]>;
+  listTracks(): Promise<TrackWithCount[]>;
+  getTrack(id: string): Promise<Track | null>;
+  listTrackItems(trackId: string): Promise<TrackItemView[]>;
+  insertTrack(row: { name: string } & TrackOptionsRow, clipIds: string[]): Promise<Track>;
+  updateTrack(id: string, patch: TrackPatch): Promise<Track>;
+  deleteTrack(id: string): Promise<void>;
+  insertTrackItems(trackId: string, clipIds: string[], fromPosition: number): Promise<TrackItem[]>;
+  deleteTrackItem(id: string): Promise<void>;
+  setTrackPositions(patches: { id: string; position: number }[]): Promise<void>;
+}
+
+const CLIP_VIDEO_COLUMNS = 'id, title, artist, source, youtube_id';
+const BAG_ITEM_SELECT =
+  `*, video:videos(id, title, artist, thumbnail_url, source, youtube_id), ` +
+  `clip:clips(id, name, video_id, start_seconds, end_seconds, speed, mirrored, color, video:videos(${CLIP_VIDEO_COLUMNS})), ` +
+  `member:members(id, name, color)`;
+
+const supabaseBags: BagsBackend = {
+  async listBags() {
+    const { data, error } = await supabase.from('bags').select('*, bag_items(count)').order('created_at');
+    if (error) throw error;
+    return (data as unknown as (Bag & { bag_items: { count: number }[] })[]).map(({ bag_items, ...bag }) => ({
+      ...bag,
+      items: bag_items[0]?.count ?? 0,
+    }));
+  },
+  async insertBag(row) {
+    // crew_id comes from the database (the default group).
+    const { data, error } = await supabase
+      .from('bags')
+      .insert({ ...row, name: row.name.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Bag;
+  },
+  async updateBag(id, patch) {
+    const clean = patch.name != null ? { ...patch, name: patch.name.trim() } : patch;
+    const { data, error } = await supabase.from('bags').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Bag;
+  },
+  async deleteBag(id) {
+    const { error } = await supabase.from('bags').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async listBagItems(bagId) {
+    const { data, error } = await supabase.from('bag_items').select(BAG_ITEM_SELECT).eq('bag_id', bagId).order('created_at');
+    if (error) throw error;
+    return data as unknown as BagItemView[];
+  },
+  async insertBagItem(row) {
+    const { data, error } = await supabase.from('bag_items').insert(row).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async deleteBagItem(id) {
+    const { error } = await supabase.from('bag_items').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async setBagItemOut(id, out) {
+    const { error } = await supabase
+      .from('bag_items')
+      .update({ removed_at: out ? new Date().toISOString() : null })
+      .eq('id', id);
+    if (error) throw error;
+  },
+  async refillBag(bagId) {
+    const { error } = await supabase
+      .from('bag_items')
+      .update({ removed_at: null })
+      .eq('bag_id', bagId)
+      .not('removed_at', 'is', null);
+    if (error) throw error;
+  },
+  async listBagDraws(bagId, limit = 40) {
+    const { data, error } = await supabase
+      .from('bag_draws')
+      .select('*')
+      .eq('bag_id', bagId)
+      .order('seq', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data;
+  },
+  async drawFromBag(bagId, count, remove, memberId) {
+    const { data, error } = await supabase.rpc('draw_from_bag', {
+      p_bag: bagId,
+      p_count: count,
+      p_remove: remove,
+      p_member: memberId,
+    });
+    if (error) throw error;
+    return (data ?? []) as BagDraw[];
+  },
+  async setDrawRemoved(draw, removed) {
+    const { error } = await supabase.from('bag_draws').update({ removed }).eq('id', draw.id);
+    if (error) throw error;
+    if (draw.item_id) await supabaseBags.setBagItemOut(draw.item_id, removed);
+  },
+  async listAllClips() {
+    const { data, error } = await supabase
+      .from('clips')
+      .select(`*, video:videos(${CLIP_VIDEO_COLUMNS})`)
+      .order('created_at');
+    if (error) throw error;
+    return data as unknown as ClipWithVideo[];
+  },
+  async listTracks() {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('*, track_items(count)')
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    return (data as unknown as (Track & { track_items: { count: number }[] })[]).map(({ track_items, ...track }) => ({
+      ...track,
+      items: track_items[0]?.count ?? 0,
+    }));
+  },
+  async getTrack(id) {
+    const { data, error } = await supabase.from('tracks').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return (data as Track | null) ?? null;
+  },
+  async listTrackItems(trackId) {
+    const { data, error } = await supabase
+      .from('track_items')
+      .select(`*, clip:clips(*, video:videos(${CLIP_VIDEO_COLUMNS}))`)
+      .eq('track_id', trackId)
+      .order('position')
+      .order('created_at');
+    if (error) throw error;
+    return data as unknown as TrackItemView[];
+  },
+  async insertTrack(row, clipIds) {
+    const { data, error } = await supabase
+      .from('tracks')
+      .insert({ ...row, name: row.name.trim() })
+      .select()
+      .single();
+    if (error) throw error;
+    const track = data as Track;
+    if (clipIds.length) {
+      try {
+        await supabaseBags.insertTrackItems(track.id, clipIds, 0);
+      } catch (err) {
+        // A track without its clips is no use: archive it and report the failure.
+        await supabase.from('tracks').delete().eq('id', track.id);
+        throw err;
+      }
+    }
+    return track;
+  },
+  async updateTrack(id, patch) {
+    const clean = patch.name != null ? { ...patch, name: patch.name.trim() } : patch;
+    const { data, error } = await supabase.from('tracks').update(clean).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Track;
+  },
+  async deleteTrack(id) {
+    const { error } = await supabase.from('tracks').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async insertTrackItems(trackId, clipIds, fromPosition) {
+    if (!clipIds.length) return [];
+    const rows = clipIds.map((clip_id, i) => ({ track_id: trackId, clip_id, position: fromPosition + i }));
+    const { data, error } = await supabase.from('track_items').insert(rows).select();
+    if (error) throw error;
+    return data;
+  },
+  async deleteTrackItem(id) {
+    const { error } = await supabase.from('track_items').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async setTrackPositions(patches) {
+    const results = await Promise.all(
+      patches.map(({ id, position }) => supabase.from('track_items').update({ position }).eq('id', id)),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed?.error) throw failed.error;
+  },
+};
+
+// Demo twin: the same rules as the database (kinds, one of each per bag, unique names, draws, archived refs vanish).
+
+type BagsDemoDb = DemoDb & {
+  bags?: Bag[];
+  bag_items?: BagItem[];
+  bag_draws?: BagDraw[];
+  tracks?: Track[];
+  track_items?: TrackItem[];
+};
+
+const demoError = (message: string, code = 'P0001') => Object.assign(new Error(message), { code });
+
+function demoItemView(db: BagsDemoDb, item: BagItem): BagItemView | null {
+  const video = item.video_id ? db.videos.find((v) => v.id === item.video_id) : null;
+  const clip = item.clip_id ? db.clips.find((c) => c.id === item.clip_id) : null;
+  const clipVideo = clip ? db.videos.find((v) => v.id === clip.video_id) : null;
+  const member = item.member_id ? (db.members ?? []).find((m) => m.id === item.member_id) : null;
+  if ((item.video_id && !video) || (item.clip_id && (!clip || !clipVideo)) || (item.member_id && !member)) return null;
+  return {
+    ...item,
+    video: video
+      ? {
+          id: video.id,
+          title: video.title,
+          artist: video.artist,
+          thumbnail_url: video.thumbnail_url,
+          source: video.source,
+          youtube_id: video.youtube_id,
+        }
+      : null,
+    clip:
+      clip && clipVideo
+        ? {
+            id: clip.id,
+            name: clip.name,
+            video_id: clip.video_id,
+            start_seconds: clip.start_seconds,
+            end_seconds: clip.end_seconds,
+            speed: clip.speed,
+            mirrored: clip.mirrored,
+            color: clip.color,
+            video: {
+              id: clipVideo.id,
+              title: clipVideo.title,
+              artist: clipVideo.artist,
+              source: clipVideo.source,
+              youtube_id: clipVideo.youtube_id,
+            },
+          }
+        : null,
+    member: member ? { id: member.id, name: member.name, color: member.color } : null,
+  };
+}
+
+const liveBagItems = (db: BagsDemoDb, bagId: string) =>
+  (db.bag_items ?? []).filter((i) => i.bag_id === bagId && demoItemView(db, i) != null);
+
+function demoClipWithVideo(db: BagsDemoDb, clip: Clip): ClipWithVideo | null {
+  const v = db.videos.find((x) => x.id === clip.video_id);
+  return v ? { ...clip, video: { id: v.id, title: v.title, artist: v.artist, source: v.source, youtube_id: v.youtube_id } } : null;
+}
+
+function checkBagName(db: BagsDemoDb, name: string, exceptId?: string) {
+  const clean = name.trim();
+  if (clean.length < 1 || clean.length > 60) throw demoError('bags_name_check', '23514');
+  if ((db.bags ?? []).some((b) => b.id !== exceptId && b.name.trim().toLowerCase() === clean.toLowerCase())) {
+    throw demoError('duplicate key value violates unique constraint "bags_crew_name_key"', '23505');
+  }
+  return clean;
+}
+
+const demoBags: BagsBackend = {
+  listBags: () =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      return (db.bags ?? [])
+        .slice()
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((bag) => ({ ...bag, items: liveBagItems(db, bag.id).length }));
+    }),
+  insertBag: async (row) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const bag: Bag = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        name: checkBagName(db, row.name),
+        kind: row.kind,
+        draw_mode: row.draw_mode,
+        no_repeat: row.no_repeat,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.bags ??= []).push(bag);
+      return bag;
+    }),
+  updateBag: async (id, patch) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const bag = db.bags?.find((b) => b.id === id);
+      if (!bag) throw demoError('PGRST116 0 rows');
+      Object.assign(bag, patch, patch.name != null ? { name: checkBagName(db, patch.name, id) } : {});
+      return bag;
+    }),
+  deleteBag: async (id) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      db.bags = (db.bags ?? []).filter((b) => b.id !== id);
+      db.bag_items = (db.bag_items ?? []).filter((i) => i.bag_id !== id);
+      db.bag_draws = (db.bag_draws ?? []).filter((d) => d.bag_id !== id);
+    }),
+  listBagItems: (bagId) =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      return (db.bag_items ?? [])
+        .filter((i) => i.bag_id === bagId)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((i) => demoItemView(db, i))
+        .filter((i): i is BagItemView => i != null);
+    }),
+  insertBagItem: async (row) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const bag = db.bags?.find((b) => b.id === row.bag_id);
+      if (!bag) throw demoError('bag_not_found');
+      const refs = [row.video_id, row.clip_id, row.member_id].filter(Boolean);
+      const ok =
+        refs.length === 1 &&
+        ((bag.kind === 'songs' && row.video_id && db.videos.some((v) => v.id === row.video_id)) ||
+          (bag.kind === 'clips' && row.clip_id && db.clips.some((c) => c.id === row.clip_id)) ||
+          (bag.kind === 'people' && row.member_id && (db.members ?? []).some((m) => m.id === row.member_id)));
+      if (!ok) throw demoError('bag_item_invalid');
+      const ref = refs[0];
+      if (liveBagItems(db, bag.id).some((i) => (i.video_id ?? i.clip_id ?? i.member_id) === ref)) {
+        throw demoError('duplicate key value violates unique constraint "bag_items_once_key"', '23505');
+      }
+      const item: BagItem = {
+        id: crypto.randomUUID(),
+        crew_id: bag.crew_id,
+        bag_id: bag.id,
+        video_id: row.video_id ?? null,
+        clip_id: row.clip_id ?? null,
+        member_id: row.member_id ?? null,
+        removed_at: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.bag_items ??= []).push(item);
+      return item;
+    }),
+  deleteBagItem: async (id) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      db.bag_items = (db.bag_items ?? []).filter((i) => i.id !== id);
+    }),
+  setBagItemOut: async (id, out) =>
+    mutate((raw) => {
+      const item = (raw as BagsDemoDb).bag_items?.find((i) => i.id === id);
+      if (item) item.removed_at = out ? now() : null;
+    }),
+  refillBag: async (bagId) =>
+    mutate((raw) => {
+      for (const item of (raw as BagsDemoDb).bag_items ?? []) if (item.bag_id === bagId) item.removed_at = null;
+    }),
+  listBagDraws: (bagId, limit = 40) =>
+    query((raw) =>
+      ((raw as BagsDemoDb).bag_draws ?? [])
+        .filter((d) => d.bag_id === bagId)
+        .sort((a, b) => b.seq - a.seq)
+        .slice(0, limit),
+    ),
+  drawFromBag: async (bagId, count, remove, memberId) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const bag = db.bags?.find((b) => b.id === bagId);
+      if (!bag) throw demoError('bag_not_found');
+      const removes = remove ?? bag.draw_mode === 'remove';
+      const draws = (db.bag_draws ??= []);
+      const last = bag.no_repeat
+        ? (draws.filter((d) => d.bag_id === bagId).sort((a, b) => b.seq - a.seq)[0]?.item_id ?? null)
+        : null;
+      const picked = drawOrder(liveBagItems(db, bagId), { count, noRepeat: bag.no_repeat, lastItemId: last });
+      let seq = draws.reduce((m, d) => Math.max(m, d.seq), 0);
+      const member = memberId && (db.members ?? []).some((m) => m.id === memberId) ? memberId : null;
+      return picked.map((item) => {
+        const view = demoItemView(db, item)!;
+        const label =
+          view.video?.title ?? (view.clip ? `${view.clip.name} · ${view.clip.video?.title ?? ''}` : view.member?.name) ?? '—';
+        const draw: BagDraw = {
+          id: crypto.randomUUID(),
+          crew_id: bag.crew_id,
+          bag_id: bag.id,
+          item_id: item.id,
+          label: label.slice(0, 200),
+          removed: removes,
+          member_id: member,
+          drawn_at: now(),
+          seq: ++seq,
+        };
+        draws.push(draw);
+        if (removes) item.removed_at = now();
+        return draw;
+      });
+    }),
+  setDrawRemoved: async (draw, removed) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const row = db.bag_draws?.find((d) => d.id === draw.id);
+      if (row) row.removed = removed;
+      const item = draw.item_id ? db.bag_items?.find((i) => i.id === draw.item_id) : null;
+      if (item) item.removed_at = removed ? now() : null;
+    }),
+  listAllClips: () =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      return db.clips
+        .slice()
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((c) => demoClipWithVideo(db, c))
+        .filter((c): c is ClipWithVideo => c != null);
+    }),
+  listTracks: () =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      return (db.tracks ?? [])
+        .slice()
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .map((t) => ({ ...t, items: (db.track_items ?? []).filter((i) => i.track_id === t.id).length }));
+    }),
+  getTrack: (id) => query((raw) => (raw as BagsDemoDb).tracks?.find((t) => t.id === id) ?? null),
+  listTrackItems: (trackId) =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      return (db.track_items ?? [])
+        .filter((i) => i.track_id === trackId)
+        .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at))
+        .map((i) => {
+          const clip = db.clips.find((c) => c.id === i.clip_id);
+          return { ...i, clip: clip ? demoClipWithVideo(db, clip) : null };
+        });
+    }),
+  insertTrack: async (row, clipIds) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const name = row.name.trim();
+      if (name.length < 1 || name.length > 80) throw demoError('tracks_name_check', '23514');
+      const pause = Number(row.pause_seconds);
+      if (!(pause >= 0 && pause <= 5)) throw demoError('tracks_pause_seconds_check', '23514');
+      const track: Track = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        name,
+        pause_seconds: pause,
+        countdown: row.countdown,
+        use_clip_settings: row.use_clip_settings,
+        title_mode: row.title_mode,
+        created_at: now(),
+        updated_at: now(),
+        archived_at: null,
+      };
+      if (clipIds.some((id) => !db.clips.some((c) => c.id === id))) throw demoError('track_item_invalid');
+      (db.tracks ??= []).push(track);
+      const items = (db.track_items ??= []);
+      clipIds.forEach((clip_id, position) => {
+        items.push({
+          id: crypto.randomUUID(),
+          crew_id: track.crew_id,
+          track_id: track.id,
+          clip_id,
+          position,
+          created_at: now(),
+          archived_at: null,
+        });
+      });
+      return track;
+    }),
+  updateTrack: async (id, patch) =>
+    mutate((raw) => {
+      const track = (raw as BagsDemoDb).tracks?.find((t) => t.id === id);
+      if (!track) throw demoError('PGRST116 0 rows');
+      if (patch.pause_seconds != null && !(patch.pause_seconds >= 0 && patch.pause_seconds <= 5)) {
+        throw demoError('tracks_pause_seconds_check', '23514');
+      }
+      Object.assign(track, patch, patch.name != null ? { name: patch.name.trim() } : {}, { updated_at: now() });
+      return track;
+    }),
+  deleteTrack: async (id) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      db.tracks = (db.tracks ?? []).filter((t) => t.id !== id);
+      db.track_items = (db.track_items ?? []).filter((i) => i.track_id !== id);
+    }),
+  insertTrackItems: async (trackId, clipIds, fromPosition) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      const track = db.tracks?.find((t) => t.id === trackId);
+      if (!track) throw demoError('track_not_found');
+      if (clipIds.some((id) => !db.clips.some((c) => c.id === id))) throw demoError('track_item_invalid');
+      const rows: TrackItem[] = clipIds.map((clip_id, i) => ({
+        id: crypto.randomUUID(),
+        crew_id: track.crew_id,
+        track_id: trackId,
+        clip_id,
+        position: fromPosition + i,
+        created_at: now(),
+        archived_at: null,
+      }));
+      (db.track_items ??= []).push(...rows);
+      track.updated_at = now();
+      return rows;
+    }),
+  deleteTrackItem: async (id) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      db.track_items = (db.track_items ?? []).filter((i) => i.id !== id);
+    }),
+  setTrackPositions: async (patches) =>
+    mutate((raw) => {
+      const db = raw as BagsDemoDb;
+      for (const { id, position } of patches) {
+        const item = db.track_items?.find((i) => i.id === id);
+        if (item) item.position = position;
+      }
+    }),
+};
+
+export const bagsBackend: BagsBackend = IS_DEMO ? demoBags : supabaseBags;

@@ -9,8 +9,7 @@ export type { DesignMoment, DesignVariant, LabState } from './labState';
  *
  * To add a moment: append an entry here (stable ids, `defaultVariant` = the recommended one), add its demo
  * to `DEMOS` in `demos.tsx` (the type requires it) and read the variant in the real component.
- * Planned next, not added yet: bag-draw, random-play, vote-reveal, reactions, event-countdown, clap-arm,
- * review-compare.
+ * Planned next, not added yet: vote-reveal, reactions, event-countdown.
  */
 export const MOMENTS = [
   {
@@ -63,6 +62,115 @@ export const MOMENTS = [
         label: 'Capas de grabado',
         description:
           'Tres planchas de ukiyo-e apiladas (todo, música, voz): la elegida pasa al frente con sus marcas de registro.',
+      },
+    ],
+  },
+  {
+    id: 'clap-arm',
+    code: 'F7',
+    name: 'Armar y empezar con un aplauso',
+    description:
+      'La pantalla del grabador armado: «Esperando señal…», el nivel de la sala y la marca que debe alcanzar el doble aplauso.',
+    defaultVariant: 'taiko',
+    variants: [
+      {
+        id: 'taiko',
+        label: 'Taiko',
+        description:
+          'Un tambor taiko visto de frente: el parche se hincha con el sonido, cada palmada lo cruza con una onda y gira el mitsudomoe; el borde es el nivel.',
+      },
+      {
+        id: 'hyoshigi',
+        label: 'Hyōshigi',
+        description:
+          'Las dos tablillas de madera del kabuki, colgadas de su cordón: se acercan con el sonido y chocan en cada palmada; la segunda las enciende.',
+      },
+      {
+        id: 'enso',
+        label: 'Ensō',
+        description:
+          'Un círculo de tinta sobre washi que se dibuja hasta donde llega el sonido; la primera palmada deja medio trazo y la segunda lo cierra con el sello.',
+      },
+    ],
+  },
+  {
+    id: 'review-compare',
+    code: 'F5',
+    name: 'Repaso: comparar la toma con el original',
+    description:
+      'Cómo comparten pantalla la toma y el original en «Apilado» y «Superpuesto». Los mismos controles en las tres: orden, reparto, transparencia y encaje con dos dedos.',
+    defaultVariant: 'biombo',
+    variants: [
+      {
+        id: 'biombo',
+        label: 'Biombo',
+        description:
+          'La recomendada. Dos paneles de laca con una bisagra dorada que se arrastra para repartir el espacio; en «Superpuesto», el original va dentro de un marco de biombo que se mueve y escala hasta que los cuerpos coinciden. Es la que menos tapa el vídeo.',
+      },
+      {
+        id: 'cortina',
+        label: 'Cortina',
+        description:
+          'Un noren: en «Apilado» los dos llenan el marco y una cortina índigo los separa; se barre a un lado y a otro para comparar el mismo sitio. En «Superpuesto» el original entra como una tela.',
+      },
+      {
+        id: 'linterna',
+        label: 'Linterna',
+        description:
+          'El original como silueta de tinta luminosa (alto contraste y mezcla de luz) sobre la toma, para ver solo el contorno del cuerpo; en «Apilado», paneles de farolillo de papel.',
+      },
+    ],
+  },
+  {
+    id: 'bag-draw',
+    code: 'F13',
+    name: 'Sacar de una bolsa',
+    description: 'La animación corta del sorteo al pulsar «Sacar» en una bolsa de canciones, clips o personas.',
+    defaultVariant: 'omikuji',
+    variants: [
+      {
+        id: 'omikuji',
+        label: 'Omikuji',
+        description:
+          'Se agita la caja hexagonal de madera del templo y sale una varilla; el papel con el resultado se despliega debajo.',
+      },
+      {
+        id: 'fukubiki',
+        label: 'Fukubiki',
+        description:
+          'La rueda garagara del sorteo de feria gira y suelta una bola del color de lo que ha salido, que rueda hasta la bandeja.',
+      },
+      {
+        id: 'daruma',
+        label: 'Daruma',
+        description: 'Un daruma se tambalea; al salir el resultado se le pinta el ojo y el nombre aparece escrito a pincel.',
+      },
+    ],
+  },
+  {
+    id: 'random-play',
+    code: 'F14',
+    name: 'Pantalla de Random Play Dance',
+    description: 'La pantalla de la ronda, pensada para verse de lejos en la tele o el portátil del local.',
+    defaultVariant: 'marquesina',
+    variants: [
+      {
+        id: 'marquesina',
+        label: 'Marquesina',
+        description:
+          'El título enorme en un cartel de laca con marco dorado; la cuenta atrás se estampa como un sello bermellón sobre el vídeo.',
+      },
+      {
+        id: 'kamishibai',
+        label: 'Kamishibai',
+        description:
+          'Un teatro de papel: la tarjeta con el título tapa el vídeo durante la cuenta atrás y se desliza fuera cuando empieza a sonar.',
+      },
+      {
+        id: 'taiko-cuenta',
+        label: 'Taiko',
+        description:
+          'La cuenta atrás como golpes en un taiko con su mitsudomoe; lo que viene después corre por una banda índigo debajo.',
       },
     ],
   },

@@ -17,6 +17,12 @@ import { ToastProvider } from '@/providers/ToastProvider';
 const StudioPage = lazy(() => loadStudioPage().then((m) => ({ default: m.StudioPage })));
 const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+// F13 bags and F14 Random Play Dance: their own chunks, loaded when visited.
+const BagsPage = lazy(() => import('@/features/bags/BagsPage').then((m) => ({ default: m.BagsPage })));
+const BagPage = lazy(() => import('@/features/bags/BagPage').then((m) => ({ default: m.BagPage })));
+const RpdPage = lazy(() => import('@/features/rpd/RpdPage').then((m) => ({ default: m.RpdPage })));
+const TrackPage = lazy(() => import('@/features/rpd/TrackPage').then((m) => ({ default: m.TrackPage })));
+const RpdPlayPage = lazy(() => import('@/features/rpd/RpdPlayPage').then((m) => ({ default: m.RpdPlayPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -111,6 +117,17 @@ export function App() {
                           </Suspense>
                         }
                       />
+                      {(
+                        [
+                          ['/bolsas', <BagsPage key="bags" />],
+                          ['/bolsas/:bagId', <BagPage key="bag" />],
+                          ['/rpd', <RpdPage key="rpd" />],
+                          ['/rpd/pista/:trackId', <TrackPage key="track" />],
+                          ['/rpd/jugar', <RpdPlayPage key="play" />],
+                        ] as const
+                      ).map(([path, page]) => (
+                        <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />
+                      ))}
                     </Route>
                     <Route
                       path="/privacidad"

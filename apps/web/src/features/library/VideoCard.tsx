@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import type { VideoWithClipCount } from '@/data/videos';
+import { AddToBagButton } from '@/features/bags/AddToBagButton';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
 
@@ -135,6 +136,17 @@ export const VideoCard = memo(function VideoCard({
       >
         <ButtonSkin kind="delete" />
       </motion.button>
+      {/* F13 · «Añadir a una bolsa», on the thumbnail's top-left corner; shown like the delete button. */}
+      <AddToBagButton
+        look="crest"
+        target={{ kind: 'songs', videoId: video.id, label: video.title }}
+        className={cn(
+          'absolute size-9 transition-[opacity,scale] duration-200',
+          featured ? 'left-3 top-3 size-10' : 'left-1.5 top-1.5 sm:left-3 sm:top-3',
+          'sm:[@media(hover:hover)]:scale-75 sm:[@media(hover:hover)]:opacity-0',
+          'group-hover:scale-100 group-hover:opacity-100 focus-visible:scale-100 focus-visible:opacity-100',
+        )}
+      />
     </motion.article>
   );
 });

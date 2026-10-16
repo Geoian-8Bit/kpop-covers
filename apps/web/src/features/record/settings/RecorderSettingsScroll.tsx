@@ -50,6 +50,7 @@ const WIDE_COLUMNS: Column[] = [
   { keys: ['mode'], width: 178 },
   { keys: ['sound'], width: 178 },
   { keys: ['micChannels'], width: 160 },
+  { keys: ['clapSensitivity'], width: 178 },
   { keys: ['startCamera'], width: 178 },
   { keys: ['grid', 'level', 'info'], width: 244, title: 'Visor', glyph: '眼' },
 ];
@@ -64,6 +65,7 @@ const TALL_CELLS: { keys: FieldKey[]; wide?: boolean; title?: string; glyph?: st
   { keys: ['startCamera'] },
   { keys: ['sound'] },
   { keys: ['micChannels'] },
+  { keys: ['clapSensitivity'], wide: true },
   { keys: ['grid', 'level', 'info'], wide: true, title: 'Visor', glyph: '眼' },
 ];
 

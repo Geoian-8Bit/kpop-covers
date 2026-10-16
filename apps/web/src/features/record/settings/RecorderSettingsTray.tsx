@@ -168,6 +168,9 @@ function TrayPanel({ onClose, summary, side, maxSize, maxFps, songPossible }: Re
               <Cell {...enter()}>
                 <FieldBlock field={f.micChannels} layout="stack" className="flex h-full flex-col" />
               </Cell>
+              <Cell {...enter()} wide>
+                <FieldBlock field={f.clapSensitivity} />
+              </Cell>
             </Section>
 
             <Section title="Pantalla" glyph="面">

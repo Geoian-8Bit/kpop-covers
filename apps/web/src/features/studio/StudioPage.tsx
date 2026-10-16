@@ -29,11 +29,11 @@ import {
   WifiOff,
   Youtube,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
-import { askWho, useMembers } from '@/data/members';
-import { takeDateLabel } from '@/features/takes/takeRules';
+import { askWho, useMe } from '@/data/members';
+import { songNotes } from '@/features/review/reviewRules';
 import { readStage, rememberStage } from '@/lib/stagePref';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -42,15 +42,11 @@ import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
 import {
-  isStaleCopy,
-  markLocalCopy,
-  signedVideoUrl,
   useLinkLocalFile,
   useUpdateVideo,
   useUploadToCloud,
   useVideo,
 } from '@/data/videos';
-import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -65,7 +61,7 @@ import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { RecordStudio } from '@/features/record/RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
-import { Dialog } from '@/components/ui/Dialog';
+import { useFileSource } from './fileSource';
 import { releaseTakeUrl } from '@/data/takes';
 import { useDesignVariant } from '@/features/lab/designLab';
 import { TakesPanel, type TakeItem } from '@/features/takes/TakesPanel';
@@ -75,6 +71,9 @@ import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline, useNoteAlert } from './Timeline';
 import { GapPicker, PlayerBar, useLongPress } from './Transport';
 import { useShortcuts } from './useShortcuts';
+
+/** F5 · The review screen, loaded when a take is first opened. */
+const ReviewScreen = lazy(() => import('@/features/review/ReviewScreen').then((m) => ({ default: m.ReviewScreen })));
 
 /** Stable empty list, so the stage never re-renders for a new [] while notes load. */
 const NO_NOTES: Note[] = [];
@@ -92,9 +91,11 @@ export function StudioPage() {
   const [recording, setRecording] = useState(false);
   const [linking, setLinking] = useState(false);
   const [sideTab, setSideTab] = useState<'clips' | 'takes'>('clips');
-  /** A take being watched (F3; the side-by-side review comes with F5). */
+  /** F5 · The take open in «Repaso» (its URL is released when the review closes). */
   const [playingTake, setPlayingTake] = useState<{ take: TakeItem; url: string } | null>(null);
-  const members = useMembers();
+  const me = useMe();
+  // F6: a take's notes show on the song only for their recipient (or when they're for the whole group).
+  const songNoteList = useMemo(() => songNotes(notes.data ?? NO_NOTES, me?.id ?? null), [notes.data, me?.id]);
   // F1: arriving from «Añadir vídeo» with this video's file: open the link panel with it.
   const location = useLocation();
   const navigateTo = useNavigate();
@@ -144,7 +145,7 @@ export function StudioPage() {
     askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () => setNoteTarget({ note: null, at }));
   }, []);
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
-  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording });
+  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording && !playingTake });
 
   /** A clip cut on a longer copy of the song may not fit this one: say so instead of a stray loop. */
   const applyClip = useCallback(
@@ -312,13 +313,13 @@ export function StudioPage() {
             {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
             <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
               {hasLinkedFile(current) && <StageSwitch video={current} />}
-              <MediaStage video={current} clips={clips.data ?? []} notes={notes.data ?? NO_NOTES} onClipSelect={tapClipLine} />
+              <MediaStage video={current} clips={clips.data ?? []} notes={songNoteList} onClipSelect={tapClipLine} />
             </div>
             <Timeline
               seed={current.id}
               clips={clips.data ?? []}
               onClipSelect={tapClipLine}
-              notes={notes.data}
+              notes={songNoteList}
               onNoteOpen={openNote}
             />
             <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
@@ -381,79 +382,30 @@ export function StudioPage() {
         />
       )}
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
-      <Dialog
-        open={playingTake != null}
-        onClose={() => {
-          if (playingTake) releaseTakeUrl(playingTake.url);
-          setPlayingTake(null);
-        }}
-        title={
-          playingTake
-            ? `Toma de ${members.data?.find((m) => m.id === playingTake.take.member_id)?.name ?? 'alguien sin nombre'} · ${takeDateLabel(playingTake.take.recorded_at)}`
-            : 'Toma'
-        }
-        size="lg"
-      >
-        {playingTake && (
-          <video
-            src={playingTake.url}
-            controls
-            autoPlay
-            playsInline
-            className="max-h-[70dvh] w-full rounded-[10px] bg-black object-contain"
+      {playingTake && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[45] grid place-items-center bg-sumi-950" role="status" aria-label="Abriendo el repaso">
+              <Spinner className="size-9 text-washi-muted" />
+            </div>
+          }
+        >
+          <ReviewScreen
+            key={playingTake.take.id}
+            video={current}
+            take={playingTake.take}
+            url={playingTake.url}
+            clips={clips.data ?? []}
+            onClose={() => {
+              releaseTakeUrl(playingTake.url);
+              setPlayingTake(null);
+            }}
           />
-        )}
-      </Dialog>
+        </Suspense>
+      )}
     </Page>
   );
 }
-
-/** `local`: the device copy the picture plays from, when there is one (it can be sent to the cloud). */
-type FileSource = { status: 'loading' } | { status: 'missing' } | { status: 'ready'; url: string; local?: Blob };
-
-function useFileSource(video: Video, reloadKey: number, enabled: boolean): FileSource {
-  const [state, setState] = useState<FileSource>({ status: 'loading' });
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setState({ status: 'loading' });
-
-    void (async () => {
-      const blob = await loadLocalVideo(video.id);
-      if (cancelled) return;
-      // F1: a copy left from a file that was since replaced (another size) is not this video's file any more.
-      const stale = blob != null && isStaleCopy(video);
-      if (stale) {
-        await deleteLocalVideo(video.id).catch(() => undefined);
-        markLocalCopy(video.id, null);
-      }
-      if (blob && !stale) {
-        objectUrl = URL.createObjectURL(blob);
-        setState({ status: 'ready', url: objectUrl, local: blob });
-        return;
-      }
-      if (video.storage_path) {
-        const url = await signedVideoUrl(video.storage_path);
-        if (cancelled) return;
-        if (url) {
-          setState({ status: 'ready', url });
-          return;
-        }
-      }
-      setState({ status: 'missing' });
-    })();
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [video.id, video.source, video.storage_path, video.file_name, video.file_size, reloadKey, enabled]);
-
-  return state;
-}
-
 
 /** F17 · Voice and music apart: on files only (YouTube's sound can't be reached). */
 function VoiceRow() {
