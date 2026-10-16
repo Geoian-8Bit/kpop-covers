@@ -5,11 +5,12 @@ import type {
   MemberColor,
   Note,
   Profile,
+  Take,
   TablesInsert,
   TablesUpdate,
   Video,
 } from '@coverscape/shared';
-import { supabase, VIDEO_BUCKET } from './supabase';
+import { supabase, TAKE_BUCKET, VIDEO_BUCKET } from './supabase';
 
 /**
  * Data access behind one interface so the app can run against Supabase (normal) or against
@@ -41,7 +42,8 @@ export type LibraryVideo = Pick<
 export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
 
 /** Why a file stayed on this device instead of reaching the group's cloud. */
-export type UploadFailure = 'too-big' | 'type' | 'network' | 'denied' | 'unavailable';
+/** 'exists': a file with that name is already there (a take's earlier upload that went through). */
+export type UploadFailure = 'too-big' | 'type' | 'network' | 'denied' | 'unavailable' | 'exists';
 export type UploadResult = { ok: true; path: string } | { ok: false; reason: UploadFailure };
 
 function uploadFailure(error: unknown): UploadFailure {
@@ -54,6 +56,11 @@ function uploadFailure(error: unknown): UploadFailure {
   if (status === 415 || e.code === 'InvalidMimeType' || /mime type/i.test(message)) return 'type';
   if (e.name === 'StorageUnknownError' || !status || /failed to fetch|network|load failed/i.test(message)) return 'network';
   return 'denied';
+}
+
+export interface StorageUsage {
+  takes: number;
+  total: number;
 }
 
 export interface Backend {
@@ -85,6 +92,20 @@ export interface Backend {
   updateMember(id: string, patch: { name?: string; color?: MemberColor }): Promise<Member>;
   /** Archives (the delete trigger keeps the row). */
   deleteMember(id: string): Promise<void>;
+  /** F3 · takes of a video (rows: the videos live on phones, or shared in the `takes` bucket). */
+  listTakes(videoId: string): Promise<Take[]>;
+  insertTake(row: TablesInsert<'takes'>): Promise<Take>;
+  /** One live take by id (null when it doesn't exist or was deleted). */
+  getTake(id: string): Promise<Take | null>;
+  updateTake(id: string, patch: Pick<TablesUpdate<'takes'>, 'is_best' | 'shared_path' | 'shared_size' | 'member_id' | 'clip_id'>): Promise<Take>;
+  deleteTake(id: string): Promise<void>;
+  uploadTakeFile(path: string, file: Blob): Promise<UploadResult>;
+  signedTakeUrl(path: string): Promise<string | null>;
+  /**
+   * Bytes really used in the cloud: by shared takes (deleted ones included: their files stay until the admin
+   * purges them) and in total (with the library's videos), against the free plan's 1 GB.
+   */
+  storageUsage(): Promise<StorageUsage>;
 }
 
 // ───────────────────────────── Supabase ─────────────────────────────
@@ -214,6 +235,54 @@ const supabaseBackend: Backend = {
     const { error } = await supabase.from('members').delete().eq('id', id);
     if (error) throw error;
   },
+  async listTakes(videoId) {
+    const { data, error } = await supabase
+      .from('takes')
+      .select('*')
+      .eq('video_id', videoId)
+      .order('recorded_at', { ascending: false });
+    if (error) throw error;
+    return data as Take[];
+  },
+  async insertTake(row) {
+    const { data, error } = await supabase.from('takes').insert(row).select().single();
+    if (error) throw error;
+    return data as Take;
+  },
+  async getTake(id) {
+    const { data, error } = await supabase.from('takes').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return (data as Take | null) ?? null;
+  },
+  async updateTake(id, patch) {
+    const { data, error } = await supabase.from('takes').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Take;
+  },
+  async deleteTake(id) {
+    const { error } = await supabase.from('takes').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async uploadTakeFile(path, file) {
+    const { error } = await supabase.storage.from(TAKE_BUCKET).upload(path, file, { contentType: file.type || 'video/mp4' });
+    if (!error) return { ok: true, path };
+    console.error('[uploadTakeFile]', error);
+    const e = error as { status?: number; statusCode?: string; message?: string };
+    if (Number(e.status ?? e.statusCode) === 409 || /already exists|duplicate/i.test(e.message ?? '')) {
+      return { ok: false, reason: 'exists' };
+    }
+    return { ok: false, reason: uploadFailure(error) };
+  },
+  async signedTakeUrl(path) {
+    const { data, error } = await supabase.storage.from(TAKE_BUCKET).createSignedUrl(path, 6 * 60 * 60);
+    return error ? null : data.signedUrl;
+  },
+  async storageUsage() {
+    const { data, error } = await supabase.rpc('storage_usage');
+    if (error) throw error;
+    const usage = (data ?? {}) as { takes?: number; total?: number };
+    return { takes: Number(usage.takes) || 0, total: Number(usage.total) || 0 };
+  },
 };
 
 // ───────────────────────────── Local demo ─────────────────────────────
@@ -226,6 +295,7 @@ interface DemoDb {
   /** Added later; older demo stores don't have it yet. */
   notes?: Note[];
   members?: Member[];
+  takes?: Take[];
 }
 
 const DEMO_KEY = 'coverscape.demo.v1';
@@ -414,6 +484,68 @@ const demoBackend: Backend = {
     mutate((db) => {
       db.members = (db.members ?? []).filter((m) => m.id !== id);
     }),
+  listTakes: (videoId) =>
+    query((db) =>
+      (db.takes ?? []).filter((t) => t.video_id === videoId).sort((a, b) => b.recorded_at.localeCompare(a.recorded_at)),
+    ),
+  insertTake: (row) =>
+    mutate((db) => {
+      const video = db.videos.find((v) => v.id === row.video_id);
+      if (!video) throw new Error('video not found');
+      const take: Take = {
+        clip_id: null,
+        device_id: null,
+        duration_seconds: 0,
+        file_name: null,
+        height: null,
+        is_best: false,
+        member_id: null,
+        mime_type: null,
+        mirrored: false,
+        recorded_at: now(),
+        song_end_seconds: null,
+        speed: 1,
+        width: null,
+        ...row,
+        crew_id: video.crew_id,
+        shared_path: null,
+        shared_size: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.takes ??= []).push(take);
+      if (take.is_best) clearOtherBest(db, take);
+      return take;
+    }),
+  updateTake: (id, patch) =>
+    mutate((db) => {
+      const take = db.takes?.find((t) => t.id === id);
+      if (!take) throw new Error('not found');
+      Object.assign(take, patch);
+      if (patch.is_best) clearOtherBest(db, take);
+      return take;
+    }),
+  deleteTake: (id) =>
+    mutate((db) => {
+      db.takes = (db.takes ?? []).filter((t) => t.id !== id);
+    }),
+  uploadTakeFile: () => Promise.resolve({ ok: false, reason: 'unavailable' }),
+  signedTakeUrl: () => Promise.resolve(null),
+  getTake: (id) => query((db) => (db.takes ?? []).find((t) => t.id === id) ?? null),
+  storageUsage: () =>
+    query((db) => {
+      const takes = (db.takes ?? []).reduce((s, t) => s + (t.shared_size ?? 0), 0);
+      return { takes, total: takes };
+    }),
 };
+
+/** Demo twin of the database's one-best-take trigger (F4). */
+function clearOtherBest(db: DemoDb, take: Take) {
+  for (const t of db.takes ?? []) {
+    if (t.id !== take.id && t.video_id === take.video_id && t.member_id === take.member_id && t.clip_id === take.clip_id) {
+      t.is_best = false;
+    }
+  }
+}
 
 export const backend: Backend = IS_DEMO ? demoBackend : supabaseBackend;

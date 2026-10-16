@@ -66,6 +66,7 @@ const UPLOAD_FAILURE_REASON: Record<UploadFailure, string> = {
   type: 'la nube no admite este formato',
   network: 'no hay conexión',
   denied: 'la nube lo rechazó',
+  exists: 'ya había un archivo con ese nombre',
   unavailable: 'la nube no está disponible',
 };
 

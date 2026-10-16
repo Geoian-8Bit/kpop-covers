@@ -21,6 +21,9 @@ export function isMemberColor(value: string): value is MemberColor {
   return (MEMBER_COLORS as readonly string[]).includes(value);
 }
 
+/** A recorded take (F3): the row is shared; the video lives on the phone that recorded it (or, shared, in the cloud). */
+export type Take = Tables<'takes'>;
+
 /** A YouTube entry with its own file attached (F1). */
 export function hasLinkedFile(video: Pick<Tables<'videos'>, 'source' | 'file_name'>): boolean {
   return video.source === 'youtube' && Boolean(video.file_name);

@@ -40,6 +40,12 @@ export function friendlyError(error: unknown): string {
   if (/file_locked/.test(message)) return 'Otro móvil ya ha vinculado un archivo a este vídeo. Cierra y vuelve a abrirlo para verlo.';
   if (/videos_cap_reached|clips_cap_reached|notes_cap_reached/.test(message)) return 'La biblioteca está llena. Borra algo antes de añadir más.';
   if (/bulk_delete_blocked/.test(message)) return 'Solo se puede borrar de uno en uno.';
+  if (/takes_cap_reached/.test(message)) return 'El grupo ya tiene el máximo de tomas guardadas.';
+  if (/shared_file_missing/.test(message)) return 'La copia no llegó a la nube. Vuelve a pulsar «Compartir».';
+  if (/shared_path_locked/.test(message)) return 'Esta toma ya está compartida.';
+  if (/takes_one_best_key/.test(message)) return 'Otro móvil acaba de cambiar la estrella. Vuelve a intentarlo.';
+  if (/video .* not found/i.test(message)) return 'Este vídeo ya no está en la biblioteca.';
+  if (/PGRST116|0 rows|JSON object requested/i.test(message)) return 'Esto ya no existe: otro móvil lo ha borrado.';
   // Never show raw database text (constraint names, policies…) to the group.
   if (message) console.error('[friendlyError]', error);
   return 'Algo salió mal. Inténtalo otra vez.';

@@ -10,7 +10,7 @@ export type { DesignMoment, DesignVariant, LabState } from './labState';
  * To add a moment: append an entry here (stable ids, `defaultVariant` = the recommended one), add its demo
  * to `DEMOS` in `demos.tsx` (the type requires it) and read the variant in the real component.
  * Planned next, not added yet: bag-draw, random-play, vote-reveal, reactions, event-countdown, clap-arm,
- * review-compare, voice-split.
+ * review-compare.
  */
 export const MOMENTS = [
   {
@@ -35,6 +35,34 @@ export const MOMENTS = [
         id: 'scroll',
         label: 'Makimono',
         description: 'Un rollo que se desenrolla de lado, con cada ajuste como una columna del pergamino.',
+      },
+    ],
+  },
+  {
+    id: 'voice-split',
+    code: 'F17',
+    name: 'Separar voz y música',
+    description:
+      'Elegir entre la canción entera, la música sin la voz o la voz al frente. Solo con el archivo del vídeo.',
+    defaultVariant: 'onda',
+    variants: [
+      {
+        id: 'onda',
+        label: 'La ola partida',
+        description:
+          'La ola de la app se parte en dos franjas, la voz en bermellón y la música en índigo; la que quitas se aquieta. Debajo, tres sellos.',
+      },
+      {
+        id: 'fusuma',
+        label: 'Puertas correderas',
+        description:
+          'Dos puertas de papel washi se deslizan con muelle sobre la voz o la música para tapar lo que se quita.',
+      },
+      {
+        id: 'capas',
+        label: 'Capas de grabado',
+        description:
+          'Tres planchas de ukiyo-e apiladas (todo, música, voz): la elegida pasa al frente con sus marcas de registro.',
       },
     ],
   },
