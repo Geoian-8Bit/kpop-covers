@@ -97,6 +97,27 @@ begin
   raise notice 'PASS «se queda» keeps items and «sin repetir seguidas» works';
 end $$;
 
+-- Review round 1: the history is only written by draws (no direct inserts, no made-up time or order).
+do $$
+declare ok boolean := false;
+begin
+  begin
+    insert into public.bag_draws (bag_id, label, removed) values ('0e0e0e0e-0000-4000-8000-000000000002', 'Inventada', true);
+  exception when others then ok := sqlerrm = 'bag_draw_direct';
+  end;
+  if not ok then raise exception 'FAIL a draw was written directly into the history'; end if;
+  ok := false;
+  begin
+    insert into public.bag_draws (bag_id, label, drawn_at) values ('0e0e0e0e-0000-4000-8000-000000000002', 'Vieja', '2000-01-01');
+  exception when insufficient_privilege then ok := true;
+  end;
+  if not ok then raise exception 'FAIL a draw time could be set by the client'; end if;
+  if exists (select 1 from public.bag_draws where drawn_at < now() - interval '1 hour') then
+    raise exception 'FAIL a draw carries a time in the past';
+  end if;
+  raise notice 'PASS the bag history is only written by draws, with the server''s time';
+end $$;
+
 -- An archived song disappears from the bag without breaking it.
 delete from public.videos where id = '0e0e0e0e-0000-4000-8000-0000000000a2';
 do $$
