@@ -7,6 +7,7 @@ import {
   type RecordQuality,
   type Video,
 } from '@coverscape/shared';
+import type { TakeSink } from './takeStore';
 
 export function canRecord(): boolean {
   return typeof MediaRecorder !== 'undefined';
@@ -67,6 +68,8 @@ const FINISH_TIMEOUT_MS = 8000;
 export function createTakeRecorder(
   tracks: MediaStreamTrack[],
   format: RecordFormat,
+  /** Where the pieces go as they come (the phone's storage, R1). */
+  sink: TakeSink,
   onDead: () => void,
 ): TakeRecorder {
   const { mimeType, videoBitsPerSecond, audioBitsPerSecond } = format;
@@ -80,9 +83,8 @@ export function createTakeRecorder(
     // A type the check accepted but the encoder refuses for this picture (e.g. a level): let the browser pick.
     rec = new MediaRecorder(new MediaStream(tracks), { videoBitsPerSecond });
   }
-  const chunks: Blob[] = [];
   rec.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
+    if (e.data.size > 0) sink.write(e.data);
   };
   let total = 0;
   let since: number | null = null;
@@ -127,7 +129,7 @@ export function createTakeRecorder(
         const done = () => {
           if (settled) return;
           settled = true;
-          resolve(new Blob(chunks, { type: rec.mimeType || mimeType || 'video/webm' }));
+          void sink.finish(rec.mimeType || mimeType || 'video/webm').then(resolve);
         };
         if (rec.state === 'inactive') return done();
         rec.addEventListener('stop', done, { once: true });
@@ -145,6 +147,7 @@ export function createTakeRecorder(
       hold();
       rec.ondataavailable = null;
       if (rec.state !== 'inactive') rec.stop();
+      void sink.discard();
     },
     mimeType() {
       return rec.mimeType || mimeType;

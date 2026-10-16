@@ -1,4 +1,4 @@
-import { clamp, formatTime, type Video } from '@coverscape/shared';
+import { clamp, formatTime, LOW_SPACE_MINUTES, minutesLeft, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Aperture,
@@ -20,7 +20,7 @@ import {
   Zap,
   ZapOff,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -32,6 +32,15 @@ import { hasRange, usePlayer } from '@/player/store';
 import { openMic } from './camera';
 import { canRecordCanvas } from './compositor';
 import { InfoPanel, type TakeStats } from './InfoPanel';
+import {
+  createTakeSink,
+  forgetTake,
+  freeSpace,
+  listLeftovers,
+  markTakeSaved,
+  type Leftover,
+  type TakeSink,
+} from './takeStore';
 import {
   IS_IOS,
   canRecord,
@@ -105,6 +114,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [lastStats, setLastStats] = useState<TakeStats | null>(null);
   /** The format the current take is being recorded with (for the «i» panel's "pedida"). */
   const takeFormat = useRef<RecordFormat | null>(null);
+  /** Where the current take is being written (R1); ready before the song starts. */
+  const sink = useRef<TakeSink | null>(null);
+  const sinkReady = useRef<Promise<TakeSink> | null>(null);
+  /** The disk copy behind the take under review, and whether it was saved somewhere. */
+  const reviewTake = useRef<{ id: string; saved: boolean } | null>(null);
+  /** A take of this song left on the phone by an app that closed mid-take (R1). */
+  const [leftover, setLeftover] = useState<Leftover | null>(null);
+  /** Free space on the phone for the app (R2), null while unknown. */
+  const [free, setFree] = useState<number | null>(null);
   const loopRange = usePlayer((s) => (hasRange(s.loop) ? { start: s.loop.start, end: s.loop.end } : null));
   const rate = usePlayer((s) => s.rate);
 
@@ -134,11 +152,44 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     phase === 'countdown' || phase === 'arming' || phase === 'recording' || phase === 'finishing';
   const supported = canRecord() && canRecordCanvas();
 
-  const replaceTake = (next: Take | null) => {
+  const replaceTake = (next: Take | null, diskId: string | null = null) => {
     if (takeUrl.current) URL.revokeObjectURL(takeUrl.current);
     takeUrl.current = next?.url ?? null;
+    // The take we leave: a saved one stays marked on disk (cleaned on the next open, after any download has
+    // read it); an unsaved one the dancer moved on from is deleted now.
+    const old = reviewTake.current;
+    if (old && old.id !== diskId && !old.saved) void forgetTake(old.id);
+    reviewTake.current = diskId ? { id: diskId, saved: false } : null;
     setTake(next);
     setSaved(false);
+  };
+
+  /** Starts preparing where the next take is written; the song waits for it. */
+  const prepareSink = () => {
+    if (sinkReady.current) return;
+    const id = session.current;
+    const promise = createTakeSink(
+      { videoId: video.id, title: video.title, mimeType: plannedFormat().mimeType },
+      () => {
+        if (id !== session.current || !recorder.current) return;
+        setNotice('El móvil se ha quedado sin espacio: la toma termina con lo grabado hasta aquí.');
+        void finishRef.current();
+      },
+    );
+    sinkReady.current = promise;
+    void promise.then((s) => {
+      if (id === session.current && sinkReady.current === promise) sink.current = s;
+      else void s.discard();
+    });
+  };
+
+  /** Drops a sink that never got a recorder (cancelled countdown, song that wouldn't start). */
+  const dropUnusedSink = () => {
+    if (recorder.current) return;
+    const pending = sinkReady.current;
+    sinkReady.current = null;
+    sink.current = null;
+    void pending?.then((s) => s.discard());
   };
 
   const clearTimers = () => {
@@ -173,6 +224,15 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setPhase('idle');
     setNotice('');
     replaceTake(null);
+    setLeftover(null);
+    // A take of this song the app didn't get to finish or save last time (R1).
+    void listLeftovers().then((list) => {
+      if (id !== session.current) return;
+      setLeftover(list.find((l) => l.meta.videoId === video.id) ?? null);
+    });
+    void freeSpace().then((bytes) => {
+      if (id === session.current) setFree(bytes);
+    });
 
     // The song's own sound when the source allows it; otherwise the microphone hears the speaker.
     const tap = p.engine?.captureAudio?.() ?? null;
@@ -206,6 +266,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       clearTimers();
       recorder.current?.cancel();
       recorder.current = null;
+      dropUnusedSink();
       releasePicture();
       micTrack.current?.stop();
       micTrack.current = null;
@@ -251,8 +312,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       setSeconds(recorder.current.seconds());
       setPhase('paused');
     } else {
+      dropUnusedSink();
       setPhase('idle');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   cameraLost.current = () => {
@@ -267,6 +330,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const id = session.current;
     clearTimers();
     recorder.current = null;
+    const written = sink.current;
+    sink.current = null;
+    sinkReady.current = null;
     usePlayer.getState().pause();
     setSeconds(rec.seconds());
     setPhase('finishing');
@@ -274,6 +340,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     releasePicture();
     if (id !== session.current) return;
     if (!blob.size) {
+      void written?.discard();
       setNotice('No se ha grabado nada. Prueba otra vez.');
       setPhase('idle');
       return;
@@ -287,10 +354,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       dropped: null,
       expected: 0,
     });
-    replaceTake({ url: URL.createObjectURL(file), file });
+    replaceTake({ url: URL.createObjectURL(file), file }, written?.where === 'disk' ? written.id : null);
     setPhase('review');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video]);
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
 
   /** The song is really playing: the camera starts (or goes on) right now. */
   const roll = () => {
@@ -307,7 +376,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         const tracks = [...picture.getVideoTracks(), ...(audio ? [audio] : [])];
         const format = plannedFormat();
         takeFormat.current = format;
-        const rec = createTakeRecorder(tracks, format, () => {
+        const target = sink.current;
+        if (!target) throw new Error('no sink');
+        const rec = createTakeRecorder(tracks, format, target, () => {
           // The browser stopped recording by itself: keep what exists rather than filming nothing.
           if (recorder.current !== rec) return;
           setNotice('La grabación se ha cortado. Te dejo lo grabado hasta ahí.');
@@ -351,6 +422,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     }
     const id = session.current;
     setPhase('arming');
+    phaseRef.current = 'arming';
+    // A new take needs its place on the phone first (a few ms): the song waits for it.
+    if (!recorder.current && !sink.current) {
+      if (!sinkReady.current) prepareSink();
+      void sinkReady.current!.then(
+        () => {
+          if (id === session.current && phaseRef.current === 'arming') go();
+        },
+        () => undefined,
+      );
+      return;
+    }
     usePlayer.getState().play();
     const began = performance.now();
     let prev = engine.getCurrentTime();
@@ -367,6 +450,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (performance.now() - began > ARM_TIMEOUT_MS) {
         usePlayer.getState().pause();
         setNotice('La canción no arranca. Dale al play una vez en el reproductor y vuelve a intentarlo.');
+        if (countFrom.current === 'idle') dropUnusedSink();
         setPhase(countFrom.current);
         return;
       }
@@ -424,9 +508,11 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       const p = usePlayer.getState();
       p.pause();
       p.seek(s.start);
+      prepareSink();
       countIn('idle');
     } else if (now === 'countdown') {
       clearTimers();
+      if (countFrom.current === 'idle') dropUnusedSink();
       setPhase(countFrom.current);
     } else if (now === 'arming' || now === 'recording') {
       pausePart();
@@ -522,9 +608,22 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setPhase('idle');
   }
 
+  /** The take reached the phone (download or share): it's safe, its working copy is not offered back. */
+  function takeKept() {
+    setSaved(true);
+    const disk = reviewTake.current;
+    if (disk && !disk.saved) {
+      disk.saved = true;
+      void markTakeSaved(disk.id);
+    }
+    if (leftover && disk?.id === leftover.meta.id) setLeftover(null);
+  }
+
   function discardTake() {
     recorder.current?.cancel();
     recorder.current = null;
+    sink.current = null;
+    sinkReady.current = null;
     releasePicture();
     usePlayer.getState().pause();
     again();
@@ -544,14 +643,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (IS_IOS && canShareFile(take.file)) {
         // iPhone: the share sheet's "Guardar vídeo" is the way into Photos.
         const result = await shareFile(take.file, video.title);
-        if (result === 'shared') setSaved(true);
+        if (result === 'shared') takeKept();
         else if (result === 'failed') {
           downloadFile(take.file);
-          setSaved(true);
+          takeKept();
         }
       } else {
         downloadFile(take.file);
-        setSaved(true);
+        takeKept();
       }
     } finally {
       sharing.current = false;
@@ -562,7 +661,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (!take || sharing.current) return;
     sharing.current = true;
     try {
-      if ((await shareFile(take.file, video.title)) === 'shared') setSaved(true);
+      if ((await shareFile(take.file, video.title)) === 'shared') takeKept();
     } finally {
       sharing.current = false;
     }
@@ -589,6 +688,31 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const canTweak = phase === 'idle' || phase === 'paused';
   const showCamera = phase !== 'review';
   const vertical = view.aspect < 1;
+  // What the next take will use; asked again only when the camera or its shape changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const nextFormat = useMemo(() => (camReady ? plannedFormat() : null), [camReady, view.aspect, view.deviceId]);
+  const spaceMinutes =
+    free != null && nextFormat
+      ? minutesLeft(free, nextFormat.videoBitsPerSecond + nextFormat.audioBitsPerSecond)
+      : null;
+  const lowSpace = spaceMinutes != null && spaceMinutes < LOW_SPACE_MINUTES;
+
+  async function recoverLeftover() {
+    const found = leftover;
+    if (!found) return;
+    setLeftover(null);
+    const type = found.blob.type || found.meta.mimeType || 'video/webm';
+    const file = new File([found.blob], takeFileName(video, type), { type });
+    setSeconds(-1);
+    replaceTake({ url: URL.createObjectURL(file), file }, found.meta.id);
+    setPhase('review');
+  }
+
+  function dropLeftover() {
+    const found = leftover;
+    setLeftover(null);
+    if (found) void forgetTake(found.meta.id);
+  }
 
   if (!open) return null;
 
@@ -746,7 +870,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         {infoOpen && (
           <InfoPanel
             track={cam.track()}
-            format={camReady ? plannedFormat() : null}
+            format={nextFormat}
             mode="Lienzo (cada fotograma se redibuja)"
             last={lastStats}
             onClose={() => setInfoOpen(false)}
@@ -841,6 +965,42 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             )}
           </AnimatePresence>
 
+          {phase === 'idle' && leftover && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={soft}
+              role="region"
+              aria-label="Toma sin guardar"
+              className="w-full max-w-sm rounded-[14px] border border-kin-400/45 bg-sumi-900/92 p-3 text-[13px] leading-snug landscape:absolute landscape:bottom-[max(16px,env(safe-area-inset-bottom))] landscape:right-[max(16px,env(safe-area-inset-right))] landscape:w-80"
+            >
+              <p className="font-bold text-washi">Hay una toma sin guardar de esta canción</p>
+              <p className="mt-0.5 text-washi-muted">
+                Del {new Date(leftover.meta.startedAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}{' '}
+                · {(leftover.blob.size / 1_048_576).toFixed(1).replace('.', ',')} MB. La app se cerró antes de
+                guardarla.
+              </p>
+              <div className="mt-2.5 flex gap-2">
+                <Button size="sm" onClick={() => void recoverLeftover()}>
+                  Recuperar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={dropLeftover}>
+                  Descartar
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {phase === 'idle' && camReady && lowSpace && (
+            <p
+              role="status"
+              className="max-w-sm rounded-[10px] bg-shu-500/90 px-3 py-2 text-center text-[13px] font-bold leading-snug text-washi"
+            >
+              Queda poco espacio en el móvil: unos {spaceMinutes} min en esta calidad. Libera espacio o baja la
+              calidad.
+            </p>
+          )}
+
           {camReady && (canTweak || phase === 'recording') && (
             <div
               role="group"
@@ -904,7 +1064,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
           <p className="tabular min-h-4 text-center text-[12px] text-washi/75 landscape:hidden">
             {phase === 'idle' && camReady
-              ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}`
+              ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · ~${spaceMinutes} min libres` : ''}`
               : phase === 'paused'
                 ? 'En pausa · toca para seguir o ✓ para terminar'
                 : phase === 'countdown'
@@ -927,7 +1087,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           />
           <div className="flex flex-col items-center gap-3 px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-4 landscape:w-64 landscape:shrink-0 landscape:justify-center landscape:pb-4 landscape:pr-[max(16px,env(safe-area-inset-right))]">
             <p className="tabular text-[12px] text-washi/75">
-              {formatTime(seconds)} · {(take.file.size / 1_048_576).toFixed(1).replace('.', ',')} MB
+              {seconds >= 0 ? `${formatTime(seconds)} · ` : 'Recuperada · '}
+              {(take.file.size / 1_048_576).toFixed(1).replace('.', ',')} MB
               {saved ? ' · guardado' : ''}
               {' · '}
               <button
