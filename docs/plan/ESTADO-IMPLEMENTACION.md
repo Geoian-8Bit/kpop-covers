@@ -10,14 +10,13 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Grabación | Pasos 1–6 (Q1–Q8, C1–C5, S1–S3, R1–R5, A1) | **Hecha y desplegada** (16-10 17:33) | Falta probar en los Samsung (apartado 2) |
 | Ideas | F1 Archivo vinculado · F2 Quién es quién | **Hechas y desplegadas** (16-10 18:13) | 3 rondas de revisión; migraciones aplicadas en Supabase |
 | Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | **Hechas y desplegadas** (16-10 19:14) | 2 rondas de revisión; migración `takes` aplicada |
-| Ideas | F5 Repaso · F6 Notas sobre la toma · F7 Aplauso | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión con correcciones |
-| Ideas | F8 Clips en tomas · F9 Zoom | En la rama, sin revisar | Migración `clip_zoom` escrita |
-| Ideas | F10 Seguir a un bailarín | Pendiente | Migración `follow_paths` escrita |
+| Ideas | F5 Repaso · F6 Notas sobre la toma · F7 Aplauso | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión por feature (repaso y notas en dos informes, aplauso en otro) con correcciones. Lo que queda, en el apartado 5. El aplauso no se ha probado en un iPhone ni en un Android reales |
+| Ideas | F8 Clips en tomas · F9 Zoom | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `clip_zoom` aplicada |
+| Ideas | F10 Seguir a un bailarín y prueba de postura con IA | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `follow_paths` aplicada. Incluye la prueba de postura de Ajustes (MoveNet y MediaPipe, solo para medir tiempos) |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
 | Grupo | F13 Bolsas · F14 Random Play Dance | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión (BD e interfaz) con correcciones |
-| Grupo | F11 Votaciones · F12 Lista de deseos | En la rama, sin revisar | Migración escrita |
-| Grupo | F15 Reacciones · F16 Cuenta atrás | En construcción | Migración escrita |
-| IA | Análisis de postura | No empezada | |
+| Grupo | F11 Votaciones · F12 Lista de deseos | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión (BD e interfaz, dos informes) con correcciones. Migraciones `wishes_and_polls` y `close_poll_zero_votes`. Migración `close_poll_live_rank` escrita, sin aplicar (apartado 6) |
+| Grupo | F15 Reacciones · F16 Cuenta atrás | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `events_and_reactions` |
 
 ## 2. Cómo probar
 
@@ -90,6 +89,120 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 13. **Rejilla y nivel:** actívalos en Ajustes del grabador; el nivel se pone dorado con el móvil recto.
 14. **Recuperación:** como en el punto 5, también tras un cierre en mitad de la toma en la app instalada.
 
+### Pruebas nuevas
+
+Cada apartado dice si basta con el navegador o si hace falta un móvil de verdad. Los pasos siguen la numeración
+de arriba.
+
+### Repaso y notas · F5 y F6 (navegador)
+
+24. **Repaso (F5).** Hace falta una toma guardada de una canción con archivo. Con YouTube, «Superpuesto» sale
+    desactivado. En el estudio, pestaña «Tomas» → «Reproducir la toma» de la tarjeta. Se abre el repaso con la
+    toma y el original sincronizados: el desfase del archivo vinculado (F1) se aplica solo. En «Cómo comparar»
+    eliges «Apilado» o «Superpuesto». En «Superpuesto», arrastra el original para encajarlo; la rueda cambia su
+    tamaño y las flechas lo mueven. Prueba «Velocidad común», «Qué se oye» (la toma o el original), «Toma en
+    espejo» y «Original en espejo», y la sincronía con «Retrasar el original 0,01 s» y «Adelantar el original
+    0,01 s». Con «,» y «.» avanzas por fotogramas. Con «Marcar A (inicio del tramo)» y «Marcar B (fin del tramo)»
+    repites un tramo. Cierra con «Cerrar el repaso» o con Escape. En el móvil, los ajustes salen con «Ajustes del
+    repaso»; en el ordenador están a la derecha.
+25. **Notas sobre la toma (F6).** En el repaso, pausa en el momento y pulsa «Nota en este momento (N)». Escribe el
+    texto. Si quieres, elige una categoría (Tiempo, Brazos, Piernas, Dirección o mirada, Espacio, Expresión o
+    Energía) y dibuja con «Dibujar sobre el fotograma». En «Para quién» queda quien grabó la toma, o eliges otra
+    persona. «Guardar nota». Aparece un punto en la barra de tiempo: al tocarlo se abre la tarjeta, donde la
+    marcas «Resuelta» o «Pendiente» y puedes «Editar». En la canción, una nota para otra persona solo la ve
+    su destinatario. Para comprobarlo, cambia de persona en «¿Quién eres?».
+
+### Aplauso · F7 (hace falta un móvil)
+
+26. **Armar con un aplauso (F7).** Hace falta un móvil con cámara y micrófono. En el navegador de escritorio solo
+    se puede probar con el micrófono falso. En el grabador, con la canción cargada y la cámara lista, aparece
+    «Armar» (solo con el grabador en reposo). Se abre «Grabación armada: esperando el doble aplauso». Pon el móvil
+    en el suelo o en un trípode, aléjate unos metros y da dos palmadas: empieza la cuenta atrás y la toma. Cancela
+    con «Cancelar» o con Escape. Tras una toma que empezó con aplauso aparece «Armar otra vez». Si no llega señal
+    en 3 minutos, se desarma solo.
+27. **Sensibilidad del aplauso.** En Ajustes del grabador: Baja, Media o Alta. Prueba cada una a varias distancias
+    y anota desde dónde dispara. «Media» promete dos palmadas normales a unos metros, y esa distancia no está
+    medida (apartado 5). Si no dispara, prueba «Alta» y mira la marca roja del medidor.
+
+### Clips y zoom · F8 y F9 (navegador; el pellizco, en el móvil)
+
+28. **Clips dentro de una toma (F8).** Abre en el repaso una toma de una canción que tenga clips. En «Ajustes del
+    repaso», «Tramos de la canción en esta toma» lista los clips que caen dentro de la toma. Elige uno: la toma y
+    el original repiten ese tramo a la vez. Si marcas A y B, «Guardar el tramo como clip» o «Guardar como clip»
+    abren el diálogo «Guardar clip» con el tramo, su velocidad y el espejo. El clip aparece en la lista de clips
+    del estudio.
+29. **Zoom (F9).** Con un archivo, la fila «Zoom» bajo el vídeo tiene «Reducir el zoom», el porcentaje,
+    «Ampliar el centro del vídeo» y «Ver completo». Con la rueda o arrastrando amplías y mueves. Con dos dedos
+    (en el móvil) también. Doble clic o doble toque vuelve al vídeo entero. Con el foco en el vídeo: «+» amplía,
+    las flechas mueven la vista si hay zoom, «−» reduce y «0» muestra el vídeo entero. Guarda un clip con zoom
+    con «Guardar con el zoom» en el diálogo «Guardar clip»: el clip se abre ampliado y la lista muestra una lupa.
+    «Quitar el zoom del clip» lo borra. Con YouTube la fila sale desactivada.
+
+### Seguir a un bailarín y prueba de postura · F10 (navegador; los tiempos, en el móvil)
+
+30. **Seguir a un bailarín (F10).** Con un archivo cargado y el vídeo en pausa, en la fila «Seguir a un bailarín»
+    pulsa «Seguir a alguien» y toca a la persona en la imagen. Salen «Persona 1», «Persona 2»…; también puedes
+    dibujar un recuadro. La app analiza el vídeo una sola vez («Progreso del análisis», con «Cancelar»). Al
+    terminar, el zoom va con esa persona. Si en un cruce salta a otra, pausa ahí y pulsa «Corregir desde aquí».
+    «¿A quién sigues?» cambia de bailarín o quita el seguimiento («Nadie»). En «Modo manual» pones tú el recuadro
+    en varios momentos con «Añadir punto aquí», «Mover el punto» y «Quitar punto». Al guardar un clip, «Guardar
+    siguiendo a «X»» y el zoom fijo no van juntos.
+31. **Prueba de postura (Ajustes).** Ajustes → «Análisis de postura (prueba)» → «Abrir la prueba» → «Elegir vídeo» →
+    «Probar los dos» (o solo MoveNet, o solo MediaPipe). Muestra tiempos por fotograma, carga y personas detectadas.
+    «Copiar» copia los resultados. El vídeo no sale del dispositivo. Los tiempos del ordenador no sirven para
+    decidir: en el equipo de pruebas, sin GPU, tardó unos 250 ms por fotograma. Las cifras buenas salen en el móvil.
+
+### Votaciones y lista de deseos · F11 y F12 (navegador; para votar a la vez, dos pestañas o dos móviles)
+
+32. **Votaciones (F11).** Menú «Próxima cover» (/deseos) → «Nueva votación». Puedes marcar antes las candidatas
+    con «Elegir para votar» (hacen falta dos propuestas). Pon título, candidatas, cuándo cierra («Fecha y hora» o
+    «A mano»), tipo («Un voto», «Varios votos» o «Ranking»), resultados («En directo» o «Al cerrar») y votantes
+    («Con nombre» o «Anónimos») → «Crear votación». Para votar, pon tu nombre («Elegir mi nombre para votar») y
+    «Votar». Luego «Cambiar voto» o «Retirar mi voto». En ranking, «Subir» y «Bajar». «Cerrar votación» →
+    «¿Cerrar la votación?»: el servidor cuenta y elige la ganadora. Con empate salen «Sorteo entre empatadas» y
+    «Segunda vuelta». La ganadora ofrece «Añadir a la biblioteca», «Abrir en el estudio» y «Meter en «Próxima
+    coreo»».
+33. **Lista de deseos (F12).** En «Próxima cover», «Proponer canción» → pega el enlace de YouTube. El título, el
+    grupo y la miniatura salen solos → «Proponer». Cada persona pulsa «Me apunto» (si no sabe quién es, sale
+    «¿Quién eres?»). La lista se ordena por interés. En el menú «Más acciones de «…»» de una propuesta está
+    «Añadir a la biblioteca»: la canción pasa a la biblioteca y sale de la lista. Si la propuesta está en una
+    votación abierta, el aviso lo dice antes de borrarla.
+
+### Bolsas · F13 (navegador)
+
+34. **Bolsas (F13).** Menú «Bolsas» → «Nueva bolsa»: nombre, tipo (canciones, clips o personas), «Sin repetir
+    seguidas» y la forma de sacar: «Se queda» (vuelve a la bolsa y puede volver a salir) o «Se quita» (sale de la
+    bolsa hasta que la rellenes). Para meter algo, «Añadir a una bolsa» en la tarjeta de una canción o en la fila de
+    un clip. Dentro de la bolsa: «Sacar» saca uno con su animación; «Sacar» con un número (N) crea una ronda de
+    Random Play Dance con lo que salga; «Quitar de la bolsa» o «Devolver» deshacen el resultado; «Rellenar»
+    devuelve todo cuando ya ha salido; «Sacar a mano» escoge uno. El historial dice qué salió, cuándo y si se quitó.
+
+### Random Play Dance · F14 (navegador)
+
+35. **Random Play Dance (F14).** Menú «Random Play Dance» (/rpd). En «De dónde salen los clips» eliges «Una bolsa»,
+    «A mano» o «Canciones». Ajusta «Uno menos» y «Uno más» (número de clips), «Pausa entre clips», «Cuándo se ve
+    el título» («Antes de sonar» o «Después (adivinar)»), la cuenta atrás y el espejo y la velocidad de cada clip.
+    Pulsa «Mezclar» (luego «Volver a mezclar») y «Empezar». En la ronda: «Pausa» (o «Seguir»), «Repetir»,
+    «Saltar», «Terminar» y «Pantalla completa». También Espacio, R y la flecha derecha. Al acabar: «Otra vez»,
+    «Volver a mezclar», «Guardar como pista» y «Salir». Las pistas guardadas aparecen en la misma página.
+
+### Reacciones · F15 (navegador, con dos identidades; también en dos móviles)
+
+36. **Reacciones (F15).** Solo en tomas compartidas. En la pestaña «Tomas», la toma tiene que estar «Compartida»
+    (botón «Compartir»). Bajo la toma salen 🔥 👏 💯 😂 con su contador; tocar añade o quita la tuya. «Quién»
+    lista quién ha reaccionado. Si no sabes quién eres, sale «¿Quién eres?»; con «Ahora no», la reacción va como
+    «sin nombre». Prueba con dos identidades: la reacción de una aparece en la otra.
+
+### Eventos con cuenta atrás · F16 (navegador)
+
+37. **Eventos (F16).** Menú «Eventos» → «Nuevo evento»: nombre, «Día y hora» y «Lugar (opcional)» → «Crear evento».
+    La portada enseña la cuenta atrás al evento más cercano: «Faltan N días», las horas el último día y «Hoy» el
+    día del evento. Un evento que empezó hace menos de 3 horas tiene prioridad sobre los próximos. Si no hay
+    ninguno próximo, el de ayer sale como «Ayer» hasta 24 horas después. En la ficha del evento, «Repertorio» →
+    «Añadir canciones» → «Añadir». Con el repertorio: «Crear bolsa de candidatas» y «Crear pista con los
+    estribillos» (clips cuyo nombre dice estribillo, chorus, coro o hook). Las secciones «Próximos» y «Pasados»
+    separan los eventos.
+
 ## 3. DECISIONES
 
 1. **F17 y F18.** El plan de ideas que se copió a `docs/plan/` no define F17 ni F18. F17 se toma del plan de
@@ -124,6 +237,57 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 11. **Laboratorio de diseño:** la variante elegida se aplica aunque se oculte el laboratorio (el laboratorio solo
     oculta el selector). Lo pidió el prompt («la elección se guarda en el dispositivo»).
 12. **Panel «i» oculto por defecto** (A1: «Información técnica, desactivado»). Se activa en Ajustes del grabador.
+13. **Repaso: la toma manda el reloj.** El original sigue a la toma, con el desfase del archivo vinculado (F1). El
+    ajuste fino de sincronía se guarda con la toma.
+14. **El encaje de «Superpuesto» se guarda con la toma** (posición y tamaño) y se comparte con el grupo. Hoy
+    queda relativo al marco de la pantalla, no a la toma (apartado 5).
+15. **«Superpuesto» y el zoom no van con YouTube.** Solo con archivo. La app lo dice al pulsar y el zoom nunca
+    toca el reproductor de YouTube.
+16. **Notas como texto en la base de datos.** Las notas viajan con la base de datos, así que se ven aunque el
+    vídeo esté en otro móvil. El dibujo es una imagen dentro de la nota, de hasta 60 000 caracteres.
+17. **Notas: quién las ve.** En la canción, el filtro de la app solo muestra la nota a su destinatario. La base
+    deja leer las notas a quien tenga la clave pública del proyecto, como el resto de datos del modelo sin login.
+18. **Aplauso: un doble aplauso, no un ruido suelto.** El detector filtra los sonidos graves y pide un golpe
+    brusco. Los pasos y las sílabas no deben disparar (apartado 5). El armado dura 3 minutos como máximo. El
+    disparo sigue el mismo camino que el botón «Empezar a grabar».
+19. **Sorteo de las bolsas en el servidor.** `draw_from_bag` elige, evita repetir seguidas y escribe el historial
+    con la hora del servidor. El cliente no puede escribir sorteos ni historial.
+20. **Bolsas: «Se queda» o «Se quita».** «Se queda» vuelve a la bolsa y puede volver a salir. «Se quita» sale de la
+    bolsa hasta que se rellene.
+21. **Votos solo por `cast_vote`.** El cliente no puede escribir votos ni poner la ganadora a mano. La función
+    comprueba que la votación siga abierta, que la persona sea miembro del grupo y que las opciones sean válidas.
+22. **`close_poll` cuenta en el servidor.** Un voto por persona: gana el más votado. Ranking: puntos (n − posición
+    + 1). Sin votos, no hay ganadora. Una opción sin votos cuenta 0 (migración `close_poll_zero_votes`).
+    Con empate, la votación no se cierra sola. Quien cierra elige «Sorteo entre empatadas» (una de las
+    empatadas) o «Segunda vuelta» (votación nueva; la original se cierra sin ganadora).
+23. **Votaciones: anónimo y resultados al cerrar son de presentación.** La app los respeta, pero la base deja
+    leer los votos (lo dice la migración). Si hace falta secreto de verdad, habría que cambiar el diseño
+    (apartado 5). La app no deja pasar de «Anónimos» a «Con nombre» con votos ya emitidos, y la base congela
+    ese campo al cerrar.
+24. **Borrar = archivar en las tablas nuevas.** Desde el cliente, borrar archiva. Así pasa con las tablas nuevas
+    de esta fase (deseos, votaciones, eventos, reacciones y recorridos). Los archivos del bucket no se borran
+    desde el cliente.
+25. **Eventos: qué sale en la portada.** Primero, el evento que empezó hace menos de 3 horas. Después, el próximo.
+    Si no hay ninguno, el de ayer hasta 24 horas después. Los eventos pasados van en «Pasados».
+26. **«Crear pista con los estribillos».** Coge los clips cuyo nombre dice estribillo, chorus, coro o hook. No
+    coge «Pre-estribillo» ni «Post-chorus».
+27. **Reacciones «sin nombre».** Quien no tiene nombre comparte un hueco por emoji con los demás sin nombre. Quitar
+    una reacción «sin nombre» puede quitar la de otra persona (apartado 5).
+28. **Modelos de postura desde terceros.** Para MoveNet, la app baja los pesos de TensorFlow Hub, que redirige a
+    Kaggle y a Google Cloud Storage. Los WASM de MediaPipe vienen de jsDelivr y su modelo de Google Cloud Storage.
+    La política de privacidad lo dice: Kaggle puede poner una cookie al redirigir la descarga. Alojar los modelos
+    en el propio dominio está pendiente (apartado 5).
+29. **CSP en modo Report-Only.** `vercel.json` tiene la política en modo informe: avisa en la consola y no bloquea.
+    Se han reducido los orígenes de jsDelivr y de Google Cloud Storage a las rutas que usa la app. TF Hub y Kaggle
+    siguen como dominio completo. Pasar a modo obligatorio es otra decisión.
+30. **Zoom y seguimiento no van juntos al guardar un clip.** Con el seguimiento activo, la opción de zoom fijo sale
+    desactivada: el zoom va con el bailarín.
+31. **Análisis de postura sin vídeo fuera del móvil.** El análisis lee el vídeo en el propio navegador. Solo se
+    guardan el recorrido (puntos) y su etiqueta.
+32. **Migraciones ya publicadas no se editan.** El arreglo de `close_poll` con cero votos es una migración nueva
+    (`20261016080000_close_poll_zero_votes`), no un cambio de la `040000` ya aplicada.
+33. **Listados completos.** La app pide las listas largas por páginas, porque PostgREST corta a 1000 filas por
+    defecto. Así no se pierden las filas nuevas.
 
 ## 4. PREGUNTAS
 
@@ -141,8 +305,11 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 
 ## 5. PENDIENTES
 
-- Pruebas en dispositivo (Samsung): todas las del apartado 2.
-- Hallazgos de revisión con nota menor de 6 sin corregir: ver apartado 8.
+- Pruebas en dispositivo (Samsung): todas las del apartado 2. Dentro de ellas, las que exigen un móvil de verdad:
+  el aplauso (F7: micrófono, cámara y distancia), los gestos de dos dedos (F5 y F9), los tiempos de la prueba de
+  postura (F10) y las reacciones con dos móviles (F15). En iPhone, además, el aplauso y la cuenta atrás (F7, hallazgo 5).
+- Hallazgos de revisión con nota menor de 6 sin corregir: ver apartado 8. Lo que sigue abajo sale de cada informe
+  y de los commits; si algo no aparece aquí, no está confirmado como corregido.
 - F1/F2 (ronda 3, todos < 6): si la vinculación falla justo después de guardar la copia nueva en el móvil, ese
   móvil puede quedar con la copia equivocada (5); si la subida falla durante «Cambiar archivo», el nuevo queda solo
   en ese móvil (5); «Quitar» y «Restaurar» no releen la ficha antes (4); el trigger de la 000200 deja algunos huecos
@@ -156,6 +323,88 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
   otra persona las borra (5), sin conexión con datos en caché (5), subida de «Compartir» sin cancelar (5), aviso de
   que Safari borra datos tras 7 días (5), «Voz» no aísla del todo la voz (5, textos ajustados), accesibilidad de
   chips y selector de fecha (4).
+- F5 Repaso (ronda 1, < 6): el guardado de ajustes y de encaje no tiene reintento, y los errores al cerrar son
+  mudos (5); el encaje superpuesto se guarda relativo al marco de la pantalla, no a la toma (5); zonas táctiles de
+  36 px en el selector de modo, la velocidad, el sonido y la barra de tiempo (4); con YouTube, «Linterna» pinta
+  bandas encima del reproductor (4); el store y el reloj de sincronía no tienen pruebas propias (4); la carga
+  perezosa del repaso no tiene botón de cerrar ni salida si falla (3); rendimiento por cada movimiento del puntero
+  (3); accesibilidad: el estudio sigue en el árbol de accesibilidad, el selector no tiene flechas y el marco del
+  superpuesto no tiene el rol adecuado (3); `clampFit` deja el original fuera del marco (2); copys, transiciones con
+  `duration` suelto y la URL de la toma que se libera mientras el vídeo sigue montado (2). Decisión pendiente: si
+  la toma y el original empiezan los dos en espejo (3).
+- F6 Notas sobre la toma (ronda 1, < 6): si quien grabó ya no está en el grupo, la nota se queda sin destinatario
+  en silencio (4); `listNotes` baja también los dibujos de todas las notas (4); la reversión optimista restaura la
+  lista entera y pisa cambios ajenos (4); el índice único `(video, segundo, texto)` choca entre una nota de toma y
+  una de canción con el mismo texto (4); editar el destinatario de una nota de una toma archivada la hace pública
+  (3); los puntos van en una barra y no en la ola de la toma (3); quien escribe una nota para otra persona no la ve
+  en la canción (3); accesibilidad del lienzo y del compositor (4); detalles (2–3).
+- F7 Aplauso (ronda 1, < 6): si el micro se corta o el contexto se suspende, el armado no avisa ni se recupera (5);
+  el umbral de «Media» no está medido en móviles (5); tras el aplauso no hay gesto del usuario, con riesgo en iOS
+  para la canción y la cuenta atrás (5; sin verificar, hace falta un iPhone); el armado no tiene trampa de foco ni
+  devuelve el foco (3); transiciones con `duration` suelto en las figuras (2); faltan pruebas del escucha y de los
+  flujos del grabador (3); el bloqueo de pantalla puede quedar sin soltar si llegan dos avisos seguidos (2). Ya
+  corregidos: el desarme al cambiar de fase, la lectura con más ventana (4096) y los pasos y sílabas.
+- F8 y F9 Clips y zoom (ronda 1, < 6): «Ampliar» y «Reducir» mueven la vista con vídeos que no son 16:9 (4); tocar
+  para pausar con zoom tarda 300 ms (4); el teclado solo sirve con el foco en el vídeo, sin botones de mover (4); la
+  rueda sin tecla amplía y roba el scroll de la página (3); la capa de zoom «patina» al cambiar el tamaño de la caja
+  (3); un clip ampliado no se aplica en «Superpuesto» ni con YouTube (3); «Guardar como clip» no deja guardar el
+  mismo tramo con otro zoom (3); el botón «Ampliar / Encajar» de «Superpuesto» mezcla `aria-pressed` con un nombre
+  que cambia (3); faltan pruebas de `stepZoom` con barras laterales y de la restricción SQL del zoom (3); detalles (2).
+- F10 Seguir a un bailarín y prueba de postura (ronda 1, < 6): H3: el suavizado cruza los huecos (4). H5: resto de
+  H5 (colocar el recuadro con teclado en modo manual, volver a pausar si se reproduce mientras se elige) (4). H8: si
+  falla el guardado se pierde el análisis, y falta «Reintentar guardado» (3). H9: restaurar el zoom manual al
+  cancelar la elección (3). H10: el superpuesto del repaso no sigue a nadie (3). H11: alojar los pesos de MoveNet y el
+  WASM en el propio dominio (3). H12: liberar los modelos y no crear un segundo detector cuando WebGPU cae a WebGL
+  (3). H13: mensaje genérico de error en español y «Reintentar» (2). Ya corregidos: las teclas que se tragaban al
+  elegir (H1), la CSP y la política de privacidad (H2), el modo manual que borraba puntos (H4), el zoom contra el
+  seguimiento (H6), y cancelar durante la descarga del modelo (H7).
+- F11 y F12 Votaciones y lista de deseos (ronda 1, < 6): el voto anterior se archiva y se inserta otro en cada
+  cambio, sin límite de ritmo (5); el enlace de vídeo de una propuesta no se valida contra su YouTube ID, y la
+  propuesta queda huérfana si se archiva el vídeo (3); `insertPoll` hace dos pasos y puede dejar una votación sin
+  candidatas (3); los votos anónimos y los resultados «al cerrar» son de presentación, no secreto (4, decisión
+  pendiente, apartado 3); en ranking, la papeleta no se maneja bien con teclado y lector (5); el radio de «Un voto»
+  usa `li` dentro de `radiogroup` (4); la ganadora se estrena en cada visita y retrasa los botones (3); al cerrar
+  por hora, el reloj del móvil decide el cierre, y la lista puede dar por cerrada una votación sin ganadora (4);
+  detalles (2): «Elegir para votar» sin explicar que hacen falta dos propuestas, «Segunda vuelta · Segunda vuelta»,
+  y el aviso de YouTube (422) al proponer.
+- F13 y F14 Bolsas y Random Play Dance (ronda 1, < 6). Base de datos: «Quitar» y «Devolver» tras sortear no son
+  atómicos (3); reordenar una pista hace una petición por clip, y crearla no es atómico (3); la demo no imita todas
+  las reglas de la base (3); `plan_b1_checks.sql` no cubre todos los casos (3); el orden de los listados no tiene
+  desempate por `id` (2). Interfaz: el lector de pantalla no anuncia nada durante la ronda (5); al reanudar, la
+  cuenta atrás parpadea «3» y suena un tic de más (5); la bolsa cambia mientras «Sacando…» (5); «Guardar como pista»
+  falla con un clip archivado y sin salida (5); los contadores cuentan también lo que está fuera (4); «Quitar» y
+  «Sacar» seguidos pueden pisarse (4); pausar mientras carga el clip se ignora (4); el aviso de «clip fuera de su
+  vídeo» se borra en la misma pasada (4); el fin del clip depende de `requestAnimationFrame` (4); en modo adivinar,
+  pausar oculta el título ya revelado (4); reordenar una pista con teclado y lector (4); «Nueva bolsa» abre sin foco
+  en el nombre (3); textos ambiguos («Quitar de la bolsa» para dos cosas) (3); Ctrl+R repite el clip, y «Salir» no
+  pide confirmación (3); tamaños de pausa y de pistas (3); «Sacar» se desplaza al revelar (3); detalles (2).
+- F15 y F16 Reacciones y cuenta atrás (ronda 1, < 6): faltan pruebas SQL de los casos de `plan_b3_checks.sql` (3);
+  el hueco «sin nombre» sigue compartido (3); detalles (2–3): `reactionRules.whoWords` sin uso, la pantalla del
+  evento no muestra el año en fechas pasadas, el formulario admite fechas pasadas sin aviso, las horas que no existen
+  por el cambio de hora no avisan, `TakeReactions` no muestra nada si falla la consulta, y cada cambio de reacción
+  deja una fila archivada.
+- Revisión global, base de datos, datos y API (`revisiones/global-bd-seguridad.md`, 17-10). `pnpm db:test` pasa
+  (19 migraciones, 84 PASS). Ningún hallazgo de nota 6 o más. Pendientes:
+  - H1 (5): el bucket `videos` no tiene tope de bytes; si se llena, bloquea las tomas.
+  - H2 (5): los topes cuentan filas, no bytes (dibujos de notas, recorridos, miniaturas); un script podría llenar la
+    base de datos, y `listNotes` trae los dibujos siempre.
+  - H4 (4): el límite por IP de la búsqueda de YouTube es por instancia, y la cuota diaria se puede agotar. Hace
+    falta una regla de firewall o un contador global, fuera del código.
+  - H5 (4): `follow_paths` no tiene tope por canción ni valida la forma de los puntos.
+  - H6 (3): un cliente puede cerrar una votación con un cambio directo y elegir la ganadora entre las opciones.
+  - H7 (3): reordenar pistas y repertorio son varias peticiones, no atómicas.
+  - H8 (3): «Me apunto» de miembros archivados sigue contando. Los votos de miembros archivados se corrigen en la
+    migración pendiente (apartado 6).
+  - H9 (3): listados por canción sin paginar (corte en 1000); `.in()` con muchas votaciones.
+  - H10 (3): la CSP sigue en Report-Only y sin destino de informes; los WASM de MediaPipe no tienen SRI.
+  - H11 (3): no hay una prueba genérica de que toda tabla archivable llegue a `archive_row`.
+  - H12 (2): `updated_at` lo elige el cliente en pistas y recorridos.
+  - H13 (2): carreras menores en las subidas: dos a la vez pueden pasar un tope.
+  H3 (ranking de `close_poll`, puntos 0 o negativos al archivar una candidata) está corregido en la migración
+  pendiente.
+- Duda de producto: si una revisión marca algo que hoy depende de la confianza en el grupo (votos y notas legibles,
+  decisiones 17 y 23 del apartado 3), decidid si se acepta o se cambia el diseño.
+- PREGUNTAS 1 y 2 (apartado 4) siguen abiertas.
 
 ## 6. Migraciones
 
@@ -164,6 +413,26 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | 16-10 18:08 | `20261016000000_linked_file_and_members` | Columnas de archivo vinculado (desfase, duración), reglas del bucket para el archivo de un vídeo de YouTube, tabla `members`, autor de las notas | Aplicada y verificada (19 PASS en producción, todo revertido) |
 | 16-10 18:09 | `20261016000100_linked_file_guard` | La descripción del archivo vinculado no se reescribe; máximo 5 archivos por vídeo de YouTube; nombre simple para vídeos subidos | Aplicada |
 | 16-10 18:09 | `20261016000200_linked_file_identity` | La protección anterior también para archivos que solo están en un móvil | Aplicada |
+| 16-10 19:09 | `20261016010000_takes` | Tabla `takes`, bucket `takes`, compartir, una mejor toma por persona y tramo, tope de 1 GiB y `storage_usage()` | Aplicada y verificada (13 PASS en producción, todo revertido) |
+| 16-10 21:55 | `20261016020000_review_and_take_notes` | Ajuste fino y encaje de la toma; notas sobre la toma (categoría, destinatario, estado, dibujo) | Aplicada y verificada (5 + 10 PASS, todo revertido) |
+| 16-10 21:55 | `20261016030000_bags_and_tracks` | Bolsas, sorteos (`draw_from_bag`) y pistas | Aplicada y verificada (5 + 10 PASS, todo revertido) |
+| 16-10 21:55 | `20261016035000_bag_draws_hardening` | El historial solo lo escribe el sorteo, con la hora del servidor; índice y tope | Aplicada y verificada (5 + 10 PASS, todo revertido) |
+| 16-10 23:50 | `20261016040000_wishes_and_polls` | Deseos, interés, votaciones, `cast_vote` (votar) y `close_poll` (cerrar) | Aplicada y verificada (13 PASS en F11/F12, todo revertido) |
+| 16-10 23:50 | `20261016050000_events_and_reactions` | Eventos, repertorio, reacciones sobre tomas compartidas | Aplicada y verificada (5 PASS en F15/F16, todo revertido) |
+| 16-10 23:50 | `20261016060000_clip_zoom` | Zoom del clip (`zoom_scale`, `zoom_x`, `zoom_y`) con sus rangos | Aplicada; verificada en el conjunto de la fase final (todo revertido) |
+| 16-10 23:50 | `20261016070000_follow_paths` | Recorridos del bailarín (`follow_paths`), tope de 500 vivos y 2000 en total | Aplicada y verificada (6 PASS en F10, todo revertido) |
+| 17-10 00:00 | `20261016080000_close_poll_zero_votes` | `close_poll` cuenta como 0 una opción sin votos (antes contaba 1) | Aplicada. Idempotente: producción ya tenía esta versión |
+| — | `20261017010000_close_poll_live_rank` | `close_poll` con ranking: renumera los puestos sobre las candidatas vivas (archivar una candidata ya no da puntos 0 o negativos); no cuenta los votos de miembros archivados | Escrita, pendiente de aplicar |
+
+Las fechas son la hora de aplicación en producción. El commit que añade cada migración está en `git log`:
+`683e39c` (takes), `cfc6296` y `7bd80cd` (020000, 030000, 035000), `675a775` (040000 a 070000) y `85d6bf6` (080000).
+
+**Migración escrita, pendiente de aplicar (17-10):** `20261017010000_close_poll_live_rank`. Corrige dos hallazgos de
+la revisión global (`revisiones/global-bd-seguridad.md`): H3, `close_poll` en ranking (los puestos se renumeran sobre
+las candidatas vivas; archivar una candidata ya no da puntos 0 o negativos), y H8 en su parte de votos (los votos de
+miembros archivados ya no cuentan). Es la misma función que `20261016080000` con solo la consulta de puntos
+cambiada. Antes de aplicarla: copia previa con la misma receta, aplicar, comprobaciones de `db:test` y de producción,
+advisors y tipos. Hasta entonces, producción no tiene estos cambios.
 
 **Copia de seguridad previa:** `~/one-shoot-backups/20261016-1806-fase1/backup.json` (todas las tablas de
 `public`, `storage.buckets` y `storage.objects`; 1 grupo, 3 vídeos, 3 clips, 2 notas, 0 archivos) y las
@@ -195,28 +464,71 @@ servidor; índice y tope). Aplicadas y verificadas (5 + 10 PASS en producción, 
 atrás en `~/one-shoot-backups/20261016-2151-fase3-b1/`. Advisors: nada nuevo. Columnas reales comparadas con
 los tipos: coinciden.
 
+**Ideas fase final (16-10 23:50 y 17-10 00:00):** se aplicaron en orden `20261016040000_wishes_and_polls`
+(deseos, interés, votaciones, `cast_vote` y `close_poll`), `20261016050000_events_and_reactions`,
+`20261016060000_clip_zoom` y `20261016070000_follow_paths`, después de una copia de seguridad en
+`~/one-shoot-backups/20261016-2346-final/` (`backup.json` y `rollback.sql`). El `rollback.sql` quita el acceso del
+cliente a las tablas y funciones nuevas, y repone `archive_row` y `guard_bag_item`. Las tablas y las columnas se
+quedan. La `040000` se aplicó como un único SQL con el mismo estado final que el fichero, incluido el arreglo de
+`close_poll` con cero votos. Ese arreglo tiene su propia migración, `20261016080000_close_poll_zero_votes`
+(aplicada el 17-10 00:00; es idempotente porque producción ya tenía esa versión), porque no se editan las
+migraciones ya publicadas.
+
+Verificación en producción, todo revertido: F11/F12 13 PASS, F15/F16 5 PASS, F10 6 PASS, comprobaciones de
+archivado 13 PASS. Después, los datos no cambiaron: 3 vídeos, 3 clips, 2 notas, 0 en las tablas nuevas y 0
+archivos.
+
+Advisors: los avisos 0028/0029 ahora incluyen también `cast_vote`. Es intencionado: es `security definer` porque el
+cliente no puede escribir votos directamente, y la función comprueba la votación, la persona y las opciones.
+Quedan los índices sin usar y nada más nuevo. Tipos: 216 columnas reales comparadas con `database.types.ts`:
+coinciden.
+
 ## 7. Laboratorio de diseño
 
 Ajustes → «Mostrar laboratorio de diseño». Cada momento clave tiene sus variantes con una demostración en vivo.
+La variante que se ve por defecto es la recomendada. Si no eliges otra, se aplica esa.
 
 | Momento | Variantes | Recomendada y por qué |
 | --- | --- | --- |
+| A1 · Panel de ajustes del grabador | **Bandeja de laca** (hoja inferior con los ajustes en filas agrupadas) · **Abanico** (los ajustes se despliegan desde ⚙ como las varillas de un sensu) · **Makimono** (un rollo que se desenrolla de lado, con cada ajuste como una columna) | **Bandeja**: la más rápida de leer y tocar con el móvil en la mano; las otras dos son más vistosas pero esconden opciones tras un gesto |
+| F5 · Repaso: comparar la toma con el original | **Biombo** (dos paneles de laca con una bisagra dorada; en «Superpuesto», el original va en un marco de biombo) · **Cortina** (un noren: en «Apilado» una cortina índigo separa los dos) · **Linterna** (el original como silueta de tinta luminosa sobre la toma) | **Biombo**: es la que menos tapa el vídeo |
+| F7 · Armar y empezar con un aplauso | **Taiko** (el parche se hincha con el sonido y cada palmada gira el mitsudomoe) · **Hyōshigi** (dos tablillas de kabuki que chocan en cada palmada) · **Ensō** (un círculo de tinta que se dibuja hasta donde llega el sonido) | **Taiko**: es la de por defecto; el código no explica por qué |
 | F17 · Separar voz y música | **La ola partida** (la ola se parte en voz bermellón y música índigo) · **Puertas correderas** (dos puertas de washi tapan lo que se quita) · **Capas de grabado** (tres planchas de ukiyo-e apiladas) | **La ola partida**: enseña de un vistazo qué suena sin tapar la ola de la canción |
-| A1 · Panel de ajustes del grabador | **Bandeja de laca** (hoja inferior con celdas bento) · **Abanico** (varillas de un sensu que se despliegan) · **Makimono** (rollo de washi que se desenrolla) | **Bandeja**: la más rápida de leer y tocar con el móvil en la mano; las otras dos son más vistosas pero esconden opciones tras un gesto |
+| F13 · Sacar de una bolsa | **Omikuji** (se agita la caja hexagonal y sale una varilla con el resultado) · **Fukubiki** (la rueda de la feria suelta una bola del color de lo que ha salido) · **Daruma** (un daruma se tambalea y, al salir, se le pinta el ojo) | **Omikuji**: es la de por defecto; el código no explica por qué |
+| F14 · Pantalla de Random Play Dance | **Marquesina** (el título enorme en un cartel de laca; la cuenta atrás es un sello sobre el vídeo) · **Kamishibai** (la tarjeta con el título tapa el vídeo durante la cuenta atrás y se desliza al sonar) · **Taiko** (la cuenta atrás como golpes en un taiko; lo que viene después corre por una banda índigo) | **Marquesina**: es la de por defecto; el código no explica por qué |
+| F11 · Revelar la ganadora de una votación | **Hanabi** (fuegos de papel sobre un cielo índigo que dejan el título y el sello 当選) · **Noren** (una cortina índigo con 当 y 選 se abre para descubrir la ganadora) · **Kakejiku** (un rollo que se desenrolla con 決定 a pincel) | **Hanabi**: es la más festiva y la que mejor se ve de lejos |
+| F16 · Cuenta atrás al próximo evento | **Koyomi** (calendario de hojas con la anilla bermellón; cada día se arranca una hoja y el día del evento dice 今日) · **Chōchin** (siete farolillos; uno por día de la última semana, y todos brillan el día del evento) · **Sunadokei** (reloj de arena que baja desde que se creó el evento) | **Koyomi**: el número de días se lee de un vistazo |
+| F15 · Reacciones en las tomas compartidas | **Hanko** (cada reacción es un sello bermellón que se estampa al tocar) · **Kami-fubuki** (al reaccionar salta una lluvia de confeti alrededor del emoji) · **Sensu** (cada emoji va sobre un abanico que se abre más cuantas más reacciones tiene) | **Hanko**: es la más clara de leer en una fila pequeña |
 
 ## 8. Revisiones
 
 | Funcionalidad | Rondas | Hallazgos (nota) | Corregido |
 | --- | --- | --- | --- |
 | Grabación paso 1 | 1 | Ninguno 🔴. 7: formato que falla sin alternativa · 6: sin opción H.264 compatible · 6: botones cortados en horizontal · 5: panel sin Esc/foco, panel tapa el diálogo, avisos solapados, niveles H.264/HEVC en 4:3 · ≤4 varios | Todos los ≥6 y los 5 citados. Pendiente: «atrás» del móvil cierra el grabador entero con el panel abierto (4), formato real leído del archivo (5, se deja «declarado») |
-
 | Grabación pasos 2–6 | 3 | Ronda 3: 🔴 9 «el iPhone no grababa» (lienzo congelado) | Todo lo ≥6 |
 | F1 · F2 | 3 | Ronda 1: 🔴 7 vincular encima de otro archivo, 🔴 cambio no atómico · Ronda 2: 🔴 7 al quinto cambio se perdía el archivo, 6 copia propia borrada, 6 archivo solo-móvil pisable · Ronda 3: ninguno ≥6 | Todo lo ≥6; lo <6 en PENDIENTES |
 | F3 · F4 · F17 | 2 | Ronda 1: 🔴 9 «Guardar» sin aviso en el repaso, 🔴 8/7 toma «compartida» sin archivo, 🔴 7 vídeo congelado con el audio suspendido, 🔴 7 «Sin voz» mudo en mono, 7 «Guardar» sin reintento, 6 tope de 1 GB solo en la app, 6 `meta.json` pisable, 6 contextos de audio sin cerrar, 6 grabador sin decir el modo · Ronda 2: ninguno ≥6 | Todo lo ≥6 y varios menores; lo <6 en PENDIENTES |
+| F5 · F6 | 1 (repaso y notas, dos informes) | Repaso: sin 🔴. 6: no se pausa si un vídeo tarda en cargar · 5: guardado mudo y sin reintento · 5: encaje relativo al marco. Notas: sin 🔴. 6: el dibujo se queda sobre la toma · 5: «Dibujar de nuevo» captura otro fotograma · 4: destinatario archivado, dibujos en cada carga, reversión que pisa, índice único | Corregido: la pausa conjunta mientras carga (F5), el dibujo en su momento y «Dibujar de nuevo» (F6), el formato de velocidad con coma. Pendiente: lo <6 (apartado 5) |
+| F7 · Aplauso | 1 | Sin 🔴. 6: pasos y voz disparan el doble aplauso · 5: un cambio de fase deja micro y contexto abiertos · 5: umbral de «Media» sin medir · 5: sin recuperación si el micro se corta · 5: sin gesto del usuario en iOS (sin verificar) | Corregido: pasos y voz (filtro de paso alto y ataque), el desarme al cambiar de fase y la ventana de lectura más larga. Pendiente: micro cortado, umbral, iOS, foco (apartado 5) |
+| F13 · F14 (B1) | 1 (base de datos e interfaz) | 🔴 base de datos: la demo no compilaba (falta `wish_id`) · 🔴 interfaz: «Volver a mezclar» no hacía nada si salía el mismo orden · 5: historial falsificable · 5: el historial no tiene tope · 4: listados cortados a 1000 filas · 5: lector de pantalla mudo en la ronda | Corregido: los dos 🔴, el historial solo lo escribe el sorteo con la hora del servidor, índice y tope, listados paginados, foco y capa inerte en la ronda. Pendiente: lo <6 (apartado 5) |
+| F11 · F12 (B2) | 1 (base de datos e interfaz, dos informes) | 🔴 interfaz: la ganadora se escribía con votos en caché · 🔴 interfaz: borrar una candidata rompía la papeleta · 6: listas de votos cortadas a 1000 · 5: opciones que cambian tras votar · 5: anonimato cambiable con votos · 5: ranking por teclado | Corregido: el cierre lo calcula el servidor (`close_poll`, con empates), listas paginadas, opciones y votos protegidos al cerrar, anonimato bloqueado con votos, aviso al borrar candidatas, «Me apunto» sin doble toque. Pendiente: lo <6 (apartado 5) |
+| F15 · F16 (B3) | 1 | Sin 🔴. 5: calendario que decía «AYER» en eventos pasados y chōchin encendido · 5: el evento de hoy ya empezado tapaba al siguiente · 4: titular con `aria-live` que cambia cada minuto · 4: sello hanko sin animar en el primer toque · 4: «Crear pista con los estribillos» con «Pre-estribillo» | Corregido: calendario de «Ayer» y «Pasó», el evento de hoy ya empezado (3 horas), «Pre-estribillo» fuera de los estribillos, titular sin `aria-live`, listas de votos completas. El sello hanko cambiado en el código, sin probar en el navegador. Pendiente: pruebas SQL y detalles (apartado 5) |
+| F8 · F9 | 1 | Sin 🔴. 6: cada paso de un gesto repintaba toda la página · 5: la lupa del clip no se veía en la lista · 4: «Ampliar» movía la vista con vídeos verticales · 4: 300 ms al tocar con zoom | Corregido: la página ya no se repinta con el zoom, la lupa se ve, las flechas funcionan con el foco en el vídeo. Pendiente: lo <6 (apartado 5) |
+| F10 | 1 | Sin 🔴. 5: las teclas se tragaban al elegir bailarín · 4: CSP ancha y terceros sin avisar · 4: el suavizado cruza los huecos · 4: el modo manual borra puntos en línea · 4: accesibilidad del flujo · 3: cancelar no respondía durante la descarga del modelo · 3: «Guardar clip» ofrecía zoom y seguimiento a la vez · otros 3 y 2 (apartado 5) | Corregido: teclas, CSP y privacidad, modo manual sin simplificar, zoom y seguimiento excluyentes, cancelar durante la descarga, foco y progreso (en parte). Pendiente: H3, H5 (resto), H8 a H13 (apartado 5) |
+
+**Revisión global (en curso, 17-10):** [accesibilidad](revisiones/global-accesibilidad.md) ·
+[base de datos, datos y API](revisiones/global-bd-seguridad.md) · [rendimiento](revisiones/global-rendimiento.md).
+La de base de datos está en el apartado 5 (pendientes) y la migración `close_poll_live_rank` en el apartado 6. Las
+de accesibilidad (22 hallazgos, el de mayor nota es el anillo de foco de los botones rellenos) y rendimiento (15
+hallazgos) aún no están convertidas en pendientes; van en sus informes.
 
 Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
 [rendimiento y diseño](revisiones/grabacion-paso1-ronda-1-rendimiento-diseno.md) ·
 [F1/F2 ronda 1 BD](revisiones/F1-F2-ronda-1-bd-seguridad.md) · [F1/F2 ronda 1 cliente](revisiones/F1-F2-ronda-1-cliente.md) ·
 [F1/F2 ronda 2](revisiones/F1-F2-ronda-2.md) · [F1/F2 ronda 3](revisiones/F1-F2-ronda-3.md) ·
 [F3/F4/F17 ronda 1 BD](revisiones/F3-F4-F17-ronda-1-bd.md) · [cliente](revisiones/F3-F4-F17-ronda-1-cliente-tomas.md) ·
-[voz](revisiones/F3-F4-F17-ronda-1-voz.md) · [ronda 2](revisiones/F3-F4-F17-ronda-2.md)
+[voz](revisiones/F3-F4-F17-ronda-1-voz.md) · [ronda 2](revisiones/F3-F4-F17-ronda-2.md) ·
+[F5 repaso](revisiones/F5-F6-ronda-1-repaso.md) · [F6 notas](revisiones/F5-F6-ronda-1-notas.md) ·
+[F7 aplauso](revisiones/F7-ronda-1.md) · [B1 BD](revisiones/B1-ronda-1-bd.md) · [B1 interfaz](revisiones/B1-ronda-1-interfaz.md) ·
+[B2 BD](revisiones/B2-ronda-1-bd.md) · [B2 interfaz](revisiones/B2-ronda-1-interfaz.md) · [B3](revisiones/B3-ronda-1.md) ·
+[F8/F9](revisiones/F8-F9-ronda-1.md) · [F10](revisiones/F10-ronda-1.md)

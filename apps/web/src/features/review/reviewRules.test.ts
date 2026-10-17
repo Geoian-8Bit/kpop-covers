@@ -2,6 +2,7 @@ import type { Clip, Note } from '@coverscape/shared';
 import { describe, expect, it } from 'vitest';
 import {
   arrowHead,
+  atNoteMoment,
   categoryLabel,
   clampFit,
   clampReviewRate,
@@ -330,5 +331,17 @@ describe('the drawing over the frame', () => {
     expect(b.x).toBeLessThan(100);
     expect(Math.sign(a.y)).toBe(-Math.sign(b.y));
     expect(isShape({ kind: 'arrow', from: { x: 0, y: 0 }, to: { x: 3, y: 3 } })).toBe(false);
+  });
+});
+
+describe('atNoteMoment (P1)', () => {
+  it('is true only within 0.2 s of the note', () => {
+    expect(atNoteMoment(10.1, 10)).toBe(true);
+    expect(atNoteMoment(9.85, 10)).toBe(true);
+    expect(atNoteMoment(10.25, 10)).toBe(false);
+    expect(atNoteMoment(0, null)).toBe(false);
+    expect(atNoteMoment(0, undefined)).toBe(false);
+    expect(atNoteMoment(3, '3.1')).toBe(true);
+    expect(atNoteMoment(3, 'x')).toBe(false);
   });
 });

@@ -241,11 +241,26 @@ export function useReviewClock(active: boolean): void {
   useEffect(() => {
     if (!active) return;
     let raf = 0;
+    let busyAt = 0;
     let nudged = false;
     let lastYouTubeJump = 0;
 
+    // P10 · Like the studio's loop (useLoopController): frames only while the take plays or a finger scrubs, plus a
+    // short tail so a fresh pause or scrub settles on the video's clock; paused and idle, no rAF at all.
     const tick = () => {
+      raf = 0;
+      step();
+      const now = performance.now();
+      if (isReviewClockBusy(useReview.getState())) busyAt = now;
+      if (useReview.getState().takeEngine && now - busyAt < REVIEW_CLOCK_TAIL_MS) raf = requestAnimationFrame(tick);
+    };
+    const wake = (s: ReviewSnapshot) => {
+      if (raf || !isReviewClockBusy(s)) return;
+      busyAt = performance.now();
       raf = requestAnimationFrame(tick);
+    };
+
+    const step = () => {
       const s = useReview.getState();
       const take = s.takeEngine;
       if (!take) return;
@@ -287,7 +302,19 @@ export function useReviewClock(active: boolean): void {
         nudged = false;
       }
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const unsubscribe = useReview.subscribe(wake);
+    wake(useReview.getState());
+    return () => {
+      unsubscribe();
+      cancelAnimationFrame(raf);
+    };
   }, [active]);
+}
+
+type ReviewSnapshot = ReturnType<typeof useReview.getState>;
+/** Keep ticking this long after the last busy frame (as the studio's loop does). */
+const REVIEW_CLOCK_TAIL_MS = 700;
+/** The clock only has work while the take moves or is being scrubbed. */
+function isReviewClockBusy(s: Pick<ReviewSnapshot, 'takeEngine' | 'playing' | 'scrubbing'>): boolean {
+  return s.takeEngine != null && (s.playing || s.scrubbing);
 }

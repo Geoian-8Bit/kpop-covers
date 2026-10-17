@@ -94,7 +94,8 @@ export function RpdPlayPage() {
 
 /**
  * The round covers the whole app: everything outside it is made inert (keyboard and screen readers stay inside;
- * Tab can't reach the navigation hidden underneath) and restored on leaving.
+ * Tab can't reach the navigation hidden underneath) and restored on leaving. The toast host stays live: the round
+ * still says «Guardado» or an error through it.
  */
 function useInertOutside(ref: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -102,7 +103,7 @@ function useInertOutside(ref: React.RefObject<HTMLElement | null>) {
     let node: HTMLElement | null = ref.current;
     while (node && node.parentElement && node !== document.body) {
       for (const sibling of Array.from(node.parentElement.children)) {
-        if (sibling !== node && sibling instanceof HTMLElement && !sibling.inert) {
+        if (sibling !== node && sibling instanceof HTMLElement && !sibling.inert && !sibling.hasAttribute('data-toast-host')) {
           sibling.inert = true;
           touched.push(sibling);
         }
@@ -354,6 +355,8 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      // Single keys only: Ctrl+R reloads, Alt+→ goes forward… those belong to the browser.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (saving || target?.closest('input, textarea, select, [role="dialog"]')) return;
       if (e.key === ' ' && !target?.closest('button')) {
         e.preventDefault();

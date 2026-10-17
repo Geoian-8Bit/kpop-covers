@@ -13,15 +13,15 @@ import { ZoomLayer } from '@/player/ZoomLayer';
 import {
   clipHasZoom,
   clipZoomColumns,
-  isZoomed,
   NO_ZOOM,
   sameZoom,
   stepZoom,
-  zoomLabel,
+  zoomBadgeLabel,
+  zoomControlsView,
   zoomOfClip,
-  ZOOM_MAX,
   type Size,
 } from '@/player/zoom';
+import { useShallow } from 'zustand/react/shallow';
 import { useToast } from '@/providers/ToastProvider';
 
 /**
@@ -44,7 +44,9 @@ export function zoomAvailability(
 }
 
 export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[]; onLink: () => void }) {
-  const zoom = usePlayer((s) => s.zoom);
+  // P12 · Derived values, not the zoom itself: a zoom that follows a dancer changes every frame, the row only
+  // when its label, a limit or «saved with the clip» changes.
+  const view = usePlayer(useShallow((s) => zoomControlsView(s.zoom)));
   const stage = usePlayer((s) => s.stage);
   const ready = usePlayer((s) => s.ready);
   const activeClipId = usePlayer((s) => s.activeClipId);
@@ -53,18 +55,26 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
   const { can, reason } = zoomAvailability(video, stage, ready);
   const clip = activeClipId ? (clips.find((c) => c.id === activeClipId) ?? null) : null;
   const clipZoom = zoomOfClip(clip);
-  const zoomed = can && isZoomed(zoom);
-  const saved = clip != null && sameZoom(zoom, clipZoom);
+  const zoomed = can && view.zoomed;
+  const saved = usePlayer((s) => clip != null && sameZoom(s.zoom, clipZoom));
 
   const step = (factor: number) => usePlayer.getState().setZoom(stepZoom(usePlayer.getState().zoom, factor));
 
   function saveWithClip() {
     if (!clip) return;
     const columns = clipZoomColumns(usePlayer.getState().zoom);
+    // A fixed zoom and following a dancer are exclusive (F10): saving the zoom stops the clip following.
+    const following = clip.follow_path_id != null;
     update.mutate(
-      { clip, patch: columns },
+      { clip, patch: following ? { ...columns, follow_path_id: null } : columns },
       {
-        onSuccess: () => toast(`Zoom guardado con «${clip.name}»`, 'success'),
+        onSuccess: () =>
+          toast(
+            following
+              ? `Zoom guardado con «${clip.name}»: ya no sigue a nadie`
+              : `Zoom guardado con «${clip.name}»`,
+            'success',
+          ),
         onError: (err) => toast(friendlyError(err), 'error'),
       },
     );
@@ -101,13 +111,13 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
           <ZoomOut className="size-5" />
         </Button>
         <span aria-live="polite" className="tabular w-14 text-center font-mono text-[13px] text-washi">
-          {can ? zoomLabel(zoom) : '100 %'}
+          {can ? view.label : '100 %'}
         </span>
         <Button
           variant="secondary"
           size="icon"
           aria-label="Ampliar el centro del vídeo"
-          disabled={!can || zoom.scale >= ZOOM_MAX}
+          disabled={!can || view.atMax}
           onClick={() => step(1.5)}
         >
           <ZoomIn className="size-5" />
@@ -207,10 +217,11 @@ export function PlayerZoomLayer({
 
 /** Over the video while zoomed: how much, and a way back to the whole video. */
 export function ZoomBadge({ visible, className }: { visible: boolean; className?: string }) {
-  const zoom = usePlayer((s) => s.zoom);
+  // P12 · Only the label (a string): following a dancer doesn't repaint the badge every frame.
+  const label = usePlayer((s) => zoomBadgeLabel(s.zoom));
   return (
     <AnimatePresence>
-      {visible && isZoomed(zoom) && (
+      {visible && label != null && (
         <motion.div
           key="zoom-badge"
           initial={{ opacity: 0, scale: 0.9 }}
@@ -222,7 +233,7 @@ export function ZoomBadge({ visible, className }: { visible: boolean; className?
             className,
           )}
         >
-          <span className="tabular font-mono text-[12px] font-semibold">{zoomLabel(zoom)}</span>
+          <span className="tabular font-mono text-[12px] font-semibold">{label}</span>
           <button
             type="button"
             aria-label="Ver el vídeo completo"

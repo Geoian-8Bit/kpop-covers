@@ -67,6 +67,17 @@ export function youTubeThumbnail(id: string, quality: YouTubeThumbQuality = 'hqd
   return `https://i.ytimg.com/vi/${id}/${quality}.jpg`;
 }
 
+const THUMB_RE = /^https:\/\/i\.ytimg\.com\/vi\/([A-Za-z0-9_-]{11})\/(?:default|mqdefault|hqdefault|sddefault|maxresdefault)\.jpg$/;
+
+/**
+ * A stored YouTube thumbnail at another size (e.g. `mqdefault`, 320×180, for small cards); any other URL
+ * (an uploaded video's poster, another host) comes back unchanged.
+ */
+export function withYouTubeThumbQuality(url: string, quality: YouTubeThumbQuality): string {
+  const match = THUMB_RE.exec(url);
+  return match ? youTubeThumbnail(match[1]!, quality) : url;
+}
+
 export function youTubeWatchUrl(id: string, startSeconds?: number): string {
   const t = startSeconds && startSeconds > 0 ? `&t=${Math.floor(startSeconds)}s` : '';
   return `https://www.youtube.com/watch?v=${id}${t}`;

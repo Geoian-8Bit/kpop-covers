@@ -62,6 +62,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {createPortal(
       <div
+        data-toast-host
         aria-live="polite"
         className="pointer-events-none fixed inset-x-0 bottom-[max(20px,calc(env(safe-area-inset-bottom)+12px))] z-[100] flex flex-col items-center gap-2 px-4"
       >

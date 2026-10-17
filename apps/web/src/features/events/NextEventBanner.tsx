@@ -14,7 +14,9 @@ import { useNow } from './useNow';
  * day after it started it stops showing on its own (nothing is deleted). Nothing at all without events.
  */
 export function NextEventBanner() {
-  const events = useEvents();
+  // P8 · The events kept from the last visit show from the first paint (refreshed behind), so the banner is
+  // already in place instead of arriving later and pushing the library down.
+  const events = useEvents({ snapshot: true });
   const now = useNow();
   const variant = useDesignVariant('event-countdown');
   const event = nearestEvent(events.data ?? [], now);
@@ -22,8 +24,9 @@ export function NextEventBanner() {
   return (
     <motion.section
       aria-label="Próximo evento"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      // Fade only: no slide, so nothing around it moves while it appears.
+      initial={events.isPlaceholderData ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={snappy}
       className="px-4 pt-4 sm:px-9 sm:pt-6"
     >

@@ -34,6 +34,7 @@ import { CompareStage } from './CompareStage';
 import { ReviewSettings, ReviewTimeline, ReviewTransport } from './ReviewControls';
 import { OriginalFile, OriginalYouTube, TakeVideo, useReviewClock } from './ReviewMedia';
 import {
+  atNoteMoment,
   clipsInTake,
   crossedNote,
   fitOf,
@@ -220,11 +221,14 @@ export function ReviewScreen({
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const openNote = openNoteId ? (notes.find((n) => n.id === openNoteId) ?? null) : null;
   const [sketchShown, setSketchShown] = useState(true);
+  // P1 · A boolean of the clock, not the clock: the screen repaints when the take reaches or leaves the note's
+  // moment, not 60 times a second.
+  const noteSeconds = openNote?.take_seconds;
+  const atOpenNote = useReview((s) => atNoteMoment(s.time, noteSeconds));
   const [alert, setAlert] = useState<Note | null>(null);
   const [composer, setComposer] = useState<ComposerDraft | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const playing = useReview((s) => s.playing);
-  const takeTime = useReview((s) => s.time);
   const takeError = useReview((s) => s.takeError);
   const originalError = useReview((s) => s.originalError);
   const takeReady = useReview((s) => s.takeEngine != null);
@@ -498,7 +502,7 @@ export function ReviewScreen({
     sketchShown &&
     !playing &&
     isValidSketch(openNote.sketch) &&
-    Math.abs(takeTime - Number(openNote.take_seconds ?? -10)) < 0.2 ? (
+    atOpenNote ? (
       <img
         src={openNote.sketch}
         alt={`Dibujo de la nota: ${openNote.body}`}

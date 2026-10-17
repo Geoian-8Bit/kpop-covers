@@ -359,7 +359,7 @@ function LoopAllButton() {
       <button
         type="button"
         aria-pressed={loopAll}
-        aria-label="Repetir la canción entera (mantén pulsado para la pausa)"
+        aria-label="Bucle: repetir la canción entera (mantén pulsado para la pausa)"
         title="Repetir la canción (R) · mantén pulsado para la pausa"
         {...press}
         className={cn(trayBtn, loopAll ? trayOn : trayIdle)}
@@ -421,11 +421,11 @@ function ClipButton({ onSaveClip }: { onSaveClip: () => void }) {
         // Phones: takes the space the tray leaves and may tighten, but never spills out of the card.
         'skin-btn h-12 justify-center px-4 max-sm:min-w-0 max-sm:flex-1 max-sm:shrink max-sm:gap-1.5 max-sm:px-3',
         step === 'save'
-          ? 'skin-primary [--skin-fill:var(--color-shu-500)] hover:[--skin-fill:var(--color-shu-400)]'
+          ? 'skin-primary [--skin-fill:var(--color-shu-700)] hover:[--skin-fill:var(--color-shu-600)]'
           : '[--skin-fill:var(--color-sumi-800)]',
         step === 'start' && toolIdle,
         step === 'end' && 'animate-pulse border-shu-400 bg-sumi-800 text-shu-400',
-        step === 'save' && 'border-shu-500 bg-shu-500 text-washi hover:bg-shu-400',
+        step === 'save' && 'border-shu-700 bg-shu-700 text-washi hover:bg-shu-600',
       )}
     >
       {/* Very narrow phones drop the icon so the label never spills out of the card. */}

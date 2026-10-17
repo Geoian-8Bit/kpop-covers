@@ -45,7 +45,7 @@ import {
   Zap,
   ZapOff,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -177,7 +177,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [from, setFrom] = useState<From>('start');
   const [left, setLeft] = useState(0);
   const [span, setSpan] = useState<Span | null>(null);
-  const [seconds, setSeconds] = useState(0);
+  /**
+   * P4 · The take's exact length lives in a ref (it is saved with the take); the screen only shows whole seconds,
+   * so while rolling the 200 ms clock re-renders the recorder once a second instead of five times.
+   */
+  const secondsExact = useRef(0);
+  const [seconds, setShownSeconds] = useState(0);
+  const setSeconds = useCallback((value: number) => {
+    secondsExact.current = value;
+    setShownSeconds(value > 0 ? Math.floor(value) : value);
+  }, []);
   const [take, setTake] = useState<Take | null>(null);
   const [saved, setSaved] = useState(false);
   /** F3: kept in the app's «Tomas» (the take's home on this phone). */
@@ -1279,7 +1288,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         clipId: timing?.clipId ?? null,
         speed: timing?.speed ?? 1,
         mirrored: timing?.mirrored ?? false,
-        durationSeconds: seconds > 0 ? seconds : probe.duration,
+        durationSeconds: secondsExact.current > 0 ? secondsExact.current : probe.duration,
         width: probe.width ?? view.mode?.width ?? null,
         height: probe.height ?? view.mode?.height ?? null,
         mimeType: take.file.type || null,
@@ -2130,19 +2139,45 @@ function RailButton({
   );
 }
 
-function useSongProgress(span: Span | null): number {
-  return usePlayer((s) =>
-    span && Number.isFinite(span.end) && span.end > span.start
-      ? clamp((s.time - span.start) / (span.end - span.start), 0, 1)
-      : 0,
-  );
+function songProgress(span: Span | null, time: number): number {
+  return span && Number.isFinite(span.end) && span.end > span.start
+    ? clamp((time - span.start) / (span.end - span.start), 0, 1)
+    : 0;
+}
+
+/**
+ * P4 · The song's progress painted straight on the DOM (like the studio's FsProgress): playback never re-renders
+ * the bar or the shutter. `paint` gets each new value; the render sets the value of that moment.
+ */
+function useSongProgressPaint(span: Span | null, paint: (progress: number) => void): void {
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
+  const start = span?.start;
+  const end = span?.end;
+  useLayoutEffect(() => {
+    const range = start != null && end != null ? { start, end } : null;
+    let last = Number.NaN;
+    const run = (time: number) => {
+      const p = songProgress(range, time);
+      if (p === last) return;
+      last = p;
+      paintRef.current(p);
+    };
+    run(usePlayer.getState().time);
+    return usePlayer.subscribe((s) => run(s.time));
+  }, [start, end]);
 }
 
 function SongBar({ span }: { span: Span }) {
-  const progress = useSongProgress(span);
+  const fill = useRef<HTMLDivElement>(null);
+  useSongProgressPaint(span, (p) => fill.current?.style.setProperty('transform', `scaleX(${p})`));
   return (
     <div className="absolute inset-x-0 top-0 z-20 h-[3px] bg-washi/20">
-      <div className="h-full origin-left bg-shu-400" style={{ transform: `scaleX(${progress})` }} />
+      <div
+        ref={fill}
+        className="h-full origin-left bg-shu-400"
+        style={{ transform: `scaleX(${songProgress(span, usePlayer.getState().time)})` }}
+      />
     </div>
   );
 }
@@ -2159,7 +2194,8 @@ function Shutter({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const progress = useSongProgress(span);
+  const ring = useRef<SVGPolygonElement>(null);
+  useSongProgressPaint(span, (p) => ring.current?.setAttribute('stroke-dashoffset', String(1 - p)));
   const rolling = phase === 'recording' || phase === 'arming';
   const label =
     phase === 'recording' || phase === 'arming'
@@ -2190,6 +2226,7 @@ function Shutter({
         />
         {span && phase !== 'idle' && (
           <polygon
+            ref={ring}
             points={HEX}
             pathLength={1}
             fill="none"
@@ -2197,7 +2234,7 @@ function Shutter({
             strokeWidth="2.6"
             strokeLinejoin="round"
             strokeDasharray="1 1"
-            strokeDashoffset={1 - progress}
+            strokeDashoffset={1 - songProgress(span, usePlayer.getState().time)}
           />
         )}
         <motion.rect

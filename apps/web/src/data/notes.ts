@@ -1,5 +1,5 @@
 import type { Note } from '@coverscape/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { backend, type NotePatch } from '@/lib/backend';
 
 export const noteKeys = {
@@ -12,12 +12,18 @@ const byTime = (a: Note, b: Note) => a.at_seconds - b.at_seconds;
  * Timed notes on a video, earliest moment first. They are the dots on the timeline wave; a note on a take (F6)
  * also carries the take's moment, and shows on the song only for its recipient (`songNotes`).
  */
+const notesQuery = (videoId: string | undefined) => ({
+  queryKey: noteKeys.forVideo(videoId),
+  queryFn: () => backend.listNotes(videoId!),
+});
+
 export function useNotes(videoId: string | undefined) {
-  return useQuery({
-    queryKey: noteKeys.forVideo(videoId),
-    enabled: Boolean(videoId),
-    queryFn: () => backend.listNotes(videoId!),
-  });
+  return useQuery({ ...notesQuery(videoId), enabled: Boolean(videoId) });
+}
+
+/** P3 · Warm a video's notes before the studio opens (no request when they're cached and fresh). */
+export function prefetchNotes(queryClient: QueryClient, videoId: string): void {
+  void queryClient.prefetchQuery(notesQuery(videoId));
 }
 
 export interface NewNote {

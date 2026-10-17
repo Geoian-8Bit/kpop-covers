@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseYouTubeId, parseYouTubeStart, youTubeThumbnail, youTubeWatchUrl } from './youtube';
+import { parseYouTubeId, parseYouTubeStart, withYouTubeThumbQuality, youTubeThumbnail, youTubeWatchUrl } from './youtube';
 
 describe('parseYouTubeId', () => {
   it.each([
@@ -65,5 +65,18 @@ describe('url builders', () => {
     expect(youTubeThumbnail('dQw4w9WgXcQ')).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
     expect(youTubeWatchUrl('dQw4w9WgXcQ', 61.7)).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=61s');
     expect(youTubeWatchUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  });
+
+  it('resizes a stored YouTube thumbnail and leaves other urls alone', () => {
+    expect(withYouTubeThumbQuality(youTubeThumbnail('dQw4w9WgXcQ'), 'mqdefault')).toBe(
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+    );
+    expect(withYouTubeThumbQuality('https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg', 'mqdefault')).toBe(
+      'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg',
+    );
+    const poster = 'data:image/webp;base64,AAAA';
+    expect(withYouTubeThumbQuality(poster, 'mqdefault')).toBe(poster);
+    const other = 'https://example.com/vi/dQw4w9WgXcQ/hqdefault.jpg';
+    expect(withYouTubeThumbQuality(other, 'mqdefault')).toBe(other);
   });
 });

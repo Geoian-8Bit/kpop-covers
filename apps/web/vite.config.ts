@@ -80,7 +80,9 @@ export default defineConfig(({ mode }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         // The pose models' code (~1 MB) is only for whoever uses F10 or the lab: cached when first used instead.
-        globIgnores: ['**/pose-*.js'],
+        // P15 · The design lab's demos (features/lab/demos.tsx: every `*Demo-<hash>.js` chunk) are for whoever
+        // opens the lab: cached when first opened (runtime cache below), not downloaded by every install.
+        globIgnores: ['**/pose-*.js', '**/*Demo-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -101,6 +103,16 @@ export default defineConfig(({ mode }) => {
             },
           },
           {
+            // P15 · Lab demos (hashed names: a cached one never changes).
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'lab-demos',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 30, purgeOnQuotaError: true },
+            },
+          },
+          {
             urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'CacheFirst',
             options: { cacheName: 'fonts', expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 } },
@@ -109,11 +121,12 @@ export default defineConfig(({ mode }) => {
             urlPattern: ({ url }) => url.origin === 'https://i.ytimg.com',
             handler: 'StaleWhileRevalidate',
             // Cross-origin thumbnails are opaque: browsers bill each one as several MB of quota (the same quota
-            // the device copies of videos use), so keep few and drop them first when space runs out.
+            // the device copies of videos use), so keep a bounded set and drop them first when space runs out.
+            // P11 · 150: a whole library plus quick access and wishes (40 evicted thumbnails on every visit).
             options: {
               cacheName: 'thumbnails',
               cacheableResponse: { statuses: [0, 200] },
-              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
+              expiration: { maxEntries: 150, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
             },
           },
         ],

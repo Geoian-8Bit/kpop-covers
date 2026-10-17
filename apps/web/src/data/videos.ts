@@ -2,7 +2,9 @@ import { MAX_CLOUD_UPLOAD_BYTES, round3, youTubeThumbnail, type TablesUpdate, ty
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { backend, type UploadFailure, type UploadResult, type VideoWithClipCount } from '@/lib/backend';
 import { deleteLocalVideo, purgeLocalVideos, saveLocalVideo } from '@/lib/localVideos';
+import { libraryRowsSnapshot, parseLibrary, readSnapshot, videoFromLibraryRow, writeSnapshot } from '@/lib/snapshot';
 import { FriendlyError } from '@/lib/supabase';
+import { invalidateAfterArchive } from './afterArchive';
 
 export type { UploadFailure, VideoWithClipCount };
 
@@ -11,26 +13,56 @@ export const videoKeys = {
   detail: (id: string | undefined) => ['video', id] as const,
 };
 
-/** `enabled: false` reads whatever is cached without fetching (e.g. a closed dialog). */
-export function useVideos(crewId: string | undefined, { enabled = true }: { enabled?: boolean } = {}) {
+const librarySnapshot = (crewId: string) => `videos.${crewId}`;
+
+/**
+ * `enabled: false` reads whatever is cached without fetching (e.g. a closed dialog).
+ * `snapshot`: P2 · while the first request runs, show the list kept from the last visit (`isPlaceholderData`);
+ * only the library page asks for it, and nothing writes from it (it never enters the cache).
+ */
+export function useVideos(
+  crewId: string | undefined,
+  { enabled = true, snapshot = false }: { enabled?: boolean; snapshot?: boolean } = {},
+) {
   return useQuery({
     queryKey: videoKeys.list(crewId),
     enabled: Boolean(crewId) && enabled,
+    placeholderData: snapshot && crewId ? () => readSnapshot(librarySnapshot(crewId), (v) => parseLibrary(v, crewId)) : undefined,
     queryFn: async () => {
       const list = await backend.listVideos(crewId!);
       // Videos deleted on another device leave their copy here: drop those (never blocks the list).
       void purgeLocalVideos(list.map((v) => v.id));
+      writeSnapshot(librarySnapshot(crewId!), libraryRowsSnapshot(list));
       return list;
     },
   });
 }
 
+function videoQuery(id: string | undefined) {
+  return { queryKey: videoKeys.detail(id), queryFn: () => backend.getVideo(id!) };
+}
+
 export function useVideo(id: string | undefined) {
+  const queryClient = useQueryClient();
   return useQuery({
-    queryKey: videoKeys.detail(id),
+    ...videoQuery(id),
     enabled: Boolean(id),
-    queryFn: () => backend.getVideo(id!),
+    // P3 · The library already has this row: open the studio at once while the full row arrives
+    // (`isPlaceholderData`; never in the cache, so no write starts from it).
+    placeholderData: () => {
+      if (!id) return undefined;
+      for (const [, list] of queryClient.getQueriesData<VideoWithClipCount[]>({ queryKey: ['videos'] })) {
+        const row = list?.find((v) => v.id === id);
+        if (row) return videoFromLibraryRow(row);
+      }
+      return undefined;
+    },
   });
+}
+
+/** P3 · Warm a video's full row (hover or focus on its card; clips and notes have their own), unless cached. */
+export function prefetchVideo(queryClient: QueryClient, id: string): void {
+  void queryClient.prefetchQuery(videoQuery(id));
 }
 
 /** Patches one video in the cached library list instead of downloading the whole list again. */
@@ -198,6 +230,8 @@ export function useDeleteVideo() {
         current?.filter((v) => v.id !== video.id),
       );
       void queryClient.invalidateQueries({ queryKey: ['quick-clips', video.crew_id] });
+      // Its clips leave Random Play Dance, bags, tracks and repertoires too.
+      invalidateAfterArchive(queryClient);
     },
   });
 }

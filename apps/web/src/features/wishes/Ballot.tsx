@@ -1,13 +1,15 @@
 import type { Poll, PollOption, Wish } from '@coverscape/shared';
 import { AnimatePresence, motion, Reorder, useDragControls } from 'motion/react';
-import { ArrowDown, ArrowUp, Check, GripVertical, UserRound } from 'lucide-react';
+import { Check, GripVertical, UserRound } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { LiveMessage, MoveArrows } from '@/components/ui/MoveArrows';
 import { openWho, useMe, useMembers } from '@/data/members';
 import { useCastVote, wishError } from '@/data/wishes';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
+import { useAnnouncer } from '@/lib/reorderA11y';
 import { useToast } from '@/providers/ToastProvider';
 import { withMe } from './identity';
 import { ballotProblem, moveInRanking, VOTE_TYPE_COPY } from './pollRules';
@@ -223,19 +225,24 @@ function RankingList({
   onChange: (next: string[]) => void;
   labelOf: (optionId: string) => Wish | undefined;
 }) {
+  const [message, announce] = useAnnouncer();
   return (
-    <Reorder.Group axis="y" values={order} onReorder={onChange} className="space-y-2" aria-label="Tu orden de preferencia">
-      {order.map((id, index) => (
-        <RankingItem
-          key={id}
-          id={id}
-          index={index}
-          total={order.length}
-          wish={labelOf(id)}
-          onMove={(delta) => onChange(moveInRanking(order, index, delta))}
-        />
-      ))}
-    </Reorder.Group>
+    <>
+      <Reorder.Group axis="y" values={order} onReorder={onChange} className="space-y-2" aria-label="Tu orden de preferencia">
+        {order.map((id, index) => (
+          <RankingItem
+            key={id}
+            id={id}
+            index={index}
+            total={order.length}
+            wish={labelOf(id)}
+            onMove={(delta) => onChange(moveInRanking(order, index, delta))}
+            announce={announce}
+          />
+        ))}
+      </Reorder.Group>
+      <LiveMessage message={message} />
+    </>
   );
 }
 
@@ -245,12 +252,14 @@ function RankingItem({
   total,
   wish,
   onMove,
+  announce,
 }: {
   id: string;
   index: number;
   total: number;
   wish: Wish | undefined;
   onMove: (delta: -1 | 1) => void;
+  announce: (message: string) => void;
 }) {
   const controls = useDragControls();
   const title = wish?.title ?? 'Candidata';
@@ -263,44 +272,33 @@ function RankingItem({
       whileDrag={{ scale: 1.03, boxShadow: '0 16px 30px -12px rgb(0 0 0 / 0.9)' }}
       className="flex min-h-16 items-center gap-2 rounded-[12px] border border-line bg-sumi-850 py-2 pl-1 pr-1.5"
     >
-      <button
-        type="button"
-        aria-label={`Arrastrar «${title}»`}
+      {/* Pointer only: the keyboard (and screen readers) use ↑ ↓, so the handle is not a tab stop. */}
+      <span
+        aria-hidden
         onPointerDown={(e) => controls.start(e)}
         className="grid size-11 shrink-0 cursor-grab touch-none place-items-center rounded-[8px] text-washi-subtle hover:text-washi active:cursor-grabbing"
       >
-        <GripVertical aria-hidden className="size-5" />
-      </button>
+        <GripVertical className="size-5" />
+      </span>
       <span
-        aria-label={`Puesto ${index + 1}`}
         className={cn(
           'grid size-8 shrink-0 place-items-center rounded-[7px] font-display text-[15px] font-extrabold',
           index === 0 ? 'bg-kin-400 text-sumi-900' : 'bg-sumi-700 text-washi',
         )}
       >
+        <span className="sr-only">Puesto </span>
         {index + 1}
       </span>
       <WishLine wish={wish} compact />
-      <span className="flex shrink-0 flex-col sm:flex-row">
-        <button
-          type="button"
-          aria-label={`Subir «${title}»`}
-          disabled={index === 0}
-          onClick={() => onMove(-1)}
-          className="grid size-11 place-items-center rounded-[8px] text-washi-muted hover:bg-washi/[0.06] hover:text-washi disabled:opacity-30"
-        >
-          <ArrowUp aria-hidden className="size-4.5" />
-        </button>
-        <button
-          type="button"
-          aria-label={`Bajar «${title}»`}
-          disabled={index === total - 1}
-          onClick={() => onMove(1)}
-          className="grid size-11 place-items-center rounded-[8px] text-washi-muted hover:bg-washi/[0.06] hover:text-washi disabled:opacity-30"
-        >
-          <ArrowDown aria-hidden className="size-4.5" />
-        </button>
-      </span>
+      <MoveArrows
+        index={index}
+        total={total}
+        name={title}
+        onMove={onMove}
+        announce={announce}
+        className="flex-col sm:flex-row"
+        iconClassName="size-4.5"
+      />
     </Reorder.Item>
   );
 }

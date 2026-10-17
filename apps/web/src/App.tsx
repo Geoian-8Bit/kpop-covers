@@ -1,12 +1,13 @@
 import { motion, MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { lazy, Suspense, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AppShell } from '@/components/AppShell';
 import { Backdrop } from '@/components/Backdrop';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
 import { LibraryPage } from '@/features/library/LibraryPage';
+import { pageTitle } from '@/lib/pageTitle';
 import { loadStudioPage } from '@/lib/prefetch';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { AuthProvider } from '@/providers/AuthProvider';
@@ -48,6 +49,15 @@ function Splash() {
       </motion.div>
     </div>
   );
+}
+
+/** «<página> · One Shoot» on every route (focus and the skip link live in AppShell). */
+function DocumentTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = pageTitle(pathname);
+  }, [pathname]);
+  return null;
 }
 
 function RequireCrew({ children }: { children: ReactNode }) {
@@ -97,6 +107,7 @@ export function App() {
             <AuthProvider>
               <CrewProvider>
                 <BrowserRouter>
+                  <DocumentTitle />
                   <Routes>
                     {/* Open access: no login screen, everyone lands in the shared library. */}
                     <Route

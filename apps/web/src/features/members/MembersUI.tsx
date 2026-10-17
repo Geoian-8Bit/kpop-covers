@@ -287,12 +287,12 @@ export function MembersSection() {
 }
 
 /** Menu entry: who this device is (or «¿Quién eres?»), opens the picker. */
-export function WhoButton({ onPick, className }: { onPick?: () => void; className?: string }) {
+export function WhoButton({ onPick, className, inMenu = false }: { onPick?: () => void; className?: string; inMenu?: boolean }) {
   const me = useMe();
   return (
     <button
       type="button"
-      role="menuitem"
+      role={inMenu ? "menuitem" : undefined}
       onClick={() => {
         onPick?.();
         openWho();

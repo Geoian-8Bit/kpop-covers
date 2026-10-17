@@ -1,11 +1,12 @@
 import type { CrewEvent } from '@coverscape/shared';
 import { motion, Reorder, useDragControls } from 'motion/react';
-import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, Music, Pencil, Plus, Shuffle, Trash2 } from 'lucide-react';
+import { ArrowLeft, GripVertical, Music, Pencil, Plus, Shuffle, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { LiveMessage, MoveArrows } from '@/components/ui/MoveArrows';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Spinner } from '@/components/ui/Spinner';
 import { bagError } from '@/data/bags';
@@ -28,6 +29,7 @@ import { useDesignVariant } from '@/features/lab/designLab';
 import { positionPatches, reorder } from '@/features/rpd/roundRules';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
+import { useAnnouncer } from '@/lib/reorderA11y';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { EventCountdown } from './EventCountdown';
@@ -76,6 +78,7 @@ function EventDetail({ event }: { event: CrewEvent }) {
   const variant = useDesignVariant('event-countdown');
   // From the cache at once when it's there: no flash of «Aún no hay canciones».
   const [order, setOrder] = useState<EventSongView[]>(() => songs.data ?? []);
+  const [announcement, announce] = useAnnouncer();
   const dragging = useRef(false);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -207,10 +210,12 @@ function EventDetail({ event }: { event: CrewEvent }) {
                       commit(order);
                     }}
                     onMove={move}
+                    announce={announce}
                     onRemove={() => removeSong.mutate(song, { onError: (err) => toast(eventError(err), 'error') })}
                   />
                 ))}
               </Reorder.Group>
+              <LiveMessage message={announcement} />
               {order.length > 1 && (
                 <p className="mt-2 text-[12px] text-washi-subtle">Arrastra por el asa o usa las flechas para cambiar el orden.</p>
               )}
@@ -306,7 +311,7 @@ function ConnectionCard({
       className="flex min-h-[88px] items-start gap-3 rounded-[12px] border border-line bg-sumi-900/60 p-3.5 text-left transition-colors hover:border-line-strong hover:bg-washi/[0.04] disabled:opacity-50"
     >
       <span className="grid size-10 shrink-0 rotate-[-4deg] place-items-center rounded-[8px] bg-ai-600 text-washi">
-        {loading ? <Spinner className="size-4" /> : icon}
+        {loading ? <Spinner decorative className="size-4" /> : icon}
       </span>
       <span className="min-w-0">
         <span className="block font-bold text-washi">{title}</span>
@@ -323,6 +328,7 @@ function SongRow({
   onDragStart,
   onDragEnd,
   onMove,
+  announce,
   onRemove,
 }: {
   song: EventSongView;
@@ -331,6 +337,7 @@ function SongRow({
   onDragStart: () => void;
   onDragEnd: () => void;
   onMove: (from: number, to: number) => void;
+  announce: (message: string) => void;
   onRemove: () => void;
 }) {
   const controls = useDragControls();
@@ -347,9 +354,9 @@ function SongRow({
       className="relative flex items-center gap-1.5 rounded-[12px] bg-sumi-850 px-1.5 py-1.5 sm:gap-3"
       as="li"
     >
-      <button
-        type="button"
-        aria-label={`Arrastrar ${title}`}
+      {/* Pointer only: the keyboard (and screen readers) use ↑ ↓, so the handle is not a tab stop. */}
+      <span
+        aria-hidden
         onPointerDown={(e) => {
           e.preventDefault();
           controls.start(e);
@@ -357,7 +364,7 @@ function SongRow({
         className="grid h-11 w-7 shrink-0 cursor-grab touch-none place-items-center rounded-[8px] text-washi-subtle hover:bg-washi/[0.06] hover:text-washi active:cursor-grabbing"
       >
         <GripVertical className="size-4.5" />
-      </button>
+      </span>
       <span aria-hidden className="tabular w-5 shrink-0 text-center font-mono text-[12px] text-washi-subtle">
         {index + 1}
       </span>
@@ -374,18 +381,7 @@ function SongRow({
         </span>
       </Link>
       <div className="flex shrink-0 items-center">
-        <Button variant="ghost" size="icon" aria-label={`Subir ${title}`} disabled={index === 0} onClick={() => onMove(index, index - 1)}>
-          <ArrowUp className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Bajar ${title}`}
-          disabled={index === count - 1}
-          onClick={() => onMove(index, index + 1)}
-        >
-          <ArrowDown className="size-4" />
-        </Button>
+        <MoveArrows index={index} total={count} name={title} onMove={(delta) => onMove(index, index + delta)} announce={announce} />
         <motion.button
           type="button"
           aria-label={`Quitar ${title} del repertorio`}

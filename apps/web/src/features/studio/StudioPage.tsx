@@ -63,13 +63,12 @@ import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
 import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
-import { RecordStudio } from '@/features/record/RecordStudio';
 import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
 import { useFileSource } from './fileSource';
 import { releaseTakeUrl } from '@/data/takes';
 import { useDesignVariant } from '@/features/lab/designLab';
-import { TakesPanel, type TakeItem } from '@/features/takes/TakesPanel';
+import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
 import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
@@ -79,6 +78,15 @@ import { useShortcuts } from './useShortcuts';
 
 /** F5 · The review screen, loaded when a take is first opened. */
 const ReviewScreen = lazy(() => import('@/features/review/ReviewScreen').then((m) => ({ default: m.ReviewScreen })));
+/**
+ * P4 · The recorder (camera, recorder, clap…) loads when «Grabar» is first hovered, focused or pressed, and is only
+ * mounted while open: closing it unmounts it (it keeps nothing between sessions: every open starts afresh).
+ */
+const loadRecordStudio = () => import('@/features/record/RecordStudio');
+const RecordStudio = lazy(() => loadRecordStudio().then((m) => ({ default: m.RecordStudio })));
+const warmRecordStudio = () => void loadRecordStudio().catch(() => undefined);
+/** P4 · «Tomas» loads when its tab is first opened. */
+const TakesPanel = lazy(() => import('@/features/takes/TakesPanel').then((m) => ({ default: m.TakesPanel })));
 
 /** Stable empty list, so the stage never re-renders for a new [] while notes load. */
 const NO_NOTES: Note[] = [];
@@ -127,7 +135,8 @@ export function StudioPage() {
   useEffect(() => () => usePlayer.getState().reset(), [videoId]);
   // F1: the stage this device last used for this video (YouTube by default, the file only if still linked).
   const linkedFile = video.data ? hasLinkedFile(video.data) : false;
-  const loaded = video.data != null;
+  // P3 · The library's row (placeholder) opens the stage, but only the real row may forget «Archivo».
+  const loaded = video.data != null && !video.isPlaceholderData;
   useEffect(() => {
     if (!videoId) return;
     if (loaded && !linkedFile) rememberStage(videoId, 'youtube'); // removed on another phone: forget «Archivo»
@@ -190,6 +199,7 @@ export function StudioPage() {
     if (!ready || !clipParam || !clips.data) return;
     const clip = clips.data.find((c) => c.id === clipParam);
     if (clip) applyClip(clip);
+    else toast('Ese clip ya no existe: se abre la canción entera', 'info');
     setParams(
       (prev) => {
         prev.delete('clip');
@@ -197,17 +207,18 @@ export function StudioPage() {
       },
       { replace: true },
     );
-  }, [ready, clipParam, clips.data, setParams, applyClip]);
+  }, [ready, clipParam, clips.data, setParams, applyClip, toast]);
 
   // First time a file/stream reports its length, remember it for the library cards.
   const current = video.data;
+  const fresh = !video.isPlaceholderData; // P3 · never write from the library's placeholder row
   useEffect(() => {
     // Only the stage that IS this entry: a linked file's own length is not the YouTube video's (F1).
     const fromFile = current?.source === 'youtube' && usePlayer.getState().stage === 'file';
-    if (current && duration > 0 && !current.duration_seconds && !fromFile) {
+    if (fresh && current && duration > 0 && !current.duration_seconds && !fromFile) {
       patchVideo({ id: current.id, patch: { duration_seconds: round3(duration) } });
     }
-  }, [current, duration, patchVideo]);
+  }, [current, fresh, duration, patchVideo]);
 
   // A failed or paused (offline) load is not "deleted": offer a retry, and say when it's the connection.
   const offline = video.fetchStatus === 'paused' || (video.isError && !navigator.onLine);
@@ -300,7 +311,7 @@ export function StudioPage() {
             <Button
               size="sm"
               variant="secondary"
-              aria-label={hasLinkedFile(current) ? 'Archivo de este vídeo' : 'Añadir el archivo de este vídeo'}
+              aria-label={hasLinkedFile(current) ? 'Archivo de este vídeo' : 'Añadir archivo de este vídeo'}
               onClick={() => setLinking(true)}
             >
               <FileVideo className="size-4" />
@@ -309,6 +320,9 @@ export function StudioPage() {
           )}
           <Button size="sm" aria-label="Grabar baile con la canción" onClick={() => askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () => setRecording(true))}
             disabled={!ready}
+            onPointerEnter={warmRecordStudio}
+            onPointerDown={warmRecordStudio}
+            onFocus={warmRecordStudio}
           >
             <VideoIcon className="size-4" />
             <span className="max-sm:sr-only">Grabar</span>
@@ -358,15 +372,23 @@ export function StudioPage() {
                 onNew={openSave}
               />
             ) : (
-              <TakesPanel
-                video={current}
-                clips={clips.data ?? []}
-                onPlay={(take, url) => {
-                  // One sound at a time: the song stops while a take plays.
-                  usePlayer.getState().pause();
-                  setPlayingTake({ take, url });
-                }}
-              />
+              <Suspense
+                fallback={
+                  <div className="grid place-items-center py-10" role="status" aria-label="Cargando tomas">
+                    <Spinner className="size-6 text-washi-muted" />
+                  </div>
+                }
+              >
+                <TakesPanel
+                  video={current}
+                  clips={clips.data ?? []}
+                  onPlay={(take, url) => {
+                    // One sound at a time: the song stops while a take plays.
+                    usePlayer.getState().pause();
+                    setPlayingTake({ take, url });
+                  }}
+                />
+              </Suspense>
             )}
           </div>
         </div>
@@ -381,7 +403,17 @@ export function StudioPage() {
         follow={followed}
       />
       <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
-      <RecordStudio open={recording} onClose={() => setRecording(false)} video={current} />
+      {recording && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[90] grid place-items-center bg-sumi-950" role="status" aria-label="Abriendo la cámara">
+              <Spinner className="size-9 text-washi-muted" />
+            </div>
+          }
+        >
+          <RecordStudio open onClose={() => setRecording(false)} video={current} />
+        </Suspense>
+      )}
       {current.source === 'youtube' && (
         <LinkFilePanel
           open={linking}

@@ -7,11 +7,13 @@ import { DEFAULT_ROUND_OPTIONS } from '@/features/rpd/roundRules';
 import {
   bagsBackend,
   eventsBackend,
+  IS_DEMO,
   type EventPatch,
   type EventSongView,
   type EventWithCount,
   type NewEvent,
 } from '@/lib/backend';
+import { parseEvents, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 
 export type { EventSongView, EventWithCount } from '@/lib/backend';
@@ -38,8 +40,22 @@ export function eventError(error: unknown): string {
   return friendlyError(error);
 }
 
-export function useEvents() {
-  return useQuery({ queryKey: eventKeys.all, queryFn: () => eventsBackend.listEvents() });
+const EVENTS_SNAPSHOT = IS_DEMO ? 'events.demo' : 'events';
+
+/**
+ * `snapshot`: P2 / P8 · while the first request runs, show the events kept from the last visit
+ * (`isPlaceholderData`): the home banner is there from the first paint instead of pushing the library down.
+ */
+export function useEvents({ snapshot = false }: { snapshot?: boolean } = {}) {
+  return useQuery({
+    queryKey: eventKeys.all,
+    placeholderData: snapshot ? () => readSnapshot(EVENTS_SNAPSHOT, parseEvents) : undefined,
+    queryFn: async () => {
+      const events = await eventsBackend.listEvents();
+      writeSnapshot(EVENTS_SNAPSHOT, events);
+      return events;
+    },
+  });
 }
 
 export function useEvent(id: string | undefined) {

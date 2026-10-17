@@ -16,6 +16,8 @@ import {
   wheelZoom,
   zoomFromBox,
   zoomInBox,
+  zoomBadgeLabel,
+  zoomControlsView,
   zoomLabel,
   zoomOfClip,
   zoomTransform,
@@ -260,5 +262,15 @@ describe('saved with a clip', () => {
     const c = clipZoomColumns({ scale: 99, x: -3, y: 0.5 });
     expect(c.zoom_scale).toBeLessThanOrEqual(4);
     expect(c.zoom_x).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('zoom control views (P12)', () => {
+  it('derive plain values that only change with the label or a limit', () => {
+    expect(zoomControlsView(NO_ZOOM)).toEqual({ zoomed: false, label: '100 %', atMax: false });
+    expect(zoomControlsView({ scale: 2, x: 0.3, y: 0.3 })).toEqual(zoomControlsView({ scale: 2, x: 0.6, y: 0.4 }));
+    expect(zoomControlsView({ scale: 4, x: 0.5, y: 0.5 }).atMax).toBe(true);
+    expect(zoomBadgeLabel(NO_ZOOM)).toBeNull();
+    expect(zoomBadgeLabel({ scale: 1.5, x: 0.5, y: 0.5 })).toBe('150 %');
   });
 });
