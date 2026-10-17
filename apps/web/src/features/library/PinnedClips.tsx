@@ -514,7 +514,8 @@ export const PinnedClips = memo(function PinnedClips({ clips }: { clips: ClipWit
             <motion.li key={clip.id} variants={fadeUp} className="shrink-0">
               <Link
                 to={`/v/${clip.video_id}?clip=${clip.id}`}
-                aria-label={clipLabel(clip)}
+                // Named by its visible text (clip, song, speed): an aria-label that left part of it out fails
+                // «label in name» (WCAG 2.5.3). The tooltip keeps the full title.
                 title={clipLabel(clip)}
                 draggable={false}
                 onClick={guardNav}
