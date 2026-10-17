@@ -18,6 +18,7 @@ import { CLIP_SWATCH, useQuickClips } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, jelly } from '@/lib/motion';
 import { loadAddVideoDialog, prefetchAddVideo, prefetchAddVideoWhenIdle } from '@/lib/prefetch';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -357,6 +358,9 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const name = profile?.display_name ?? user?.email ?? 'Tú';
+  // The phone's back button closes the menu instead of leaving the page. Its links replace the menu's
+  // history entry, so back from where they lead returns here in one press.
+  useBackToClose(menuOpen, () => setMenuOpen(false));
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -458,6 +462,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       key={item.to}
                       role="menuitem"
                       to={item.to}
+                      replace
                       end={item.end}
                       onClick={(e) => {
                         guardNav(e);
@@ -480,6 +485,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                   <Link
                     role="menuitem"
                     to="/ajustes"
+                    replace
                     onClick={(e) => {
                       guardNav(e);
                       setMenuOpen(false);

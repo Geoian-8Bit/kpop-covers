@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 
@@ -87,6 +88,8 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, onClose: () => voi
 function Popover({ children, onClose, className, label }: { children: ReactNode; onClose: () => void; className?: string; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(ref, onClose);
+  // The phone's back button closes the menu instead of leaving the song.
+  useBackToClose(true, onClose);
   return (
     <motion.div
       ref={ref}

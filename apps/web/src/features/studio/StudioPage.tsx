@@ -50,6 +50,7 @@ import {
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { friendlyError } from '@/lib/supabase';
 import { FileStage } from '@/player/FileStage';
 import { hasRange, usePlayer } from '@/player/store';
@@ -1481,6 +1482,8 @@ function FullscreenBar({
   }, [visible]);
 
   const speedRef = useRef<HTMLDivElement>(null);
+  // The phone's back button closes the menu instead of leaving fullscreen and the song.
+  useBackToClose(speedOpen, () => setSpeedOpen(false));
   useEffect(() => {
     if (!speedOpen) return;
     const onDown = (e: PointerEvent) => {

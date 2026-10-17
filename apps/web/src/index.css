@@ -258,8 +258,11 @@
   html {
     color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
-    /* No double-tap zoom: taps fire at once and a quick second tap isn't read as a zoom gesture. */
-    touch-action: manipulation;
+    /*
+     * No double-tap or pinch zoom of the page: taps fire at once, a quick second tap isn't a zoom gesture and
+     * a stray pinch while dancing doesn't blow the studio up. The video's own zoom (F9) handles its gestures.
+     */
+    touch-action: pan-x pan-y;
   }
 
   /* Press-and-hold buttons (pause pickers) must not select text or pop the iOS callout. */

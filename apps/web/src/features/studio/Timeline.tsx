@@ -275,7 +275,8 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
               whileTap={{ scaleY: 0.9 }}
               transition={jelly}
               className={cn(
-                'absolute min-w-2.5 rounded-[3px] transition-opacity',
+                // The bar is thin; an invisible margin around it makes it easy to hit with a finger.
+                "absolute min-w-2.5 rounded-[3px] transition-opacity before:absolute before:-inset-x-1 before:-inset-y-1.5 before:content-['']",
                 CLIP_SWATCH[clip.color].dot,
                 activeClipId === clip.id
                   ? 'opacity-100 ring-1 ring-washi/70'
