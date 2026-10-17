@@ -21,7 +21,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | # | Zona | Qué cambiar | Prioridad | Estado |
 | --- | --- | --- | --- | --- |
 | 1 | Navegación en móvil | Sacar las secciones del menú «⋯» y llevarlas a un menú de acciones rápidas abajo a la derecha, con un diseño creativo y animado (4 prototipos para elegir). Detalle abajo | Alta | Pendiente |
-| 2 | Menú «⋯» · versión | El menú «⋯» queda solo para la política (Privacidad y condiciones de YouTube) y el número de versión, que sube en cada despliegue, con un botón «Buscar actualización» que descarga y aplica la nueva. Detalle abajo | Alta | Pendiente |
+| 2 | Menú «⋯» · versión | El menú «⋯» queda solo para Ajustes, «Instalar app», la política (Privacidad y condiciones de YouTube) y el número de versión, que sube en cada despliegue, con un botón «Buscar actualización» que descarga y aplica la nueva. Detalle abajo | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -54,8 +54,9 @@ las 5 secciones (`MAIN_NAV`: Biblioteca, Bolsas, Próxima cover, Random Play Dan
   vista previa de Vercel) para que el responsable los pruebe en su móvil. **Cuando elija uno, se borran los otros
   tres** y su selector (como se hizo con el laboratorio de diseño).
 
-**Qué va en el menú de abajo.** Las 5 secciones seguro. «¿Quién eres?», Ajustes e «Instalar app» están **por
-confirmar** con el responsable (propuesta: Ajustes y «¿Quién eres?» abajo, «Instalar app» arriba en «⋯»).
+**Qué va en cada menú (confirmado por el responsable).**
+- **Abajo a la derecha:** las 5 secciones y «¿Quién eres?».
+- **Arriba, en «⋯»:** Ajustes, Privacidad y condiciones, «Instalar app» y la versión con «Buscar actualización» (punto 2).
 
 **Requisitos que no pueden faltar.**
 - Pensado para el pulgar derecho: el botón dentro de la zona segura (`env(safe-area-inset-*)`), con objetivos de 44 px.
@@ -69,6 +70,7 @@ confirmar** con el responsable (propuesta: Ajustes y «¿Quién eres?» abajo, �
 ### 2 · Número de versión y «Buscar actualización»
 
 **Qué quiere el responsable.** El menú «⋯» de arriba queda solo para:
+- Ajustes (`/ajustes`) e «Instalar app»;
 - la política (Privacidad y condiciones, con los términos de YouTube: `/privacidad`);
 - el **número de versión**, que sube en cada despliegue, para saber si la app instalada es la última;
 - un botón para **buscar si hay versión nueva** y, si la hay, descargarla y aplicarla al momento.
