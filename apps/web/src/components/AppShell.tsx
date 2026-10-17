@@ -117,13 +117,25 @@ function useRouteFocus(mainRef: RefObject<HTMLElement | null>) {
       const active = document.activeElement;
       return active != null && active !== document.body && active !== from && active.isConnected;
     };
+    /** A control the page wants first (data-autofocus), even when it shows up after the heading. */
+    const preferred = () => main.querySelector<HTMLElement>('[data-autofocus]:not([disabled])');
+    let onHeading: HTMLElement | null = null;
     const land = () => {
-      if (done) return true;
+      const wanted = preferred();
+      if (wanted && (!done || document.activeElement === onHeading)) {
+        if (document.activeElement !== wanted) wanted.focus();
+        done = true;
+        return true;
+      }
+      if (done) return onHeading == null;
       if (movedOn()) return (done = true);
       const heading = main.querySelector<HTMLElement>('h1');
       if (!heading) return false;
       focusLandmark(heading);
-      return (done = true);
+      onHeading = heading;
+      done = true;
+      // Keep watching a little longer in case the page's first control (data-autofocus) arrives later.
+      return false;
     };
     if (land()) return;
     const observer = new MutationObserver(() => {

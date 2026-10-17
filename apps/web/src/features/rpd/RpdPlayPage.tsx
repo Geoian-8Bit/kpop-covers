@@ -477,7 +477,7 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
                       {total === 0 ? (
                         <p className="mt-4 text-sm text-enji-300">Ninguno de estos clips está disponible.</p>
                       ) : (
-                        <Button size="lg" className="mt-6 w-full" onClick={start} autoFocus>
+                        <Button size="lg" className="mt-6 w-full" onClick={start} autoFocus data-autofocus>
                           <Play aria-hidden className="size-5" /> Empezar
                         </Button>
                       )}
