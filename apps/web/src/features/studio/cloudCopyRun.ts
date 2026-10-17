@@ -3,7 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { takeKeys } from '@/data/takes';
 import { fileIdentity, uploadGroupFile, videoKeys } from '@/data/videos';
 import { backend, cloudLimitBytes } from '@/lib/backend';
-import { heavyWorkRunning, type HeavyWork } from '@/lib/heavyWork';
+import { heavyWorkBusy, type HeavyWork } from '@/lib/heavyWork';
 import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { isAbort, makeCloudCopy, probeVideo, type CopyPaceNow } from './cloudCopy';
@@ -88,10 +88,13 @@ function extensionOf(name: string | null | undefined): string {
   return name?.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'mp4';
 }
 
-/** What the rest of the device allows the copy now. */
+/**
+ * What the rest of the device allows the copy now. Global review 2 [2] · The separation counts only while it loads
+ * the device: while it downloads its model or uploads its tracks (network only) the copy goes on.
+ */
 function paceNow(): CopyPaceNow {
   const player = usePlayer.getState();
-  return copyPace({ covered: player.covered, separating: heavyWorkRunning('voice'), studioPlaying: player.playing });
+  return copyPace({ covered: player.covered, separating: heavyWorkBusy('voice'), studioPlaying: player.playing });
 }
 
 export async function runCloudCopy({ video, source, queryClient }: StartCopyInput, signal: AbortSignal, work: HeavyWork): Promise<void> {

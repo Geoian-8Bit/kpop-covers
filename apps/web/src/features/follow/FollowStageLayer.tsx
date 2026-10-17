@@ -6,6 +6,7 @@ import { useFollowPaths } from '@/data/follow';
 import { cancelRelease, scheduleRelease } from '@/features/pose/models';
 import { cn } from '@/lib/cn';
 import { snappy } from '@/lib/motion';
+import { friendlyError } from '@/lib/supabase';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { usePlayer } from '@/player/store';
 import { NO_ZOOM, sameZoom, type Pt, type Size, type Zoom } from '@/player/zoom';
@@ -286,7 +287,12 @@ function PickOverlay({
       .catch((err: unknown) => {
         if (!alive) return;
         setStatus('error');
-        setError(err instanceof Error ? err.message : 'No se pudo cargar el modelo.');
+        // Our own errors say it in Spanish; anything else (the analysis chunk not loading…) never in the browser's words.
+        setError(
+          err instanceof Error && (err.name === 'FollowError' || err.name === 'ModelLoadError')
+            ? err.message
+            : friendlyError(err),
+        );
       });
     return () => {
       alive = false;

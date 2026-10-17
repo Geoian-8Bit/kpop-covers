@@ -1,5 +1,5 @@
 import { buildMp4, type Mp4Codec } from './mp4';
-import { estimateLag, headFrameCount, LAG_HEAD_SECONDS, monoHead, stemBitrate } from './separateRules';
+import { estimateLagSliced, headFrameCount, LAG_HEAD_SECONDS, monoHead, stemBitrate } from './separateRules';
 
 /**
  * 18 · The two separated tracks as small audio files (3–6 MB each for a 4-minute song): WebCodecs' AudioEncoder
@@ -209,7 +209,7 @@ export async function encodeStem(
       reference.length,
     );
     await breathe();
-    const lag = estimateLag(reference, back, maxLag, rate);
+    const lag = await estimateLagSliced(reference, back, maxLag, rate, breathe);
     await breathe();
     return lag && lag.confidence > 0.5 ? lag.lag : null;
   };

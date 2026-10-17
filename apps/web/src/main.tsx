@@ -74,7 +74,8 @@ setUpdateApplier(applyUpdate);
 setWaitingUpdateApplier(applyUpdate);
 window.addEventListener('vite:preloadError', () => {
   // Offline the chunk isn't stale, just out of reach: a reload wouldn't help.
-  if (navigator.onLine && !document.querySelector('[role="dialog"]')) recoverFromStaleChunks();
+  // Global review 2 [2] · Nor with the copy or the separation running: a reload would cut it short.
+  if (navigator.onLine && !document.querySelector('[role="dialog"]') && !reloadBusy()) recoverFromStaleChunks();
 });
 
 // Audio (metronome ticks) may only start after a user gesture: unlock on the first tap or key.

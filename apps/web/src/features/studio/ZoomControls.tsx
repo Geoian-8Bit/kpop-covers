@@ -13,6 +13,7 @@ import { ZoomLayer } from '@/player/ZoomLayer';
 import {
   clipHasZoom,
   clipZoomColumns,
+  isZoomed,
   keyZoom,
   NO_ZOOM,
   sameZoom,
@@ -224,7 +225,7 @@ const PAN_KEYS = [
  * While zoomed: moves the zoomed spot with single taps, no dragging needed (WCAG 2.5.7). Same steps as the arrow
  * keys on the video, and the way they point on screen (the mirror is taken into account).
  */
-function PanArrows() {
+function PanArrows({ fullscreen = false }: { fullscreen?: boolean }) {
   const move = (key: string) => {
     const { zoom, mirrored, setZoom } = usePlayer.getState();
     const next = keyZoom(zoom, key, PAN_BOX, null, mirrored);
@@ -238,12 +239,30 @@ function PanArrows() {
           type="button"
           aria-label={label}
           onClick={() => move(key)}
-          className="grid size-11 place-items-center rounded-[10px] border border-line-strong text-washi hover:bg-washi/[0.06]"
+          className={
+            fullscreen
+              ? 'grid size-11 place-items-center rounded-full bg-sumi-950/60 text-washi transition-colors hover:bg-washi/15 active:bg-washi/20'
+              : 'grid size-11 place-items-center rounded-[10px] border border-line-strong text-washi hover:bg-washi/[0.06]'
+          }
         >
           <Icon aria-hidden className="size-4.5" />
         </button>
       ))}
     </span>
+  );
+}
+
+/**
+ * Global review 2 [2] · The same arrows in fullscreen's bottom bar while zoomed: moving the zoomed spot doesn't ask
+ * to drag there either (WCAG 2.5.7), nor to leave fullscreen.
+ */
+export function FsPanArrows() {
+  const zoomed = usePlayer((s) => isZoomed(s.zoom));
+  if (!zoomed) return null;
+  return (
+    <div className="mb-1 flex justify-end">
+      <PanArrows fullscreen />
+    </div>
   );
 }
 

@@ -27,6 +27,15 @@ export function needsMove(
   return !current.connected || current.parent !== desired;
 }
 
+/**
+ * Global review 2 [3] · What a batch of page changes means for an open dialog: `data-fs` added or removed (the stage
+ * entering or leaving fullscreen, which React marks a render after `fullscreenchange`) changes where overlays go,
+ * like fullscreen itself; anything else is an ordinary change.
+ */
+export function triggerOf(records: readonly { type: string; attributeName?: string | null }[]): PlacementTrigger {
+  return records.some((r) => r.type === 'attributes' && r.attributeName === 'data-fs') ? 'fullscreen' : 'mutation';
+}
+
 /** Moves `wrapper` into `host` keeping focus where it was (a DOM move blurs the focused element). */
 function moveTo(wrapper: HTMLElement, host: Element, lastFocus: HTMLElement | null) {
   const active = document.activeElement;
@@ -72,13 +81,17 @@ export function useOverlayContainer(open: boolean): HTMLElement {
         moveTo(wrapper, host, lastFocus);
       }
     };
+    // `fullscreenchange` comes before React marks the stage (`data-fs`): the mark coming or going (observed below)
+    // places it again, so leaving native fullscreen puts the dialog back in the page.
     const onFullscreen = () => place('fullscreen');
     place('mutation'); // put back if it was taken out between renders (StrictMode's test unmount does it)
     wrapper.addEventListener('focusin', onFocusIn);
     document.addEventListener('fullscreenchange', onFullscreen);
-    // The CSS fullscreen layer (`[data-fs]`) has no event of its own: notice when it takes the wrapper with it.
-    const observer = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => place('mutation'));
-    observer?.observe(document.body, { childList: true, subtree: true });
+    // The CSS fullscreen layer (`[data-fs]`) has no event of its own: notice when it takes the wrapper with it, and
+    // when the mark comes or goes.
+    const observer =
+      typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => place(triggerOf(records)));
+    observer?.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-fs'] });
     return () => {
       wrapper.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('fullscreenchange', onFullscreen);

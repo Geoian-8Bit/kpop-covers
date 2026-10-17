@@ -3,6 +3,7 @@ import {
   DEFAULT_RAMP_MS,
   DEFAULT_TUNING,
   frameStats,
+  hasSeparableFile,
   isVoiceMode,
   judgeMono,
   modeGains,
@@ -11,6 +12,7 @@ import {
   pushFrame,
   rampSeconds,
   resolveTuning,
+  separateShown,
   learnLead,
   STEM_SYNC,
   stemNudge,
@@ -312,5 +314,23 @@ describe('pickStems', () => {
     expect(pickStems({ file_name: 'other.mp4', file_size: 1000 }, [row({})])).toBeNull();
     expect(pickStems({ file_name: null, file_size: null }, [row({})])).toBeNull();
     expect(pickStems(video, [])).toBeNull();
+  });
+});
+
+describe('«Separar voz y música» on the studio (global review 2 [5])', () => {
+  it('is mounted for every entry with a file, whatever plays on the stage', () => {
+    expect(hasSeparableFile({ source: 'upload', file_name: 'a.mp4' })).toBe(true);
+    expect(hasSeparableFile({ source: 'youtube', file_name: 'a.mp4' })).toBe(true);
+    expect(hasSeparableFile({ source: 'youtube', file_name: null })).toBe(false);
+    expect(hasSeparableFile({ source: 'upload', file_name: '' })).toBe(false);
+  });
+
+  it('a running separation keeps showing when the stage lets its engine go (available false, then true)', () => {
+    const steps = [true, false, true].map((available) => separateShown({ hasFile: true, available, running: true }));
+    expect(steps).toEqual([true, true, true]);
+    // Not running: hidden while there is no file engine, back when it returns.
+    expect(separateShown({ hasFile: true, available: false, running: false })).toBe(false);
+    expect(separateShown({ hasFile: true, available: true, running: false })).toBe(true);
+    expect(separateShown({ hasFile: false, available: true, running: true })).toBe(false);
   });
 });

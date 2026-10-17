@@ -224,7 +224,8 @@ function PlainQuickNav() {
       {open && (
         <nav
           // No name of its own: the dialog around it is already «Secciones».
-          className="paper-raised pointer-events-auto absolute bottom-[calc(max(16px,calc(env(safe-area-inset-bottom)+12px))+68px)] right-[max(16px,calc(env(safe-area-inset-right)+12px))] w-60 max-w-[calc(100vw-32px)] rounded-[14px] p-1.5"
+          // Global review 2 [2] · Never taller than the room above the button (a phone on its side, the page zoomed in).
+          className="paper-raised pointer-events-auto absolute bottom-[calc(max(16px,calc(env(safe-area-inset-bottom)+12px))+68px)] right-[max(16px,calc(env(safe-area-inset-right)+12px))] max-h-[calc(100dvh-120px)] w-60 max-w-[calc(100vw-32px)] overflow-y-auto rounded-[14px] p-1.5"
         >
           <ul>
             {MAIN_NAV.map((section, i) => (

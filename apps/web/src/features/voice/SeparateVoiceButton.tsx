@@ -19,6 +19,7 @@ import {
   unsupportedCopy,
   type ProgressState,
 } from './separate/separateRules';
+import { hasSeparableFile, separateShown } from './voiceRules';
 
 type State =
   | { kind: 'idle' }
@@ -38,9 +39,13 @@ type State =
  * the worker) loads only when it is pressed.
  *
  * Only for a file playing on the stage: YouTube's terms forbid separating or modifying its audio.
+ *
+ * Global review 2 [5] · Mounted for as long as the song has a file, whatever the stage does (`available` turns
+ * false while YouTube plays or the stage reloads): a separation running carries on and keeps showing its progress.
+ * Only leaving the song (or the studio) stops it, and then it says so.
  */
 export function SeparateVoiceButton({ video, available }: { video: Video; available: boolean }) {
-  const hasFile = Boolean(video.file_name) && (video.source === 'upload' || video.source === 'youtube');
+  const hasFile = hasSeparableFile(video);
   const stems = useCurrentStems(video, available && hasFile);
   const members = useMembers();
   const refresh = useRefreshStems();
@@ -51,13 +56,19 @@ export function SeparateVoiceButton({ video, available }: { video: Video; availa
   const mounted = useRef(true);
   const job = useRef<AbortController | null>(null);
   const isRunning = state.kind === 'running';
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      // Leaving the song (or the studio) mid-way stops the work: nothing half-done is shared.
-      job.current?.abort();
+      // Leaving the song (or the studio) mid-way stops the work: nothing half-done is shared. Never in silence.
+      const running = job.current;
+      if (running && !running.signal.aborted) {
+        running.abort();
+        toastRef.current('Separación de la voz cancelada: has salido de la canción', 'info');
+      }
     };
   }, [video.id]);
   // Closing the tab mid-way would lose the work: the browser asks first.
@@ -89,7 +100,7 @@ export function SeparateVoiceButton({ video, available }: { video: Video; availa
     setState(next);
   };
 
-  if (!available || !hasFile) return null;
+  if (!separateShown({ hasFile, available, running: isRunning })) return null;
 
   if (stems && state.kind !== 'running') {
     if (state.kind === 'remove') {

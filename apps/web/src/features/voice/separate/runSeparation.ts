@@ -200,7 +200,15 @@ const covered = () => usePlayer.getState().covered;
 async function whileCovered(signal: AbortSignal, work: HeavyWork): Promise<void> {
   if (!covered() || signal.aborted) return;
   work.idle(true);
-  await new Promise<void>((resolve) => {
+  await untilUncovered(signal);
+  work.idle(false);
+  if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+}
+
+/** Resolves once the recorder no longer covers the studio (or the signal aborts). */
+function untilUncovered(signal: AbortSignal): Promise<void> {
+  if (!covered() || signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
     const done = () => {
       off();
       signal.removeEventListener('abort', done);
@@ -211,8 +219,6 @@ async function whileCovered(signal: AbortSignal, work: HeavyWork): Promise<void>
     });
     signal.addEventListener('abort', done);
   });
-  work.idle(false);
-  if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
 }
 
 function runWorker(
@@ -223,14 +229,20 @@ function runWorker(
 ): Promise<Extract<WorkerMessage, { type: 'done' }>> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./stemSeparator.worker.ts', import.meta.url), { type: 'module' });
-    // Global review [6] · The recorder open: the worker holds before its next segment (idle once it says it has).
+    // Global review [6] · The recorder open: the worker holds before loading the model and before each segment
+    // (idle once it says it has). Global review 2 [2] · Downloading the model only waits on the network: idle too, so
+    // the copy for the group may go on meanwhile.
     let paused = false;
+    let held = false;
+    let downloading = false;
+    const syncIdle = () => work.idle(downloading || (paused && held));
     const syncCover = () => {
       const now = covered();
       if (now === paused) return;
       paused = now;
+      if (!now) held = false;
       worker.postMessage({ type: 'pause', paused: now } satisfies PauseRequest);
-      if (!now) work.idle(false);
+      syncIdle();
     };
     const offCover = usePlayer.subscribe((s, prev) => {
       if (s.covered !== prev.covered) syncCover();
@@ -248,10 +260,13 @@ function runWorker(
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       const msg = event.data;
       if (msg.type === 'held') {
-        if (paused) work.idle(true);
+        held = paused;
+        syncIdle();
         return;
       }
       if (msg.type === 'progress') {
+        downloading = msg.phase === 'model';
+        syncIdle();
         if (msg.phase === 'model') onProgress({ phase: 'model', loaded: msg.loaded, total: msg.total });
         else if (msg.phase === 'compile') onProgress({ phase: 'compile' });
         else onProgress({ phase: 'separate', done: msg.done, total: msg.total, etaSeconds: msg.etaSeconds });
@@ -277,8 +292,9 @@ function runWorker(
       worker.terminate();
       reject(new FriendlyError(WORKER_ERRORS.unknown));
     };
-    worker.postMessage(request, [request.left.buffer, request.right.buffer]);
+    // The pause first: the worker reads it before it starts on the model.
     syncCover();
+    worker.postMessage(request, [request.left.buffer, request.right.buffer]);
   });
 }
 
@@ -295,18 +311,33 @@ type SeparationRequest = {
  * (lib/heavyWork). Global review [6] · It first waits for a copy being made (one encoder at a time).
  */
 export async function runSeparation(opts: SeparationRequest): Promise<VideoStems> {
-  if (heavyWorkBusy('copy')) {
-    opts.onProgress({ phase: 'wait-copy' });
-    await untilHeavyWork(() => heavyWorkBusy('copy'), opts.signal);
-    if (opts.signal.aborted) throw new DOMException('cancelled', 'AbortError');
-    opts.onProgress({ phase: 'read' });
-  }
+  await untilFreeToStart(opts);
+  // Marked right after the last check (no await between): the copy sees it before it could start anything.
   const work = beginHeavyWork('voice');
   try {
     return await separate(opts, work);
   } finally {
     work();
   }
+}
+
+/**
+ * Global review 2 [4] · Before starting: while the copy for the group loads the device (one encoder at a time) and
+ * while the recorder is open (the copy rests then, and reading and decoding the song would run under the take).
+ */
+async function untilFreeToStart({ signal, onProgress }: SeparationRequest): Promise<void> {
+  let waited = false;
+  for (;;) {
+    if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+    if (heavyWorkBusy('copy')) {
+      onProgress({ phase: 'wait-copy' });
+      await untilHeavyWork(() => heavyWorkBusy('copy'), signal);
+    } else if (covered()) {
+      await untilUncovered(signal);
+    } else break;
+    waited = true;
+  }
+  if (waited) onProgress({ phase: 'read' });
 }
 
 const STEMS_TOO_BIG =
@@ -348,7 +379,11 @@ async function separate(opts: SeparationRequest, work: HeavyWork): Promise<Video
   // The song goes to the worker (transferred: the page no longer holds it).
   let durationSeconds = 0;
   let done: Extract<WorkerMessage, { type: 'done' }> | null = await (async () => {
-    const { left, right } = await decodeSong(await readSongFile(video), maxSeconds);
+    const bytes = await readSongFile(video);
+    check();
+    // Decoding the whole song (~160 MB of samples) runs on this thread: not under the recorder either.
+    await whileCovered(signal, work);
+    const { left, right } = await decodeSong(bytes, maxSeconds);
     check();
     durationSeconds = left.length / DEMUCS.sampleRate;
     return runWorker({ type: 'run', engine, left, right }, onProgress, signal, work);
@@ -372,6 +407,8 @@ async function separate(opts: SeparationRequest, work: HeavyWork): Promise<Video
   const measured = [instrumental.delaySeconds, vocals.delaySeconds].find((d) => Number.isFinite(d));
   const delay = Math.max(-1, Math.min(1, measured ?? 0));
 
+  // Global review 2 [2] · From here on it only waits on the network (space, upload, the row): no load on the device.
+  work.idle(true);
   // Space: the real sizes against what the group has left now.
   const usage = await backend.storageUsage().catch(() => null);
   if (usage) {

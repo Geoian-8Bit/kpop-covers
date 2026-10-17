@@ -345,6 +345,43 @@ export function estimateLag(
   maxLag: number,
   window: number,
 ): LagEstimate | null {
+  const steps = lagSteps(reference, test, maxLag, window, Infinity);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/** Coarse lags tried between two pauses of `estimateLagSliced` (a few tens of ms each on a slow phone). */
+export const LAG_SLICE = 400;
+
+/**
+ * Global review 2 [3] · `estimateLag` in slices of `slice` coarse lags, awaiting `pause` between them: the coarse
+ * pass is ~40 M multiplications (hundreds of ms on a phone), and the studio's loop and clips run on this thread.
+ */
+export async function estimateLagSliced(
+  reference: ArrayLike<number>,
+  test: ArrayLike<number>,
+  maxLag: number,
+  window: number,
+  pause: () => Promise<void>,
+  slice = LAG_SLICE,
+): Promise<LagEstimate | null> {
+  const steps = lagSteps(reference, test, maxLag, window, slice);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+    await pause();
+  }
+}
+
+function* lagSteps(
+  reference: ArrayLike<number>,
+  test: ArrayLike<number>,
+  maxLag: number,
+  window: number,
+  slice: number,
+): Generator<void, LagEstimate | null, void> {
   const usable = Math.min(reference.length, test.length) - maxLag;
   if (usable <= maxLag + window) return null;
   const start = loudestWindow(reference, window, maxLag, usable);
@@ -366,7 +403,8 @@ export function estimateLag(
   let coarse = 0;
   let coarseScore = -Infinity;
   const maxLagQ = Math.ceil(maxLag / q);
-  for (let lag = -maxLagQ; lag <= maxLagQ; lag++) {
+  for (let lag = -maxLagQ, tried = 0; lag <= maxLagQ; lag++, tried++) {
+    if (tried > 0 && tried % slice === 0) yield;
     const score = correlationAt(a.out, b.out, aStart, Math.floor(window / q), lag);
     if (score > coarseScore) {
       coarseScore = score;

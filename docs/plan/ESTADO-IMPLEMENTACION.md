@@ -17,6 +17,7 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Grupo | F13 Bolsas · F14 Random Play Dance | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión (BD e interfaz) con correcciones |
 | Grupo | F11 Votaciones · F12 Lista de deseos | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión (BD e interfaz, dos informes) con correcciones. Migraciones `wishes_and_polls`, `close_poll_zero_votes` y `close_poll_live_rank` (17-10 02:16) aplicadas |
 | Grupo | F15 Reacciones · F16 Cuenta atrás | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `events_and_reactions` |
+| Mejoras | 39 puntos de la prueba manual (MEJORAS-PRUEBA-MANUAL.md) | **Hechos** (17-10, commits 2a29b94 a 0e6df92) | Revisiones con nota por bloque (2–3 rondas) y global (2 rondas); 6 diseños en el laboratorio para que elija el responsable. Migraciones `20261017120000`, `130000` y `140000` |
 | Todo | Revisión global, rendimiento y verificación en producción | **Hecha y desplegada** (17-10 02:47) | 4 revisores (funcional, BD, rendimiento, accesibilidad); ninguno ≥6 en funcional y BD; lo ≥6 de accesibilidad y rendimiento corregido. Prueba manual de todo en producción con datos «PRUEBA», ya archivados (apartado 9) |
 
 ## 2. Cómo probar
@@ -42,13 +43,13 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 
 ### Ideas · F1 y F2 (en producción)
 
-15. **Miembros (F2).** Ajustes → «Miembros del grupo» → «Añadir miembro» con nombre y color. Abajo a la izquierda
-    (o arriba en el móvil) sale «¿Quién eres?»: elige tu nombre. Se recuerda en ese móvil.
+15. **Miembros (F2).** Ajustes → «Miembros del grupo» → «Añadir miembro» con nombre y color. En el menú rápido de abajo a la derecha (móvil) o abajo a la izquierda
+    (escritorio) sale «¿Quién eres?»: elige tu nombre. Se recuerda en ese móvil.
 16. **Archivo de un vídeo de YouTube (F1).** Abre una canción de YouTube → «Añadir archivo» → elige el mismo vídeo
     descargado por tu cuenta (la app no descarga nada de YouTube). Si dura distinto, avisa. Luego «Sincronizar»:
     reproduce los dos y pulsa en el mismo golpe de música; ajusta con ±. Desde entonces el selector
     «YouTube | Archivo» cambia de uno a otro en el mismo punto. Hasta 50 MB se sube a la nube para todo el grupo;
-    más grande queda solo en ese móvil y los demás pueden vincular su propia copia.
+    más grande, el dispositivo hace una copia más ligera para el grupo y se queda con el original (mejora 13).
 17. **Cambiar / quitar archivo:** en el mismo panel. «Cambiar» elige el nuevo antes de quitar el viejo y, si falla,
     deja el anterior.
 18. **Duplicados:** al añadir un vídeo con un título parecido a otro de la biblioteca, sale «¿Es la misma
@@ -206,6 +207,43 @@ de arriba.
     estribillos» (clips cuyo nombre dice estribillo, chorus, coro o hook). Las secciones «Próximos» y «Pasados»
     separan los eventos.
 
+### Ronda de mejoras de la prueba manual (17-10, puntos de MEJORAS-PRUEBA-MANUAL.md)
+
+Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio está marcado.
+
+38. **Navegación (1, 2).** Abajo a la derecha, el botón redondo dice en qué sección estás. Ábrelo: las 5 secciones
+    y «¿Quién eres?». Se cierra con «Atrás», tocando fuera o al elegir. En el «⋯» de arriba: Ajustes, «Instalar app»,
+    Privacidad y «Versión N · fecha» con «Buscar actualización». En el estudio, la ronda y el grabador no sale.
+39. **Laboratorio (17).** Ajustes → «Laboratorio de diseño»: menú rápido (P1: Sensu, Hanafuda, Rueda de kamon,
+    Origami), voz y música (F17: siete olas), lista de bolsas (P30) e icono (P29), cuenta atrás larga (F16: Koyomi,
+    Sunadokei, Tsuki). Cada una con su demo; «Usar esta» la aplica en ese móvil.
+40. **Estudio (3–12).** Sin botón rojo sobre el vídeo: tocar el vídeo pausa. Pantalla completa: un toque muestra
+    los controles sin tirones. Pellizca para ampliar (solo con archivo), arrastra o usa las flechas, doble toque
+    vuelve. Bucle A–B sin pausa: la vuelta es inmediata. Mantén «Bucle»: el panel de pausa se ve entero. Lápiz de
+    un clip: «Editar clip». «Guardar clip» cabe en media pantalla. «Fijar en la portada». Con archivo vinculado
+    la canción abre con el archivo; la fila «Vídeo: Archivo | YouTube» está bajo la barra.
+41. **Archivo de más de 50 MB (13, hace falta el archivo).** Vincúlalo: el dispositivo hace una copia más ligera
+    para el grupo (barra, tiempo, «Cancelar») y sigue usando el original. En otro móvil la fila «Vídeo» dice
+    «Copia del grupo · 720p». Con el grabador abierto, la copia espera.
+42. **Seguir a un bailarín (14, 15, hace falta un archivo).** Pausa, «Seguir a alguien», toca a la persona: primero
+    analiza el tramo que ves («quedan unos N s») y ya te sigue; el resto, en segundo plano. En pantalla completa, el
+    botón de persona arriba. En un ordenador sin GPU, Ajustes → prueba de postura → MoveNet con WASM.
+43. **Separar voz y música (18, en el ordenador con Chrome y un archivo).** «Separar voz y música» → confirmación
+    (descarga del modelo de unos 120–172 MB la primera vez) → «Empezar». Al acabar, «Sin voz» y «Voz» suenan con las
+    pistas en todos los móviles. «Quitar las pistas separadas» lo deshace.
+44. **Grabador (19–27, hace falta el Samsung).** 1080p 60: vista previa fluida; panel «i» → «Fluidez» y «Retraso».
+    «Descartar» deja la cámara lista. «Empieza en»: tocar cambia, mantener abre la lista con los clips. Lentes
+    0,5× / 1× / 2×. Abre la última cámara usada. El chip de arriba abre solo «Calidad». Abanico con «Calidad» e
+    «Imagen». Aplauso: Baja, Media, Alta, Muy alta (mover la silla no dispara). Color de la luz: cambia al primer
+    toque.
+45. **Bolsas (28–32).** En una bolsa de canciones, «Añadir» → «Buscar en YouTube»: entra en la bolsa sin pasar a la
+    biblioteca; al salir en el sorteo, «Añadir a la biblioteca». Cabecera en una línea, sorteo y «Sacar» / «Añadir»
+    a la vista, pestañas «En la bolsa», «Fuera» e «Historial».
+46. **Random Play Dance (33, 34).** Crear ronda: fuente, cuántos y el orden ya mezclado; el resto en «Más opciones»;
+    «Empezar» fijo abajo. La ronda: fondo de la app, tarjeta Kamishibai, controles grandes. «Salir» pregunta.
+47. **Próxima cover (35–37).** «Proponer» con el buscador de YouTube. «Elegir para votar» con su barra. En la votación,
+    la papeleta y «Votar» primero. Solo «Añadir a la biblioteca» lleva una propuesta a la biblioteca.
+
 ## 3. DECISIONES
 
 1. **F17 y F18.** El plan de ideas que se copió a `docs/plan/` no define F17 ni F18. F17 se toma del plan de
@@ -237,9 +275,9 @@ de arriba.
    siempre lienzo (guardaba los vídeos tumbados).
 10. **Formatos que fallan se recuerdan por familia** (HEVC, H.264 High…), 30 días y por versión del navegador, y
     se pueden volver a probar desde el panel «i».
-11. **Diseños elegidos y laboratorio retirado (17-10).** Hubo un laboratorio de diseño con 3 variantes por momento.
+11. **Diseños elegidos y laboratorio retirado (17-10; vuelve para 6 momentos nuevos, decisión 36).** Hubo un laboratorio de diseño con 3 variantes por momento.
     El responsable del producto eligió una por momento (apartado 7); las demás y el laboratorio se han quitado del
-    código, así que ya no hay nada que elegir en Ajustes.
+    código. Para la ronda de mejoras vuelve con otros momentos (decisión 36).
 12. **Panel «i» oculto por defecto** (A1: «Información técnica, desactivado»). Se activa en Ajustes del grabador.
 13. **Repaso: la toma manda el reloj.** El original sigue a la toma, con el desfase del archivo vinculado (F1). El
     ajuste fino de sincronía se guarda con la toma.
@@ -293,6 +331,28 @@ de arriba.
 33. **Listados completos.** La app pide las listas largas por páginas, porque PostgREST corta a 1000 filas por
     defecto. Así no se pierden las filas nuevas.
 
+34. **Zoom con YouTube: no (mejora 7).** El responsable lo pidió, pero las condiciones de YouTube prohíben modificar,
+    recortar o tapar su reproductor («You must not make changes to the YouTube player that are not explicitly described
+    by the API documentation»; III.I.6). El zoom con los dedos va solo con el archivo vinculado.
+35. **Vídeo limpio (mejora 4).** Sin botón propio encima del vídeo y sin los controles de YouTube (`controls: 0`), para
+    no romper bucle, velocidad ni sincronía. YouTube sigue pintando su icono de pausa: no se puede quitar desde fuera.
+36. **Laboratorio de diseño otra vez (mejora 17).** Temporal, en Ajustes, para P1 (menú rápido), F17 (olas), P29
+    (icono de bolsa), P30 (lista de bolsas) y F16 (cuenta atrás larga). Por defecto se ve lo de antes o la primera
+    propuesta. Cuando el responsable elija, se borran las demás y el laboratorio.
+37. **Número de versión.** Se despliega con `pnpm deploy:prod`, que lanza un único `vercel --prod --yes -b APP_BUILD=<n>`
+    con el número de commits de main; sin él la app dice «Versión de desarrollo».
+38. **Separar voz con IA solo con el archivo (mejora 18).** HTDemucs (MIT) en ONNX con WebGPU, una vez por canción,
+    en el ordenador. Las pistas (AAC, unos 5 MB cada una) suenan sincronizadas con el vídeo del archivo. Con YouTube no:
+    sus condiciones prohíben separar o modificar su audio (III.I.7). El mid/side queda de respaldo.
+39. **Copia más ligera para la nube (mejora 13).** Si el archivo pasa de 50 MB, el dispositivo lo recodifica (WebCodecs y
+    un escritor MP4 propio) hasta quedar por debajo; el original se queda en ese dispositivo. El bucket `videos` ya
+    impone en el servidor el tope de 1 GiB del grupo, dejando 50 MB para tomas.
+40. **Trabajo pesado coordinado.** La copia para la nube, la separación de voz y el análisis de seguir nunca van a la vez
+    y se pausan con el grabador abierto; una actualización de la app no recarga a mitad de uno de ellos.
+41. **El grabador baja de calidad solo si se confirma.** Si un móvil no va fluido a 60 fps (o a 4K), lo dice y baja a 30
+    (o a 1080p) solo tras dos medidas seguidas; las tomas directas se juzgan por el retraso. Se recuerda 30 días y se
+    puede «Volver a medir».
+
 ## 4. PREGUNTAS
 
 **Bloquean algo**
@@ -307,7 +367,45 @@ de arriba.
    hecho: deja de verse y de poder leerse, pero el archivo sigue ocupando hasta que el administrador lo purgue. El
    medidor cuenta ese espacio. ¿Queréis una forma de purgar desde la app (solo para un administrador)?
 
+**De la ronda de mejoras (17-10)**
+
+3. **El reproductor de YouTube recortado y en espejo.** Desde antes, el iframe es un 24 % más alto que su marco para
+   esconder el título y la franja de abajo, y el espejo lo voltea con CSS. Las condiciones de YouTube no permiten tapar
+   partes del reproductor ni cambiarlo. ¿Lo dejamos así o se quita el recorte (y el espejo con YouTube)?
+4. **Copia del grupo frente a YouTube.** En los móviles sin el original, ¿la copia ligera (720p) debe ganar a YouTube
+   (que puede verse a 1080p), o mejor YouTube y la copia solo para el zoom, seguir y voz?
+5. **Botón «Ampliar» del zoom.** Se dejó (y flechas para mover) para quien no puede pellizcar (accesibilidad), aunque el
+   punto 7 pedía sin botones. ¿Se queda?
+6. **Licencia del modelo de respaldo** (`timcsy/demucs-web-onnx`, para tarjetas sin fp16): su ficha no declara licencia
+   (el código y Demucs son MIT). ¿Lo aceptamos o se usa solo el de `monteslu` (MIT declarada)?
+7. **Cuenta atrás:** Chōchin empieza a 6 días (1 farolillo) para cubrir la semana con el día del evento; Tsuki va en una
+   escala fija de una luna. ¿Os vale?
+8. **Seguir con otro archivo a mitad:** si se cambia el archivo mientras se guarda un recorrido nuevo, se archiva ese
+   recorrido. ¿Correcto?
+
 ## 5. PENDIENTES
+
+**Ronda de mejoras de la prueba manual (17-10).** Todo lo ≥6 está corregido. Lo menor que queda (detalle y nota en
+`revisiones/mejoras-*`):
+- Sin probar en un móvil real (este ordenador no tiene cámara, micro ni GPU buena): el retraso del grabador a 1080p 60 y
+  la prueba de fluidez (punto 19), lentes y flash (23), color de la luz (24), aplauso con ruidos reales (21), la
+  sincronía de las pistas de voz tras cada vuelta del bucle (18, medir con un clic de metrónomo), la copia ligera en el
+  móvil (13: tiempo, calor, pantalla apagada) y los tiempos de seguir con WebGPU, WebGL o WASM (15).
+- Grabador: umbrales a ojo (caída del 25 % y +30 ms de retraso; 85 % en reposo); solo se mide la primera cuenta atrás
+  de la toma (2).
+- Estudio: menú de velocidad y A/B de 36–38 px a la vista (zona táctil de 44 con relleno) (2); tope de anticipación del
+  bucle de YouTube (200 ms) sin medir con metrónomo (3).
+- Seguir: margen de las máscaras y rechazo de cajas anchas sin medir con vídeo real (3); el primer medio segundo de una
+  oclusión puede confundir a dos bailarines (3; «Corregir desde aquí»).
+- Voz y nube: subidas en paralelo pueden comerse la reserva de 50 MB (2); las pistas suponen 16 MiB por archivo sin
+  bucket propio (3); modelos sin sha256 (2, revisión fijada y tamaño exacto); la subida de la copia no se reanuda (4).
+- Bolsas: un móvil con la versión anterior ve las canciones de YouTube de una bolsa como «No disponible» (2).
+- Grupo: «Atrás» del sistema en la ronda pregunta, pero una capa abierta mientras otra se cierra deja a veces una
+  entrada de historial de más fuera de la ronda (3).
+- Rendimiento: precache con 84 entradas (1,9 MB), por encima de las 80 propuestas; el grabador pesa más porque ya no
+  viene con el estudio (estudio + grabador bajan de 152 a 138 kB gzip).
+- CSP en Report-Only (H10 de antes) con Hugging Face y `blob:` añadidos; `maximum-scale=1` en index.html (decisión
+  de 2fa8679) impide ampliar la página con los dedos (4).
 
 - Pruebas en dispositivo (Samsung): todas las del apartado 2. Dentro de ellas, las que exigen un móvil de verdad:
   el aplauso (F7: micrófono, cámara y distancia), los gestos de dos dedos (F5 y F9), los tiempos de la prueba de

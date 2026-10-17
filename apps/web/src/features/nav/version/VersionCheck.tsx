@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { RefreshCw } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import {
@@ -13,7 +13,7 @@ import {
   savingCount,
   useUpdateStatus,
 } from './appUpdate';
-import { reloadBusy } from '@/lib/heavyWork';
+import { onHeavyWorkChange, reloadBusy } from '@/lib/heavyWork';
 import { reloadNeedsConfirm, updateMessage, versionLabel } from './versionRules';
 
 const needsConfirm = () =>
@@ -31,8 +31,10 @@ const needsConfirm = () =>
 export function VersionCheck({ className, inMenu = false }: { className?: string; inMenu?: boolean }) {
   const status = useUpdateStatus((s) => s.status);
   const busy = status.kind === 'checking' || status.kind === 'downloading' || status.kind === 'applying';
-  // The confirmation says what an update would cut short (the copy for the group, the separation).
-  const message = updateMessage(status, status.kind === 'confirm' ? reloadBusy() : null);
+  // The confirmation says what an update would cut short (the copy for the group, the separation), kept up to date
+  // while it is open (the copy may end meanwhile).
+  const heavy = useSyncExternalStore(onHeavyWorkChange, reloadBusy, () => null);
+  const message = updateMessage(status, status.kind === 'confirm' ? heavy : null);
   const role = inMenu ? 'menuitem' : undefined;
 
   // A finished answer doesn't stay for the next time the menu opens.

@@ -4,6 +4,7 @@ import {
   chooseEngine,
   DEMUCS,
   estimateLag,
+  estimateLagSliced,
   estimateRemainingSeconds,
   estimateSeparationRange,
   estimateStemBytes,
@@ -227,6 +228,19 @@ describe('estimateLag', () => {
       expect(lag?.lag).toBe(delay);
       expect(lag!.confidence).toBeGreaterThan(0.9);
     }
+  });
+
+  it('in slices (global review 2 [3]): the same answer, with the thread given back between them', async () => {
+    const ref = noise(48000 * 3, 5);
+    const test = new Float32Array(ref.length);
+    for (let i = 2112; i < ref.length; i++) test[i] = ref[i - 2112]! * 0.8;
+    let pauses = 0;
+    const sliced = await estimateLagSliced(ref, test, 7200, 48000, async () => void pauses++, 400);
+    expect(sliced).toEqual(estimateLag(ref, test, 7200, 48000));
+    expect(sliced?.lag).toBe(2112);
+    // 2 × 1800 + 1 coarse lags in slices of 400: 9 pauses.
+    expect(pauses).toBe(9);
+    expect(await estimateLagSliced(noise(100), noise(100), 50, 40, async () => void pauses++)).toBeNull();
   });
 
   it('is unsure about unrelated signals and refuses too-short ones', () => {

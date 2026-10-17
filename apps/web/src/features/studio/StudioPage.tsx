@@ -29,7 +29,18 @@ import {
   WifiOff,
   Youtube,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
 import { askWho, useMe } from '@/data/members';
@@ -63,7 +74,7 @@ import { YouTubeStage } from '@/player/YouTubeStage';
 import { useMediaBox } from '@/player/ZoomLayer';
 import { gestureZoom, isDoubleTap, isZoomed, keyZoom, NO_ZOOM, wheelZoom, type Pt, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
-import { PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
+import { FsPanArrows, PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
 import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
 import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
 import { useFollowUi } from '@/features/follow/followUi';
@@ -76,6 +87,7 @@ import { cloudLimitBytes } from '@/lib/backend';
 import { useFileSource } from './fileSource';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
+import { hasSeparableFile } from '@/features/voice/voiceRules';
 import { useStageStems } from '@/data/stems';
 import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
@@ -96,11 +108,28 @@ const RecordStudio = lazy(() => loadRecordStudio().then((m) => ({ default: m.Rec
 const warmRecordStudio = () => void loadRecordStudio().catch(() => undefined);
 /** P4 · «Tomas» loads when its tab is first opened. */
 const TakesPanel = lazy(() => import('@/features/takes/TakesPanel').then((m) => ({ default: m.TakesPanel })));
+/**
+ * Global review 2 [3] · An extra part of the studio in a chunk of its own: if the chunk can't load (offline before the
+ * precache finished, no service worker, an iPhone that emptied its cache) it shows nothing, like the long countdowns,
+ * instead of taking the whole studio to the error screen.
+ */
+function optionalPart<P extends object>(load: () => Promise<ComponentType<P>>) {
+  const Nothing: ComponentType<P> = () => null;
+  return lazy(() =>
+    load().then(
+      (Part) => ({ default: Part }),
+      (error: unknown) => {
+        console.warn('[studio] optional part not loaded', error);
+        return { default: Nothing };
+      },
+    ),
+  );
+}
 /** «Seguir a un bailarín» in fullscreen's top bar: loads when fullscreen first opens. */
-const FollowFsButton = lazy(() => import('@/features/follow/FollowFsMenu').then((m) => ({ default: m.FollowFsButton })));
-/** 18 · «Separar voz y música»: loads only where the voice can be split (a file on the stage). */
-const SeparateVoiceButton = lazy(() =>
-  import('@/features/voice/SeparateVoiceButton').then((m) => ({ default: m.SeparateVoiceButton })),
+const FollowFsButton = optionalPart(() => import('@/features/follow/FollowFsMenu').then((m) => m.FollowFsButton));
+/** 18 · «Separar voz y música»: loads only for a song with a file of its own. */
+const SeparateVoiceButton = optionalPart(() =>
+  import('@/features/voice/SeparateVoiceButton').then((m) => m.SeparateVoiceButton),
 );
 
 /**
@@ -575,9 +604,11 @@ function VoiceRow({ video }: { video: Video }) {
         monoLike={monoLike}
         compact
       />
-      {available && (
+      {/* Global review 2 [5] · Mounted while the song has a file, not only while its engine is on the stage: a
+          separation running survives «YouTube», a resync or a media error (it hides itself when idle). */}
+      {hasSeparableFile(video) && (
         <Suspense fallback={null}>
-          <SeparateVoiceButton video={video} available />
+          <SeparateVoiceButton video={video} available={available} />
         </Suspense>
       )}
     </div>
@@ -1622,6 +1653,7 @@ function FullscreenBar({
     <div className="fs-hit pointer-events-none absolute inset-x-0 bottom-0">
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)]" />
       <div className="px-3 pb-[max(6px,env(safe-area-inset-bottom))] pt-10 sm:px-5">
+        <FsPanArrows />
         <FsProgress clips={clips} onClipSelect={onClipSelect} />
         <div className="flex items-center gap-0.5 sm:gap-1">
           <FsPlayButton />

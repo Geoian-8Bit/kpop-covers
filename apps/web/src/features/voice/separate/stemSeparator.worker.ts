@@ -47,7 +47,9 @@ class SeparationError extends Error {
 
 const post = (message: WorkerMessage, transfer?: Transferable[]) => scope.postMessage(message, transfer);
 
-// Global review [6] · The page asks to hold between segments while the recorder is open (it needs the phone).
+// Global review [6] · The page asks to hold while the recorder is open (it needs the phone): before the model is
+// read and built, between the model's pieces and between segments. Global review 2 [4] · The model too: reading it
+// from the cache and building it on the GPU is as heavy as a segment.
 let paused = false;
 let wake: (() => void) | null = null;
 
@@ -90,6 +92,7 @@ async function loadModel(kind: EngineKind): Promise<Runner> {
   if (model.pieces) {
     const [only] = model.pieces;
     const bytes = await file(only!.url);
+    await untilGoOn();
     post({ type: 'progress', phase: 'compile' });
     const session = await create(new Uint8Array(bytes), {
       executionProviders: ['webgpu'],
@@ -125,9 +128,11 @@ async function loadModel(kind: EngineKind): Promise<Runner> {
     await clearModelCache();
     throw new SeparationError('model-download', `pieces ${sum} of ${model.bytes} bytes`);
   }
+  await untilGoOn();
   post({ type: 'progress', phase: 'compile' });
   const sessions: ort.InferenceSession[] = [];
   for (let i = 0; i < manifest.pieces.length; i++) {
+    await untilGoOn();
     sessions.push(
       await create(new Uint8Array(buffers[i]!), {
         executionProviders: [
@@ -226,6 +231,7 @@ function hasNaN(a: Float32Array): boolean {
 async function separate({ engine, left, right }: RunRequest) {
   if (!scope.navigator.gpu) throw new SeparationError('no-webgpu', 'navigator.gpu');
   const startedAt = performance.now();
+  await untilGoOn();
   const runner = await loadModel(engine);
 
   const total = left.length;

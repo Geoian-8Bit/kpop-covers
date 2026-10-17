@@ -317,10 +317,13 @@ async function encodeAlignedSound(
   bitrate: number,
   signal: AbortSignal | undefined,
   onStep: (fraction: number) => void,
+  /** Global review 2 [4] · Waits between the steps while the device is asked for (the recorder opened meanwhile). */
+  between: () => Promise<void> = async () => undefined,
 ): Promise<{ sound: EncodedSound; corrected: number }> {
   let shift = 0;
   let sound = await encodeSound(original, picked, bitrate, shift, signal);
   onStep(0.4);
+  await between();
   let first = await soundShift(original, sound).catch(() => null);
   // AAC starts late by its priming. The standard fix is an edit list that tells every player to drop exactly that
   // (so the copy plays in step on any browser, not only on one that decodes like this one). Kept only if this
@@ -334,6 +337,7 @@ async function encodeAlignedSound(
   ) {
     const priming = shiftSamples(first.seconds, original.sampleRate);
     const edited: EncodedSound = { ...sound, track: { ...sound.track, primingSamples: priming } };
+    await between();
     const check = await soundShift(original, edited).catch(() => null);
     if (check && check.confidence >= 0.5 && Math.abs(check.seconds) <= SHIFT_ACCEPT_SECONDS) {
       onStep(1);
@@ -343,6 +347,7 @@ async function encodeAlignedSound(
   }
   for (let round = 0; round < 2; round++) {
     throwIfAborted(signal);
+    if (round > 0) await between();
     const measured = round === 0 ? first : await soundShift(original, sound).catch(() => null);
     first = null;
     onStep(0.6 + round * 0.2);
@@ -353,6 +358,7 @@ async function encodeAlignedSound(
       throw new FriendlyError('No se ha podido ajustar el inicio del sonido de la copia. Prueba desde un ordenador con Chrome o Edge.');
     }
     shift += shiftSamples(measured.seconds, original.sampleRate);
+    await between();
     sound = await encodeSound(original, picked, bitrate, shift, signal);
   }
   onStep(1);
@@ -656,10 +662,18 @@ export async function makeCloudCopy(source: Blob, opts: CloudCopyOptions): Promi
     const original = await decodeSound(source);
     throwIfAborted(signal);
     report({ phase: 'sound', progress: 0.02, attempt: 1 });
+    // Global review 2 [4] · Each step of the sound is seconds of work on a phone: the recorder opened (or the
+    // separation started) meanwhile is waited for between them, not only before the first.
+    await untilFree(opts);
     const channels = Math.min(2, original.channels.length);
     const audioPicked = { ...pickedAudio, config: { ...pickedAudio.config, numberOfChannels: channels } };
-    return encodeAlignedSound(original, audioPicked, enc.audioBps, signal, (f) =>
-      report({ phase: 'sound', progress: 0.02 + 0.06 * f, attempt: 1 }),
+    return encodeAlignedSound(
+      original,
+      audioPicked,
+      enc.audioBps,
+      signal,
+      (f) => report({ phase: 'sound', progress: 0.02 + 0.06 * f, attempt: 1 }),
+      () => untilFree(opts),
     );
   })();
 

@@ -358,3 +358,17 @@ export function pickStems<T extends StemRow>(
   }
   return best as (T & { vocals_path: string; instrumental_path: string }) | null;
 }
+
+/** 18 · An entry with a file of its own that the AI separation could take (an upload, or a YouTube entry's file). */
+export function hasSeparableFile(video: { source: string; file_name: string | null }): boolean {
+  return Boolean(video.file_name) && (video.source === 'upload' || video.source === 'youtube');
+}
+
+/**
+ * Global review 2 [5] · Whether «Separar voz y música» shows. It stays mounted for as long as the song has a file
+ * (the stage letting its engine go — «YouTube» picked, a resync, a media error — must not cancel the work); it
+ * shows while the file plays on the stage, and a separation already running keeps showing its progress meanwhile.
+ */
+export function separateShown(o: { hasFile: boolean; available: boolean; running: boolean }): boolean {
+  return o.hasFile && (o.available || o.running);
+}
