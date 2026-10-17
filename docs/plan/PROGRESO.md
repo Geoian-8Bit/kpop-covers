@@ -8,7 +8,18 @@
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
-## Ahora (2026-10-17 02:50): todo hecho
+## Ronda de mejoras de la prueba manual (desde 2026-10-17 14:00)
+
+Lista de trabajo: [MEJORAS-PRUEBA-MANUAL.md](MEJORAS-PRUEBA-MANUAL.md) (39 puntos). Decisiones del responsable al
+empezar: punto 4 «vídeo limpio» (sin botón rojo, sin controles de YouTube), punto 7 zoom con los dedos también con
+YouTube (si las condiciones de YouTube lo permiten), punto 13 copia reducida automática de menos de 50 MB.
+
+| Hora | Qué |
+| --- | --- |
+| 14:05 | Oleada 1 de subagentes: grabador (19–27), aplauso y luz (21, 24), biblioteca (38), navegación y laboratorio (1, 2, 17), reproductor (4–8, 12), clips (3, 9–11), próxima cover (35–37). |
+| 14:30 | Punto 38 hecho (2a29b94): rejillas con una columna que encoge, chip «con archivo» que pasa a icono si no cabe. Revisión ronda 1 ([informe](revisiones/mejoras-38-ronda-1.md)): un 6 (chip a 360–384 px) corregido y medido a 360, 390 y en giro. |
+
+## Antes (2026-10-17 02:50): todo el plan hecho
 
 - **Plan completo desplegado.** Última versión: main `d75b994`, 17-10 02:47.
 - **Revisión global hecha** (funcional, base de datos, rendimiento y accesibilidad), con lo ≥6 corregido.

@@ -59,7 +59,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 35 | Próxima cover · proponer | «Proponer canción» tiene que poder buscar en YouTube (como «Añadir vídeo»), no solo pegar un enlace. Sin esto el responsable no puede probar deseos ni votaciones | Alta | Pendiente |
 | 36 | Próxima cover · biblioteca | Las canciones propuestas (también las buscadas en YouTube) no salen en la biblioteca hasta que se confirme con «Añadir a la biblioteca» | Alta | Pendiente (comprobar; mantener) |
 | 37 | Próxima cover · estructura | La pantalla tiene que ser más sencilla e intuitiva: mejor estructura y jerarquía en el móvil | Alta | Pendiente |
-| 38 | Biblioteca · se sale del marco | **Fallo visual.** En el móvil, las tarjetas de la biblioteca se salieron del marco por la derecha (la miniatura grande y la fila de «ARrC», con «con archivo» cortado). Pasó al volver de otra página, quizá con «Atrás» del móvil. No puede pasar nunca | Crítica | Pendiente |
+| 38 | Biblioteca · se sale del marco | **Fallo visual.** En el móvil, las tarjetas de la biblioteca se salieron del marco por la derecha (la miniatura grande y la fila de «ARrC», con «con archivo» cortado). Pasó al volver de otra página, quizá con «Atrás» del móvil. No puede pasar nunca | Crítica | **Hecho** (2a29b94) |
 | 39 | Eventos · cuenta atrás larga | Chōchin (farolillos) encanta, pero con más de 7 días no se aprecia porque no hay ninguno encendido. Otro diseño igual de bonito para cuando faltan más de 7 días, y Chōchin para los últimos 7. Propuestas al laboratorio de diseño | Media | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
