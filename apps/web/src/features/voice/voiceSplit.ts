@@ -6,11 +6,13 @@ import {
   pushFrame,
   rampSeconds,
   resolveTuning,
+  stemModeGains,
   type FrameStats,
   type MonoJudgement,
   type SplitTuning,
   type VoiceMode,
 } from './voiceRules';
+import { createStemPlayer, onStemsChange, stemsFor, type StemPlayer, type StemSources } from './stems';
 
 export type { VoiceMode } from './voiceRules';
 
@@ -45,6 +47,11 @@ export type { VoiceMode } from './voiceRules';
  * - «Sin voz» comes out mono (the side on both channels, in phase): a ±side stereo image would cancel itself on a
  *   phone speaker or a mono Bluetooth box, leaving only the bass (measured in review round 1).
  * - «Voz» still carries whatever the band lets through from the centre (snare body, centred keys).
+ *
+ * 18 · When the song has tracks separated by the AI model (registered for this element's file, see `stems.ts`),
+ * «Sin voz» and «Voz» play those instead: real separation, mono files included. The file's own sound is silenced
+ * in the graph (dry = 0) while a track sounds; the mid/side split is the fallback (no tracks, or they fail), and
+ * keeps sounding until the tracks are in step, so a switch never leaves a gap. «Todo» is always the file itself.
  */
 export interface VoiceSplit {
   /** Connect this to the speakers and/or a MediaStreamDestination (stereo). */
@@ -61,7 +68,8 @@ export interface VoiceSplit {
   dispose(): void;
 }
 
-export type VoiceAnalysis = MonoJudgement;
+/** `stems`: «Sin voz» / «Voz» play the tracks separated by the AI model (18). */
+export type VoiceAnalysis = MonoJudgement & { stems?: boolean };
 
 export interface VoiceSplitOptions {
   /** Mode at creation, applied without a glide. Default `original`. */
@@ -204,6 +212,67 @@ export function createVoiceSplit(
 
   let disposed = false;
 
+  // ── 18 · Tracks separated by the AI model, when the studio registered some for this element's file. ──
+  const element = 'mediaElement' in source ? (source as MediaElementAudioSourceNode).mediaElement : null;
+  let stems: StemPlayer | null = null;
+  let stemsOff: ReturnType<typeof setTimeout> | undefined;
+  const sameSources = (a: StemSources | null, b: StemSources | null) =>
+    a === b || (a != null && b != null && a.instrumental === b.instrumental && a.vocals === b.vocals && a.delay === b.delay);
+
+  /** Every gain for the current mode: the tracks once they are in step, the mid/side split until then. */
+  const apply = (seconds: number) => {
+    const useStems = stems != null && !stems.failed && mode !== 'original';
+    if (stems && !stems.failed) {
+      clearTimeout(stemsOff);
+      if (useStems) stems.setActive(true);
+      else {
+        // Let the tracks fade out before pausing them (a pause mid-sound would click).
+        const player = stems;
+        stemsOff = setTimeout(() => {
+          if (stems === player && mode === 'original') player.setActive(false);
+        }, seconds * 1000 + 120);
+      }
+    }
+    const onTracks = useStems && stems!.ready;
+    const split = onTracks ? { dry: 0, side: 0, bass: 0, highs: 0, voice: 0 } : modeGains(mode, tuning);
+    for (const key of Object.keys(params) as (keyof typeof params)[]) glide(params[key], split[key], seconds);
+    if (stems) {
+      const target = onTracks ? stemModeGains(mode) : { instrumental: 0, vocals: 0 };
+      glide(stems.instrumentalGain, target.instrumental, seconds);
+      glide(stems.vocalsGain, target.vocals, seconds);
+    }
+  };
+
+  const resolveStems = () => {
+    if (disposed || !element) return;
+    const wanted = stemsFor(element.currentSrc || element.src);
+    if (sameSources(stems?.sources ?? null, wanted) && !stems?.failed) return;
+    clearTimeout(stemsOff);
+    stems?.dispose();
+    stems = null;
+    if (wanted) {
+      try {
+        const player: StemPlayer = createStemPlayer(ctx, element, wanted, out, {
+          onReady: () => {
+            if (stems === player) apply(rampSeconds());
+          },
+          onFail: () => {
+            if (stems !== player) return;
+            console.warn('[voice] separated tracks failed to load: back to the mid/side split');
+            apply(rampSeconds());
+          },
+        });
+        stems = player;
+      } catch (error) {
+        console.warn('[voice] separated tracks unavailable', error);
+      }
+    }
+    apply(rampSeconds());
+  };
+  const stopWatching = onStemsChange(resolveStems);
+  element?.addEventListener('loadstart', resolveStems);
+  resolveStems();
+
   return {
     output: out,
     get mode() {
@@ -212,11 +281,13 @@ export function createVoiceSplit(
     setMode(next, opts) {
       if (disposed) return;
       mode = next;
-      const target = modeGains(next, tuning);
-      const seconds = rampSeconds(opts?.rampMs);
-      for (const key of Object.keys(params) as (keyof typeof params)[]) glide(params[key], target[key], seconds);
+      // Usually called from a tap: the moment iOS allows the tracks' elements to start.
+      if (next !== 'original') stems?.prime();
+      apply(rampSeconds(opts?.rampMs));
     },
     analyse() {
+      // With real tracks a mono file separates fine: no warning.
+      if (stems && !stems.failed) return { monoLike: false, settled: true, correlation: null, stems: true };
       return judgeMono(frames);
     },
     resetAnalysis() {
@@ -226,6 +297,11 @@ export function createVoiceSplit(
       if (disposed) return;
       disposed = true;
       if (timer != null) clearInterval(timer);
+      clearTimeout(stemsOff);
+      stopWatching();
+      element?.removeEventListener('loadstart', resolveStems);
+      stems?.dispose();
+      stems = null;
       try {
         source.disconnect(input);
       } catch {

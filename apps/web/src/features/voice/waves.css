@@ -1,0 +1,52 @@
+/*
+ * F17 · Drift of the voice/music waves. Each strip is drawn once, longer than the box, and slides left by exactly
+ * one period (--voice-drift), so the loop has no jump. Compositor only (transform); paused unless the control
+ * says the song is playing ([data-voice-playing]); still with «reducir movimiento».
+ */
+@keyframes voice-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(var(--voice-drift, -100px), 0, 0);
+  }
+}
+
+.voice-drift {
+  animation: voice-drift var(--voice-drift-s, 12s) linear infinite;
+  animation-play-state: paused;
+  will-change: transform;
+}
+
+.voice-drift[data-reverse] {
+  animation-direction: reverse;
+}
+
+/* A slow rise and fall in place (the great wave, the mini waves' boats of foam). */
+@keyframes voice-bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, var(--voice-bob, -2px), 0);
+  }
+}
+
+.voice-bob {
+  animation: voice-bob var(--voice-bob-s, 3.4s) ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+[data-voice-playing] .voice-drift,
+[data-voice-playing] .voice-bob {
+  animation-play-state: running;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-drift,
+  .voice-bob {
+    animation: none;
+    will-change: auto;
+  }
+}
