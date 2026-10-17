@@ -34,6 +34,8 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 11 | Estudio · «Fijar en acceso rápido» | No se entiende para qué sirve el interruptor. Explicarlo en la propia interfaz (texto o etiqueta más clara) | Media | Pendiente |
 | 12 | Estudio · archivo vinculado | Si la canción tiene archivo, se usa el archivo por defecto (no YouTube), en todos los móviles que lo tengan. El selector «YouTube | Archivo» sale de la zona de arriba (quita espacio a lo importante) y pasa abajo o a otro sitio discreto | Alta | Pendiente |
 | 13 | Archivo vinculado · nube | Un archivo vinculado desde el ordenador no llegó a la nube: en el móvil sale «está en otro dispositivo». Todos tienen que poder usarlo | Alta | Pendiente |
+| 14 | Seguir a un bailarín · pantalla completa | Poder elegir y seguir a un bailarín también con el vídeo en pantalla completa | Alta | Pendiente |
+| 15 | Seguir a un bailarín · velocidad | El análisis es demasiado lento (en el ordenador, unos 3 min para llegar al 50 % de una canción de 2:38). Tiene que ser lo más rápido posible | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -184,3 +186,29 @@ subió conserva el original. La sincronía (desfase) se mantiene porque es el mi
 grupo (1 GiB) no da.
 **Otra vía, solo si el responsable lo decide:** pasar a un plan de pago de Supabase, que permite archivos más grandes
 y más espacio. Es un cambio de cuenta y de coste; no tocar ajustes del proyecto sin su permiso.
+
+### 14 y 15 · Seguir a un bailarín (prueba del 17-10, en el ordenador)
+
+**14 · En pantalla completa.** Hoy «Seguir a alguien» y el modo manual solo están en la fila «Seguir a un bailarín»
+del estudio (`features/follow/FollowRow.tsx`, `FollowStageLayer.tsx`). En pantalla completa hay que poder: empezar
+el seguimiento (tocar al bailarín sobre el vídeo o dibujar el recuadro), ver el progreso, cambiar de bailarín y
+dejar de seguir, con controles que no tapen el vídeo y se oculten como el resto.
+
+**15 · Por qué tarda.** `features/follow/analyze.ts` recorre la canción entera desde el principio (`direction: both`,
+`from: 0`) a 5–10 fotogramas por segundo (`analysisFps`), con MoveNet MultiPose Lightning sobre el fotograma completo
+(hasta 6 personas), en WebGL y en el hilo principal. La velocidad de reproducción se adapta a lo que tarda el modelo
+(1×–4×). Una canción de 2:38 son unos 1.000 análisis; a ~300 ms cada uno salen ~6 min.
+
+Ideas, de más a menos impacto (medir cada una):
+- **Analizar primero lo que se va a ver.** Empezar por el clip o tramo activo (o desde el momento actual) y seguir ya
+  mientras se analiza el resto en segundo plano; el resto de la canción solo si hace falta.
+- **Seguir con un recorte, no con el fotograma entero.** Tras el primer fotograma, analizar solo un recorte alrededor
+  del bailarín elegido con MoveNet SinglePose Lightning (mucho más rápido que MultiPose), y volver a MultiPose solo si
+  se pierde.
+- **Menos fotogramas e interpolar.** 3–4 por segundo suelen bastar para un zoom que sigue; el recorrido ya se suaviza.
+- **Reducir el fotograma antes del modelo** (lado largo ~256–320 px en un canvas) en vez de pasarle el 1080p.
+- **WebGPU cuando exista**, con WebGL de reserva (hoy se fuerza `webgl`). Calentar el modelo una vez antes del pase.
+- **Un Web Worker con OffscreenCanvas** para no competir con la interfaz.
+- Mostrar el tiempo que queda («unos 40 s») en vez de solo el porcentaje.
+Objetivo orientativo: una canción de 3 min en menos de 30–40 s en un portátil normal, y el seguimiento usable en
+unos segundos para el tramo que se está practicando.
