@@ -300,7 +300,7 @@ function SpeedButton() {
                     s === rate ? 'bg-washi text-sumi-900' : 'text-washi hover:bg-washi/10',
                   )}
                 >
-                  {s}
+                  {formatSpeed(s)}
                 </button>
               ))}
             </div>
