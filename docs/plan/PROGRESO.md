@@ -8,15 +8,15 @@
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
-## Ahora (2026-10-17, tras el despliegue de las 00:01)
+## Ahora (2026-10-17 02:50): todo hecho
 
-- **Fase final desplegada** (F8, F9, F10, F11, F12, F15, F16 y la revisión de F10): main `db091db`, 17-10 00:01.
-  Migraciones 040000 a 080000 aplicadas con copia previa; verificación en producción hecha y revertida.
-- **Revisión global en curso.** Tres informes en `revisiones/`: base de datos y seguridad, accesibilidad y
-  rendimiento. Los hallazgos de base de datos ya están en ESTADO (apartado 5).
-- **Migración escrita, pendiente de aplicar:** `20261017010000_close_poll_live_rank` (ranking de `close_poll` y votos
-  de miembros archivados). Sin aplicar en producción.
-- **Cambios sin commit** de los arreglos de la revisión global en `apps/web` y `supabase/`.
+- **Plan completo desplegado.** Última versión: main `d75b994`, 17-10 02:47.
+- **Revisión global hecha** (funcional, base de datos, rendimiento y accesibilidad), con lo ≥6 corregido.
+- **Verificación manual en producción hecha**, con datos «PRUEBA» ya archivados (ESTADO, apartado 9).
+- **Migración `20261017010000_close_poll_live_rank`** aplicada con copia previa en
+  `~/one-shoot-backups/20261017-0215-close-poll/`.
+- **Queda para el usuario:** pruebas en los móviles (cámara y micro), PREGUNTAS 1 y 2 y lo <6 (ESTADO, apartado 5).
+  El texto del correo está al final de ESTADO.
 - Regla del usuario: cada despliegue = versión funcional de todo lo implementado.
 - Regla del usuario: **todas las pruebas en silencio** (también producción): el demo está silenciado con
   `apps/web/src/lib/devSilence.ts`; en producción, página en blanco y navegar con un script que silencia todo.
@@ -126,4 +126,11 @@ Después, los datos no cambian: 3 vídeos, 3 clips, 2 notas, 0 en las tablas nue
 | 2026-10-17 00:01 | Fase final desplegada (main db091db): https://kpop-covers-5j6ac0lnw-geoian-s-projects.vercel.app |
 | 2026-10-17 00:12 | Revisión global: informe de accesibilidad (`global-accesibilidad.md`). |
 | 2026-10-17 00:13 | Revisión global: informes de base de datos y seguridad (`global-bd-seguridad.md`) y de rendimiento (`global-rendimiento.md`). |
-| 2026-10-17 | Migración `20261017010000_close_poll_live_rank` escrita; pendiente de aplicar. |
+| 2026-10-17 01:50 | Revisión global: informe funcional (`global-funcional.md`); arreglos de accesibilidad (A11Y-01 a 05, 19, 20) y de rendimiento (P1–P4, P8, P10–P12, P15) por subagentes. |
+| 2026-10-17 02:10 | Arreglos funcionales (cachés entre funciones, zoom contra seguimiento, aviso de clip inexistente, recuento sin miembros archivados) y migración `close_poll_live_rank` con su prueba (87f7f71). |
+| 2026-10-17 02:15 | Copia de seguridad en `~/one-shoot-backups/20261017-0215-close-poll/`. |
+| 2026-10-17 02:16 | Migración `close_poll_live_rank` aplicada y verificada en producción (todo revertido). Advisors sin cambios. |
+| 2026-10-17 02:20 | Desplegado main 8a472aa: https://kpop-covers-6fgpic6pk-geoian-s-projects.vercel.app |
+| 2026-10-17 02:20–02:45 | Verificación manual de todas las funciones en producción con datos «PRUEBA», en silencio; todo archivado al final. |
+| 2026-10-17 02:47 | Dos arreglos de la verificación (velocidad «0,75×», foco de «Empezar») desplegados: main d75b994, https://kpop-covers-eqbbx1ujl-geoian-s-projects.vercel.app |
+| 2026-10-17 02:50 | Medidas finales: LCP 296 ms, CLS 0,00, Lighthouse 100/100/100. Documentación final y texto del correo en ESTADO. |

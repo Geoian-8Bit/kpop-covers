@@ -15,8 +15,9 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Ideas | F10 Seguir a un bailarín y prueba de postura con IA | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `follow_paths` aplicada. Incluye la prueba de postura de Ajustes (MoveNet y MediaPipe, solo para medir tiempos) |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
 | Grupo | F13 Bolsas · F14 Random Play Dance | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión (BD e interfaz) con correcciones |
-| Grupo | F11 Votaciones · F12 Lista de deseos | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión (BD e interfaz, dos informes) con correcciones. Migraciones `wishes_and_polls` y `close_poll_zero_votes`. Migración `close_poll_live_rank` escrita, sin aplicar (apartado 6) |
+| Grupo | F11 Votaciones · F12 Lista de deseos | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión (BD e interfaz, dos informes) con correcciones. Migraciones `wishes_and_polls`, `close_poll_zero_votes` y `close_poll_live_rank` (17-10 02:16) aplicadas |
 | Grupo | F15 Reacciones · F16 Cuenta atrás | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `events_and_reactions` |
+| Todo | Revisión global, rendimiento y verificación en producción | **Hecha y desplegada** (17-10 02:47) | 4 revisores (funcional, BD, rendimiento, accesibilidad); ninguno ≥6 en funcional y BD; lo ≥6 de accesibilidad y rendimiento corregido. Prueba manual de todo en producción con datos «PRUEBA», ya archivados (apartado 9) |
 
 ## 2. Cómo probar
 
@@ -393,15 +394,37 @@ de arriba.
   - H5 (4): `follow_paths` no tiene tope por canción ni valida la forma de los puntos.
   - H6 (3): un cliente puede cerrar una votación con un cambio directo y elegir la ganadora entre las opciones.
   - H7 (3): reordenar pistas y repertorio son varias peticiones, no atómicas.
-  - H8 (3): «Me apunto» de miembros archivados sigue contando. Los votos de miembros archivados se corrigen en la
-    migración pendiente (apartado 6).
+  - H8 (3): las filas de «Me apunto» de miembros archivados siguen en la base (la app ya no las cuenta). Los votos
+    de miembros archivados ya no cuentan (migración `close_poll_live_rank`).
   - H9 (3): listados por canción sin paginar (corte en 1000); `.in()` con muchas votaciones.
   - H10 (3): la CSP sigue en Report-Only y sin destino de informes; los WASM de MediaPipe no tienen SRI.
   - H11 (3): no hay una prueba genérica de que toda tabla archivable llegue a `archive_row`.
   - H12 (2): `updated_at` lo elige el cliente en pistas y recorridos.
   - H13 (2): carreras menores en las subidas: dos a la vez pueden pasar un tope.
   H3 (ranking de `close_poll`, puntos 0 o negativos al archivar una candidata) está corregido en la migración
-  pendiente.
+  `close_poll_live_rank`, aplicada.
+- Revisión global, accesibilidad (`revisiones/global-accesibilidad.md`). Corregidos A11Y-01 a 05 (≥6) y 19, 20 y
+  partes de 07 y 08. Pendientes: botón con foco que pasa a `disabled` al cargar pierde el foco (5); menú móvil sin
+  flechas completas y con la navegación principal detrás de «Menú» en vez de una barra (5); la ronda de Random Play
+  Dance no anuncia los cambios de clip (5); mover el zoom ampliado sin arrastrar (5); grupos de radios sin flechas en
+  `Segmented` y la papeleta (5); el foco tras una acción del menú ⋯ que abre un diálogo (5); quitar del repertorio o
+  de la pista sin confirmar ni deshacer, y la confirmación de bolsa que caduca a 2,6 s (5); texto pequeño con
+  `opacity` (4); toasts de error que se van a los 5,2 s (4); nombres ambiguos («Sacar a mano», «Uno más») (4);
+  resultados asíncronos sin anunciar (4); controles tapados por «¿Preparados?» tabulables (4); copys incoherentes
+  Eliminar/Borrar/Quitar y «Próxima coreo»/«Próxima cover» (4); objetivos táctiles de 32–36 px en la ronda (3);
+  detalles del laboratorio y de las reacciones (3).
+- Revisión global, rendimiento (`revisiones/global-rendimiento.md`). Corregidos P1, P2, P3, P4, P8, P10, P11, P12 y
+  P15. Pendientes: precargar las secciones del menú y dar señal al tocar (P5, 5); pósteres en base64 dentro de la
+  fila del vídeo (P6, 5); quitar auth y realtime del cliente de Supabase (P7, 5); fuentes propias en vez de Google
+  Fonts (P9, 4); `LazyMotion` (P13, 3); tailwind-merge en el entry (P14, 3).
+- Revisión global, funcional (`revisiones/global-funcional.md`). Ninguno ≥6. Corregidos F1, F2, F3, F4, F7 y F11.
+  Pendientes: «Atrás» tras crear o borrar desde un diálogo deja una entrada de historial de más (F5, 4); «Jugar la
+  ronda» con la caché de la bolsa vieja (F6, 3); un móvil cuyo miembro se archivó no vuelve a preguntar «¿Quién
+  eres?» (F8, 3); al cambiar el archivo vinculado los recorridos siguen siendo del anterior (F9, 3); un deseo
+  añadido a la biblioteca desaparece si luego se archiva el vídeo (F10, 3); «Añadir a una bolsa» que falla en parte
+  (F12, 3); una reacción que falla restaura toda la caché (F13, 2); «Proponer» bloqueado si oEmbed se cuelga (F14, 2).
+- Sin probar en este ordenador (no tiene cámara ni micro): grabar, tomas, reacciones, aplauso y la prueba de
+  postura con un vídeo propio. Van con las pruebas en dispositivo.
 - Duda de producto: si una revisión marca algo que hoy depende de la confianza en el grupo (votos y notas legibles,
   decisiones 17 y 23 del apartado 3), decidid si se acepta o se cambia el diseño.
 - PREGUNTAS 1 y 2 (apartado 4) siguen abiertas.
@@ -422,17 +445,16 @@ de arriba.
 | 16-10 23:50 | `20261016060000_clip_zoom` | Zoom del clip (`zoom_scale`, `zoom_x`, `zoom_y`) con sus rangos | Aplicada; verificada en el conjunto de la fase final (todo revertido) |
 | 16-10 23:50 | `20261016070000_follow_paths` | Recorridos del bailarín (`follow_paths`), tope de 500 vivos y 2000 en total | Aplicada y verificada (6 PASS en F10, todo revertido) |
 | 17-10 00:00 | `20261016080000_close_poll_zero_votes` | `close_poll` cuenta como 0 una opción sin votos (antes contaba 1) | Aplicada. Idempotente: producción ya tenía esta versión |
-| — | `20261017010000_close_poll_live_rank` | `close_poll` con ranking: renumera los puestos sobre las candidatas vivas (archivar una candidata ya no da puntos 0 o negativos); no cuenta los votos de miembros archivados | Escrita, pendiente de aplicar |
+| 17-10 02:16 | `20261017010000_close_poll_live_rank` | `close_poll` con ranking: renumera los puestos sobre las candidatas vivas (archivar una candidata ya no da puntos 0 o negativos); no cuenta los votos de miembros archivados | Aplicada y verificada (empates esperados en producción, todo revertido) |
 
 Las fechas son la hora de aplicación en producción. El commit que añade cada migración está en `git log`:
 `683e39c` (takes), `cfc6296` y `7bd80cd` (020000, 030000, 035000), `675a775` (040000 a 070000) y `85d6bf6` (080000).
 
-**Migración escrita, pendiente de aplicar (17-10):** `20261017010000_close_poll_live_rank`. Corrige dos hallazgos de
-la revisión global (`revisiones/global-bd-seguridad.md`): H3, `close_poll` en ranking (los puestos se renumeran sobre
-las candidatas vivas; archivar una candidata ya no da puntos 0 o negativos), y H8 en su parte de votos (los votos de
-miembros archivados ya no cuentan). Es la misma función que `20261016080000` con solo la consulta de puntos
-cambiada. Antes de aplicarla: copia previa con la misma receta, aplicar, comprobaciones de `db:test` y de producción,
-advisors y tipos. Hasta entonces, producción no tiene estos cambios.
+**Revisión global (17-10 02:16):** `20261017010000_close_poll_live_rank` corrige H3 y la parte de votos de H8 de
+`revisiones/global-bd-seguridad.md`. Es la misma función que `20261016080000` con solo la consulta de puntos
+cambiada. Copia previa en `~/one-shoot-backups/20261017-0215-close-poll/` (`backup.json` y `rollback.sql`, que repone
+la versión `080000`). En local, `pnpm db:test` con 86 PASS (prueba nueva en `plan_b2_checks.sql`). En producción, la
+misma prueba da los empates esperados, todo revertido. Advisors: sin cambios. Datos: sin cambios.
 
 **Copia de seguridad previa:** `~/one-shoot-backups/20261016-1806-fase1/backup.json` (todas las tablas de
 `public`, `storage.buckets` y `storage.objects`; 1 grupo, 3 vídeos, 3 clips, 2 notas, 0 archivos) y las
@@ -516,11 +538,12 @@ La variante que se ve por defecto es la recomendada. Si no eliges otra, se aplic
 | F8 · F9 | 1 | Sin 🔴. 6: cada paso de un gesto repintaba toda la página · 5: la lupa del clip no se veía en la lista · 4: «Ampliar» movía la vista con vídeos verticales · 4: 300 ms al tocar con zoom | Corregido: la página ya no se repinta con el zoom, la lupa se ve, las flechas funcionan con el foco en el vídeo. Pendiente: lo <6 (apartado 5) |
 | F10 | 1 | Sin 🔴. 5: las teclas se tragaban al elegir bailarín · 4: CSP ancha y terceros sin avisar · 4: el suavizado cruza los huecos · 4: el modo manual borra puntos en línea · 4: accesibilidad del flujo · 3: cancelar no respondía durante la descarga del modelo · 3: «Guardar clip» ofrecía zoom y seguimiento a la vez · otros 3 y 2 (apartado 5) | Corregido: teclas, CSP y privacidad, modo manual sin simplificar, zoom y seguimiento excluyentes, cancelar durante la descarga, foco y progreso (en parte). Pendiente: H3, H5 (resto), H8 a H13 (apartado 5) |
 
-**Revisión global (en curso, 17-10):** [accesibilidad](revisiones/global-accesibilidad.md) ·
+| Funcionalidad | Rondas | Hallazgos (nota) | Corregido |
+| --- | --- | --- | --- |
+| Revisión global (todo) | 1 (4 revisores) | Funcional: ninguno ≥6 (5: un clip nuevo no salía en RPD durante 5 min) · BD: ninguno ≥6 (5: topes por filas y no por bytes) · Accesibilidad: 8 anillo de foco invisible en los botones rellenos, 7 diálogos que abrían en la acción destructiva, 6 contraste del botón principal, 6 reordenar con teclado, 6 rutas sin título ni foco · Rendimiento: 8 el repaso se repintaba 60 veces por segundo, 7 arranque en cascada, 7 abrir un vídeo esperaba una petición, 6 grabador siempre montado | Todo lo ≥6 y varios menores (cachés entre funciones, zoom contra seguimiento, recuento de votos, aviso de clip inexistente). Pendiente: lo <6 (apartado 5) |
+
+**Revisión global (17-10):** [funcional](revisiones/global-funcional.md) · [accesibilidad](revisiones/global-accesibilidad.md) ·
 [base de datos, datos y API](revisiones/global-bd-seguridad.md) · [rendimiento](revisiones/global-rendimiento.md).
-La de base de datos está en el apartado 5 (pendientes) y la migración `close_poll_live_rank` en el apartado 6. Las
-de accesibilidad (22 hallazgos, el de mayor nota es el anillo de foco de los botones rellenos) y rendimiento (15
-hallazgos) aún no están convertidas en pendientes; van en sus informes.
 
 Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
 [rendimiento y diseño](revisiones/grabacion-paso1-ronda-1-rendimiento-diseno.md) ·
@@ -532,3 +555,72 @@ Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
 [F7 aplauso](revisiones/F7-ronda-1.md) · [B1 BD](revisiones/B1-ronda-1-bd.md) · [B1 interfaz](revisiones/B1-ronda-1-interfaz.md) ·
 [B2 BD](revisiones/B2-ronda-1-bd.md) · [B2 interfaz](revisiones/B2-ronda-1-interfaz.md) · [B3](revisiones/B3-ronda-1.md) ·
 [F8/F9](revisiones/F8-F9-ronda-1.md) · [F10](revisiones/F10-ronda-1.md)
+
+## 9. Verificación en producción (17-10, 02:20–02:50)
+
+Con la versión `8a472aa` y luego `d75b994` (dos arreglos encontrados aquí). Todo en silencio: el navegador de
+pruebas tenía el sonido anulado y YouTube en mute.
+
+**Probado de punta a punta, con datos «PRUEBA» que luego se borraron desde la propia app:**
+
+1. Miembros: alta de «PRUEBA Ana», «Soy yo» («Eres PRUEBA Ana» en el menú); al final «Quitar» (vuelve «¿Quién eres?»).
+2. Biblioteca: «Añadir vídeo» con un enlace de YouTube (el título se rellena solo) y con el buscador de YouTube
+   (resultados en 1,3 s); el estudio abre al momento.
+3. Estudio: reproducir, avanzar 5 s, A–B con «Nuevo clip», guardar «PRUEBA clip» fijado (sale en «Clips fijados»),
+   bucle del clip (vuelve de 0:07 a 0:02), velocidad, nota «PRUEBA nota» con aviso, abrir un clip que ya no existe
+   (avisa), grabador (abre y cierra; este ordenador no tiene cámara).
+4. Bolsas: «PRUEBA bolsa» de clips, añadir 4 (aviso «4 clips en la bolsa», incluido el clip recién creado), sacar
+   (1,2 s con animación; el historial dice quién lo sacó), «Sacar 3» y «Jugar la ronda».
+5. Random Play Dance: la ronda corre con cuenta atrás, «Guardar como pista» («PRUEBA pista»; el aviso se ve durante
+   la ronda), «Terminar», y la pista aparece en «Pistas guardadas».
+6. Próxima cover: dos propuestas con enlace (título automático), «Me apunto», «Elegir para votar», votación en
+   ranking con resultados en directo, reordenar con las flechas (el foco se queda y se anuncia el puesto), votar,
+   cerrar (el diálogo abre en «Cancelar»), ganadora con 当選 y «Añadir a la biblioteca».
+7. Eventos: «PRUEBA evento» dentro de 7 días con lugar, repertorio con 2 canciones y cuenta atrás en la portada.
+8. Ajustes: laboratorio de diseño con los 9 momentos; privacidad con los modelos de postura. Cada página cambia el
+   título de la pestaña y lleva el foco a su encabezado; «Saltar al contenido» presente.
+
+**Encontrado y corregido durante la prueba:** el menú de velocidad de la barra mostraba «0.75» (ahora «0,75×»); al
+entrar en una ronda el foco iba al título oculto en vez de a «Empezar».
+
+**Datos creados y archivados:** 1 miembro, 2 vídeos (con 1 clip y 1 nota), 1 bolsa (4 elementos, 4 sorteos), 1 pista
+(3 clips), 2 propuestas (1 «Me apunto»), 1 votación (2 candidatas, 2 votos) y 1 evento (2 canciones). Todo se borró
+desde la app (archivado), salvo una propuesta que ya estaba en la biblioteca y que la app no enseña (hallazgo F10 de
+la revisión funcional): se archivó igual que lo haría la app. El «Me apunto» y los 2 votos colgaban de padres
+archivados y la app no puede tocarlos: se archivaron directamente. Comprobado después: 0 filas «PRUEBA» vivas y los
+datos del grupo igual que antes (2 vídeos vivos, 3 clips, 2 notas, 0 archivos).
+
+**Rendimiento medido en producción:**
+
+| Medida | Antes | Después |
+| --- | --- | --- |
+| Portada, LCP (visita repetida, escritorio) | 736 ms | 296 ms |
+| Portada, CLS | 0,04 | 0,00 |
+| Estudio con un clip en bucle | 58 fps, p95 16,9 ms | igual |
+| Chunk del estudio (gzip) | 73,8 kB | 48,9 kB (el grabador va aparte: 20,8 kB) |
+| Lighthouse móvil (accesibilidad / buenas prácticas / SEO) | 95 / 100 / 80 | 100 / 100 / 100 |
+
+## 10. Texto del correo
+
+En esta sesión no hay ninguna herramienta de correo, así que el texto queda aquí para enviarlo a mano:
+
+> **Asunto:** One Shoot · todo el plan hecho y en producción
+>
+> Hola:
+>
+> Ya está todo el plan implementado, revisado y desplegado en https://kpop-covers.vercel.app.
+>
+> - Grabación de máxima calidad (pasos 1 a 6) y las ideas F1 a F17: archivo vinculado, quién es quién, tomas y mejor
+>   toma, voz y música, repaso, notas sobre la toma, aplauso, clips en tomas, zoom, seguir a un bailarín con prueba de
+>   postura, votaciones, lista de deseos, bolsas, Random Play Dance, reacciones y cuenta atrás.
+> - Cada bloque pasó revisiones con nota y todo lo de 6 o más está corregido. Al final, una revisión global
+>   (funcional, base de datos, rendimiento y accesibilidad) y una prueba manual de todas las funciones en producción,
+>   con datos de prueba que ya están borrados.
+> - Rendimiento: la portada pinta en 0,3 s en visitas repetidas, sin saltos; Lighthouse 100 en accesibilidad, buenas
+>   prácticas y SEO.
+> - Base de datos: todas las migraciones aplicadas con copia de seguridad previa (`~/one-shoot-backups/`), sin tocar
+>   los datos del grupo.
+>
+> Queda por vuestra parte: probar en los Samsung lo que necesita cámara y micro (apartado 2 de
+> `docs/plan/ESTADO-IMPLEMENTACION.md`) y contestar dos preguntas (qué es F18 y si queréis purgar archivos desde la
+> app). Lo menor que queda está en el apartado 5.
