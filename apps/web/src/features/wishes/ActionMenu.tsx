@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
+import { useBackToClose } from '@/lib/useBackToClose';
 
 export interface MenuAction {
   label: string;
@@ -18,6 +19,8 @@ export function ActionMenu({ label, actions, className }: { label: string; actio
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
+  // The phone's back button closes the menu instead of leaving the page.
+  useBackToClose(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
