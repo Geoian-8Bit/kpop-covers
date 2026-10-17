@@ -6,7 +6,8 @@ sobre todo en el móvil. Cada punto es un cambio pedido para que lo haga otro ag
 ## Para el agente que haga estos cambios
 
 - Lee antes `CLAUDE.md`, `docs/plan/ESTADO-IMPLEMENTACION.md` (qué hay y cómo probarlo) y este documento.
-- El 90–95 % del uso es en móvil: revisa y prueba primero a tamaño de móvil, con toques reales.
+- El 90–95 % del uso es en móvil: revisa y prueba primero a tamaño de móvil, con toques reales. **Todo lo que el
+  responsable dice de la interfaz en este documento es en el móvil**, salvo que diga otra cosa.
 - Todas las pruebas en el navegador, en silencio (el demo ya se silencia con `apps/web/src/lib/devSilence.ts`).
 - Interfaz en español de España; colores solo con los tokens de `index.css`; animaciones con los presets de
   `src/lib/motion.ts`.
@@ -55,6 +56,9 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 32 | Bolsa · animación | Gusta el giro de la rueda (Fukubiki). Hacer más fluida la salida de la bola | Media | Pendiente |
 | 33 | Random Play Dance · crear ronda | La pantalla para crear la ronda tiene que ser más sencilla e intuitiva, con mejor estructura | Alta | Pendiente |
 | 34 | Random Play Dance · ronda | La pantalla de la ronda es «la peor»: fondo como el del resto de la app (no negro) y mejor jerarquía y estructura visual | Alta | Pendiente |
+| 35 | Próxima cover · proponer | «Proponer canción» tiene que poder buscar en YouTube (como «Añadir vídeo»), no solo pegar un enlace. Sin esto el responsable no puede probar deseos ni votaciones | Alta | Pendiente |
+| 36 | Próxima cover · biblioteca | Las canciones propuestas (también las buscadas en YouTube) no salen en la biblioteca hasta que se confirme con «Añadir a la biblioteca» | Alta | Pendiente (comprobar; mantener) |
+| 37 | Próxima cover · estructura | La pantalla tiene que ser más sencilla e intuitiva: mejor estructura y jerarquía en el móvil | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -389,3 +393,21 @@ velocidad) en «Más opciones» con valores por defecto sensatos.
 fondo como el del resto de la app (washi y seigaiha en vez de negro), el vídeo y la tarjeta como protagonistas,
 «Siguiente» y los controles con una jerarquía clara (los principales grandes, los secundarios agrupados), y que se lea
 bien de lejos en una tele. Revisar también en horizontal.
+
+### 35 a 37 · Próxima cover (bloque 6, prueba del 17-10)
+
+**No se ha podido probar** porque proponer exige pegar un enlace. Las votaciones se probarán cuando esté el punto 35.
+
+**35 · Buscar en YouTube al proponer.** `features/wishes/WishFormDialog.tsx`: añadir el buscador de «Añadir vídeo»
+(`api/youtube-search.ts`; reutilizar el componente de resultados de `features/library/AddVideoDialog.tsx`). Al elegir
+un resultado se rellenan título, grupo y miniatura como con el enlace. Pegar enlace sigue funcionando.
+
+**36 · Fuera de la biblioteca hasta confirmar.** Hoy una propuesta vive en `wishes` y solo crea un vídeo con
+«Añadir a la biblioteca» (`useAddWishToLibrary`). Mantenerlo así también para las buscadas en YouTube, y comprobar que
+ningún paso (buscar, proponer, votar, ganar) crea un vídeo por su cuenta. Mismo criterio que las canciones de YouTube
+en una bolsa (punto 28).
+
+**37 · Estructura.** `features/wishes/WishesPage.tsx` y `PollPage.tsx`: en el móvil, lo primero tiene que ser
+«Proponer» (buscar) y la lista ordenada por interés con «Me apunto» bien visible; las votaciones abiertas destacadas
+arriba si las hay; «Elegir para votar» como modo claro con su barra de acción; y en una votación, la papeleta y
+«Votar» antes que la información secundaria (tipo, cierre, anonimato). Menos texto explicativo fijo.
