@@ -36,7 +36,8 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 13 | Archivo vinculado · nube | Un archivo vinculado desde el ordenador no llegó a la nube: en el móvil sale «está en otro dispositivo». Todos tienen que poder usarlo | Alta | Pendiente |
 | 14 | Seguir a un bailarín · pantalla completa | Poder elegir y seguir a un bailarín también con el vídeo en pantalla completa | Alta | Pendiente |
 | 15 | Seguir a un bailarín · velocidad | El análisis es demasiado lento (en el ordenador, unos 3 min para llegar al 50 % de una canción de 2:38). Tiene que ser lo más rápido posible | Alta | Pendiente |
-| 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente (el responsable elige propuesta) |
+| 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente: al laboratorio de diseño (punto 17) |
+| 17 | Laboratorio de diseño | Volver a poner un laboratorio de diseño en Ajustes para elegir probando: las propuestas de la ola de voz y música (punto 16) y los 4 prototipos del menú de abajo a la derecha (punto 1). Cuando el responsable elija, se quita lo descartado | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -239,3 +240,27 @@ audio.
   borrados en el commit `5e5217a`; se recuperan con `git show 5e5217a^:apps/web/src/features/voice/VoiceFusuma.tsx`
   (y `VoiceCapas.tsx`, más sus ramas en `VoiceSplitControl.tsx`).
 Sea cual sea, revisar a 390 px de ancho y en escritorio, con «reducir movimiento».
+
+### 17 · Laboratorio de diseño (decidido el 17-10)
+
+El responsable quiere elegir probando, como antes. Recuperar el laboratorio que se quitó en el commit `5e5217a`
+(«feat(design): keep the chosen design per moment, remove the design lab»):
+- Código anterior: `git show 5e5217a^:apps/web/src/features/lab/designLab.ts` (y `labState.ts`, `labState.test.ts`,
+  `DesignLabSection.tsx`, `demos.tsx`), la sección en `features/settings/SettingsPage.tsx`, y en `vite.config.ts` el
+  `globIgnores` de `**/*Demo-*.js` y la caché `lab-demos`.
+- Solo con los momentos que están en duda; los 9 diseños elegidos (ESTADO, apartado 7) **no** vuelven al laboratorio.
+
+**Momentos del laboratorio:**
+1. **F17 · Voz y música** (punto 16), con una demo en vivo de cada una:
+   - A · La ola partida arreglada (repetida a lo ancho, más alta, espuma y movimiento);
+   - B · Olas del audio real (cresta = voz, cuerpo = música, con la marca de reproducción);
+   - C · Gran ola estilo Hokusai;
+   - D · Seigaiha y pincel;
+   - E · Compacta: tres botones con una mini ola animada dentro (pensada para el móvil);
+   - y, como referencia, los dos diseños anteriores: Puertas correderas (`VoiceFusuma.tsx`) y Capas de grabado
+     (`VoiceCapas.tsx`), que se recuperan del mismo commit.
+2. **Menú de acciones rápidas en el móvil** (punto 1): Sensu (abanico de esquina), Hanafuda (mano de cartas), Rueda de
+   kamon (dial) y Origami. Como afecta a toda la app, en el laboratorio se elige y se aplica al momento en ese móvil.
+
+**Cuando el responsable elija** en cada momento: dejar solo el elegido, borrar el resto y el laboratorio otra vez (como
+en `5e5217a`), y apuntarlo en ESTADO (apartado 7, «Diseños elegidos»).
