@@ -59,6 +59,8 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 35 | Próxima cover · proponer | «Proponer canción» tiene que poder buscar en YouTube (como «Añadir vídeo»), no solo pegar un enlace. Sin esto el responsable no puede probar deseos ni votaciones | Alta | Pendiente |
 | 36 | Próxima cover · biblioteca | Las canciones propuestas (también las buscadas en YouTube) no salen en la biblioteca hasta que se confirme con «Añadir a la biblioteca» | Alta | Pendiente (comprobar; mantener) |
 | 37 | Próxima cover · estructura | La pantalla tiene que ser más sencilla e intuitiva: mejor estructura y jerarquía en el móvil | Alta | Pendiente |
+| 38 | Biblioteca · se sale del marco | **Fallo visual.** En el móvil, las tarjetas de la biblioteca se salieron del marco por la derecha (la miniatura grande y la fila de «ARrC», con «con archivo» cortado). Pasó al volver de otra página, quizá con «Atrás» del móvil. No puede pasar nunca | Crítica | Pendiente |
+| 39 | Eventos · cuenta atrás larga | Chōchin (farolillos) encanta, pero con más de 7 días no se aprecia porque no hay ninguno encendido. Otro diseño igual de bonito para cuando faltan más de 7 días, y Chōchin para los últimos 7. Propuestas al laboratorio de diseño | Media | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -137,6 +139,7 @@ Lo que el responsable ya probó y le parece bien, para no tocarlo sin motivo.
 | Bloque 1 · Miembros y biblioteca (17-10) | Correcto: miembros y «¿Quién eres?», añadir vídeo (buscador, enlace, aviso de duplicado), portada, acceso rápido y borrar con confirmación |
 | Bloque 2 · Estudio (17-10) | Correcto lo no apuntado como mejora: reproductor, velocidad, espejo, clips (crear, fijar, bolsa, borrar), notas, archivo vinculado (sincronía, cambio YouTube/Archivo sin saltos), zoom a mano y «Guardar zoom con el clip». Seguir a un bailarín: el responsable lo volverá a probar cuando estén los puntos 14 y 15. Voz y música: ver puntos 16–18 |
 | Bloque 5 · Bolsas y Random Play Dance (17-10) | El funcionamiento va bien: crear bolsas, añadir, sacar, historial, sacar varios, rondas, pistas guardadas. La animación de la rueda (giro) gusta. Lo demás, en los puntos 28–34 |
+| Bloque 7 · Eventos (17-10) | Gusta mucho y está «genial»: crear, cuenta atrás Chōchin, aviso en la portada, repertorio, bolsa de candidatas y pista. Solo el punto 39. Reacciones sin probar (necesitan tomas, punto 19) |
 
 ### 3 a 11 · Estudio (bloque 2 de la prueba manual, 17-10)
 
@@ -284,7 +287,8 @@ El responsable quiere elegir probando, como antes. Recuperar el laboratorio que 
      (`VoiceCapas.tsx`), que se recuperan del mismo commit.
 2. **Pantalla «Bolsas»: cómo se elige una bolsa** (punto 30), con 3 propuestas creativas; y, si se rediseña el icono
    (punto 29), sus variantes.
-3. **Menú de acciones rápidas en el móvil** (punto 1): Sensu (abanico de esquina), Hanafuda (mano de cartas), Rueda de
+3. **Cuenta atrás cuando faltan más de 7 días** (punto 39), con 3 propuestas (ver detalle del punto 39).
+4. **Menú de acciones rápidas en el móvil** (punto 1): Sensu (abanico de esquina), Hanafuda (mano de cartas), Rueda de
    kamon (dial) y Origami. Como afecta a toda la app, en el laboratorio se elige y se aplica al momento en ese móvil.
 
 **Cuando el responsable elija** en cada momento: dejar solo el elegido, borrar el resto y el laboratorio otra vez (como
@@ -411,3 +415,25 @@ en una bolsa (punto 28).
 «Proponer» (buscar) y la lista ordenada por interés con «Me apunto» bien visible; las votaciones abiertas destacadas
 arriba si las hay; «Elegir para votar» como modo claro con su barra de acción; y en una votación, la papeleta y
 «Votar» antes que la información secundaria (tipo, cierre, anonimato). Menos texto explicativo fijo.
+
+### 38 y 39 · Biblioteca y eventos (bloque 7, prueba del 17-10)
+
+**38 · La biblioteca se sale del marco.** Captura del responsable (Samsung, 390 px aprox.): bajo «Biblioteca», la tarjeta
+destacada (GOT7) y la fila siguiente (ARrC) sobresalen por la derecha del marco de papel; la etiqueta «con archivo»
+sale cortada. Ocurrió al volver a la portada desde otra página (quizá con «Atrás» de Android). Pistas: una animación de
+`motion` interrumpida al volver (layout, «brisa» o física de las tarjetas en `features/library/VideoCard.tsx` y
+`LibraryPage.tsx`) que deja un `transform` a medias; el pintado con la copia guardada (snapshot) con otro ancho; o un
+`min-w-0` u `overflow` que falta en la rejilla. Reproducir: abrir una canción, volver con «Atrás» del móvil y con el botón
+de la app, varias veces y rápido, también girando el móvil. Arreglo de fondo: ninguna tarjeta puede salirse del marco
+(contención en el contenedor y en la tarjeta) y la animación se reinicia limpia al montar. Revisar las demás páginas.
+
+**39 · Cuenta atrás larga.** `features/events/EventCountdown.tsx` (Chōchin, `litLanterns` en `eventRules.ts`): con
+más de 7 días los siete farolillos están apagados. Mantener Chōchin para los últimos 7 días y añadir un diseño para
+cuando faltan más; el cambio de uno a otro al entrar en la última semana puede ser una pequeña transición (por
+ejemplo, el primer farolillo se enciende). Propuestas para el laboratorio:
+- **Koyomi**, el calendario de hojas que había antes (se arranca una hoja por día; el número se lee de un vistazo). Se
+  recupera de `git show 5e5217a^:apps/web/src/features/events/EventCountdown.tsx` (`pageFace` en `eventRules.ts`).
+- **Sunadokei**, el reloj de arena de antes, que baja desde que se creó el evento (se recupera del mismo commit).
+- **Tsuki** (nueva): las fases de la luna en una fila; la luna se va llenando según se acerca el día, y el número de
+  días grande al lado.
+Con «reducir movimiento», sin animaciones. En la portada no debe empujar el contenido (ver P8 de la revisión global).
