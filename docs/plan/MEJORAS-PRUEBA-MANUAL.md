@@ -97,3 +97,4 @@ Lo que el responsable ya probó y le parece bien, para no tocarlo sin motivo.
 
 | Zona | Comentario |
 | --- | --- |
+| Bloque 1 · Miembros y biblioteca (17-10) | Correcto: miembros y «¿Quién eres?», añadir vídeo (buscador, enlace, aviso de duplicado), portada, acceso rápido y borrar con confirmación |
