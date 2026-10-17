@@ -198,3 +198,20 @@ export function closingLabel(poll: PollTiming, now: number = Date.now()): string
   const day = date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
   return `Cierra el ${day} a las ${time}`;
 }
+
+/**
+ * 37 · The compact summary under the ballot (secondary to voting): closing, type, named or anonymous, when the
+ * results show. E.g. «Cierra hoy a las 22:00 · Un voto · Anónima · Resultados al cerrar».
+ */
+export function pollSummary(
+  poll: PollTiming & Pick<Poll, 'vote_type' | 'anonymous' | 'results_live'>,
+  now: number = Date.now(),
+): string[] {
+  const closing = poll.closed_at == null && isPollClosed(poll, now) ? 'Plazo terminado' : closingLabel(poll, now);
+  return [
+    closing,
+    VOTE_TYPE_COPY[poll.vote_type].label,
+    poll.anonymous ? 'Anónima' : 'Con nombre',
+    poll.results_live ? 'Resultados en directo' : 'Resultados al cerrar',
+  ];
+}

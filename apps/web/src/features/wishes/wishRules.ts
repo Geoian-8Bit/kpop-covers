@@ -12,9 +12,28 @@ export type LinkCheck =
   | { ok: true; youtubeId: string }
   | { ok: false; reason: 'empty' | 'not-youtube' | 'duplicate' | 'in-library' };
 
+/** Where a YouTube video already is for the group: nowhere yet, in the live wish list, or in the library. */
+export type SongStatus = 'new' | 'duplicate' | 'in-library';
+
+export function songStatus(
+  youtubeId: string,
+  liveWishes: Pick<Wish, 'youtube_id'>[],
+  libraryYoutubeIds: Iterable<string | null> = [],
+): SongStatus {
+  if (liveWishes.some((w) => w.youtube_id === youtubeId)) return 'duplicate';
+  for (const id of libraryYoutubeIds) if (id === youtubeId) return 'in-library';
+  return 'new';
+}
+
+/** The note on a search result (35): proposing it again or wishing for a library video is refused. */
+export const SONG_BADGE: Record<Exclude<SongStatus, 'new'>, string> = {
+  duplicate: 'Ya propuesta',
+  'in-library': 'Ya en la biblioteca',
+};
+
 /**
- * A wish is proposed by pasting a YouTube link (or a bare id). Refused: empty, not YouTube, already in the
- * live list (the database refuses it too), already in the library (no need to wish for it).
+ * A wish is proposed by pasting a YouTube link (or a bare id) or by picking a search hit. Refused: empty, not
+ * YouTube, already in the live list (the database refuses it too), already in the library (no need to wish for it).
  */
 export function checkWishLink(
   input: string,
@@ -24,9 +43,8 @@ export function checkWishLink(
   if (!input.trim()) return { ok: false, reason: 'empty' };
   const youtubeId = parseYouTubeId(input);
   if (!youtubeId) return { ok: false, reason: 'not-youtube' };
-  if (liveWishes.some((w) => w.youtube_id === youtubeId)) return { ok: false, reason: 'duplicate' };
-  for (const id of libraryYoutubeIds) if (id === youtubeId) return { ok: false, reason: 'in-library' };
-  return { ok: true, youtubeId };
+  const status = songStatus(youtubeId, liveWishes, libraryYoutubeIds);
+  return status === 'new' ? { ok: true, youtubeId } : { ok: false, reason: status };
 }
 
 export const LINK_PROBLEM: Record<Exclude<LinkCheck, { ok: true }>['reason'], string> = {
@@ -75,4 +93,11 @@ export function parseMembersCount(raw: string): number | null | 'invalid' {
   const n = Number(clean);
   if (!Number.isInteger(n) || n < 1 || n > 30) return 'invalid';
   return n;
+}
+
+/** 37 · The action bar of «Elegir para votar»: a vote needs two candidates or more. */
+export function selectionHint(count: number): string {
+  if (count <= 0) return 'Marca dos o más canciones';
+  if (count === 1) return '1 elegida · falta otra';
+  return `${count} elegidas`;
 }

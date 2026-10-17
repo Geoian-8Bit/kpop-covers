@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import type { HoldReason } from './analyze';
 import type { Box, FollowPick } from './followPath';
+import { remainingPhrase } from './followPlan';
 
 /**
  * F10 · The follow feature's own screen state (choosing a dancer on the stage, the name dialog, the analysis in
@@ -30,15 +32,31 @@ export interface FollowJob {
   done: number;
   total: number;
   abort: AbortController;
+  /** 15 · The stretch being watched is done and followed; the rest of the song goes on in the background. */
+  ready: boolean;
+  /** 15 · Seconds left, in the steps the screen shows (followPlan.remainingStep); null: not known yet. */
+  remaining: number | null;
+  /** 15 · Waiting: a take is being recorded, or the voice is being separated. */
+  held?: HoldReason | null;
 }
 
 interface FollowUiState {
   picking: PickMode | null;
   draft: FollowDraft | null;
   job: FollowJob | null;
+  /** 14 · Fullscreen follow controls on screen: the name is asked there, not in a dialog under the fullscreen. */
+  fsHosts: number;
 }
 
-export const useFollowUi = create<FollowUiState>()(() => ({ picking: null, draft: null, job: null }));
+export const useFollowUi = create<FollowUiState>()(() => ({
+  picking: null,
+  draft: null,
+  job: null,
+  fsHosts: 0,
+}));
+
+/** 7 · Why an analysis was stopped when another file (or offset) came on the stage: nothing of it is saved. */
+export const FILE_CHANGED = 'file-changed';
 
 export const followUi = {
   pick(mode: PickMode | null) {
@@ -50,12 +68,32 @@ export const followUi = {
   job(job: FollowJob | null) {
     useFollowUi.setState({ job });
   },
-  progress(patch: Partial<Pick<FollowJob, 'phase' | 'done' | 'total'>>) {
-    const job = useFollowUi.getState().job;
-    if (job) useFollowUi.setState({ job: { ...job, ...patch } });
+  /** An analysis ended: its job goes, but never a newer one started meanwhile (after a change of song). */
+  endJob(abort: AbortController) {
+    if (useFollowUi.getState().job?.abort === abort) useFollowUi.setState({ job: null });
   },
-  reset() {
-    useFollowUi.getState().job?.abort.abort();
+  progress(patch: Partial<Pick<FollowJob, 'phase' | 'done' | 'total' | 'ready' | 'remaining' | 'held'>>) {
+    const job = useFollowUi.getState().job;
+    if (!job) return;
+    const next = { ...job, ...patch };
+    // Only what the screen shows: the analysis reports every frame, the screen repaints per percent at most.
+    if (
+      next.phase === job.phase &&
+      next.ready === job.ready &&
+      next.remaining === job.remaining &&
+      (next.held ?? null) === (job.held ?? null) &&
+      jobPercent(next) === jobPercent(job)
+    )
+      return;
+    useFollowUi.setState({ job: next });
+  },
+  /** 14 · A fullscreen follow panel mounted or gone. */
+  fsHost(delta: 1 | -1) {
+    useFollowUi.setState((s) => ({ fsHosts: Math.max(0, s.fsHosts + delta) }));
+  },
+  /** Leaving the song (or, with FILE_CHANGED, its file or offset changing): nothing half-done carries over. */
+  reset(reason?: typeof FILE_CHANGED) {
+    useFollowUi.getState().job?.abort.abort(reason);
     useFollowUi.setState({ picking: null, draft: null, job: null });
   },
 };
@@ -78,11 +116,46 @@ export function takeFollowOpener(): HTMLElement | null {
   return el;
 }
 
+type JobView = Pick<FollowJob, 'phase' | 'done' | 'total' | 'label' | 'pathId'> &
+  Partial<Pick<FollowJob, 'ready' | 'remaining' | 'held'>>;
+
+/** 15 · «En pausa mientras grabas»: why the analysis waits. */
+export function holdText(reason: HoldReason): string {
+  if (reason === 'recording') return 'En pausa mientras grabas';
+  if (reason === 'copy') return 'En pausa mientras se hace la copia para el grupo';
+  return 'En pausa mientras se separa la voz';
+}
+
 /** What a screen reader hears about the analysis: each phase, and the progress only every 25 %. */
-export function jobMilestone(job: Pick<FollowJob, 'phase' | 'done' | 'total' | 'label' | 'pathId'>): string {
+export function jobMilestone(job: JobView): string {
   if (job.phase === 'model') return 'Preparando el modelo…';
   if (job.phase === 'video') return 'Abriendo el vídeo…';
   if (job.phase === 'saving') return 'Guardando el recorrido…';
+  if (job.held) return holdText(job.held);
   const step = Math.floor(jobPercent(job) / 25) * 25;
+  // «Ya sigues a…» was already said once (the notice when the stretch got ready): only the progress now.
+  if (job.ready) return `Resto de la canción: ${step} %`;
   return `${job.pathId ? 'Recalculando' : 'Analizando'} a «${job.label}»: ${step} %`;
+}
+
+/** The progress line under the follow row: what is going on, the percent and (15) the time left. */
+export function jobLine(job: JobView): string {
+  if (job.phase === 'model') return 'Preparando el modelo…';
+  if (job.phase === 'video') return 'Abriendo el vídeo…';
+  if (job.phase === 'saving') return 'Guardando el recorrido…';
+  if (job.held) return `${holdText(job.held)} · ${jobPercent(job)} %`;
+  const eta = remainingPhrase(job.remaining);
+  const tail = `${jobPercent(job)} %${eta ? ` · ${eta}` : ''}`;
+  if (job.ready) return `Ya sigues a «${job.label}» aquí. Resto de la canción: ${tail}`;
+  return `${job.pathId ? 'Recalculando' : 'Analizando'} a «${job.label}»: ${tail}`;
+}
+
+/** The same, short, for over the video and fullscreen. */
+export function jobShort(job: JobView): string {
+  if (job.phase === 'frames') {
+    if (job.held) return `En pausa ${jobPercent(job)} %`;
+    const eta = remainingPhrase(job.remaining);
+    return `${job.ready ? 'Resto' : 'Analizando'} ${jobPercent(job)} %${eta ? ` · ${eta}` : ''}`;
+  }
+  return job.phase === 'saving' ? 'Guardando…' : 'Preparando…';
 }

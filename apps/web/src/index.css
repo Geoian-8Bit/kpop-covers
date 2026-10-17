@@ -263,6 +263,17 @@
      * a stray pinch while dancing doesn't blow the studio up. The video's own zoom (F9) handles its gestures.
      */
     touch-action: pan-x pan-y;
+    /*
+     * WCAG 2.4.11: a control that focus scrolls into view never ends up under a sticky bar pinned to the bottom
+     * (`--sticky-bar-h`, kept by `useStickyBarPadding`) or, on phones, the quick-menu button (`--fab-scroll-pad`,
+     * set by the shell while it shows). The bars sit beside the button, so the larger of the two counts.
+     */
+    scroll-padding-bottom: calc(var(--sticky-bar-h, 0px) + 8px);
+  }
+  @media (width < 64rem) {
+    html {
+      scroll-padding-bottom: calc(max(var(--fab-scroll-pad, 0px), var(--sticky-bar-h, 0px)) + 8px);
+    }
   }
 
   /* Press-and-hold buttons (pause pickers) must not select text or pop the iOS callout. */
@@ -284,6 +295,16 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     caret-color: var(--color-kin-300);
+  }
+
+  /*
+   * A grid with no column template (the phone layout of most `grid sm:grid-cols-2` lists) gets one `auto`
+   * column, and an auto column grows to the widest line that can't wrap inside it (a nowrap caption, a chip):
+   * every card then pokes out of its frame. Default to one column that can shrink; any grid-cols-* utility
+   * (utilities layer) still wins, and grids that flow into columns keep their own sizing.
+   */
+  :where(.grid:not(.grid-flow-col)) {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   h1,

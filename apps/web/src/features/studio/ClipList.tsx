@@ -1,6 +1,6 @@
 import { formatSpeed, formatTime, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { FlipHorizontal2, Pin, Plus, Repeat, Trash2, ZoomIn } from 'lucide-react';
+import { FlipHorizontal2, Pencil, Pin, Plus, Repeat, Trash2, ZoomIn } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -12,6 +12,11 @@ import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { clipHasZoom, zoomLabel, zoomOfClip } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
+import { EditClipDialog, PIN_LABEL } from './SaveClipDialog';
+
+/** Row actions: a 36 px mark with a 44 px hit area (the pseudo-element reaches into the gaps). */
+const rowAction =
+  'relative grid size-9 shrink-0 place-items-center rounded-[8px] text-washi-subtle before:absolute before:-inset-1 before:content-[""] hover:bg-washi/[0.06] hover:text-washi';
 
 interface ClipListProps {
   clips: Clip[];
@@ -27,6 +32,9 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
   const remove = useDeleteClip();
   const toast = useToast();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // The list's own copy: the dialog sees optimistic edits and drops a clip archived meanwhile.
+  const editing = editingId ? (clips.find((c) => c.id === editingId) ?? null) : null;
   /** When the delete button was armed: a fast double tap must not skip the confirmation. */
   const armedAt = useRef(0);
 
@@ -116,9 +124,9 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                       <span className={cn('grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]', CLIP_SWATCH[clip.color].dot)}>
                         {active ? <Repeat className="size-4 text-sumi-900" /> : null}
                       </span>
-                      <span className="min-w-0">
+                      <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{clip.name}</span>
-                        <span className="tabular mt-0.5 flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-washi-muted">
+                        <span className="tabular mt-0.5 flex items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-xs text-washi-muted">
                           {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
                           <span className="text-washi-subtle">·</span>
                           {formatSpeed(clip.speed)}
@@ -132,12 +140,26 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
 
                     <motion.button
                       type="button"
-                      aria-label={clip.is_pinned ? 'Quitar de acceso rápido' : 'Fijar en acceso rápido'}
+                      aria-label={`Editar ${clip.name}`}
+                      title="Editar el clip"
+                      onClick={() => setEditingId(clip.id)}
+                      whileTap={{ scale: 0.85, rotate: -8 }}
+                      transition={jelly}
+                      className={rowAction}
+                    >
+                      <Pencil className="size-4" />
+                    </motion.button>
+
+                    <motion.button
+                      type="button"
+                      // aria-pressed carries the state: the name stays the same either way.
+                      aria-label={`${PIN_LABEL}: ${clip.name}`}
+                      title={clip.is_pinned ? 'Fijado en la portada · toca para quitarlo' : `${PIN_LABEL} (sale el primero en Acceso rápido)`}
                       aria-pressed={clip.is_pinned}
                       onClick={() => togglePin(clip)}
                       whileTap={{ scale: 0.7, rotate: -20 }}
                       transition={jelly}
-                      className="grid size-9 shrink-0 place-items-center rounded-[8px] text-washi-subtle hover:bg-washi/[0.06] hover:text-washi"
+                      className={rowAction}
                     >
                       <Pin className={cn('size-4', clip.is_pinned && 'fill-shu-500 text-shu-500')} />
                     </motion.button>
@@ -152,7 +174,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
                       whileTap={{ scale: 0.85 }}
                       transition={jelly}
                       className={cn(
-                        'flex h-9 shrink-0 items-center justify-center gap-1 rounded-[8px] text-xs font-medium',
+                        'relative flex h-9 shrink-0 items-center justify-center gap-1 rounded-[8px] text-xs font-medium before:absolute before:-inset-1 before:content-[""]',
                         confirming ? 'bg-enji-500 px-3 text-washi' : 'w-9 text-washi-subtle hover:bg-washi/[0.06] hover:text-enji-300',
                       )}
                     >
@@ -166,6 +188,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
           </AnimatePresence>
         </ul>
       )}
+      <EditClipDialog clip={editing} onClose={() => setEditingId(null)} clips={clips} />
     </aside>
   );
 }

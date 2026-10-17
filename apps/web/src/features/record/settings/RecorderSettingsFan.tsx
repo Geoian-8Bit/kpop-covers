@@ -18,12 +18,12 @@ export function RecorderSettingsFan(props: RecorderSettingsProps) {
   return (
     <>
       <BoxProbe probeRef={probe} />
-      <AnimatePresence>{props.open && size && <FanPanel key="fan" {...props} w={size.w} h={size.h} />}</AnimatePresence>
+      <AnimatePresence>{props.open && size && <FanPanel key={`fan-${props.only ?? 'all'}`} {...props} w={size.w} h={size.h} />}</AnimatePresence>
     </>
   );
 }
 
-type GroupId = 'quality' | 'size' | 'format' | 'sound' | 'view';
+type GroupId = 'quality' | 'image' | 'format' | 'sound' | 'view';
 interface Group {
   id: GroupId;
   title: string;
@@ -31,29 +31,35 @@ interface Group {
   keys: FieldKey[];
 }
 
+/**
+ * P27 · «Calidad» gathers quality, size and frame rate (one decision: how the take looks and how much it weighs);
+ * «Imagen» is the camera's light, colour of the light and focus: its stick opens the recorder's image panel (the
+ * same one a take uses while it rolls).
+ */
 const GROUPS: Group[] = [
-  { id: 'quality', title: 'Calidad', glyph: '質', keys: ['quality'] },
-  { id: 'size', title: 'Tamaño', glyph: '寸', keys: ['resolution', 'fps'] },
+  { id: 'quality', title: 'Calidad', glyph: '質', keys: ['quality', 'resolution', 'fps'] },
+  { id: 'image', title: 'Imagen', glyph: '光', keys: [] },
   { id: 'format', title: 'Formato', glyph: '式', keys: ['codec', 'mode'] },
   { id: 'sound', title: 'Sonido', glyph: '音', keys: ['sound', 'micChannels', 'clapSensitivity'] },
-  { id: 'view', title: 'Visor', glyph: '眼', keys: ['startCamera', 'grid', 'level', 'info'] },
+  { id: 'view', title: 'Visor', glyph: '眼', keys: ['grid', 'level', 'info'] },
 ];
 
 /** What each slip shows under its name. */
-function groupValue(id: GroupId, f: Fields): string {
+function groupValue(id: GroupId, f: Fields, image: string): string {
   switch (id) {
     case 'quality':
-      return f.quality.display;
-    case 'size':
-      return `${f.resolution.display} · ${f.fps.value ?? '30'}`;
+      return [f.quality.display, f.resolution.value && f.resolution.value !== 'auto' ? f.resolution.display : null, f.fps.value ?? '30']
+        .filter(Boolean)
+        .join(' · ');
+    case 'image':
+      return image;
     case 'format':
       return `${f.codec.value === 'h264' ? 'H.264' : 'Auto'}${f.mode.value === 'canvas' ? ' · lienzo' : ''}`;
     case 'sound':
       return f.sound.value === 'song' ? 'Canción' : 'Micrófono';
     case 'view': {
-      const on = [f.grid, f.level, f.info].filter((x) => x.value).length;
-      const cam = f.startCamera.value === 'last' ? 'Última' : f.startCamera.display;
-      return on ? `${cam} · +${on}` : cam;
+      const on = [f.grid, f.level, f.info].filter((x) => x.value).map((x) => (x.key === 'info' ? 'Info' : x.label));
+      return on.length ? on.join(' · ') : 'Sin guías';
     }
   }
 }
@@ -142,6 +148,8 @@ function FanPanel({
   maxSize,
   maxFps,
   songPossible,
+  only,
+  image,
   w,
   h,
 }: RecorderSettingsProps & { w: number; h: number }) {
@@ -153,13 +161,17 @@ function FanPanel({
   const titleId = useId();
   const summaryId = useId();
   const detailTitleId = useId();
-  const [openGroup, setOpenGroup] = useState<GroupId | null>(null);
+  // P26: the quality chip opens its group straight away (and closing it closes the settings).
+  const [openGroup, setOpenGroup] = useState<GroupId | null>(only ?? null);
   const lastStick = useRef(0);
-  const g = fanGeometry(w, h, GROUPS.length);
+  // «Imagen» only when this camera has light, colour or focus controls.
+  const groups = GROUPS.filter((x) => x.id !== 'image' || image);
+  const g = fanGeometry(w, h, groups.length);
   const folded = openGroup != null;
-  const group = GROUPS.find((x) => x.id === openGroup) ?? null;
+  const group = groups.find((x) => x.id === openGroup) ?? null;
+  const back = () => (only ? onClose() : setOpenGroup(null));
 
-  useModalFocus(true, rootRef, () => (openGroup ? setOpenGroup(null) : onClose()));
+  useModalFocus(true, rootRef, () => (openGroup ? back() : onClose()));
 
   // Focus follows the fan: into the group that opened, back to its stick when it closes.
   const wasFolded = useRef(false);
@@ -173,7 +185,7 @@ function FanPanel({
   }, [folded]);
 
   const onStickKey = (e: ReactKeyboardEvent, i: number) => {
-    const n = GROUPS.length;
+    const n = groups.length;
     let next = -1;
     if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (i + 1) % n;
     else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (i - 1 + n) % n;
@@ -275,10 +287,10 @@ function FanPanel({
 
       {/* The sticks, each with its slip. */}
       <div role="list" aria-label="Grupos de ajustes" inert={folded} className="absolute inset-0">
-        {GROUPS.map((grp, i) => {
+        {groups.map((grp, i) => {
           const angle = g.base + (g.angles[i] ?? 0);
           const turn = folded ? g.base : angle;
-          const value = groupValue(grp.id, f);
+          const value = groupValue(grp.id, f, image?.summary ?? '');
           return (
             <motion.div
               key={grp.id}
@@ -314,7 +326,9 @@ function FanPanel({
                     onKeyDown={(e) => onStickKey(e, i)}
                     onClick={() => {
                       lastStick.current = i;
-                      setOpenGroup(grp.id);
+                      // «Imagen» is the recorder's own image panel: the fan closes and it opens.
+                      if (grp.id === 'image') image?.onOpen();
+                      else setOpenGroup(grp.id);
                     }}
                     whileTap={{ scale: 0.9 }}
                     transition={jelly}
@@ -390,17 +404,19 @@ function FanPanel({
               className="pointer-events-auto flex max-h-full w-full max-w-[440px] flex-col outline-none"
             >
               <div className="paper-raised flex min-h-0 flex-col overflow-hidden rounded-[16px]">
-                <header className="flex shrink-0 items-center gap-2 px-2 pb-1 pt-2">
-                  <motion.button
-                    type="button"
-                    aria-label="Volver al abanico"
-                    onClick={() => setOpenGroup(null)}
-                    whileTap={{ scale: 0.86 }}
-                    transition={jelly}
-                    className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-washi/10"
-                  >
-                    <ChevronLeft className="size-6" />
-                  </motion.button>
+                <header className={cn('flex shrink-0 items-center gap-2 pb-1 pt-2', only ? 'pl-4 pr-2' : 'px-2')}>
+                  {!only && (
+                    <motion.button
+                      type="button"
+                      aria-label="Volver al abanico"
+                      onClick={() => setOpenGroup(null)}
+                      whileTap={{ scale: 0.86 }}
+                      transition={jelly}
+                      className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-washi/10"
+                    >
+                      <ChevronLeft className="size-6" />
+                    </motion.button>
+                  )}
                   <Seal glyph={group.glyph} />
                   <h3 id={detailTitleId} className="min-w-0 flex-1 truncate font-display text-[20px] font-bold">
                     {group.title}

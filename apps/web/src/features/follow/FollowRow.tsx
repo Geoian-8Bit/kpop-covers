@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
-import { useDeleteFollowPath, useFollowPaths, useUpdateFollowPath } from '@/data/follow';
+import { useDeleteFollowPath, useFollowPaths } from '@/data/follow';
 import { MEMBER_SWATCH, useMembers } from '@/data/members';
 import { zoomAvailability } from '@/features/studio/ZoomControls';
 import { cn } from '@/lib/cn';
@@ -15,9 +15,10 @@ import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { NO_ZOOM } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
-import { cleanManualKeyframes, FOLLOW_LABEL_MAX, removeKeyframeNear } from './followPath';
+import { FOLLOW_LABEL_MAX } from './followPath';
 import {
   followUi,
+  jobLine,
   jobMilestone,
   jobPercent,
   rememberFollowOpener,
@@ -50,9 +51,12 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
   const picking = useFollowUi((s) => s.picking);
   const job = useFollowUi((s) => s.job);
   const draft = useFollowUi((s) => s.draft);
+  // 14 · In fullscreen the name is asked in the fullscreen panel (a dialog would open under it).
+  const inFullscreen = useFollowUi((s) => s.fsHosts > 0);
   const busy = Boolean(job) || actions.saving;
+  // 15 · Once the stretch being watched is ready, who to follow can change while the rest is analysed.
+  const choosing = (Boolean(job) && !job?.ready) || actions.saving;
   const remove = useDeleteFollowPath();
-  const update = useUpdateFollowPath();
   const toast = useToast();
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => setConfirmDelete(false), [followId]);
@@ -84,23 +88,9 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
     }
   }
 
-  async function removePoint() {
+  function removePoint() {
     if (!selected || !nearPoint) return;
-    if (selected.keyframes.length <= 1) {
-      toast('Es el único punto: borra el recorrido si ya no lo quieres', 'info');
-      return;
-    }
-    try {
-      await update.mutateAsync({
-        id: selected.id,
-        patch: {
-          keyframes: cleanManualKeyframes(removeKeyframeNear(selected.keyframes, usePlayer.getState().time)),
-        },
-      });
-      toast('Punto quitado', 'success');
-    } catch (err) {
-      toast(friendlyError(err), 'error');
-    }
+    void actions.removePoint(selected, usePlayer.getState().time);
   }
 
   return (
@@ -122,7 +112,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
                 type="button"
                 role="radio"
                 aria-checked={on}
-                disabled={busy}
+                disabled={choosing}
                 onClick={() => follow(p)}
                 whileTap={{ scale: 0.92 }}
                 transition={jelly}
@@ -184,7 +174,7 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
           </Button>
         )}
         {selected?.source === 'manual' && nearPoint && (
-          <Button variant="ghost" className="min-h-11" disabled={busy} onClick={() => void removePoint()}>
+          <Button variant="ghost" className="min-h-11" disabled={busy} onClick={removePoint}>
             <MapPinOff className="size-4" /> Quitar punto
           </Button>
         )}
@@ -221,9 +211,10 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
           ))}
       </div>
 
-      {/* Read out only at milestones (each phase, every 25 %), not at every percent. */}
+      {/* Read out only at milestones (each phase, every 25 %), not at every percent. 14 · Quiet in fullscreen:
+          the fullscreen controls have the one region then. */}
       <p className="sr-only" aria-live="polite">
-        {job ? jobMilestone(job) : ''}
+        {job && !inFullscreen ? jobMilestone(job) : ''}
       </p>
       <AnimatePresence initial={false}>
         {job && (
@@ -237,14 +228,8 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
           >
             <div className="mt-2.5 flex items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="mb-1 truncate text-[13px] text-washi" aria-hidden>
-                  {job.phase === 'model'
-                    ? 'Preparando el modelo…'
-                    : job.phase === 'video'
-                      ? 'Abriendo el vídeo…'
-                      : job.phase === 'saving'
-                        ? 'Guardando el recorrido…'
-                        : `${job.pathId ? 'Recalculando' : 'Analizando'} a «${job.label}»: ${jobPercent(job)} %`}
+                <p className="mb-1 text-[13px] leading-snug text-washi" aria-hidden>
+                  {jobLine(job)}
                 </p>
                 <div
                   role="progressbar"
@@ -255,9 +240,9 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
                   className="h-2 overflow-hidden rounded-full bg-sumi-700"
                 >
                   <motion.div
-                    className="h-full rounded-full bg-kin-300"
+                    className="h-full origin-left rounded-full bg-kin-300"
                     initial={false}
-                    animate={{ width: `${jobPercent(job)}%` }}
+                    animate={{ scaleX: jobPercent(job) / 100 }}
                     transition={snappy}
                   />
                 </div>
@@ -267,9 +252,10 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
                 className="min-h-11"
                 data-follow-cancel
                 disabled={job.phase === 'saving'}
+                aria-label={job.ready ? 'Parar el análisis (se guarda lo analizado)' : undefined}
                 onClick={() => job.abort.abort()}
               >
-                Cancelar
+                {job.ready ? 'Parar' : 'Cancelar'}
               </Button>
             </div>
           </motion.div>
@@ -310,11 +296,15 @@ export function FollowRow({ video, onLink }: { video: Video; onLink: () => void 
             `Siguiendo a «${selected.label}». Si en un cruce salta a otra persona, pausa ahí y pulsa «Corregir desde aquí». Guarda un clip y se abrirá siguiéndole.`
           )
         ) : (
-          'Pausa, pulsa «Seguir a alguien» y toca al bailarín: la app analiza el vídeo una vez en este dispositivo (no se sube) y comparte con el grupo solo el recorrido.'
+          'Pausa, pulsa «Seguir a alguien» y toca al bailarín: la app analiza en este dispositivo (el vídeo no se sube), primero el tramo que estás viendo y después el resto, y comparte con el grupo solo el recorrido.'
         )}
       </p>
 
-      <FollowNameDialog draft={draft} onDone={() => followUi.draft(null)} actions={actions} />
+      <FollowNameDialog
+        draft={inFullscreen ? null : draft}
+        onDone={() => followUi.draft(null)}
+        actions={actions}
+      />
     </div>
   );
 }
@@ -337,6 +327,39 @@ function FollowNameDialog({
   draft: FollowDraft | null;
   onDone: () => void;
   actions: ReturnType<typeof useFollowActions>;
+}) {
+  return (
+    <Dialog
+      open={draft != null}
+      onClose={onDone}
+      title="¿A quién sigues?"
+      description={draft ? followNameHelp(draft) : undefined}
+    >
+      <FollowNameForm draft={draft} onDone={onDone} actions={actions} />
+    </Dialog>
+  );
+}
+
+export function followNameHelp(draft: FollowDraft): string {
+  return draft.mode === 'auto'
+    ? 'Se analiza el vídeo en este dispositivo, empezando por lo que vas a ver, y puedes parar cuando quieras. El vídeo no se sube: solo se guarda el recorrido, para todo el grupo.'
+    : 'El recorrido se guarda para todo el grupo. Después, ve a otros momentos y coloca el recuadro: el zoom irá de uno a otro.';
+}
+
+/**
+ * The name step itself (members as quick choices, or any name), in the studio's dialog or (14) in the fullscreen
+ * panel. `compact`: smaller, for the fullscreen panel over the video.
+ */
+export function FollowNameForm({
+  draft,
+  onDone,
+  actions,
+  compact = false,
+}: {
+  draft: FollowDraft | null;
+  onDone: () => void;
+  actions: ReturnType<typeof useFollowActions>;
+  compact?: boolean;
 }) {
   const members = useMembers().data ?? [];
   const [memberId, setMemberId] = useState<string | null>(null);
@@ -364,63 +387,52 @@ function FollowNameDialog({
   }
 
   return (
-    <Dialog
-      open={draft != null}
-      onClose={onDone}
-      title="¿A quién sigues?"
-      description={
-        draft?.mode === 'auto'
-          ? 'Se analiza el vídeo una vez en este dispositivo y puedes cancelar cuando quieras. El vídeo no se sube: solo se guarda el recorrido, para todo el grupo.'
-          : 'El recorrido se guarda para todo el grupo. Después, ve a otros momentos y coloca el recuadro: el zoom irá de uno a otro.'
-      }
-    >
-      <form onSubmit={onSubmit} className="space-y-4">
-        {members.length > 0 && (
-          <div role="radiogroup" aria-label="Miembro del grupo" className="flex flex-wrap gap-1.5">
-            {members.map((m) => (
-              <motion.button
-                key={m.id}
-                type="button"
-                role="radio"
-                aria-checked={memberId === m.id}
-                onClick={() => chooseMember(m)}
-                whileTap={{ scale: 0.92 }}
-                transition={jelly}
-                className={cn(
-                  'flex min-h-11 items-center gap-2 rounded-[10px] border px-3 text-[14px] transition-colors',
-                  memberId === m.id
-                    ? 'border-washi bg-washi text-sumi-900'
-                    : 'border-line text-washi-muted hover:text-washi',
-                )}
-              >
-                <span aria-hidden className={cn('size-3 rounded-full', MEMBER_SWATCH[m.color].dot)} />
-                {m.name}
-              </motion.button>
-            ))}
-          </div>
-        )}
-        <Field
-          data-autofocus="desktop"
-          label={members.length ? 'Nombre (o elige a alguien del grupo)' : 'Nombre'}
-          required
-          maxLength={FOLLOW_LABEL_MAX}
-          value={label}
-          placeholder="p. ej. Minji, centro, la de rojo…"
-          onChange={(e) => {
-            setLabel(e.target.value);
-            const match = members.find((m) => m.name === e.target.value.trim());
-            setMemberId(match?.id ?? null);
-          }}
-        />
-        <div className="flex justify-end gap-2 border-t border-line pt-4">
-          <Button variant="ghost" onClick={onDone}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={!label.trim()}>
-            {draft?.mode === 'auto' ? 'Seguir' : 'Guardar recorrido'}
-          </Button>
+    <form onSubmit={onSubmit} className={compact ? 'space-y-3' : 'space-y-4'}>
+      {members.length > 0 && (
+        <div role="radiogroup" aria-label="Miembro del grupo" className="flex flex-wrap gap-1.5">
+          {members.map((m) => (
+            <motion.button
+              key={m.id}
+              type="button"
+              role="radio"
+              aria-checked={memberId === m.id}
+              onClick={() => chooseMember(m)}
+              whileTap={{ scale: 0.92 }}
+              transition={jelly}
+              className={cn(
+                'flex min-h-11 items-center gap-2 rounded-[10px] border px-3 text-[14px] transition-colors',
+                memberId === m.id
+                  ? 'border-washi bg-washi text-sumi-900'
+                  : 'border-line text-washi-muted hover:text-washi',
+              )}
+            >
+              <span aria-hidden className={cn('size-3 rounded-full', MEMBER_SWATCH[m.color].dot)} />
+              {m.name}
+            </motion.button>
+          ))}
         </div>
-      </form>
-    </Dialog>
+      )}
+      <Field
+        data-autofocus="desktop"
+        label={members.length ? 'Nombre (o elige a alguien del grupo)' : 'Nombre'}
+        required
+        maxLength={FOLLOW_LABEL_MAX}
+        value={label}
+        placeholder="p. ej. Minji, centro, la de rojo…"
+        onChange={(e) => {
+          setLabel(e.target.value);
+          const match = members.find((m) => m.name === e.target.value.trim());
+          setMemberId(match?.id ?? null);
+        }}
+      />
+      <div className={cn('flex justify-end gap-2 border-t border-line', compact ? 'pt-3' : 'pt-4')}>
+        <Button variant="ghost" className="min-h-11" onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button type="submit" className="min-h-11" disabled={!label.trim()}>
+          {draft?.mode === 'auto' ? 'Seguir' : 'Guardar recorrido'}
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -1,6 +1,7 @@
 import {
   durationMismatch,
   fileTime,
+  formatBytes,
   formatTime,
   hasLinkedFile,
   nudgeOffset,
@@ -8,7 +9,8 @@ import {
   type Video,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { AlertTriangle, Check, FileVideo, Flag, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Check, CloudUpload, FileVideo, Flag, Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -27,7 +29,11 @@ import { jelly, soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
-import { rememberStage } from '@/lib/stagePref';
+import { forgetStage } from '@/lib/stagePref';
+import { cloudLimitBytes } from '@/lib/backend';
+import { CloudCopyStatus } from './CloudCopyStatus';
+import { cancelCloudCopy, clearCloudCopy, startCloudCopy } from './cloudCopyJob';
+import { estimateCopySeconds, formatEta } from './cloudCopyRules';
 
 type Step =
   | { kind: 'start' }
@@ -55,6 +61,7 @@ export function LinkFilePanel({
   initialFile?: File | null;
 }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const link = useLinkVideoFile();
   const unlink = useUnlinkVideoFile();
   const restore = useRestoreVideoFile();
@@ -91,9 +98,12 @@ export function LinkFilePanel({
       let target = video;
       const previous = replacing.current && hasLinkedFile(video) ? video : null;
       if (previous) {
+        // A copy of the old file being made here is of no use any more.
+        cancelCloudCopy(video.id);
+        clearCloudCopy(video.id);
         target = await unlink.mutateAsync({ video: previous, keepLocal: true });
         usePlayer.getState().setStage('youtube');
-        rememberStage(video.id, 'youtube');
+        forgetStage(video.id); // 12 · the new file opens by default again
       }
       replacing.current = false;
       let result;
@@ -104,7 +114,15 @@ export function LinkFilePanel({
         if (previous) await restore.mutateAsync(previous).catch(() => undefined);
         throw err;
       }
-      if (!result.synced && result.uploadFailure) toast(uploadFailureMessage(result.uploadFailure), 'info');
+      if (!result.synced && result.uploadFailure === 'too-big') {
+        // 13 · Too big for one cloud file: this device makes a lighter copy for the group while the dancer syncs;
+        // it keeps and plays the original. No room left in the group (`no-space`) is not this: a copy wouldn't
+        // fit either, so the file just stays here (the toast below says so) and no copy is started.
+        startCloudCopy({ video: result.video, source: file, queryClient });
+        toast('Pesa demasiado para la nube: se está preparando una copia más ligera para el grupo. Puedes sincronizar mientras.', 'info');
+      } else if (!result.synced && result.uploadFailure) {
+        toast(uploadFailureMessage(result.uploadFailure), 'info');
+      }
       startSync(URL.createObjectURL(file), true);
     } catch (err) {
       toast(friendlyError(err), 'error');
@@ -128,10 +146,12 @@ export function LinkFilePanel({
 
   async function removeFile() {
     setConfirm(null);
+    cancelCloudCopy(video.id);
+    clearCloudCopy(video.id);
     try {
       await unlink.mutateAsync(video);
       usePlayer.getState().setStage('youtube');
-      rememberStage(video.id, 'youtube');
+      forgetStage(video.id);
       toast('Archivo quitado: el vídeo vuelve a ser solo de YouTube', 'success');
       onClose();
     } catch (err) {
@@ -185,11 +205,18 @@ export function LinkFilePanel({
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-bold">{video.file_name}</p>
                     <p className="text-[13px] text-washi-muted">
-                      {video.storage_path ? 'En la nube del grupo' : 'Solo en el móvil de quien lo vinculó'} · desfase{' '}
-                      {fmtSigned(Number(video.file_offset_seconds ?? 0))}
+                      {video.storage_path
+                        ? // A copy is only ever made of a file over the per-file limit (without room in the
+                          // group nothing is uploaded at all), so the original's size tells.
+                          Number(video.file_size) > cloudLimitBytes()
+                          ? 'En la nube del grupo (copia más ligera)'
+                          : 'En la nube del grupo'
+                        : 'Solo en el dispositivo de quien lo vinculó'}{' '}
+                      · desfase {fmtSigned(Number(video.file_offset_seconds ?? 0))}
                     </p>
                   </div>
                 </div>
+                <CloudCopyStatus video={video} variant="panel" />
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={() => void resync()}>
                     <RefreshCw className="size-4" /> Volver a sincronizar
@@ -206,7 +233,10 @@ export function LinkFilePanel({
               <div className="space-y-3 text-[14px] leading-relaxed text-washi-muted">
                 <ul className="list-disc space-y-1 pl-5">
                   <li>La app no descarga nada de YouTube: consigue el archivo por tu cuenta.</li>
-                  <li>Hasta 50 MB se sube a la nube y lo tiene todo el grupo; si pesa más, se queda en este móvil.</li>
+                  <li>
+                    Se sube a la nube y lo tiene todo el grupo. Si pesa más de 50 MB, este dispositivo hace una copia más
+                    ligera para el grupo y se queda con el original.
+                  </li>
                   <li>Después marcas el mismo momento en los dos para sincronizarlos.</li>
                 </ul>
                 <Button className="mt-2" onClick={() => input.current?.click()}>
@@ -246,6 +276,17 @@ export function LinkFilePanel({
             ) : (
               <p className="flex items-center gap-2 text-[14px] text-washi-muted">
                 <Check className="size-4 text-rokusho" /> La duración coincide con la del vídeo de YouTube.
+              </p>
+            )}
+            {step.file.size > cloudLimitBytes() && (
+              <p className="flex gap-2 text-[14px] leading-snug text-washi-muted">
+                <CloudUpload className="mt-0.5 size-4 shrink-0 text-ai-400" aria-hidden />
+                <span>
+                  Pesa más de {formatBytes(cloudLimitBytes())}: al vincularlo, este dispositivo hará una copia más ligera
+                  para el grupo
+                  {step.duration ? ` (tarda ${formatEta(estimateCopySeconds(step.duration))})` : ''}. Aquí seguirás usando el
+                  original.
+                </span>
               </p>
             )}
             <div className="flex justify-end gap-2">

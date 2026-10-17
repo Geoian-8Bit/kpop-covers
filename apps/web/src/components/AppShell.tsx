@@ -1,5 +1,6 @@
+import { useIsMutating } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { CalendarDays, Library, LogOut, MoreVertical, Plus, Settings, Shuffle, Sparkles } from 'lucide-react';
+import { Ellipsis, LogOut, Plus, Settings, ShieldCheck } from 'lucide-react';
 import {
   lazy,
   Suspense,
@@ -9,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -25,19 +27,21 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { InstallAppButton, InstallAppHelp } from './InstallApp';
 import { ButtonSkin } from './ui/ButtonSkin';
 import { Logo } from './Logo';
+import { useFabScrollPadding } from './stickyBarPadding';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
 import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
-import { BagIcon } from '@/features/bags/BagIcon';
+import { MAIN_NAV } from '@/features/nav/navItems';
+import { QuickNav, useQuickNavShown } from '@/features/nav/QuickNav';
+import { noteSaving } from '@/features/nav/version/appUpdate';
+import { VersionCheck } from '@/features/nav/version/VersionCheck';
 
-/** Main sections: the library, the next cover (F12 wishes, F11 votes), the bags (F13) and Random Play Dance (F14). */
-const MAIN_NAV: { to: string; end?: boolean; label: string; Icon: (p: { className?: string }) => ReactNode }[] = [
-  { to: '/', end: true, label: 'Biblioteca', Icon: Library },
-  { to: '/bolsas', label: 'Bolsas', Icon: BagIcon },
-  { to: '/deseos', label: 'Próxima cover', Icon: Sparkles },
-  { to: '/rpd', label: 'Random Play Dance', Icon: Shuffle },
-  { to: '/eventos', label: 'Eventos', Icon: CalendarDays },
-];
+/** Tells the update check how many saves are in flight, so a new version never reloads the app mid-save. */
+function SavingReporter() {
+  const saving = useIsMutating();
+  useEffect(() => noteSaving(saving), [saving]);
+  return null;
+}
 
 // Not in the entry chunk: warmed while idle and on hover/press of the add buttons, so the first open is instant.
 const AddVideoDialog = lazy(() => loadAddVideoDialog().then((m) => ({ default: m.AddVideoDialog })));
@@ -173,9 +177,17 @@ export function AppShell() {
   useEffect(() => prefetchAddVideoWhenIdle(), []);
   const mainRef = useRef<HTMLElement>(null);
   useRouteFocus(mainRef);
+  const quickNav = useQuickNavShown();
+  // Focus scrolled to the bottom edge is never left under the button (WCAG 2.4.11; see `html` in index.css).
+  useFabScrollPadding(quickNav);
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[264px_minmax(0,1fr)]">
+    <div
+      className="min-h-dvh lg:grid lg:grid-cols-[264px_minmax(0,1fr)]"
+      // P1 · Room a fixed bar at the bottom right leaves for the quick-menu button (56 px + 16 px margin), only while
+      // it shows. Pages use it on phones: `max-lg:pr-[var(--fab-clearance,0px)]`.
+      style={quickNav ? ({ '--fab-clearance': 'calc(72px + env(safe-area-inset-right))' } as CSSProperties) : undefined}
+    >
       {/* First stop for the keyboard: past the rail and the top bar, straight to the page. */}
       <a
         href="#contenido"
@@ -190,7 +202,14 @@ export function AppShell() {
       <SideRail onAdd={openAddVideo} />
       <div className="min-w-0">
         <MobileBar onAdd={openAddVideo} />
-        <main id="contenido" ref={mainRef} tabIndex={-1} data-route-focus>
+        {/* P1 · Room at the bottom on phones, so the quick-menu button never sits over the end of a page. */}
+        <main
+          id="contenido"
+          ref={mainRef}
+          tabIndex={-1}
+          data-route-focus
+          className={cn(quickNav && 'pb-[calc(84px+env(safe-area-inset-bottom))] lg:pb-0')}
+        >
           <Routed context={context}>
             {/* Portalled, so it can sit inside the boundary: a chunk that fails to load can't blank the app. */}
             {addLoaded && (
@@ -204,6 +223,9 @@ export function AppShell() {
       {/* One help dialog for every install button, outside the phone menu so closing the menu can't take it down. */}
       <InstallAppHelp />
       <WhoPromptHost />
+      {/* P1 · Phones: the sections and «¿Quién eres?» in the quick menu, bottom right (desktop keeps the rail). */}
+      <QuickNav shown={quickNav} />
+      <SavingReporter />
     </div>
   );
 }
@@ -409,8 +431,8 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
             <motion.button
               ref={triggerRef}
               type="button"
-              // It holds the main navigation on phones, not only the account.
-              aria-label="Menú"
+              // P2 · The sections live in the quick menu (bottom right); this one holds the rest.
+              aria-label="Más opciones"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((v) => !v)}
@@ -421,14 +443,14 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
               {user ? (
                 <Avatar name={name} hue={profile?.avatar_hue} />
               ) : (
-                <MoreVertical className="size-5 text-washi-muted" />
+                <Ellipsis className="size-5 text-washi-muted" />
               )}
             </motion.button>
             <AnimatePresence>
               {menuOpen && (
                 <motion.div
                   role="menu"
-                  aria-label="Menú"
+                  aria-label="Más opciones"
                   onKeyDown={(event) => {
                     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
                     event.preventDefault();
@@ -443,7 +465,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                   exit={{ opacity: 0, scale: 0.96, y: -4, transition: { duration: 0.12 } }}
                   transition={jelly}
                   style={{ transformOrigin: 'top right' }}
-                  className="paper-raised absolute right-0 top-[calc(100%+8px)] w-64 rounded-[14px] p-2"
+                  className="paper-raised absolute right-0 top-[calc(100%+8px)] w-[min(18rem,calc(100vw-32px))] rounded-[14px] p-2"
                 >
                   {user && (
                     <>
@@ -457,31 +479,6 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       <div className="my-1 h-px bg-line" />
                     </>
                   )}
-                  {MAIN_NAV.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      role="menuitem"
-                      to={item.to}
-                      replace
-                      end={item.end}
-                      onClick={(e) => {
-                        guardNav(e);
-                        setMenuOpen(false);
-                      }}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-bold transition-colors hover:bg-washi/[0.06] hover:text-washi',
-                          isActive ? 'bg-washi/[0.07] text-washi' : 'text-washi-muted',
-                        )
-                      }
-                    >
-                      <item.Icon className="size-4" />
-                      {item.label}
-                    </NavLink>
-                  ))}
-                  <div className="my-1 h-px bg-line" />
-                  <InstallAppButton compact className="mb-1" />
-                  <WhoButton inMenu onPick={() => setMenuOpen(false)} />
                   <Link
                     role="menuitem"
                     to="/ajustes"
@@ -490,10 +487,24 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       guardNav(e);
                       setMenuOpen(false);
                     }}
-                    className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
+                    className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-bold text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
                   >
                     <Settings className="size-4" />
                     Ajustes
+                  </Link>
+                  <InstallAppButton compact className="my-1" />
+                  <Link
+                    role="menuitem"
+                    to="/privacidad"
+                    replace
+                    onClick={(e) => {
+                      guardNav(e);
+                      setMenuOpen(false);
+                    }}
+                    className="flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium text-washi-muted transition-colors hover:bg-washi/[0.06] hover:text-washi"
+                  >
+                    <ShieldCheck className="size-4" />
+                    Privacidad y condiciones
                   </Link>
                   {user && (
                     <button
@@ -506,20 +517,8 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                       Cerrar sesión
                     </button>
                   )}
-                  <p className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-washi-subtle">
-                    One Shoot · estudio de ensayo
-                    <Link
-                      role="menuitem"
-                      to="/privacidad"
-                      onClick={(e) => {
-                        guardNav(e);
-                        setMenuOpen(false);
-                      }}
-                      className="hover:text-washi-muted"
-                    >
-                      Privacidad
-                    </Link>
-                  </p>
+                  <div className="my-1 h-px bg-line" />
+                  <VersionCheck inMenu className="pt-1.5" />
                 </motion.div>
               )}
             </AnimatePresence>

@@ -1,7 +1,22 @@
+import {
+  cameraRateFps,
+  createFrameIntervalLog,
+  createLagLog,
+  frameIntervalMs,
+  frameLagMs,
+  type LagLog,
+  type MedianLog,
+} from '@coverscape/shared';
+
 /**
  * The recorded picture when it has to be redrawn (Q6). Every camera frame is drawn upright onto a canvas of the
  * picture's own shape (vertical when the phone is held upright, horizontal when it's turned), and that canvas is
- * both the preview and the video track that gets recorded: what you see is exactly what you get.
+ * the video track that gets recorded.
+ *
+ * P19 · It is not the preview: the live <video> is (the browser composites it without the page, so a busy main
+ * thread never holds the picture up), with a digital zoom shown as the same centre crop in CSS. The canvas only
+ * draws while something records it, and goes on screen only when a turned phone made the recorded frame differ
+ * from the live one. A 1:1 copy is drawn without filtering (the cheapest draw); a zoom is resampled in high quality.
  *
  * Drawing it ourselves is what allows a digital zoom on lenses without a browser zoom, flipping the camera or
  * turning the phone between parts of a take, and upright files on browsers that save them on their side. When
@@ -30,8 +45,9 @@ export interface Compositor {
 
 type CapturableCanvas = HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream };
 type FrameTrack = MediaStreamTrack & { requestFrame?: () => void };
+type FrameMeta = { presentedFrames: number; captureTime?: number; expectedDisplayTime?: number };
 type FrameVideo = HTMLVideoElement & {
-  requestVideoFrameCallback?: (cb: (now: number, meta: { presentedFrames: number }) => void) => number;
+  requestVideoFrameCallback?: (cb: (now: number, meta: FrameMeta) => void) => number;
   cancelVideoFrameCallback?: (id: number) => void;
 };
 
@@ -39,6 +55,14 @@ type FrameVideo = HTMLVideoElement & {
 const MAX_LONG = 3840;
 /** Fallback pacing: the screen refreshes at 60–120 Hz, the camera at 30 or 60. */
 const frameGap = (fps: number) => 1000 / (fps + 2);
+/** No camera frame for this long while drawing per frame: the source stopped being presented, pace by the screen. */
+const STALL_MS = 250;
+
+/** The canvas size for a camera picture: its own, up to 4K on the long side, in even numbers (encoders want them). */
+export function canvasSize(sw: number, sh: number): { width: number; height: number } {
+  const scale = Math.min(1, MAX_LONG / Math.max(sw, sh));
+  return { width: Math.round(sw * scale) & ~1, height: Math.round(sh * scale) & ~1 };
+}
 
 /**
  * R4 · Counts frames only while a take is rolling (pauses don't count): `read` gives an ever-growing frame count
@@ -61,23 +85,67 @@ export function createFrameMeter(read: () => number) {
 }
 export type FrameMeter = ReturnType<typeof createFrameMeter>;
 
-/** Frames the camera presents to the page (a direct recording records exactly those). */
-export function watchPresentedFrames(source: HTMLVideoElement): { count(): number; stop(): void } {
+export interface FrameWatch {
+  /** Frames presented so far. */
+  count(): number;
+  /** Of those, frames the page's callbacks missed (jumps in `presentedFrames`) while sampling. */
+  missed(): number;
+  /** P19 review · Camera → screen delays seen while sampling (empty where the browser doesn't tell them). */
+  lag: LagLog;
+  /** Time between camera frames while sampling (from `captureTime`): the camera's real rate. */
+  intervals: MedianLog;
+  /** The camera's real rate from `intervals` (null when the browser gives no capture times, or too few). */
+  cameraFps(): number | null;
+  /** Collect delays, intervals and missed frames or not (off during a take's pauses). */
+  sampleLag(on: boolean): void;
+  stop(): void;
+}
+
+/** Frames the camera presents to the page (a direct recording records exactly those), and how late they show. */
+export function watchPresentedFrames(source: HTMLVideoElement): FrameWatch {
   const video = source as FrameVideo;
   let count = 0;
+  let missed = 0;
   let last: number | null = null;
+  /** The previous frame seen while sampling (reset by a pause: its interval would span it). */
+  let prev: { presentedFrames: number; captureTime?: number } | null = null;
   let handle = 0;
   let stopped = false;
-  if (typeof video.requestVideoFrameCallback !== 'function') return { count: () => 0, stop: () => undefined };
-  const tick = (_now: number, meta: { presentedFrames: number }) => {
+  let sampling = true;
+  const lag = createLagLog();
+  const intervals = createFrameIntervalLog();
+  const cameraFps = () => cameraRateFps(intervals);
+  if (typeof video.requestVideoFrameCallback !== 'function')
+    return { count: () => 0, missed: () => 0, lag, intervals, cameraFps, sampleLag: () => undefined, stop: () => undefined };
+  const tick = (_now: number, meta: FrameMeta) => {
     if (stopped) return;
     count += last == null ? 1 : Math.max(1, meta.presentedFrames - last);
     last = meta.presentedFrames;
+    if (sampling) {
+      const ms = frameLagMs(meta);
+      if (ms != null) lag.add(ms);
+      if (prev) {
+        missed += Math.max(0, meta.presentedFrames - prev.presentedFrames - 1);
+        const gap = frameIntervalMs(prev, meta);
+        if (gap != null) intervals.add(gap);
+      }
+      if (!prev) prev = { presentedFrames: 0 };
+      prev.presentedFrames = meta.presentedFrames;
+      prev.captureTime = meta.captureTime;
+    }
     handle = video.requestVideoFrameCallback!(tick);
   };
   handle = video.requestVideoFrameCallback(tick);
   return {
     count: () => count,
+    missed: () => missed,
+    lag,
+    intervals,
+    cameraFps,
+    sampleLag(on) {
+      sampling = on;
+      prev = null;
+    },
     stop() {
       stopped = true;
       video.cancelVideoFrameCallback?.(handle);
@@ -96,12 +164,17 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
   // Hidden until it holds a real frame (the live camera underneath shows meanwhile).
   canvas.style.opacity = '0';
   const ctx = canvas.getContext('2d', { alpha: false });
-  if (ctx) ctx.imageSmoothingQuality = 'high';
   const video = source as FrameVideo;
-  /** Frame callbacks when the browser has them; dropped for the screen-refresh loop if they never fire. */
-  let perFrame = typeof video.requestVideoFrameCallback === 'function';
-  let heardFrame = false;
-  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Frame callbacks when the browser has them. A source that isn't presented (hidden, on some browsers) never calls
+   * back: when frames stop coming for STALL_MS, at any moment and not only at the start, the screen-refresh loop
+   * takes over, drawing only frames the camera really changed, and goes back to the frame callbacks as soon as one
+   * answers (a frame callback stays asked for meanwhile).
+   */
+  const canPerFrame = typeof video.requestVideoFrameCallback === 'function';
+  let perFrame = canPerFrame;
+  let lastFrameAt = 0;
+  let watchdog: ReturnType<typeof setInterval> | undefined;
   let zoom = 1;
   let locked = false;
   let frozen = false;
@@ -119,13 +192,10 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     const sh = source.videoHeight;
     if (!ctx || !sw || !sh || source.readyState < 2) return;
     if (!locked) {
-      const scale = Math.min(1, MAX_LONG / Math.max(sw, sh));
-      const w = Math.round(sw * scale) & ~1;
-      const h = Math.round(sh * scale) & ~1;
+      const { width: w, height: h } = canvasSize(sw, sh);
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
-        ctx.imageSmoothingQuality = 'high';
       }
     }
     // The whole picture (or its zoomed centre), fitted in; bars only when the shape changed mid-take.
@@ -138,6 +208,10 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
+    // P19 · A 1:1 copy needs no filtering (the cheapest draw); only a zoom or a refit is resampled, and well.
+    const scaled = Math.abs(dw - cw) > 0.5 || Math.abs(dh - ch) > 0.5;
+    if (ctx.imageSmoothingEnabled !== scaled) ctx.imageSmoothingEnabled = scaled;
+    if (scaled && ctx.imageSmoothingQuality !== 'high') ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
     if (drawn === 0) canvas.style.opacity = '';
     drawn++;
@@ -148,9 +222,9 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     }
   };
 
-  const onVideoFrame = (_now: number, meta: { presentedFrames: number }) => {
+  const onVideoFrame = (_now: number, meta: FrameMeta) => {
     handle = 0;
-    heardFrame = true;
+    lastFrameAt = performance.now();
     if (disposed || frozen) return;
     handle = video.requestVideoFrameCallback!(onVideoFrame);
     // presentedFrames jumps by more than one when the page missed frames (busy main thread).
@@ -159,36 +233,110 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     draw();
   };
 
+  /**
+   * Screen loop · whether the camera has a new frame since the last draw, from the element's own frame counter:
+   * true (draw), false (the same frame: drawing it again would only duplicate it in the take), or null (no counter
+   * that moves here: draw on the screen's pace as before).
+   */
+  let shownFrames: number | null = null;
+  let shownSince = 0;
+  let counterMoved = false;
+  let counterUseful = true;
+  const newFrames = (now: number): number | null => {
+    if (!counterUseful) return null;
+    const q = video.getVideoPlaybackQuality?.().totalVideoFrames;
+    if (typeof q !== 'number' || !(q > 0)) return null;
+    if (shownFrames == null || q < shownFrames) {
+      // A first look at the counter (after a stall, the frame callbacks drew the current frame already) says nothing
+      // new: wait for it to move rather than draw that frame twice; only a canvas still empty draws at once. A counter
+      // that went back (a camera reopened) is a new frame.
+      const first = shownFrames == null;
+      shownFrames = q;
+      shownSince = now;
+      return first && drawn > 0 ? 0 : 1;
+    }
+    if (q === shownFrames) {
+      // A counter that never moves for a camera stream (some browsers) would freeze the canvas: stop trusting it.
+      if (!counterMoved && now - shownSince > STALL_MS && source.readyState >= 2) counterUseful = false;
+      return counterUseful ? 0 : null;
+    }
+    counterMoved = true;
+    const fresh = q - shownFrames;
+    shownFrames = q;
+    shownSince = now;
+    return fresh;
+  };
+
   const onAnimationFrame = (now: number) => {
     handle = 0;
     if (disposed || frozen) return;
     handle = requestAnimationFrame(onAnimationFrame);
     if (now - last < gap) return;
+    const fresh = newFrames(now);
+    if (fresh === 0) return;
     last = now;
-    delivered++;
+    delivered += fresh ?? 1;
     draw();
+  };
+
+  /**
+   * While on the screen's loop a frame callback stays asked for: as soon as the camera is presented again (a flash
+   * or a lens that reconfigured the camera, a camera reopening), drawing goes back to one per camera frame.
+   */
+  let probe = 0;
+  const onProbe = (now: number, meta: FrameMeta) => {
+    probe = 0;
+    if (disposed || frozen || perFrame) return;
+    if (handle) cancelAnimationFrame(handle);
+    handle = 0;
+    perFrame = true;
+    presentedAt = null;
+    watch();
+    onVideoFrame(now, meta);
   };
 
   const schedule = () => {
     if (handle || disposed || frozen) return;
     presentedAt = null;
-    handle = perFrame ? video.requestVideoFrameCallback!(onVideoFrame) : requestAnimationFrame(onAnimationFrame);
-    // A hidden source may never be "presented" on some browsers: then pace by the screen instead.
-    if (perFrame && !heardFrame) {
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => {
-        if (heardFrame || disposed || frozen || source.readyState < 2) return;
-        unschedule();
-        perFrame = false;
-        schedule();
-      }, 1000);
+    if (perFrame) {
+      handle = video.requestVideoFrameCallback!(onVideoFrame);
+      watch();
+      return;
     }
+    shownFrames = null;
+    counterMoved = false;
+    counterUseful = true;
+    handle = requestAnimationFrame(onAnimationFrame);
+    if (canPerFrame && !probe) probe = video.requestVideoFrameCallback!(onProbe);
   };
   const unschedule = () => {
+    if (probe) video.cancelVideoFrameCallback?.(probe);
+    probe = 0;
     if (!handle) return;
     if (perFrame) video.cancelVideoFrameCallback?.(handle);
     else cancelAnimationFrame(handle);
     handle = 0;
+  };
+  /** Armed for as long as frames are drawn per frame: frames that stop coming switch to the screen's loop. */
+  const watch = () => {
+    clearInterval(watchdog);
+    lastFrameAt = performance.now();
+    watchdog = setInterval(() => {
+      if (disposed || frozen || !perFrame) {
+        clearInterval(watchdog);
+        return;
+      }
+      // A camera still opening (or reopening) has nothing to present yet: not a stall.
+      if (source.readyState < 2) {
+        lastFrameAt = performance.now();
+        return;
+      }
+      if (performance.now() - lastFrameAt < STALL_MS) return;
+      clearInterval(watchdog);
+      unschedule();
+      perFrame = false;
+      schedule();
+    }, STALL_MS / 2);
   };
   schedule();
 
@@ -204,9 +352,16 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
       locked = next;
     },
     freeze(next) {
+      if (next === frozen) return;
       frozen = next;
-      if (frozen) unschedule();
-      else schedule();
+      if (frozen) {
+        unschedule();
+        clearInterval(watchdog);
+      } else {
+        // Drawing again: the frame callbacks get another chance (the source may be presented again).
+        perFrame = canPerFrame;
+        schedule();
+      }
     },
     stream() {
       const capture = (canvas as CapturableCanvas).captureStream;
@@ -227,7 +382,7 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     counts: () => ({ drawn, delivered }),
     dispose() {
       disposed = true;
-      clearTimeout(watchdog);
+      clearInterval(watchdog);
       unschedule();
       track = null;
     },

@@ -3,12 +3,14 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '@/components/ui/Spinner';
 import { useFollowPaths } from '@/data/follow';
+import { cancelRelease, scheduleRelease } from '@/features/pose/models';
 import { cn } from '@/lib/cn';
 import { snappy } from '@/lib/motion';
+import { friendlyError } from '@/lib/supabase';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { usePlayer } from '@/player/store';
 import { NO_ZOOM, sameZoom, type Pt, type Size, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
-import { peopleInFrame } from './analyze';
 import {
   boxAt,
   boxFromDrag,
@@ -21,7 +23,15 @@ import {
   type Candidate,
   type FollowPick,
 } from './followPath';
-import { followUi, jobPercent, takeFollowOpener, useFollowUi, type PickMode } from './followUi';
+import {
+  FILE_CHANGED,
+  followUi,
+  jobPercent,
+  jobShort,
+  takeFollowOpener,
+  useFollowUi,
+  type PickMode,
+} from './followUi';
 import { registerFollowStage, stageVideo, useFollowActions } from './useFollowActions';
 
 /**
@@ -34,12 +44,15 @@ export function FollowStageLayer({
   box,
   media,
   canZoom,
+  fullscreen = false,
 }: {
   video: Video;
   box: Size;
   media: Size | null;
   /** A file is playing and ready (the zoom can be applied; YouTube's player is never altered). */
   canZoom: boolean;
+  /** 14 · In fullscreen the progress is a thin line along the top of the video, not a label over it. */
+  fullscreen?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -48,6 +61,20 @@ export function FollowStageLayer({
   }, []);
   // Leaving the song: no half-finished choice or analysis carries over to the next one.
   useEffect(() => () => followUi.reset(), [video.id]);
+  // 7 · Another file linked (or its offset moved) mid-analysis: that analysis stops and nothing of it is saved.
+  const offset = video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0;
+  const fileKey = `${video.storage_path ?? ''}|${video.file_name ?? ''}|${offset}`;
+  const firstFile = useRef(fileKey);
+  useEffect(() => {
+    if (firstFile.current === fileKey) return;
+    firstFile.current = fileKey;
+    if (useFollowUi.getState().job) followUi.reset(FILE_CHANGED);
+  }, [fileKey]);
+  // H12 · Leaving the studio frees the models' memory on the graphics chip (coming straight back keeps them).
+  useEffect(() => {
+    cancelRelease();
+    return () => scheduleRelease();
+  }, []);
 
   const paths = useFollowPaths(video.id).data;
   const followId = usePlayer((s) => s.followPathId);
@@ -56,7 +83,7 @@ export function FollowStageLayer({
   // While choosing, the whole picture shows (the right dancer may be outside the zoom); following resumes after.
   useFollowDriver(path, canZoom && !picking);
 
-  const job = useFollowUi((s) => s.job);
+  const working = useFollowUi((s) => s.job != null);
   const playing = usePlayer((s) => s.playing);
   const pickPath =
     picking && 'pathId' in picking ? (paths?.find((p) => p.id === picking.pathId) ?? null) : null;
@@ -74,31 +101,59 @@ export function FollowStageLayer({
           box={box}
           media={media}
           canRead={canZoom}
+          fullscreen={fullscreen}
         />
       )}
       <AnimatePresence>
-        {job && (
-          <motion.div
-            key="follow-job"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={snappy}
-            aria-hidden
-            className="pointer-events-none absolute right-3 top-3 z-30 flex items-center gap-2 rounded-[10px] bg-sumi-950/85 px-3 py-2 text-[12px] font-semibold text-washi"
-          >
-            <span aria-hidden className="contents">
-              <Spinner className="size-3.5" />
-            </span>
-            {job.phase === 'frames'
-              ? `Analizando ${jobPercent(job)} %`
-              : job.phase === 'saving'
-                ? 'Guardando…'
-                : 'Preparando…'}
-          </motion.div>
-        )}
+        {working &&
+          (fullscreen ? (
+            <motion.div
+              key="follow-line"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[3px] bg-sumi-950/60"
+            >
+              <JobLineFill />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="follow-job"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={snappy}
+              aria-hidden
+              className="pointer-events-none absolute right-3 top-3 z-30 flex max-w-[calc(100%-24px)] items-center gap-2 rounded-[10px] bg-sumi-950/85 px-3 py-2 text-[12px] font-semibold text-washi"
+            >
+              <span aria-hidden className="contents">
+                <Spinner className="size-3.5" />
+              </span>
+              <JobShortText />
+            </motion.div>
+          ))}
       </AnimatePresence>
     </>
+  );
+}
+
+/** Only these repaint as the analysis moves on (once per percent at most), never the stage layer. */
+function JobShortText() {
+  const text = useFollowUi((s) => (s.job ? jobShort(s.job) : ''));
+  return <span className="truncate">{text}</span>;
+}
+
+function JobLineFill() {
+  const percent = useFollowUi((s) => (s.job ? jobPercent(s.job) : 0));
+  return (
+    <motion.span
+      className="block h-full origin-left bg-kin-300"
+      initial={false}
+      animate={{ scaleX: percent / 100 }}
+      transition={snappy}
+    />
   );
 }
 
@@ -123,6 +178,12 @@ function useFollowDriver(path: FollowPath | null, canZoom: boolean) {
     apply(usePlayer.getState().time);
     return usePlayer.subscribe((s, prev) => {
       if (s.followPathId !== path.id) return;
+      // Under the recorder (`covered`) nobody sees the studio's picture: follow again once it shows.
+      if (s.covered) return;
+      if (prev.covered) {
+        apply(s.time);
+        return;
+      }
       // A clip (re)applied sets its own zoom: follow again from there, it isn't the user moving it.
       if (s.loop !== prev.loop || s.activeClipId !== prev.activeClipId) {
         applied = null;
@@ -180,6 +241,7 @@ function PickOverlay({
   box,
   media,
   canRead,
+  fullscreen,
 }: {
   mode: PickMode;
   video: Video;
@@ -188,6 +250,7 @@ function PickOverlay({
   media: Size | null;
   /** The picture can be read (a file is on screen): look for people with the model. */
   canRead: boolean;
+  fullscreen: boolean;
 }) {
   const toast = useToast();
   const actions = useFollowActions(video);
@@ -213,7 +276,9 @@ function PickOverlay({
       return;
     }
     let alive = true;
-    peopleInFrame(el)
+    // The analysis module loads the first time the picker looks for people, not with the studio.
+    import('./analyze')
+      .then(({ peopleInFrame }) => peopleInFrame(el))
       .then(({ candidates }) => {
         if (!alive) return;
         setPeople(candidates);
@@ -222,7 +287,12 @@ function PickOverlay({
       .catch((err: unknown) => {
         if (!alive) return;
         setStatus('error');
-        setError(err instanceof Error ? err.message : 'No se pudo cargar el modelo.');
+        // Our own errors say it in Spanish; anything else (the analysis chunk not loading…) never in the browser's words.
+        setError(
+          err instanceof Error && (err.name === 'FollowError' || err.name === 'ModelLoadError')
+            ? err.message
+            : friendlyError(err),
+        );
       });
     return () => {
       alive = false;
@@ -231,6 +301,8 @@ function PickOverlay({
 
   // Focus goes into the picker (on «Cancelar») and back to the button that opened it when it closes (unless the
   // name dialog takes it).
+  // The phone's back button closes the picker instead of leaving the song (or fullscreen).
+  useBackToClose(true, () => followUi.pick(null));
   const cancelRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelRef.current?.focus();
@@ -367,7 +439,15 @@ function PickOverlay({
       onPointerCancel={() => setDrag(null)}
     >
       {/* The text lets the finger through (drawing can start under it); only Cancelar takes taps. */}
-      <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex items-start gap-2">
+      <div
+        className={cn(
+          'pointer-events-none absolute z-10 flex items-start gap-2',
+          // In fullscreen the video can reach the phone's notch (and, in landscape, its sides).
+          fullscreen
+            ? 'left-[max(8px,env(safe-area-inset-left))] right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))]'
+            : 'inset-x-2 top-2',
+        )}
+      >
         <p
           id="follow-pick-help"
           role="status"

@@ -1,9 +1,17 @@
 import { motion } from 'motion/react';
 import { Lock, LockOpen, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
-import { canLock, canWhiteBalance, WHITE_BALANCE, type TrackInfo } from './camera';
+import {
+  canLock,
+  canWhiteBalance,
+  subscribeWhiteBalance,
+  whiteBalanceHiddenNow,
+  whiteBalanceVersion,
+  WHITE_BALANCE,
+  type TrackInfo,
+} from './camera';
 
 export interface ImageState {
   /** Exposure compensation (C3), 0 = as the camera meters. */
@@ -40,6 +48,9 @@ export function ImageControls({
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // P24 · Re-render when this phone turns out to ignore the colour presets (the option then hides).
+  useSyncExternalStore(subscribeWhiteBalance, whiteBalanceVersion);
+  const whiteBalance = canWhiteBalance(info);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -109,7 +120,12 @@ export function ImageControls({
         </div>
       )}
 
-      {canWhiteBalance(info) && (
+      {!whiteBalance && whiteBalanceHiddenNow(info) && (
+        <p role="status" className="mt-3 text-[12px] leading-snug text-washi-subtle">
+          Este móvil no cambia el color de la luz desde el navegador: se queda en automático.
+        </p>
+      )}
+      {whiteBalance && (
         <div className="mt-3">
           <p className="text-[13px] font-bold text-washi-muted">Color de la luz</p>
           <div role="radiogroup" aria-label="Balance de blancos" className="mt-1.5 flex flex-wrap gap-1.5">

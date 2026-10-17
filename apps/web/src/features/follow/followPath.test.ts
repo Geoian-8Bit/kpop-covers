@@ -22,6 +22,7 @@ import {
   screenToPicture,
   smoothKeyframes,
   spliceFrom,
+  spliceRange,
   upsertKeyframe,
   type Box,
   type Candidate,
@@ -421,5 +422,66 @@ describe('manual points are never dropped', () => {
     expect(cleanManualKeyframes([[1.23456, 0.4444444, 0.3, 0.1, 0.4]])).toEqual([
       [1.23, 0.444, 0.3, 0.1, 0.4],
     ]);
+  });
+});
+
+describe('15 · the faster analysis keeps the path right', () => {
+  it('smoothing stops at a gap: the dancer hidden for a while is not pulled towards the other side', () => {
+    const kfs: FollowKeyframe[] = [
+      [0, 0.1, 0.3, 0.1, 0.4],
+      [0.25, 0.1, 0.3, 0.1, 0.4],
+      [0.5, 0.1, 0.3, 0.1, 0.4],
+      // Hidden for 3 s; seen again on the other side of the picture.
+      [3.5, 0.7, 0.3, 0.1, 0.4],
+      [3.75, 0.7, 0.3, 0.1, 0.4],
+      [4, 0.7, 0.3, 0.1, 0.4],
+    ];
+    const smooth = smoothKeyframes(kfs, 2);
+    expect(smooth[2]![1]).toBeCloseTo(0.1, 6);
+    expect(smooth[3]![1]).toBeCloseTo(0.7, 6);
+  });
+
+  it('a correction ready in part only replaces its own stretch', () => {
+    const old: FollowKeyframe[] = [0, 2, 4, 6, 8].map((t) => [t, 0.1, 0.3, 0.1, 0.4]);
+    const fresh: FollowKeyframe[] = [3, 4, 5, 9].map((t) => [t, 0.6, 0.3, 0.1, 0.4]);
+    expect(spliceRange(old, 3, 5, fresh).map((k) => [k[0], k[1]])).toEqual([
+      [0, 0.1],
+      [2, 0.1],
+      [3, 0.6],
+      [4, 0.6],
+      [5, 0.6],
+      [6, 0.1],
+      [8, 0.1],
+    ]);
+  });
+
+  it('while the dancer is hidden, the neighbour standing where they stood is not taken for them', () => {
+    const f = createFollower(box(0.4, 0.3), 1, 0);
+    // Both seen: ours at 0.4, the neighbour at 0.55.
+    expect(
+      f.step(0.25, [
+        { box: box(0.4, 0.3), id: 1 },
+        { box: box(0.55, 0.3), id: 2 },
+      ]).found,
+    ).toBe(true);
+    // Ours hidden: only the neighbour, where they were.
+    expect(f.step(0.5, [{ box: box(0.555, 0.3), id: 2 }]).found).toBe(false);
+    // Ours back.
+    expect(
+      f.step(0.75, [
+        { box: box(0.41, 0.3), id: 1 },
+        { box: box(0.55, 0.3), id: 2 },
+      ]).found,
+    ).toBe(true);
+    expect(f.box.x).toBeCloseTo(0.41);
+  });
+
+  it('says where it expects the dancer and which person it took', () => {
+    const f = createFollower(box(0.4, 0.3), null, 0);
+    const r = f.step(1, [{ box: box(0.1, 0.3) }, { box: box(0.45, 0.3) }]);
+    expect(r.index).toBe(1);
+    // Moving right at 0.05 a second: half a second later, a little further right.
+    expect(f.expect(1.5).x).toBeCloseTo(0.475, 3);
+    expect(f.lastSeen).toBe(1);
   });
 });

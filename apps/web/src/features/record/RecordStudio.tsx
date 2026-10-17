@@ -8,10 +8,35 @@ import {
   droppedFrames,
   HEAT_WARN_MINUTES,
   tooManyDrops,
+  takeVerdict,
+  directTakeVerdict,
+  CAMERA_RATE_MIN_SAMPLES,
+  restRateFps,
+  type PaceVerdict,
+  resolutionClass,
   QUALITY_LABEL,
   resolutionLabel,
+  type Clip,
   type Video,
 } from '@coverscape/shared';
+import { useClips } from '@/data/clips';
+import {
+  benchDone,
+  forgetPace,
+  heavyMode,
+  judgePace,
+  pacePending,
+  paceLog,
+  paceNotice,
+  pacePendingNotice,
+  paceRest,
+  runBench,
+  settleBench,
+  type Bench,
+  type BenchResult,
+} from './pace';
+import { StartButton, StartList } from './StartPicker';
+import { clipSection, currentChoice, nextStartKind, startKinds, startLabel, type StartChoice } from './startRules';
 import { recordSettings, useRecordSettings } from './settings';
 import { GridOverlay } from './settings/GridOverlay';
 import { LevelIndicator } from './settings/LevelIndicator';
@@ -21,12 +46,10 @@ import { useSaveTake } from '@/data/takes';
 import { friendlyError } from '@/lib/supabase';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Aperture,
   Check,
   Download,
   Info,
   Library,
-  Locate,
   Lock,
   Settings2,
   SunMedium,
@@ -34,9 +57,7 @@ import {
   MicOff,
   Music2,
   RefreshCw,
-  Repeat,
   Share,
-  SkipBack,
   SwitchCamera,
   Timer,
   Trash2,
@@ -63,7 +84,15 @@ import {
   setExposureCompensation,
   setWhiteBalance,
 } from './camera';
-import { canRecordCanvas, createFrameMeter, watchPresentedFrames, type FrameMeter } from './compositor';
+import {
+  canRecordCanvas,
+  canvasSize,
+  createFrameMeter,
+  watchPresentedFrames,
+  type FrameMeter,
+  type FrameWatch,
+} from './compositor';
+import { countedPace, createSkipWindows, type PaceCounts, type SkipWindows } from './paceSkip';
 import { InfoPanel, type TakeStats } from './InfoPanel';
 import { IMAGE_DEFAULT, ImageControls, type ImageState } from './ImageControls';
 import {
@@ -169,8 +198,16 @@ function probeVideo(url: string): Promise<{ duration: number; width: number | nu
 export function RecordStudio({ open, onClose, video }: { open: boolean; onClose: () => void; video: Video }) {
   /** The camera went away mid-take (another app, a call): set once pausePart exists, below. */
   const cameraLost = useRef<() => void>(() => undefined);
-  const cam = useCamera(open, () => cameraLost.current());
+  /** A take is starting or under way, or a clap is armed (set below): the camera never reopens by itself meanwhile. */
+  const cameraBusy = useRef<() => boolean>(() => false);
+  const cam = useCamera(
+    open,
+    () => cameraLost.current(),
+    () => cameraBusy.current(),
+  );
   const { view } = cam;
+  const viewNow = useRef(view);
+  viewNow.current = view;
   const settings = useRecordSettings();
   const [phase, setPhase] = useState<Phase>('idle');
   const [timer, setTimer] = useState<TimerSeconds>(readTimer);
@@ -178,8 +215,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [left, setLeft] = useState(0);
   const [span, setSpan] = useState<Span | null>(null);
   /**
-   * P4 · The take's exact length lives in a ref (it is saved with the take); the screen only shows whole seconds,
-   * so while rolling the 200 ms clock re-renders the recorder once a second instead of five times.
+   * P4 · The take's exact length lives in a ref (it is saved with the take). P19 · While rolling, only the small
+   * clock in the top bar re-renders (once a second): the recorder itself doesn't, nothing repaints over the camera.
    */
   const secondsExact = useRef(0);
   const [seconds, setShownSeconds] = useState(0);
@@ -204,6 +241,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   keepingRef.current = keeping;
   const [hereAt, setHereAt] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** P22 · The list of places to start (held start button). */
+  const [startListOpen, setStartListOpen] = useState(false);
   /** R3: the heat notice was shown for this take. */
   const heatWarned = useRef(false);
   const [lastStats, setLastStats] = useState<TakeStats | null>(null);
@@ -219,6 +258,30 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const reviewTake = useRef<{ id: string; saved: boolean; noSpace: boolean; kept: boolean; videoId: string } | null>(null);
   /** How the current take gets its picture (Q5): the camera's own track or the redrawn canvas. */
   const [takeKind, setTakeKind] = useState<'direct' | 'canvas' | null>(null);
+  /** Width / height of a canvas take's frame, fixed when it started rolling (P19: when to show the canvas). */
+  const [lockedAspect, setLockedAspect] = useState<number | null>(null);
+  /** P19 · The silent rehearsal running now (its path draws the canvas when it is the canvas one). */
+  const [benchPath, setBenchPath] = useState<'direct' | 'canvas' | null>(null);
+  const bench = useRef<Bench | null>(null);
+  /** The last rehearsal's numbers (panel «i»). */
+  const [benchStats, setBenchStats] = useState<BenchResult | null>(null);
+  /** Rehearsals tried in this opening (a cancelled one waits for the next opening, not for the next render). */
+  const benchTried = useRef(new Set<string>());
+  /** «Volver a medir»: runs the rehearsal again now. */
+  const [benchNonce, setBenchNonce] = useState(0);
+  /**
+   * P19 review · How the take's preview keeps up: frames and camera → screen delay, not counted in the first 2 s of
+   * the take nor in the 2 s after each resume (`skips`; nothing is sampled meanwhile).
+   */
+  const takePace = useRef<{ watch: FrameWatch; skips: SkipWindows } | null>(null);
+  /**
+   * P19 review · The camera in this take's countdown (same session and light, camera open, nothing encoding): its
+   * mean rate and delay, what a direct take is compared with. `countWatch` measures while it counts.
+   */
+  const countRest = useRef<{ fps: number | null; lagMs: number | null } | null>(null);
+  const countWatch = useRef<{ watch: FrameWatch; at: number; track: MediaStreamTrack | undefined } | null>(null);
+  /** Frames the canvas had drawn when the shutter was pressed (a frame from before is not «ready»). */
+  const drawnAtShutter = useRef(0);
   /** The camera track and picture size a direct take started with: it can only go on with the same ones. */
   const direct = useRef<{ track: MediaStreamTrack; width: number; height: number } | null>(null);
   const stopPresented = useRef<() => void>(() => undefined);
@@ -390,7 +453,33 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     cancelTicks.current = () => undefined;
     cancelAnimationFrame(armFrame.current);
     armFrame.current = 0;
+    endCountWatch(false);
   };
+
+  /**
+   * P19 review · The countdown is over (`keep`: the take goes on to roll) or cancelled: stop measuring it, and keep
+   * its rate and delay when it really ran on the same camera.
+   */
+  function endCountWatch(keep: boolean) {
+    const c = countWatch.current;
+    if (!c) return;
+    countWatch.current = null;
+    c.watch.stop();
+    if (!keep || cam.track() !== c.track) return;
+    const fps = restRateFps(c.watch.count(), (performance.now() - c.at) / 1000);
+    const lagMs = c.watch.lag.size() >= CAMERA_RATE_MIN_SAMPLES ? c.watch.lag.median() : null;
+    countRest.current = { fps, lagMs };
+  }
+
+  /** What the rolling take has counted so far (pace skips). */
+  function paceCounts(): PaceCounts {
+    const mt = meter.current;
+    return {
+      drawn: mt?.drawn.value() ?? 0,
+      delivered: mt?.delivered?.value() ?? 0,
+      seconds: recorder.current?.seconds() ?? 0,
+    };
+  }
 
   /** Ends the canvas capture and lets the frame follow the phone again. */
   const releasePicture = () => {
@@ -402,9 +491,11 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     // A direct take recorded the camera's own track: it stays open for the preview.
     stopPresented.current();
     stopPresented.current = () => undefined;
+    takePace.current = null;
     direct.current = null;
     unlockOrientation();
     setTakeKind(null);
+    setLockedAspect(null);
   };
 
   /** Q5: the camera's picture can be recorded as it comes (no digital crop, canvas not forced in settings). */
@@ -428,6 +519,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const p = usePlayer.getState();
     restore.current = { loopEnabled: p.loop.enabled, loopAll: p.loopAll };
     usePlayer.setState((s) => ({ loop: { ...s.loop, enabled: false }, loopAll: false }));
+    // The studio under the recorder stops painting from the clock until it closes (player/store.ts `covered`).
+    p.setCovered(true);
     p.pause();
     setHereAt(p.time);
     setFrom('start');
@@ -487,6 +580,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       wakeLock.current = null;
       const saved = restore.current;
       restore.current = null;
+      usePlayer.getState().setCovered(false);
       usePlayer.getState().pause();
       if (saved)
         usePlayer.setState((s) => ({
@@ -576,8 +670,13 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const w = Math.min(r.width, r.height * aspect);
     const h = w / aspect;
     let x = (clientX - r.left - (r.width - w) / 2) / w;
-    const y = (clientY - r.top - (r.height - h) / 2) / h;
+    let y = (clientY - r.top - (r.height - h) / 2) / h;
     if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    // A digital zoom shows the centre of the frame, enlarged: the point is that much nearer the centre.
+    if (view.crop > 1.001) {
+      x = 0.5 + (x - 0.5) / view.crop;
+      y = 0.5 + (y - 0.5) / view.crop;
+    }
     if (view.facing === 'user') x = 1 - x;
     return { x, y };
   }
@@ -586,6 +685,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const info = trackInfo;
     const p = framePoint(clientX, clientY);
     if (!info || !p) return;
+    stopBench();
     const t = cam.track();
     setFocusMark({ x: clientX, y: clientY, key: performance.now() });
     void (async () => {
@@ -614,6 +714,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       cam.pinchHandlers.onPointerDown(e);
       const p = press.current;
       if (p) {
+        // A second finger: a pinch is coming (zoom), which a rehearsal must not measure.
+        stopBench();
         p.multi = true;
         clearTimeout(p.timer);
         return;
@@ -663,27 +765,42 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   };
 
   function changeExposure(value: number) {
+    stopBench();
     setImage((s) => ({ ...s, exposure: value }));
     void setExposureCompensation(cam.track(), value);
   }
+  /** The latest «Color de la luz» asked for: an older answer never overwrites a newer choice. */
+  const wbAsk = useRef(0);
   function changeWhiteBalance(kelvin: number | null) {
     if (!trackInfo) return;
-    const before = image.kelvin;
+    stopBench();
+    const ask = ++wbAsk.current;
+    const t = cam.track();
     setImage((s) => ({ ...s, kelvin }));
-    void setWhiteBalance(cam.track(), kelvin, trackInfo).then((ok) => {
-      if (!ok) setImage((s) => ({ ...s, kelvin: before }));
+    void setWhiteBalance(t, kelvin, trackInfo).then((ok) => {
+      // Another camera (or the same one reopened) since: its own reset already says «Auto».
+      if (ok || ask !== wbAsk.current || cam.track() !== t) return;
+      // A failed preset leaves the camera on automatic (setWhiteBalance puts it back): say so, as it is.
+      setImage((s) => ({ ...s, kelvin: null }));
+      if (kelvin != null) setNotice('La cámara no ha aplicado ese color de la luz: sigue en automático.');
     });
   }
   function changeLock(locked: boolean) {
     if (!trackInfo) return;
+    stopBench();
     void lockFocusExposure(cam.track(), locked, trackInfo).then((ok) => {
       if (ok) setImage((s) => ({ ...s, locked }));
       if (!locked) setFocusMark(null);
     });
   }
 
-  /** The canvas is the picture only for a digital zoom, when forced in the settings, or during a canvas take. */
+  /** A take goes through the canvas for a digital zoom, when forced in the settings, or when it can't be direct. */
   const usesCanvas = settings.mode === 'canvas' || view.digital || takeKind === 'canvas';
+  /**
+   * P19 · The canvas is on screen only when the recorded frame no longer matches the live picture: a canvas take
+   * whose phone was turned mid-take (it keeps its first shape, with bars). Otherwise the live video is the preview.
+   */
+  const canvasOnScreen = takeKind === 'canvas' && lockedAspect != null && Math.abs(view.aspect - lockedAspect) > 0.02;
   /**
    * A direct take records this camera's own track: it can't switch camera or lens, crop digitally, or change
    * shape until it ends (the canvas take can, which is why it exists).
@@ -692,6 +809,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   // ───────────── A1 · recorder settings ─────────────
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** P26 · The settings opened from the chip show only «Calidad». */
+  const [settingsOnly, setSettingsOnly] = useState<'quality' | null>(null);
   /** Settings reopen the camera and change the format: only between takes. */
   const settingsAllowed = phase === 'idle' && !recorder.current;
   const summary = view.mode
@@ -709,14 +828,16 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   // Reviewing: nothing redraws the hidden camera frame, and the song stays quiet under the take's own sound.
   useEffect(() => {
-    // Q5: the canvas only draws when it is the picture (digital zoom, canvas forced, or a canvas take).
-    cam.compositor.current?.freeze(phase === 'review' || !usesCanvas);
+    // P19: the canvas only draws when something records it (a canvas take from its count-in on, or the canvas
+    // rehearsal). The preview never needs it: the live video shows the picture, digital zoom included.
+    const draws = takeKind === 'canvas' || benchPath === 'canvas';
+    cam.compositor.current?.freeze(phase === 'review' || !draws);
     if (!open || phase !== 'review') return;
     usePlayer.getState().pause();
     return usePlayer.subscribe((s) => {
       if (s.playing) s.pause();
     });
-  }, [open, phase, cam.compositor, usesCanvas]);
+  }, [open, phase, cam.compositor, takeKind, benchPath]);
 
   // Back between takes: the space left changed (a take was written, saved or deleted).
   useEffect(() => {
@@ -741,6 +862,98 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setNotice(`Esta cámara no da 60 fps en ${resolutionLabel(m.width, m.height)}: graba a ${Math.round(m.fps)}.`);
   }, [open, view.status, view.mode, view.wantFps, view.deviceId]);
 
+  // P19 · The silent rehearsal: once per phone, camera mode and format, a couple of seconds after the camera is
+  // ready and only while nothing else happens (at most one try per opening). A phone that doesn't keep up twice in a
+  // row steps down (60 → 30, or a smaller size) and says so; the camera reopens lighter on its own (the cap is part
+  // of its mode). A first «too slow» is only said; the next opening's rehearsal (or a long take) confirms it or not.
+  const clapArmed = clap != null;
+  useEffect(() => {
+    if (open) benchTried.current = new Set();
+  }, [open]);
+  // The main lens found while a take was rolling opens once the recorder is idle again (not while armed).
+  const { retryMainLens } = cam;
+  useEffect(() => {
+    if (open && phase === 'idle' && !clapArmed) retryMainLens();
+  }, [open, phase, clapArmed, retryMainLens]);
+  useEffect(() => {
+    const m = view.mode;
+    if (!open || phase !== 'idle' || view.status !== 'ready' || !m || !supported || clapArmed) return;
+    if (recorder.current || typeof MediaRecorder === 'undefined') return;
+    // Nothing lighter to step down to: no rehearsal (it would only cost battery).
+    if (!heavyMode(m)) return;
+    const installed =
+      typeof matchMedia === 'function' && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+    const path: 'direct' | 'canvas' = !IS_IOS && settings.mode === 'auto' && !view.digital && installed ? 'direct' : 'canvas';
+    const format = plannedFormat();
+    const key = `${m.width}x${m.height}@${Math.round(m.fps)}|${format.mimeType}|${path}|${view.deviceId}`;
+    if (benchDone(m, format, path) || benchTried.current.has(key)) return;
+    const id = session.current;
+    let canvasStreamForBench: MediaStream | null = null;
+    const wait = setTimeout(() => {
+      const video = cam.source.current;
+      const track = cam.track();
+      const compositor = cam.compositor.current;
+      if (!video || !track || track.readyState !== 'live' || !compositor) return;
+      if (document.visibilityState !== 'visible') return;
+      let canvas: { track: MediaStreamTrack; frames: () => number } | undefined;
+      if (path === 'canvas') {
+        try {
+          canvasStreamForBench = compositor.stream();
+          const t = canvasStreamForBench.getVideoTracks()[0];
+          if (!t) return;
+          canvas = { track: t, frames: () => compositor.counts().drawn };
+        } catch {
+          return;
+        }
+        setBenchPath('canvas');
+      } else setBenchPath('direct');
+      benchTried.current.add(key);
+      const b = runBench({ video, track, format, mode: m, wantFps: view.wantFps, path, canvas });
+      bench.current = b;
+      void b.done.then((result) => {
+        if (bench.current === b) bench.current = null;
+        canvasStreamForBench?.getTracks().forEach((t) => t.stop());
+        canvasStreamForBench = null;
+        setBenchPath(null);
+        if (!result || id !== session.current) return;
+        setBenchStats(result);
+        const label = resolutionLabel(m.width, m.height);
+        const judged = judgePace(result.verdict, resolutionClass(m.width, m.height));
+        settleBench(m, format, path, result.verdict, judged);
+        paceLog('rehearsal judged', { verdict: result.verdict, judged });
+        if (judged === 'learnt') setNotice(paceNotice(result.verdict, label) ?? '');
+        else if (judged === 'pending') setNotice(pacePendingNotice(label));
+        else if (result.verdict === 'warn') setNotice(paceNotice('warn', label) ?? '');
+      });
+    }, 1500);
+    return () => {
+      clearTimeout(wait);
+      // The rehearsal's own promise lets go of its canvas stream and says it stopped.
+      bench.current?.cancel();
+      bench.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, phase, view.status, view.mode, view.deviceId, view.digital, view.wantFps, settings.mode, settings.codec, settings.quality, supported, clapArmed, benchNonce]);
+
+  /**
+   * P19 review · Anything that touches the camera during a rehearsal (zoom, lens, flash, focus, light, the shutter)
+   * would make its frames look slow: it is cancelled, without judging.
+   */
+  function stopBench() {
+    const b = bench.current;
+    if (!b) return;
+    bench.current = null;
+    b.cancel();
+  }
+
+  /** «Volver a medir» (panel «i»): forget what was learnt here and rehearse again now. */
+  function remeasure() {
+    forgetPace();
+    benchTried.current.clear();
+    setBenchStats(null);
+    setBenchNonce((n) => n + 1);
+  }
+
   // Notices fade on their own.
   useEffect(() => {
     if (!notice) return;
@@ -755,6 +968,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       recorder.current.pause();
       meter.current?.drawn.hold();
       meter.current?.delivered?.hold();
+      takePace.current?.watch.sampleLag(false);
       setSeconds(recorder.current.seconds());
       setPhase('paused');
     } else {
@@ -779,6 +993,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     src.addEventListener('resize', onResize);
     return () => src.removeEventListener('resize', onResize);
   }, [takeKind, cam.source, pausePart]);
+
+  // An armed clap counts too: a camera reopening then would answer a clap with «La cámara no está lista».
+  cameraBusy.current = () => phaseRef.current !== 'idle' || recorder.current != null || clapRes.current != null;
 
   cameraLost.current = () => {
     if (!['countdown', 'arming', 'recording'].includes(phaseRef.current)) return;
@@ -809,6 +1026,17 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     const expected = m?.delivered ? deliveredFrames : 0;
     const dropped = m?.delivered && deliveredFrames > 0 ? droppedFrames({ expected, delivered: drawnFrames }) : null;
     const realFps = rec.seconds() > 0 && drawnFrames > 0 ? drawnFrames / rec.seconds() : null;
+    // P19 review · The pace, without the first 2 s of the take and of each resume: frames, and how late the preview
+    // showed them. Callbacks the page missed and the median rate are only logged (they don't judge a direct take).
+    const tp = takePace.current;
+    const lagMs = tp?.watch.lag.median() ?? null;
+    const total: PaceCounts = { drawn: drawnFrames, delivered: deliveredFrames, seconds: rec.seconds() };
+    const kept = tp ? countedPace(total, tp.skips.skipped(total)) : null;
+    const counted = kept
+      ? { frames: kept.drawn, delivered: kept.delivered, missed: tp?.watch.missed() ?? 0, seconds: kept.seconds }
+      : null;
+    const captureFps = tp?.watch.cameraFps() ?? null;
+    const countdown = countRest.current;
     setPhase('finishing');
     const blob = await rec.finish();
     releasePicture();
@@ -837,8 +1065,64 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       dropped,
       expected,
       realFps,
+      lagMs,
+      restFps: countdown?.fps ?? null,
+      missed: m?.delivered ? null : (counted?.missed ?? null),
     });
-    if (tooManyDrops(dropped, expected)) {
+    // P19 · A take whose preview couldn't keep up (frames lost, or a delay that grew): this phone doesn't keep up
+    // with the mode. Confirmed by a second measurement, the next takes step down by themselves (60 → 30, or a
+    // smaller size) and the review says so. A canvas take is judged against the frames the camera delivered; a
+    // direct take (the file gets every camera frame) by its delay against the countdown's, and by its mean rate
+    // against the countdown's only when the delay grows too: never by callbacks the page missed, by the median rate,
+    // nor by the rate at rest of an earlier rehearsal (a darker room slows the camera down by itself). (Read from a
+    // ref: this callback is memoised.)
+    const mode = viewNow.current.mode;
+    const rest = mode ? paceRest(mode) : null;
+    let verdict: PaceVerdict = 'unknown';
+    if (mode && counted && counted.seconds > 0) {
+      const resolution = resolutionClass(mode.width, mode.height);
+      verdict = m?.delivered
+        ? takeVerdict({
+            wantFps: viewNow.current.wantFps,
+            cameraFps: counted.delivered / counted.seconds,
+            frames: counted.frames,
+            seconds: counted.seconds,
+            resolution,
+            lagMs,
+            restLagMs: rest?.lagMs ?? null,
+          })
+        : directTakeVerdict({
+            wantFps: viewNow.current.wantFps,
+            modeFps: mode.fps,
+            presented: counted.frames,
+            seconds: counted.seconds,
+            restFps: countdown?.fps ?? null,
+            resolution,
+            lagMs,
+            restLagMs: countdown?.lagMs ?? rest?.lagMs ?? null,
+          });
+    }
+    const judged = mode && verdict !== 'unknown' ? judgePace(verdict, resolutionClass(mode.width, mode.height)) : 'none';
+    paceLog('take', {
+      kind: m?.delivered ? 'canvas' : 'direct',
+      mode: mode ? `${mode.width}x${mode.height}@${Math.round(mode.fps)}` : null,
+      seconds: rec.seconds(),
+      counted,
+      fps: counted && counted.seconds > 0 ? counted.frames / counted.seconds : null,
+      cameraFps: captureFps,
+      lagMs,
+      rest,
+      countdown,
+      verdict,
+      judged,
+    });
+    if (judged === 'learnt' && mode) {
+      setNotice(
+        `Esta toma no ha ido fluida: este móvil no puede con este modo. Las próximas se graban ${verdict === 'fps30' ? 'a 30 fps' : 'en 1080p'}.`,
+      );
+    } else if (judged === 'pending' && mode) {
+      setNotice(pacePendingNotice(resolutionLabel(mode.width, mode.height)));
+    } else if (tooManyDrops(dropped, expected)) {
       const now = recordSettings();
       setNotice(
         now.fps === 60 || now.quality === 'max'
@@ -872,10 +1156,18 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           direct.current = { track: camTrack, width: src.videoWidth, height: src.videoHeight };
           const presented = watchPresentedFrames(src);
           stopPresented.current = presented.stop;
+          takePace.current = { watch: presented, skips: createSkipWindows() };
           meter.current = { drawn: createFrameMeter(presented.count), delivered: null };
           setTakeKind('direct');
         } else {
+          // The preview is still the live video: its delay says how the take's picture keeps up.
+          if (src) {
+            const presented = watchPresentedFrames(src);
+            stopPresented.current = presented.stop;
+            takePace.current = { watch: presented, skips: createSkipWindows() };
+          }
           compositor.lock(true);
+          setLockedAspect(compositor.canvas.height > 0 ? compositor.canvas.width / compositor.canvas.height : null);
           const picture = compositor.stream();
           canvasStream.current = picture;
           videoTracks = picture.getVideoTracks();
@@ -940,11 +1232,19 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     }
     meter.current?.drawn.run();
     meter.current?.delivered?.run();
+    // P19 review · The take's start and each resume stutter a little (the song starting): their first 2 s are not
+    // counted nor sampled; the clock starts sampling once they're over.
+    const tp = takePace.current;
+    if (tp) {
+      tp.watch.sampleLag(false);
+      tp.skips.start(paceCounts());
+    }
     setPhase('recording');
   };
 
   /** Start the song and wait until it really moves (YouTube may still be loading) before rolling. */
   const go = () => {
+    endCountWatch(true);
     const engine = usePlayer.getState().engine;
     if (!engine) {
       setNotice('El reproductor no está listo.');
@@ -995,6 +1295,13 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const countIn = (back: 'idle' | 'paused') => {
     countFrom.current = back;
     unlockAudio();
+    // P19 review · A new take's countdown measures the camera as it is right now (same light, nothing encoding).
+    if (back === 'idle') {
+      countRest.current = null;
+      endCountWatch(false);
+      const src = cam.source.current;
+      if (timer > 0 && src) countWatch.current = { watch: watchPresentedFrames(src), at: performance.now(), track: cam.track() };
+    }
     if (timer === 0) return go();
     setPhase('countdown');
     setLeft(timer);
@@ -1033,16 +1340,26 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     });
   }
 
-  /** The camera has drawn at least one frame (the canvas starts at 2×2). */
+  /**
+   * The canvas holds a frame of this take: drawn after the shutter (not one left from an older take or rehearsal,
+   * maybe of another shape) and of the picture's size now, or the take would lock to a stale frame.
+   */
   function frameReady() {
+    if (recorder.current) return true;
     if (directPossible() && orientation.current.locked) return true;
-    return (cam.compositor.current?.canvas.width ?? 0) > 2;
+    const c = cam.compositor.current;
+    const src = cam.source.current;
+    if (!c || !src?.videoWidth) return false;
+    const want = canvasSize(src.videoWidth, src.videoHeight);
+    return c.counts().drawn > drawnAtShutter.current && c.canvas.width === want.width && c.canvas.height === want.height;
   }
 
   function shutter() {
     const now = phaseRef.current;
     if (now === 'idle') {
       if (view.status !== 'ready' || !cam.source.current?.videoWidth) return;
+      stopBench();
+      drawnAtShutter.current = cam.compositor.current?.counts().drawn ?? 0;
       setNotice('');
       // A take that can't be direct (iPhone, canvas forced, digital zoom) starts drawing the canvas now, during
       // the count-in; the rotation lock for a direct take is asked for when the count-in ends (go).
@@ -1106,7 +1423,11 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     });
     const clock = setInterval(() => {
       const recorded = recorder.current?.seconds() ?? 0;
-      setSeconds(recorded);
+      // P19: only the ref; the clock in the top bar reads it on its own, the recorder doesn't re-render.
+      secondsExact.current = recorded;
+      // P19 review · The pace is counted 2 s after the take's start and after each resume (they stutter a little).
+      const tp = takePace.current;
+      if (tp && meter.current && tp.skips.tick(paceCounts())) tp.watch.sampleLag(true);
       // R3: long takes at the heaviest settings heat the phone; say so once per take.
       const now = recordSettings();
       const heavy = now.quality === 'max' || (view.mode?.width ?? 0) * (view.mode?.height ?? 0) > 2560 * 1440;
@@ -1161,6 +1482,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   /** Arms: the microphone is asked for now if the take doesn't already use it (songs from a file don't). */
   function armClap() {
     if (phaseRef.current !== 'idle' || clapRes.current || !supported || view.status !== 'ready') return;
+    stopBench();
     setNotice('');
     setSettingsOpen(false);
     setImageOpen(false);
@@ -1253,8 +1575,23 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     else onClose();
   }
 
-  // Back / swipe-back: closes the studio, or asks first when a take would be lost.
-  useBackToClose(open, onClose, rolling || unsaved || clap != null);
+  // Back / swipe-back: closes the studio, or asks first when a take would be lost. With a panel open (settings,
+  // image, info, start list) it closes that panel only.
+  const panelOpen = settingsOpen || imageOpen || infoOpen || startListOpen;
+  const panelOpenRef = useRef(panelOpen);
+  panelOpenRef.current = panelOpen;
+  useBackToClose(open, onClose, rolling || unsaved || clap != null || panelOpen);
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onPop = () => {
+      setSettingsOpen(false);
+      setImageOpen(false);
+      setInfoOpen(false);
+      setStartListOpen(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [panelOpen]);
   const requestCloseRef = useRef(requestClose);
   requestCloseRef.current = requestClose;
   const confirmRef = useRef(confirm);
@@ -1263,7 +1600,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     if (!open || !(rolling || unsaved)) return;
     const onPop = () => {
       if (confirmRef.current) setConfirm(null);
-      else requestCloseRef.current();
+      else if (!panelOpenRef.current) requestCloseRef.current();
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -1349,7 +1686,11 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     again();
   }
 
-  function confirmDiscard() {
+  /**
+   * P20 · «Descartar» drops the take and leaves the camera ready for the next one, also when it was asked from
+   * «Cerrar» (or the phone's «Atrás»): leaving the recorder is its own button, «Descartar y salir».
+   */
+  function confirmDiscard(exit = false) {
     const action = confirm;
     setConfirm(null);
     if (action === 'leftover') {
@@ -1357,7 +1698,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       return;
     }
     discardTake();
-    if (action === 'close') onClose();
+    if (exit) onClose();
     if (action === 'rearm') {
       phaseRef.current = 'idle';
       armClap();
@@ -1406,11 +1747,56 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   }
 
   const duration = usePlayer((s) => s.duration);
-  const fromOptions: From[] = ['start'];
-  if (hereAt > 1 && (duration <= 0 || hereAt < duration - 3)) fromOptions.push('here');
-  if (loopRange) fromOptions.push('range');
+  const fromOptions: From[] = startKinds({ hereAt, duration, hasRange: loopRange != null });
   const fromNow = fromOptions.includes(from) ? from : 'start';
-  const startsAt = fromNow === 'range' && loopRange ? loopRange.start : fromNow === 'here' ? hereAt : 0;
+  // P22 · The start as shown (a section that is a clip carries the clip's name), and the song's clips to pick from.
+  const clips = useClips(video.id);
+  const activeClipId = usePlayer((s) => s.activeClipId);
+  const activeClip = clips.data?.find((c) => c.id === activeClipId) ?? null;
+  const startChoice = currentChoice({ kind: fromNow, hereAt, range: loopRange, clip: activeClip });
+  useEffect(() => {
+    if (phase !== 'idle') setStartListOpen(false);
+  }, [phase]);
+
+  /**
+   * P22 · A start picked from the list. A clip becomes the A–B section (without looping: the take ends at B), and
+   * only that: the take keeps the studio's speed, mirror, zoom and follow (a clip saved at 0,75× would otherwise
+   * record at 0,75×, mirrored, and move the studio's zoom under the recorder). The studio gets its own A–B and clip
+   * back on closing.
+   */
+  const startRestore = useRef<{ start: number | null; end: number | null; activeClipId: string | null } | null>(null);
+  function pickStart(choice: StartChoice) {
+    setStartListOpen(false);
+    if (choice.kind === 'clip') {
+      const clip = clips.data?.find((c: Clip) => c.id === choice.clipId);
+      const p = usePlayer.getState();
+      const section = clip ? clipSection(clip, p.duration) : null;
+      if (!clip || !section) {
+        setNotice('Este clip queda fuera de este vídeo.');
+        return;
+      }
+      startRestore.current ??= { start: p.loop.start, end: p.loop.end, activeClipId: p.activeClipId };
+      p.pause();
+      usePlayer.setState({ loop: { ...section, enabled: false }, activeClipId: clip.id });
+      setFrom('range');
+      return;
+    }
+    setFrom(choice.kind);
+  }
+  // Declared after the opening effect: its clean-up runs after that one's, which gives the loop's on/off back.
+  useEffect(() => {
+    if (!open) return;
+    startRestore.current = null;
+    return () => {
+      const before = startRestore.current;
+      startRestore.current = null;
+      if (before)
+        usePlayer.setState((s) => ({
+          loop: { ...s.loop, start: before.start, end: before.end },
+          activeClipId: before.activeClipId,
+        }));
+    };
+  }, [open]);
 
   const camReady = view.status === 'ready';
   const canTweak = phase === 'idle' || phase === 'paused';
@@ -1469,19 +1855,41 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       aria-modal="true"
       aria-label="Grabar baile"
     >
-      {/* The live camera, exactly what a direct take records (Q5); mirrored on screen only for the front camera. */}
-      <video
-        ref={cam.source}
-        autoPlay
-        muted
-        playsInline
+      {/*
+        P19 · The preview is always the live camera <video>: the browser composites it on its own, so nothing the page
+        does (a busy main thread, the canvas being drawn) can hold it up. A digital zoom is shown by cropping it with
+        CSS inside a box of the frame's shape, exactly the centre crop the canvas records. Mirrored on screen only
+        for the front camera. Never hidden while a take may draw from it: some browsers stop presenting a hidden
+        video, and the canvas take (drawn from its frames) would freeze; when the canvas is the preview, it covers it.
+      */}
+      <div
         className={cn(
-          'pointer-events-none absolute inset-0 size-full object-contain',
-          view.facing === 'user' && '-scale-x-100',
+          'pointer-events-none absolute inset-0 grid place-items-center [container-type:size]',
           !showCamera && 'invisible',
         )}
-      />
-      {/* The redrawn frame, on top when it is the picture (digital zoom or a canvas take). Pinch zooms. */}
+      >
+        <div
+          className="relative overflow-hidden"
+          style={{ aspectRatio: view.aspect, width: `min(100cqw, calc(100cqh * ${view.aspect}))` }}
+        >
+          <video
+            ref={cam.source}
+            autoPlay
+            muted
+            playsInline
+            className="absolute inset-0 size-full object-contain"
+            style={
+              view.crop > 1.001 || view.facing === 'user'
+                ? { transform: `scale(${view.facing === 'user' ? -view.crop : view.crop}, ${view.crop})` }
+                : undefined
+            }
+          />
+        </div>
+      </div>
+      {/*
+        The redrawn frame a canvas take records. Shown only when the phone was turned mid-take (the take keeps its
+        first shape, with bars): then the preview has to be the recorded frame. Pinch zooms, tap focuses.
+      */}
       <div
         ref={cam.host}
         {...previewHandlers}
@@ -1490,7 +1898,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           'absolute inset-0 touch-none',
           view.facing === 'user' && '-scale-x-100',
           !showCamera && 'invisible',
-          !usesCanvas && '[&>canvas]:opacity-0',
+          // The recorded frame on top of the live video, which stays playing underneath (covered, not hidden).
+          canvasOnScreen ? 'bg-black' : '[&>canvas]:invisible',
         )}
       />
 
@@ -1525,7 +1934,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                   phase === 'recording' ? 'animate-pulse bg-washi' : 'bg-shu-400',
                 )}
               />
-              {formatTime(seconds)}
+              <TakeClock read={() => recorder.current?.seconds() ?? secondsExact.current} running={phase === 'recording'} />
             </span>
           ) : (
             <span className="inline-flex min-w-0 items-center gap-2 rounded-full bg-black/40 px-3 py-1.5">
@@ -1540,8 +1949,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             <button
               type="button"
               disabled={!settingsAllowed}
-              onClick={() => setSettingsOpen(true)}
-              aria-label={`Ajustes del grabador: ${summary}`}
+              onClick={() => {
+                // P26: the chip opens only its own setting (quality, size and frame rate).
+                setSettingsOnly('quality');
+                setSettingsOpen(true);
+              }}
+              aria-label={`Calidad: ${summary}. Toca para cambiarla`}
               className={cn(
                 'tabular min-h-9 rounded-full bg-black/45 px-2.5 py-1 font-mono text-[11px] font-bold enabled:active:scale-95',
                 view.wantFps === 60 && view.mode.fps < 45 ? 'text-kin-300' : 'text-washi/90',
@@ -1571,42 +1984,48 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               <Timer className="size-5" />
             </RailButton>
           )}
-          {view.torchAvailable && (
+          {(view.torchAvailable || cam.flashElsewhere) && (
+            // P23 · The flash lives on one rear camera: on another lens it shows muted and its tap says which one.
             <RailButton
               label="Flash"
-              ariaLabel={view.torch ? 'Apagar la linterna' : 'Encender la linterna'}
-              pressed={view.torch}
-              onClick={cam.toggleTorch}
+              ariaLabel={
+                view.torchAvailable
+                  ? view.torch
+                    ? 'Apagar el flash'
+                    : 'Encender el flash'
+                  : `Flash no disponible: ${cam.noTorchHint ?? 'esta lente no tiene flash.'}`
+              }
+              pressed={view.torchAvailable && view.torch}
+              muted={!view.torchAvailable}
+              onClick={
+                view.torchAvailable
+                  ? () => {
+                      stopBench();
+                      cam.toggleTorch();
+                    }
+                  : () => setNotice(cam.noTorchHint ?? 'Esta lente no tiene flash.')
+              }
             >
               {view.torch ? <Zap className="size-5" /> : <ZapOff className="size-5" />}
             </RailButton>
           )}
-          {phase === 'idle' && fromOptions.length > 1 && (
-            <RailButton
-              label={fromNow === 'range' ? 'A–B' : fromNow === 'here' ? formatTime(hereAt) : 'Inicio'}
-              ariaLabel={`Empezar desde: ${fromNow === 'range' ? 'el tramo A–B' : fromNow === 'here' ? `el minuto ${formatTime(hereAt)}` : 'el principio'}`}
-              onClick={() => setFrom(fromOptions[(fromOptions.indexOf(fromNow) + 1) % fromOptions.length]!)}
-            >
-              {fromNow === 'range' ? (
-                <Repeat className="size-5" />
-              ) : fromNow === 'here' ? (
-                <Locate className="size-5" />
-              ) : (
-                <SkipBack className="size-5" />
-              )}
-            </RailButton>
+          {phase === 'idle' && (fromOptions.length > 1 || (clips.data?.length ?? 0) > 0) && (
+            <StartButton
+              choice={startChoice}
+              listOpen={startListOpen}
+              onTap={() => {
+                if (fromOptions.length > 1) setFrom(nextStartKind(fromNow, fromOptions));
+                else setStartListOpen(true);
+              }}
+              onOpenList={() => {
+                setInfoOpen(false);
+                setImageOpen(false);
+                setStartListOpen(true);
+              }}
+            />
           )}
-          {canTweak && cam.lensCycle && (
-            <RailButton
-              label={`Lente ${(view.deviceId ? view.lenses.ids.indexOf(view.deviceId) : 0) + 1}/${view.lenses.ids.length}`}
-              ariaLabel="Cambiar de lente"
-              muted={!canChangeCamera}
-              onClick={canChangeCamera ? cam.nextLens : explainDirectLock}
-            >
-              <Aperture className="size-5" />
-            </RailButton>
-          )}
-          {hasImageControls && (
+          {/* P27: «Imagen» lives in the settings fan; during a take (no settings then) it stays here. */}
+          {hasImageControls && !settingsAllowed && (
             <RailButton
               label="Imagen"
               ariaLabel="Luz, color y enfoque"
@@ -1627,6 +2046,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               onClick={() => {
                 setInfoOpen(false);
                 setImageOpen(false);
+                setSettingsOnly(null);
                 setSettingsOpen(true);
               }}
             >
@@ -1699,7 +2119,33 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         maxFps={trackInfo?.maxFrameRate ?? null}
         songPossible={songPossible}
         summary={summary}
+        only={settingsOnly}
+        image={
+          hasImageControls
+            ? {
+                summary: imageSummary(image),
+                onOpen: () => {
+                  setSettingsOpen(false);
+                  setInfoOpen(false);
+                  setImageOpen(true);
+                },
+              }
+            : null
+        }
       />
+
+      <AnimatePresence>
+        {startListOpen && phase === 'idle' && !confirm && (
+          <StartList
+            current={startChoice}
+            hereAt={fromOptions.includes('here') ? hereAt : null}
+            range={loopRange}
+            clips={clips.data ?? []}
+            onPick={pickStart}
+            onClose={() => setStartListOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {infoOpen && !confirm && (
@@ -1710,6 +2156,30 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               (takeKind ?? (usesCanvas ? 'canvas' : 'direct')) === 'direct'
                 ? 'Directa (la imagen de la cámara tal cual)'
                 : 'Lienzo (cada fotograma se redibuja)'
+            }
+            pace={
+              view.paceCapped
+                ? 'Más ligera: este móvil no fue fluido con lo pedido'
+                : benchPath
+                  ? 'Midiendo…'
+                  : 'Como se pide'
+            }
+            video={showCamera ? cam.source.current : null}
+            bench={benchStats}
+            rest={view.mode ? paceRest(view.mode) : null}
+            // Only where measuring again changes something: a lighter mode learnt, a first «too slow» waiting, or a
+            // mode that is measured (60 fps, above 1080p). Otherwise the panel says when it will be measured.
+            onRemeasure={
+              settingsAllowed &&
+              !benchPath &&
+              (view.paceCapped || benchStats != null || pacePending() || (view.mode != null && heavyMode(view.mode)))
+                ? remeasure
+                : undefined
+            }
+            paceHint={
+              view.mode && !heavyMode(view.mode) && !view.paceCapped
+                ? 'La fluidez se mide sola al grabar a 60 fps o por encima de 1080p.'
+                : undefined
             }
             last={lastStats}
             onClose={() => setInfoOpen(false)}
@@ -1856,6 +2326,22 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             </p>
           )}
 
+          {/* P19 review · The rehearsal costs a couple of seconds of encoding on a slow phone: say what it is. */}
+          <AnimatePresence>
+            {camReady && phase === 'idle' && benchPath && !notice && (
+              <motion.p
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={soft}
+                role="status"
+                className="pointer-events-none rounded-full bg-sumi-900/90 px-3 py-1 text-[12px] font-bold text-washi landscape:hidden"
+              >
+                Comprobando que el móvil va fluido…
+              </motion.p>
+            )}
+          </AnimatePresence>
+
           {/* Q7: a crop of the frame is less sharp than the lens's own zoom; say so while it's on. */}
           <AnimatePresence>
             {camReady && view.digital && (
@@ -1873,28 +2359,38 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           </AnimatePresence>
 
           {camReady && (canTweak || phase === 'recording') && (
+            // P23 · Lenses and zoom like the phone's camera app: 0,5× is the ultra-wide, 1× the main lens, «Tele» the
+            // telephoto; a rear camera the browser doesn't identify is «Otra». Switching lens reopens the camera, so
+            // while rolling only the zooms of the lens in use are offered.
             <div
               role="group"
-              aria-label="Zoom"
-              className="flex items-center gap-1 rounded-full bg-black/45 p-1 landscape:flex-col"
+              aria-label="Lentes y zoom"
+              // Solid ink behind the 12 px numbers: readable over a white wall too (WCAG 1.4.3).
+              className="flex items-center gap-1 rounded-full bg-sumi-900/90 p-1 landscape:flex-col"
             >
               {cam.chips
-                .filter((z) => canTweak || z === cam.activeChip || !(z < 1 || cam.onUltra))
-                .map((z) => {
-                  const active = z === cam.activeChip;
+                .filter((c) => canTweak || c.key === cam.activeChip || !c.switches)
+                .map((c) => {
+                  const active = c.key === cam.activeChip;
+                  const shown = active && c.zoom != null && Math.abs(view.zoom - c.zoom) > 0.05 ? formatZoom(view.zoom) : c.label;
                   return (
                     <button
-                      key={z}
+                      key={c.key}
                       type="button"
                       aria-pressed={active}
-                      aria-label={`Zoom ${formatZoom(z)}`}
-                      onClick={() => cam.pickZoom(z, canChangeCamera)}
+                      // The zoom really in use, when a pinch moved it off the button's own number.
+                      aria-label={shown !== c.label ? `${c.ariaLabel}; ahora ${shown}` : c.ariaLabel}
+                      aria-disabled={(c.switches && !canChangeCamera) || undefined}
+                      onClick={() => {
+                        stopBench();
+                        if (!cam.pickChip(c, canChangeCamera)) explainDirectLock();
+                      }}
                       className={cn(
-                        'tabular grid size-10 place-items-center rounded-full font-mono text-[12px] font-bold transition-colors',
-                        active ? 'bg-washi text-sumi-900' : 'text-washi/90',
+                        'tabular grid h-11 min-w-11 place-items-center rounded-full px-1.5 font-mono text-[12px] font-bold transition-colors',
+                        active ? 'bg-washi text-sumi-900' : 'text-washi',
                       )}
                     >
-                      {active && Math.abs(view.zoom - z) > 0.05 ? formatZoom(view.zoom) : formatZoom(z)}
+                      {shown}
                     </button>
                   );
                 })}
@@ -1918,7 +2414,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               )}
               {phase === 'paused' && (
                 <RailButton
-                  label="Borrar"
+                  // Same verb as its dialog («¿Descartar la toma?»).
+                  label="Descartar"
                   ariaLabel="Descartar la toma"
                   onClick={() => setConfirm('discard')}
                 >
@@ -1948,7 +2445,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
           <p className="tabular min-h-4 text-center text-[12px] text-washi/75 landscape:hidden">
             {phase === 'idle' && camReady
-              ? `${vertical ? 'Vertical' : 'Horizontal'} · empieza en ${formatTime(startsAt)}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · espacio para ${minutesPhrase(spaceMinutes)}` : ''}`
+              ? `${vertical ? 'Vertical' : 'Horizontal'} · ${startLabel(startChoice).line}${timer ? ` · cuenta de ${timer} s` : ''}${spaceMinutes != null && !lowSpace ? ` · espacio para ${minutesPhrase(spaceMinutes)}` : ''}`
               : phase === 'paused'
                 ? 'En pausa · toca para seguir o «Listo» para terminar'
                 : phase === 'countdown'
@@ -2055,7 +2552,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       <AnimatePresence>
         {confirm && (
           <motion.div
-            className="absolute inset-0 z-30 grid place-items-center bg-sumi-950/80 p-6"
+            className="absolute inset-0 z-30 grid grid-rows-[minmax(0,1fr)] place-items-center bg-sumi-950/80 p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -2065,7 +2562,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="record-discard-title"
-              className="paper-raised w-full max-w-sm rounded-[16px] p-6"
+              aria-describedby="record-discard-text"
+              // Big system text on a turned phone: the card scrolls instead of pushing its buttons off screen.
+              className="paper-raised max-h-full w-full max-w-sm overflow-y-auto overscroll-contain rounded-[16px] p-6"
               initial={{ y: 24, scale: 0.97 }}
               animate={{ y: 0, scale: 1, transition: soft }}
               onClick={(e) => e.stopPropagation()}
@@ -2076,21 +2575,37 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               >
                 {confirm === 'leftover' ? '¿Descartar la toma sin guardar?' : '¿Descartar la toma?'}
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-washi-muted">
+              <p id="record-discard-text" className="mt-2 text-sm leading-relaxed text-washi-muted">
                 {confirm === 'leftover'
                   ? 'Se borra de este móvil y no se puede recuperar.'
                   : phase === 'review'
                     ? 'Aún no la has guardado en el móvil. Si la descartas, se pierde.'
                     : 'Lo grabado hasta ahora se pierde.'}
+                {confirm !== 'leftover' && confirm !== 'rearm' && confirm !== 'close' && ' Después, la cámara queda lista para otra toma.'}
               </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <Button variant="ghost" autoFocus onClick={() => setConfirm(null)}>
-                  Cancelar
-                </Button>
-                <Button variant="danger" onClick={confirmDiscard}>
-                  Descartar
-                </Button>
-              </div>
+              {/* Asked from «Cerrar» (or «Atrás»): the main action is what was asked, leaving; staying is the other one. */}
+              {confirm === 'close' ? (
+                <div className="mt-5 flex flex-col gap-2">
+                  <Button variant="danger" onClick={() => confirmDiscard(true)}>
+                    Descartar y salir
+                  </Button>
+                  <Button variant="secondary" onClick={() => confirmDiscard()}>
+                    Descartar y seguir grabando
+                  </Button>
+                  <Button variant="ghost" autoFocus onClick={() => setConfirm(null)}>
+                    Cancelar
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-5 flex flex-wrap justify-end gap-2">
+                  <Button variant="ghost" autoFocus onClick={() => setConfirm(null)}>
+                    Cancelar
+                  </Button>
+                  <Button variant="danger" onClick={() => confirmDiscard()}>
+                    Descartar
+                  </Button>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -2173,7 +2688,9 @@ function useSongProgressPaint(span: Span | null, paint: (progress: number) => vo
     const range = start != null && end != null ? { start, end } : null;
     let last = Number.NaN;
     const run = (time: number) => {
-      const p = songProgress(range, time);
+      // P19: the clock ticks every frame; a step of 1/500 of the song is plenty for a 3 px bar and a ring, and
+      // spares a paint over the camera on most frames.
+      const p = Math.round(songProgress(range, time) * 500) / 500;
       if (p === last) return;
       last = p;
       paintRef.current(p);
@@ -2183,6 +2700,29 @@ function useSongProgressPaint(span: Span | null, paint: (progress: number) => vo
   }, [start, end]);
 }
 
+/** P27 · What the «Imagen» stick shows under its name. */
+function imageSummary(s: ImageState): string {
+  const parts: string[] = [];
+  if (Math.abs(s.exposure) > 0.001) parts.push(`Luz ${s.exposure > 0 ? '+' : ''}${String(Math.round(s.exposure * 10) / 10).replace('.', ',')}`);
+  if (s.kelvin != null) parts.push(`${s.kelvin} K`);
+  if (s.locked) parts.push('Fijo');
+  return parts.length ? parts.join(' · ') : 'Automática';
+}
+
+/** P19 · The take's clock on its own: a whole second changes once a second, and only this text re-renders. */
+function TakeClock({ read, running }: { read: () => number; running: boolean }) {
+  const readRef = useRef(read);
+  readRef.current = read;
+  const [shown, setShown] = useState(() => Math.max(0, Math.floor(read())));
+  useEffect(() => {
+    setShown(Math.max(0, Math.floor(readRef.current())));
+    if (!running) return;
+    const id = setInterval(() => setShown(Math.max(0, Math.floor(readRef.current()))), 250);
+    return () => clearInterval(id);
+  }, [running]);
+  return <>{formatTime(shown)}</>;
+}
+
 function SongBar({ span }: { span: Span }) {
   const fill = useRef<HTMLDivElement>(null);
   useSongProgressPaint(span, (p) => fill.current?.style.setProperty('transform', `scaleX(${p})`));
@@ -2190,7 +2730,7 @@ function SongBar({ span }: { span: Span }) {
     <div className="absolute inset-x-0 top-0 z-20 h-[3px] bg-washi/20">
       <div
         ref={fill}
-        className="h-full origin-left bg-shu-400"
+        className="h-full origin-left bg-shu-400 will-change-transform"
         style={{ transform: `scaleX(${songProgress(span, usePlayer.getState().time)})` }}
       />
     </div>

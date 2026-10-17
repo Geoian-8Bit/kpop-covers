@@ -1,4 +1,4 @@
-import { createStore, del, delMany, get, keys, set } from 'idb-keyval';
+import { createStore, del, delMany, get, keys, set, values } from 'idb-keyval';
 
 // Uploaded files live in IndexedDB on the device (instant, offline playback, no size cap).
 // Files ≤ 50 MB are additionally synced to Supabase Storage so the whole crew can open them.
@@ -39,6 +39,49 @@ export async function loadLocalVideo(videoId: string): Promise<Blob | undefined>
 
 export function deleteLocalVideo(videoId: string): Promise<void> {
   return del(videoId, store);
+}
+
+// ── Local demo only (13): a pretend group cloud in this browser, so the reduced copy can be tried end to end. ──
+
+// Opened on first use only: the real app never creates this database.
+let demoStore: ReturnType<typeof createStore> | null = null;
+const demoCloudStore = () => (demoStore ??= createStore('coverscape-demo-cloud', 'files'));
+const demoUrls = new Map<string, string>();
+
+/** Never overwrites (like the bucket): false when the name is taken or storage fails. */
+export async function saveDemoCloudFile(path: string, blob: Blob): Promise<boolean> {
+  try {
+    if ((await get(path, demoCloudStore())) != null) return false;
+    await set(path, blob, demoCloudStore());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A playable URL for a pretend cloud file (kept for the visit, like a signed URL). */
+export async function demoCloudUrl(path: string): Promise<string | null> {
+  const known = demoUrls.get(path);
+  if (known) return known;
+  try {
+    const blob = await get<Blob>(path, demoCloudStore());
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    demoUrls.set(path, url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/** Bytes in the pretend cloud. */
+export async function demoCloudBytes(): Promise<number> {
+  try {
+    const all = await values<Blob>(demoCloudStore());
+    return all.reduce((n, b) => n + (b?.size ?? 0), 0);
+  } catch {
+    return 0;
+  }
 }
 
 /** Longest side of an upload's poster, in px (≈ 10–20 KB as JPEG). */

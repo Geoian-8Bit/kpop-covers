@@ -215,3 +215,160 @@ export function stepMode(current: VoiceMode, key: string): VoiceMode | null {
       return null;
   }
 }
+
+// ───────────────────────── 18 · Separated tracks (AI) ─────────────────────────
+
+/**
+ * With tracks separated by the AI model, «Sin voz» and «Voz» play those instead of the mid/side split: gains of
+ * the file's own sound (`dry`) and of each track. The mid/side paths stay at 0 meanwhile.
+ */
+export interface StemGains {
+  dry: number;
+  instrumental: number;
+  vocals: number;
+}
+
+export function stemModeGains(mode: VoiceMode): StemGains {
+  switch (mode) {
+    case 'sin-voz':
+      return { dry: 0, instrumental: 1, vocals: 0 };
+    case 'voz':
+      return { dry: 0, instrumental: 0, vocals: 1 };
+    case 'original':
+    default:
+      return { dry: 1, instrumental: 0, vocals: 0 };
+  }
+}
+
+/**
+ * Keeping a track (an <audio> element) on the video's clock. Small drifts are absorbed by playing the track a
+ * little faster or slower (pitch kept, inaudible at ±5 %); big ones (a jump, a loop, a stall) by seeking it.
+ *
+ * After every jump (a loop back to A, a seek, a resume) an <audio> element starts some 30–100 ms late on phones,
+ * which sits under `seekSeconds`. Two things keep that from being heard: the jump lands ahead by a lead learnt from
+ * the previous jumps (`learnLead`), and while the drift is still beyond `catchUpSeconds` the nudge is stronger (up
+ * to `maxCatchUp`, still a gentle tempo change with the pitch kept).
+ */
+export const STEM_SYNC = {
+  /** Beyond this the track jumps to where it should be. */
+  seekSeconds: 0.25,
+  /** Within this nothing is corrected (the clocks' own jitter). */
+  okSeconds: 0.02,
+  /** Rate correction per second of drift, capped at `maxNudge`. */
+  gain: 1,
+  maxNudge: 0.05,
+  /** Beyond this drift (heard as a late beat) the correction is stronger… */
+  catchUpSeconds: 0.06,
+  catchUpGain: 1,
+  /** …but never more than this tempo change (pitch kept: a few hundred ms at 8 % don't sound odd). */
+  maxCatchUp: 0.08,
+  /** Lead of a jump before anything has been learnt (the track's seek takes a moment while the video carries on). */
+  seekLead: 0.04,
+  /** Learning the lead: weight of each new reading, the lead's range, and the largest reading believed. */
+  leadAlpha: 0.5,
+  maxLead: 0.2,
+  maxLeadSample: 0.25,
+  /** The track counts as in step (the switch from the file's own sound can happen) within this. */
+  readySeconds: 0.06,
+} as const;
+
+export type StemSyncAction =
+  | { kind: 'seek'; to: number }
+  | { kind: 'rate'; rate: number }
+  | { kind: 'stop' };
+
+/** Rate correction for a drift (track − where it should be, s): ahead (> 0) a little slower, behind a little faster. */
+export function stemNudge(drift: number): number {
+  const size = Math.abs(drift);
+  if (!(size > STEM_SYNC.okSeconds)) return 0;
+  const strong = size > STEM_SYNC.catchUpSeconds;
+  const gain = strong ? STEM_SYNC.catchUpGain : STEM_SYNC.gain;
+  const cap = strong ? STEM_SYNC.maxCatchUp : STEM_SYNC.maxNudge;
+  return Math.max(-cap, Math.min(cap, drift * gain));
+}
+
+/**
+ * What a playing track should do now. Times in the track's own seconds; `delay` is the measured encoder delay
+ * (the track's sound starts that much later than the file's), so the track should be at `master + delay`.
+ * `seekLead` (wall seconds) is how far ahead a jump lands: the learnt one when there is one.
+ */
+export function stemSyncAction(args: {
+  masterTime: number;
+  masterRate: number;
+  trackTime: number;
+  trackDuration: number;
+  delay: number;
+  seekLead?: number;
+}): StemSyncAction {
+  const target = args.masterTime + args.delay;
+  const rate = args.masterRate > 0 ? args.masterRate : 1;
+  if (Number.isFinite(args.trackDuration) && args.trackDuration > 0 && target >= args.trackDuration - 0.05) {
+    return { kind: 'stop' };
+  }
+  const drift = args.trackTime - target;
+  const lead = clampLead(args.seekLead ?? STEM_SYNC.seekLead);
+  if (Math.abs(drift) > STEM_SYNC.seekSeconds) return { kind: 'seek', to: Math.max(0, target + lead * rate) };
+  return { kind: 'rate', rate: rate * (1 - stemNudge(drift)) };
+}
+
+function clampLead(lead: number): number {
+  return Number.isFinite(lead) ? Math.min(STEM_SYNC.maxLead, Math.max(0, lead)) : STEM_SYNC.seekLead;
+}
+
+/**
+ * Learns how far ahead a jump has to land. After a jump that landed `lead` ahead, the first steady reading of the
+ * drift (track − where it should be, both clocks running at the same rate) says how late the track really started:
+ * `landed − drift / rate`, where `landed` is how far ahead that jump really landed (the learnt lead, unless the track
+ * was already close enough not to be moved). The learnt lead moves part of the way there (`leadAlpha`) and stays
+ * within 0…`maxLead`; a reading too big to be a start-up delay (a stall, buffering) teaches nothing.
+ */
+export function learnLead(learnt: number, drift: number, rate = 1, landed: number = learnt): number {
+  const current = clampLead(learnt);
+  if (!Number.isFinite(drift) || !Number.isFinite(landed) || Math.abs(drift) > STEM_SYNC.maxLeadSample) return current;
+  const r = rate > 0 && Number.isFinite(rate) ? rate : 1;
+  const ideal = landed - drift / r;
+  return clampLead(current + STEM_SYNC.leadAlpha * (ideal - current));
+}
+
+/** The parts of a separation the player needs (see `video_stems`). */
+export interface StemRow {
+  id: string;
+  source_file_name: string;
+  source_file_size: number;
+  vocals_path: string | null;
+  instrumental_path: string | null;
+  delay_seconds: number;
+  created_at: string;
+}
+
+/**
+ * Which separation goes with the video's file now: the newest complete one made from this same file (name and
+ * size, like the linked file's identity). A replaced file never plays with the old file's tracks.
+ */
+export function pickStems<T extends StemRow>(
+  video: { file_name: string | null; file_size: number | null },
+  rows: readonly T[],
+): (T & { vocals_path: string; instrumental_path: string }) | null {
+  if (!video.file_name || video.file_size == null) return null;
+  let best: T | null = null;
+  for (const row of rows) {
+    if (!row.vocals_path || !row.instrumental_path) continue;
+    if (row.source_file_name !== video.file_name || Number(row.source_file_size) !== Number(video.file_size)) continue;
+    if (!best || row.created_at > best.created_at) best = row;
+  }
+  return best as (T & { vocals_path: string; instrumental_path: string }) | null;
+}
+
+/** 18 · An entry with a file of its own that the AI separation could take (an upload, or a YouTube entry's file). */
+export function hasSeparableFile(video: { source: string; file_name: string | null }): boolean {
+  return Boolean(video.file_name) && (video.source === 'upload' || video.source === 'youtube');
+}
+
+/**
+ * Global review 2 [5] · Whether «Separar voz y música» shows. It stays mounted for as long as the song has a file
+ * (the stage letting its engine go — «YouTube» picked, a resync, a media error — must not cancel the work); it
+ * shows while the file plays on the stage, and a separation already running keeps showing its progress meanwhile.
+ */
+export function separateShown(o: { hasFile: boolean; available: boolean; running: boolean }): boolean {
+  return o.hasFile && (o.available || o.running);
+}

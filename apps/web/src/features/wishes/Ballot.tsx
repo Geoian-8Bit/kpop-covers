@@ -1,7 +1,8 @@
 import type { Poll, PollOption, Wish } from '@coverscape/shared';
 import { AnimatePresence, motion, Reorder, useDragControls } from 'motion/react';
 import { Check, GripVertical, UserRound } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { Button } from '@/components/ui/Button';
 import { LiveMessage, MoveArrows } from '@/components/ui/MoveArrows';
 import { openWho, useMe, useMembers } from '@/data/members';
@@ -35,6 +36,8 @@ export function Ballot({
   const me = useMe();
   const members = useMembers();
   const cast = useCastVote();
+  const barRef = useRef<HTMLDivElement>(null);
+  useStickyBarPadding(barRef, Boolean(me));
   const toast = useToast();
   const optionIds = useMemo(() => options.map((o) => o.id), [options]);
   // A saved choice whose song was deleted from the list meanwhile no longer counts: it's left out here too.
@@ -101,9 +104,8 @@ export function Ballot({
       </div>
 
       {!me ? (
-        <div className="flex flex-col items-start gap-3 rounded-[12px] border border-line px-4 py-4">
-          <p className="text-sm text-washi-muted">Cada persona vota una vez, con su nombre del grupo.</p>
-          <Button onClick={() => withMe('Para votar, di quién eres.', members.data, () => undefined)}>
+        <div className="flex flex-col items-stretch gap-3 sm:items-start">
+          <Button size="lg" onClick={() => withMe('Para votar, di quién eres.', members.data, () => undefined)}>
             <UserRound aria-hidden className="size-4" /> Elegir mi nombre para votar
           </Button>
         </div>
@@ -169,28 +171,39 @@ export function Ballot({
             </ul>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button onClick={() => send(draft)} disabled={!canSend} loading={cast.isPending}>
+          {/* Stays in reach while scrolling a long list of candidates (inside the ballot only). On phones its right
+              edge leaves room for the floating menu button (`--fab-clearance`, set by the shell while it shows).
+              Only the main action rides in it, so at 360 px or with large text it stays one row high; its height
+              keeps focus from hiding under it (`useStickyBarPadding`). */}
+          <div
+            ref={barRef}
+            className="paper-raised sticky bottom-[calc(env(safe-area-inset-bottom)+12px)] z-10 -mx-1.5 mt-4 flex items-center gap-2 rounded-[14px] p-1.5 max-lg:mr-[var(--fab-clearance,0px)]"
+          >
+            <Button
+              size="lg"
+              className="min-w-0 flex-1 sm:flex-none"
+              onClick={() => send(draft)}
+              disabled={!canSend}
+              loading={cast.isPending}
+            >
               {hasVote ? 'Cambiar voto' : 'Votar'}
             </Button>
-            {hasVote && (
+          </div>
+          <p className="mt-2 min-h-5 text-[13px] text-washi-subtle" aria-live="polite">
+            {dirty ? 'Tienes cambios sin guardar.' : hasVote ? 'Voto guardado. Puedes cambiarlo hasta el cierre.' : ''}
+          </p>
+          {hasVote && (
+            <div className="mt-1 flex flex-wrap gap-x-2">
+              {dirty && (
+                <Button variant="ghost" onClick={() => change(initial)} disabled={cast.isPending}>
+                  Deshacer cambios
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => send([])} disabled={cast.isPending}>
                 Retirar mi voto
               </Button>
-            )}
-            {dirty && hasVote && (
-              <Button variant="ghost" onClick={() => change(initial)} disabled={cast.isPending}>
-                Deshacer cambios
-              </Button>
-            )}
-          </div>
-          <p className="mt-2 text-[13px] text-washi-subtle" aria-live="polite">
-            {dirty
-              ? 'Tienes cambios sin guardar.'
-              : hasVote
-                ? 'Tu voto está guardado. Puedes cambiarlo hasta que se cierre.'
-                : 'Aún no has votado.'}
-          </p>
+            </div>
+          )}
         </>
       )}
     </section>

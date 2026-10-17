@@ -1,4 +1,14 @@
 import { belowRequested } from '@coverscape/shared';
+import {
+  canSetTemperature,
+  createLatestQueue,
+  noteWbOutcome,
+  parseWbMemory,
+  runWhiteBalance,
+  wbHidden,
+  type WbMemoryEntry,
+  type WhiteBalanceOutcome,
+} from './whiteBalanceRules';
 
 /**
  * Camera and microphone access for the recording studio. Picture and sound are asked for separately:
@@ -260,31 +270,109 @@ export const WHITE_BALANCE: { label: string; kelvin: number | null }[] = [
   { label: 'Nublado', kelvin: 6500 },
 ];
 
+const wbQueue = createLatestQueue();
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * C4 / P24 · Applies a preset (or «Auto», null) in steps and checks it took (`whiteBalanceRules`). Requests are
+ * serialised and only the latest runs: an overtaken one resolves true (it isn't a failure to undo). False when it
+ * didn't work: the camera is put back on automatic. A camera that accepted presets twice in a row without showing
+ * them is remembered (30 days, this browser) and the option hides on it; a refusal never hides it.
+ */
 export function setWhiteBalance(track: MediaStreamTrack | undefined, kelvin: number | null, info: TrackInfo): Promise<boolean> {
-  if (kelvin == null) {
-    return info.whiteBalanceModes.includes('continuous')
-      ? applyAdvanced(track, { whiteBalanceMode: 'continuous' })
-      : Promise.resolve(false);
+  const caps = { modes: info.whiteBalanceModes, range: info.colorTemperature };
+  return wbQueue(async (isStale) => {
+    if (!track) return false;
+    const outcome = await runWhiteBalance(track, kelvin, caps, { wait: sleep, isStale });
+    if (outcome === 'superseded') return true;
+    if (kelvin != null) noteWhiteBalance(info.label, outcome);
+    if (outcome === 'applied') return true;
+    if (kelvin != null && (outcome === 'ignored' || outcome === 'refused') && !isStale())
+      await runWhiteBalance(track, null, caps, { wait: sleep, isStale });
+    return false;
+  }, true);
+}
+
+// P24 · Cameras (by label) whose presets didn't show: remembered on this phone only.
+const WB_MEMORY_KEY = 'oneshoot.wb-ignored.v2';
+const WB_OLD_KEY = 'oneshoot.wb-ignored.v1';
+let wbMemory: WbMemoryEntry[] | null = null;
+/** Hidden during this visit (the panel says why, once). */
+const wbHiddenNow = new Set<string>();
+const wbListeners = new Set<() => void>();
+let wbVersion = 0;
+
+const uaNow = () => (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+
+function memory(): WbMemoryEntry[] {
+  if (!wbMemory) {
+    try {
+      const raw = localStorage.getItem(WB_MEMORY_KEY) ?? localStorage.getItem(WB_OLD_KEY);
+      wbMemory = parseWbMemory(raw, Date.now(), uaNow());
+    } catch {
+      wbMemory = [];
+    }
   }
-  const range = info.colorTemperature;
-  if (!range) return Promise.resolve(false);
-  const k = Math.min(range.max, Math.max(range.min, kelvin));
-  return applyAdvanced(track, { whiteBalanceMode: 'manual', colorTemperature: k });
+  return wbMemory;
 }
 
-/** C4 needs a manual mode with a colour temperature range. */
+function saveMemory(next: WbMemoryEntry[]) {
+  wbMemory = next;
+  try {
+    localStorage.setItem(WB_MEMORY_KEY, JSON.stringify(next));
+    localStorage.removeItem(WB_OLD_KEY);
+  } catch {
+    /* for this visit only */
+  }
+  wbVersion++;
+  for (const listener of wbListeners) listener();
+}
+
+function noteWhiteBalance(label: string, outcome: WhiteBalanceOutcome) {
+  const before = memory();
+  const next = noteWbOutcome(before, label, outcome, Date.now(), uaNow());
+  if (next === before) return;
+  if (!wbHidden(before, label) && wbHidden(next, label)) wbHiddenNow.add(label);
+  saveMemory(next);
+}
+
+/** «Volver a probar el color de la luz» (panel «i»): every camera offers it again. */
+export function forgetWhiteBalanceFailures(): void {
+  wbHiddenNow.clear();
+  saveMemory([]);
+}
+
+/** Cameras where the colour option is hidden now. */
+export function whiteBalanceHiddenCount(): number {
+  return memory().filter((e) => wbHidden(memory(), e.label)).length;
+}
+
+/** For `useSyncExternalStore`: changes when a camera's colour option gets hidden or offered again. */
+export function subscribeWhiteBalance(listener: () => void): () => void {
+  wbListeners.add(listener);
+  return () => wbListeners.delete(listener);
+}
+export const whiteBalanceVersion = () => wbVersion;
+
+/** True when this camera's colour option was hidden during this visit (worth a word in the panel). */
+export function whiteBalanceHiddenNow(info: TrackInfo | null): boolean {
+  return Boolean(info && wbHiddenNow.has(info.label));
+}
+
+/** C4 needs a manual mode with a colour temperature range, on a camera that really applies it. */
 export function canWhiteBalance(info: TrackInfo | null): boolean {
-  return Boolean(info?.colorTemperature && info.whiteBalanceModes.includes('manual'));
+  if (!info) return false;
+  return (
+    canSetTemperature({ modes: info.whiteBalanceModes, range: info.colorTemperature }) &&
+    !wbHidden(memory(), info.label)
+  );
 }
 
-export interface BackLenses {
-  ids: string[];
-  /** The 0.5× lens, when its name says so (iPhone and many Androids name it). */
-  ultra: string | null;
-}
+/** The rear cameras as the browser lists them (P23: lensRules says which is which). */
+export type BackCamera = { id: string; label: string };
 
 /** Device names are only readable once the camera is allowed. */
-export async function listBackLenses(): Promise<BackLenses> {
+export async function listBackLenses(): Promise<BackCamera[]> {
   try {
     const cams = (await navigator.mediaDevices.enumerateDevices()).filter(
       (d) => d.kind === 'videoinput' && d.deviceId,
@@ -292,10 +380,9 @@ export async function listBackLenses(): Promise<BackLenses> {
     const back = cams.filter((d) => !/front|frontal|delantera|user|selfie|facetime/i.test(d.label));
     // iPhone also lists "virtual" lens bundles (Dual, Triple): the real lenses are enough.
     const real = back.filter((d) => !/dual|triple|desk view/i.test(d.label));
-    const ultra = real.find((d) => /ultra|0[.,]5|gran ?angular|grand ?angle|weitwinkel/i.test(d.label));
-    return { ids: real.map((d) => d.deviceId), ultra: ultra?.deviceId ?? null };
+    return real.map((d) => ({ id: d.deviceId, label: d.label }));
   } catch {
-    return { ids: [], ultra: null };
+    return [];
   }
 }
 

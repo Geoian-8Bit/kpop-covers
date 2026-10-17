@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { soft } from '@/lib/motion';
 import { ClapArmView, useClapUi } from './ClapArmView';
+import { techLogging } from '../pace';
+import { noteClapReading } from './clapLog';
 import { listenForClap, type ClapListener } from './clapListener';
 
 /** With no signal in this long, the recorder disarms on its own. */
@@ -57,6 +59,7 @@ export function ClapArm({
       sensitivity: sensitivityRef.current,
       onReading: (reading) => {
         take(reading);
+        noteClapReading(reading, techLogging);
         if (reading.state === 'fired') {
           // The clap only starts the take: nothing is heard any more.
           current.stop();

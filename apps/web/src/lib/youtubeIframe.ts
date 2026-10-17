@@ -23,6 +23,8 @@ export interface YTPlayer {
   mute?(): void;
   unMute?(): void;
   getVideoData?(): { title?: string; author?: string; video_id?: string };
+  /** Deprecated by YouTube (often a no-op now): a hint only, never relied on. */
+  setPlaybackQuality?(suggestedQuality: string): void;
   destroy(): void;
 }
 

@@ -1,33 +1,79 @@
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ComponentType,
+  type LazyExoticComponent,
+  type ReactNode,
+} from 'react';
 import { MapPin } from 'lucide-react';
+import { useDesignVariant } from '@/features/lab/labState';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
-import { countdown, countdownDetail, countdownHeadline, eventDateLabel, litLanterns, type Countdown } from './eventRules';
+import { instant, type LongProps } from './countdownBand';
+import {
+  countdown,
+  countdownDetail,
+  countdownHeadline,
+  countdownStage,
+  eventDateLabel,
+  ignitesFirstLantern,
+  litLanterns,
+  LONG_COUNTDOWN_MOMENT,
+  longVariantOf,
+  type Countdown,
+  type CountdownStage,
+  type LongCountdownVariant,
+} from './eventRules';
 
 /**
- * F16 · The countdown to an event («Chōchin»): seven paper lanterns with 祭; one lights up for each day of the last
- * week, all of them glow and sway on the day. The lanterns are decoration: the words carry it all («Faltan 12 días»,
- * hours and minutes the last day, «Hoy», «Ayer», «Ya pasó»), so an event further than a week away reads the same.
+ * F16 · The countdown to an event. Two stages (`countdownStage`):
+ *  - seven or more days left: the long design chosen in the lab (`countdown-long`, point 39): Koyomi (a tear-off
+ *    calendar), Sunadokei (an hourglass running since the event was created) or Tsuki (the moon filling up);
+ *  - the last seven days: Chōchin, seven paper lanterns, one lit per day and all of them on the day.
+ * The switch shows as the first lantern lighting up. Every design draws in the same 280×66 band above the words
+ * (beside them from `sm`), so the banner keeps its height whatever the design (P8: nothing below moves). The
+ * drawings are decoration: the words carry it all («Faltan 12 días», hours and minutes the last day, «Hoy»…).
  */
 
 export interface EventCountdownProps {
   name: string;
   startsAt: string;
+  /** When the event was created: Sunadokei's sand and Koyomi's torn pages start there. */
+  createdAt: string;
   place: string | null;
   now: Date;
   /** Smaller words (the home banner on a phone). */
   compact?: boolean;
+  /** The lab's demos show one long design whatever this device has chosen. */
+  longVariant?: LongCountdownVariant;
   className?: string;
 }
 
-export function EventCountdown({ name, startsAt, place, now, compact, className }: EventCountdownProps) {
+export function EventCountdown({ name, startsAt, createdAt, place, now, compact, longVariant, className }: EventCountdownProps) {
+  const chosen = longVariantOf(useDesignVariant(LONG_COUNTDOWN_MOMENT));
+  const variant = longVariant ?? chosen;
   const c = countdown(startsAt, now);
   const detail = countdownDetail(c);
   const headline = countdownHeadline(c);
+  const stage = countdownStage(c);
+
+  // Previous stage, kept the React way (state adjusted during render): whether Chōchin arrives lighting up.
+  const [seen, setSeen] = useState<{ stage: CountdownStage | null; ignite: boolean }>({ stage: null, ignite: false });
+  if (seen.stage !== stage) setSeen({ stage, ignite: ignitesFirstLantern(c, seen.stage) });
+
   return (
-    // The lanterns hang in a row across the top on a phone, beside the words from `sm`.
+    // The band hangs across the top on a phone, beside the words from `sm`.
     <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5', className)}>
-      <Lanterns c={c} />
+      <Band id={stage === 'long' ? `long-${variant}` : 'lanterns'}>
+        {stage === 'long' ? (
+          <LongVisual variant={variant} c={c} startsAt={startsAt} createdAt={createdAt} now={now} />
+        ) : (
+          <Chochin c={c} ignite={seen.ignite} />
+        )}
+      </Band>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-washi-muted">{name}</p>
         <p
@@ -54,17 +100,74 @@ export function EventCountdown({ name, startsAt, place, now, compact, className 
   );
 }
 
-function Lanterns({ c }: { c: Countdown }) {
+/**
+ * The fixed 280×66 frame every design draws in (its size never depends on the design). A change of design
+ * cross-fades; nothing animates on the first paint, and with reduced motion the swap is instant.
+ */
+function Band({ id, children }: { id: string; children: ReactNode }) {
+  const reduce = useReducedMotion();
+  const fade = reduce ? instant : soft;
+  return (
+    <div aria-hidden className="relative aspect-[280/66] w-full max-w-[320px] shrink-0 sm:w-[240px]">
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={id}
+          className="absolute inset-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: fade }}
+          exit={{ opacity: 0, transition: fade }}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * The three long designs, one chunk each: only the one chosen on this device loads (they're in the precache, so
+ * offline too). While it loads the band stays empty at its fixed size: nothing below moves (P8). A chunk that
+ * can't load (a deploy swapped it mid-visit) leaves the band empty: it is decoration, the words say it all.
+ */
+const NoDesign: ComponentType<LongProps> = () => null;
+const longDesign = (load: () => Promise<ComponentType<LongProps>>) =>
+  lazy(() => load().then((Design) => ({ default: Design }), () => ({ default: NoDesign })));
+const LONG: Record<LongCountdownVariant, LazyExoticComponent<ComponentType<LongProps>>> = {
+  koyomi: longDesign(() => import('./CountdownKoyomi').then((m) => m.Koyomi)),
+  sunadokei: longDesign(() => import('./CountdownSunadokei').then((m) => m.Sunadokei)),
+  tsuki: longDesign(() => import('./CountdownTsuki').then((m) => m.Tsuki)),
+};
+
+function LongVisual({ variant, ...props }: LongProps & { variant: LongCountdownVariant }) {
+  const Design = LONG[variant] ?? LONG.koyomi;
+  return (
+    <Suspense fallback={null}>
+      <Design {...props} />
+    </Suspense>
+  );
+}
+
+// ───────────── Chōchin ─────────────
+
+function Chochin({ c, ignite }: { c: Countdown; ignite: boolean }) {
   const reduce = useReducedMotion();
   const lit = litLanterns(c);
   const festive = c.kind === 'today';
+  // Arriving from the long design (or on the first day of the last week): the newest lantern is dark for a
+  // moment, then lights up. With reduced motion it is simply lit.
+  const [dark, setDark] = useState(ignite && !reduce ? lit - 1 : -1);
+  useEffect(() => {
+    if (dark < 0) return;
+    const id = window.setTimeout(() => setDark(-1), 420);
+    return () => window.clearTimeout(id);
+  }, [dark]);
   return (
-    <svg viewBox="0 0 280 66" aria-hidden className="h-auto w-full max-w-[320px] shrink-0 sm:w-[240px]">
+    <svg viewBox="0 0 280 66" className="h-full w-full">
       <path d="M2 8 Q140 24 278 8" className="stroke-kiji-300" strokeWidth={1.4} fill="none" />
       {Array.from({ length: 7 }, (_, i) => {
         const x = 23 + i * 39;
         const y = 8 + 16 * (1 - Math.pow((x - 140) / 138, 2)) * 0.5;
-        const on = i < lit;
+        const on = i < lit && i !== dark;
         const flicker = c.kind === 'hours' && i === 6;
         const glow = on || flicker;
         return (
@@ -85,7 +188,7 @@ function Lanterns({ c }: { c: Countdown }) {
               animate={{ opacity: flicker && !reduce ? [0.55, 1, 0.7, 1] : 1 }}
               transition={flicker && !reduce ? { duration: 1.6, repeat: Infinity } : jelly}
               className={cn(
-                'transition-[fill] duration-500',
+                'transition-[fill] duration-500 motion-reduce:transition-none',
                 glow ? 'fill-shu-500 drop-shadow-[0_0_7px_rgb(226_103_77/0.85)]' : 'fill-sumi-700',
               )}
             />
@@ -103,7 +206,10 @@ function Lanterns({ c }: { c: Countdown }) {
               x={x}
               y={y + 30}
               textAnchor="middle"
-              className={cn('font-display font-extrabold transition-[fill] duration-500', glow ? 'fill-washi' : 'fill-sumi-600')}
+              className={cn(
+                'font-display font-extrabold transition-[fill] duration-500 motion-reduce:transition-none',
+                glow ? 'fill-washi' : 'fill-sumi-600',
+              )}
               fontSize={14}
             >
               祭

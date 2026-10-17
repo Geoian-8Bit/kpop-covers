@@ -58,7 +58,9 @@ export function PrivacyPage() {
           </p>
           <p>
             En tu dispositivo se guardan preferencias (por ejemplo el bucle o el sonido del metrónomo) y, si subes un
-            archivo grande, una copia local. Lo que grabas con la cámara no se sube: se queda en tu dispositivo hasta que
+            archivo grande, una copia local. Si el archivo pesa más de lo que admite la nube (50 MB), tu dispositivo
+            prepara una copia más ligera (menos resolución, el mismo vídeo) y la sube a la nube del grupo para que la
+            vean los demás; el original se queda en tu dispositivo. Lo que grabas con la cámara no se sube: se queda en tu dispositivo hasta que
             lo compartes o lo descargas. No usamos analítica ni cookies propias.
           </p>
           <p>
@@ -81,6 +83,15 @@ export function PrivacyPage() {
             nada tuyo: el vídeo se analiza en tu dispositivo y no se sube; del seguimiento solo se guarda en la app el
             recorrido (el nombre que le pongas y las posiciones, como texto), y los resultados de la prueba se quedan en
             tu dispositivo.
+          </p>
+          <p>
+            La primera vez que usas «Separar voz y música», tu navegador descarga el modelo de IA (HTDemucs, de unos
+            120 a 172 MB según el ordenador) desde Hugging Face (huggingface.co y sus servidores de descarga *.hf.co), que recibe tu
+            dirección IP como con cualquier descarga; luego queda guardado en tu dispositivo, y puedes borrarlo desde
+            el propio botón. La canción se separa en
+            tu dispositivo y no se envía a Hugging Face. Las dos pistas que salen (la música sin voz y la voz) se suben
+            a la nube del grupo, como los vídeos, para que las usen los demás. Nunca se separa el sonido de los vídeos
+            de YouTube: solo el del archivo vinculado.
           </p>
         </Section>
 

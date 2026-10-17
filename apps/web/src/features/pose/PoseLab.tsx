@@ -9,12 +9,48 @@ import {
   learnDuration,
   loadLandmarker,
   loadMoveNet,
+  loadSinglePose,
+  MEDIAPIPE_LITE,
   moveNetPairs,
+  MOVENET_MULTIPOSE,
+  MOVENET_SINGLEPOSE,
+  onMobile,
+  recordBench,
   resetTracker,
   seekVideo,
   type MoveNetPose,
   type TfBackend,
 } from './models';
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const BACKEND_LABEL: Record<TfBackend, string> = { webgl: 'WebGL', webgpu: 'WebGPU', wasm: 'WASM' };
+const MODEL_LABEL: Record<string, string> = {
+  [MOVENET_MULTIPOSE]: 'MoveNet MultiPose',
+  [MOVENET_SINGLEPOSE]: 'MoveNet SinglePose',
+  [MEDIAPIPE_LITE]: 'MediaPipe lite',
+};
+
+/** The first confident person MoveNet saw, as fractions of the frame (for SinglePose's crop). */
+function personBox(poses: readonly MoveNetPose[], v: HTMLVideoElement): Box | null {
+  const w = v.videoWidth || 1;
+  const h = v.videoHeight || 1;
+  for (const p of poses) {
+    const sure = p.keypoints.filter((k) => (k.score ?? 0) >= 0.3);
+    if (sure.length < 4) continue;
+    const xs = sure.map((k) => k.x / w);
+    const ys = sure.map((k) => k.y / h);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  return null;
+}
 
 /**
  * 5.5 · Paso 1 «Prueba rápida»: on a take or a dance practice chosen from this device, draw the skeleton with
@@ -134,7 +170,7 @@ export default function PoseLab() {
     });
   }
 
-  async function measure(which: Which, signal: AbortSignal): Promise<LabRun> {
+  async function measure(which: Which, signal: AbortSignal): Promise<LabRun[]> {
     const v = video.current!;
     const colors = palette();
     setBusy({ which, done: 0, total: frames, phase: 'load' });
@@ -145,10 +181,7 @@ export default function PoseLab() {
     if (loaded.kind === 'movenet') {
       resetTracker(loaded.detector);
       if (loaded.backend !== backend) {
-        toast(
-          `${backend === 'webgpu' ? 'WebGPU' : 'WebGL'} no está disponible aquí: se mide con ${loaded.backend}`,
-          'info',
-        );
+        toast(`${BACKEND_LABEL[backend]} no está disponible aquí: se mide con ${loaded.backend}`, 'info');
       }
     }
     const start = v.currentTime;
@@ -161,6 +194,7 @@ export default function PoseLab() {
     const people: number[] = [];
     let firstMs = 0;
     let clock = performance.now();
+    let firstPerson: Box | null = null;
     setBusy({ which, done: 0, total: frames, phase: 'run' });
     const t0 = performance.now();
     for (let i = 0; i < times.length; i++) {
@@ -176,6 +210,7 @@ export default function PoseLab() {
         );
         count = poses.length;
         const ms = performance.now() - a;
+        firstPerson ??= personBox(poses, v);
         if (i === 0) firstMs = ms;
         else frameMs.push(ms);
         drawMoveNet(poses, loaded.pairs, colors);
@@ -193,7 +228,7 @@ export default function PoseLab() {
       setBusy({ which, done: i + 1, total: frames, phase: 'run' });
     }
     const wall = performance.now() - t0;
-    return {
+    const run: LabRun = {
       id: crypto.randomUUID(),
       at: new Date().toISOString(),
       model: loaded.model,
@@ -202,6 +237,63 @@ export default function PoseLab() {
       firstMs: Math.round(firstMs),
       ...summarize(frameMs, people, wall),
       video: `${file?.name ?? 'vídeo'} · ${v.videoWidth}×${v.videoHeight}`,
+      device: describeDevice(navigator as Navigator & { deviceMemory?: number }),
+    };
+    if (loaded.kind !== 'movenet') return [run];
+    // 15 · Kept for «auto»: which backend is fastest here (backendRules.chooseBackend).
+    recordBench(loaded.backend, run.avgMs);
+    return [run, await measureSingle(signal, times, firstPerson)];
+  }
+
+  /**
+   * 15 · SinglePose (what follows the dancer on a crop) on the same frames: a 192 px square around the first person
+   * MultiPose saw (the middle of the picture when nobody), on the same backend.
+   */
+  async function measureSingle(signal: AbortSignal, times: number[], around: Box | null): Promise<LabRun> {
+    const v = video.current!;
+    setBusy({ which: 'movenet', done: 0, total: times.length, phase: 'load' });
+    const loaded = await loadSinglePose(backend);
+    const side = 192;
+    const crop = document.createElement('canvas');
+    crop.width = side;
+    crop.height = side;
+    const g = crop.getContext('2d', { alpha: false })!;
+    const fw = v.videoWidth || 1;
+    const fh = v.videoHeight || 1;
+    const b = around ?? { x: 0.35, y: 0.15, w: 0.3, h: 0.7 };
+    const size = Math.max(b.w * fw, b.h * fh) * 1.4;
+    const sx = (b.x + b.w / 2) * fw - size / 2;
+    const sy = (b.y + b.h / 2) * fh - size / 2;
+    const frameMs: number[] = [];
+    const people: number[] = [];
+    let firstMs = 0;
+    setBusy({ which: 'movenet', done: 0, total: times.length, phase: 'run' });
+    const t0 = performance.now();
+    for (let i = 0; i < times.length; i++) {
+      if (signal.aborted) throw new DOMException('Cancelado', 'AbortError');
+      await seekVideo(v, times[i]!);
+      g.fillStyle = 'black';
+      g.fillRect(0, 0, side, side);
+      g.drawImage(v, sx, sy, size, size, 0, 0, side, side);
+      const a = performance.now();
+      const poses = await loaded.detector.estimatePoses(crop, { flipHorizontal: false });
+      const ms = performance.now() - a;
+      if (i === 0) firstMs = ms;
+      else {
+        frameMs.push(ms);
+        people.push(poses.length);
+      }
+      setBusy({ which: 'movenet', done: i + 1, total: times.length, phase: 'run' });
+    }
+    return {
+      id: crypto.randomUUID(),
+      at: new Date().toISOString(),
+      model: loaded.model,
+      backend: loaded.backend,
+      loadMs: Math.round(loaded.loadMs),
+      firstMs: Math.round(firstMs),
+      ...summarize(frameMs, people, performance.now() - t0),
+      video: `${file?.name ?? 'vídeo'} · recorte de ${side} px`,
       device: describeDevice(navigator as Navigator & { deviceMemory?: number }),
     };
   }
@@ -216,9 +308,9 @@ export default function PoseLab() {
     try {
       for (const w of which) {
         await seekVideo(video.current, start);
-        const result = await measure(w, controller.signal);
+        const results = await measure(w, controller.signal);
         setRuns((current) => {
-          const next = addRun(current, result);
+          const next = results.reduce<LabRun[]>((list, r) => addRun(list, r), current);
           saveRuns(next);
           return next;
         });
@@ -324,6 +416,8 @@ export default function PoseLab() {
             options={[
               { value: 'webgl', label: 'WebGL' },
               { value: 'webgpu', label: 'WebGPU' },
+              // 15 · Never WASM on a phone (it runs on the main thread): not offered there either.
+              ...(onMobile() ? [] : [{ value: 'wasm' as const, label: 'WASM' }]),
             ]}
           />
         </div>
@@ -391,8 +485,7 @@ export default function PoseLab() {
             {runs.map((r) => (
               <li key={r.id} className="rounded-[10px] border border-line px-3.5 py-3 text-[13px]">
                 <p className="font-semibold text-washi">
-                  {r.model === 'movenet-multipose-lightning' ? 'MoveNet MultiPose' : 'MediaPipe lite'} ·{' '}
-                  <span className="font-mono">{r.backend}</span>
+                  {MODEL_LABEL[r.model] ?? r.model} · <span className="font-mono">{r.backend}</span>
                 </p>
                 <dl className="tabular mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-[12px] text-washi-muted sm:grid-cols-4">
                   <Stat label="ms/fotograma" value={`${r.avgMs} (p95 ${r.p95Ms})`} />

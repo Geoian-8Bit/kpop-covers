@@ -62,11 +62,19 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
             rel: 0,
             enablejsapi: 1,
             origin: window.location.origin,
+            // 6 · A quality hint (deprecated, usually ignored): YouTube picks by the player's real size in device
+            // pixels, which is why the iframe is full size from the start and never scaled down with CSS.
+            vq: 'hd1080',
           },
           events: {
             onReady: (event) => {
               if (disposed) return;
               clearTimeout(stalled);
+              try {
+                event.target.setPlaybackQuality?.('hd1080');
+              } catch {
+                /* gone from the API: the size decides */
+              }
               engine = createYouTubeEngine(event.target, (actual, requested) => {
                 usePlayer.setState({ rate: actual });
                 toastRef.current(

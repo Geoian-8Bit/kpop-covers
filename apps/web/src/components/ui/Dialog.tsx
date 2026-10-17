@@ -7,6 +7,7 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { soft } from '@/lib/motion';
 import { Button } from './Button';
 import { initialFocusIndex } from './dialogFocus';
+import { useOverlayContainer } from './overlayPlacement';
 
 interface DialogProps {
   open: boolean;
@@ -19,6 +20,8 @@ interface DialogProps {
   busy?: boolean;
   /** Confirmations already offer Cancelar: no extra X in the corner. */
   hideClose?: boolean;
+  /** Actions pinned under the body: they stay in view while the body scrolls (submit buttons use `form=`). */
+  footer?: ReactNode;
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
@@ -32,7 +35,7 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false, hideClose = false }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false, hideClose = false, footer }: DialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
@@ -43,6 +46,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
     if (!busyRef.current) onCloseRef.current();
   };
   useBackToClose(open, onClose, busy);
+  const container = useOverlayContainer(open);
 
   useEffect(() => {
     if (!open) return;
@@ -107,7 +111,8 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-6">
+        // The bottom padding clears the iPhone's home bar, so the pinned footer buttons stay tappable.
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:items-center sm:p-6">
           <motion.div
             aria-hidden
             className="absolute inset-0 bg-sumi-950/80"
@@ -125,7 +130,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             // The frame never scrolls (its gold corner fittings stay pinned to the real corners);
             // only the body below the title does.
             className={cn(
-              'paper-raised relative flex max-h-[calc(100dvh-24px)] w-full flex-col overflow-hidden rounded-[16px] outline-none',
+              'paper-raised relative flex max-h-[calc(100dvh_-_12px_-_max(12px,env(safe-area-inset-bottom)))] w-full sm:max-h-[calc(100dvh-48px)] flex-col overflow-hidden rounded-[16px] outline-none',
               widths[size],
             )}
             initial={{ opacity: 0, y: 36, scale: 0.97 }}
@@ -148,12 +153,16 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
               </div>
               {description && <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>}
             </div>
-            <div className="min-h-0 overflow-y-auto overscroll-contain px-6 pb-6 pt-1 sm:px-7 sm:pb-7">{children}</div>
+            <div className={cn('min-h-0 overflow-y-auto overscroll-contain px-6 pt-1 sm:px-7', footer ? 'pb-3' : 'pb-6 sm:pb-7')}>
+              {children}
+            </div>
+            {footer && <div className="shrink-0 border-t border-line px-6 py-2.5 sm:px-7 sm:py-4">{footer}</div>}
           </motion.div>
         </div>
       )}
     </AnimatePresence>,
-    // Native fullscreen only shows the fullscreen element's subtree.
-    document.fullscreenElement ?? document.body,
+    // Inside the fullscreen stage (native or CSS) when there is one, else the page's body: chosen when it opens and
+    // moved (not mounted again) if that changes while open — see overlayPlacement.ts.
+    container,
   );
 }

@@ -6,6 +6,53 @@ import { MAX_ROUND, PAUSE_MAX, type RoundOptions } from './roundRules';
 
 const PAUSES = Array.from({ length: PAUSE_MAX + 1 }, (_, i) => i);
 
+interface CountStepperProps {
+  value: number;
+  /** How many the source offers. */
+  available: number;
+  onChange: (count: number) => void;
+  /** The visible label's id. */
+  labelledBy: string;
+}
+
+/** «Un clip menos» · N · «Un clip más», within 1…what the source offers (and the round's top). */
+export function CountStepper({ value, available, onChange, labelledBy }: CountStepperProps) {
+  const max = Math.max(1, Math.min(MAX_ROUND, available));
+  const shown = Math.min(value, max);
+  return (
+    <div
+      role="group"
+      aria-labelledby={labelledBy}
+      className="well inline-flex items-center gap-1 rounded-[12px] p-1"
+    >
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Un clip menos"
+        disabled={shown <= 1}
+        onClick={() => onChange(Math.max(1, shown - 1))}
+      >
+        <Minus className="size-4" />
+      </Button>
+      <output
+        aria-live="polite"
+        className="tabular min-w-[3ch] text-center font-display text-[22px] font-bold text-washi"
+      >
+        {shown}
+      </output>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Un clip más"
+        disabled={value >= max}
+        onClick={() => onChange(Math.min(max, value + 1))}
+      >
+        <Plus className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
 interface RoundOptionsFieldsProps {
   value: RoundOptions;
   /** Only what changed (two quick taps never undo each other). */
@@ -18,7 +65,6 @@ interface RoundOptionsFieldsProps {
 /** Número de clips · pausa (0–5 s) · cuenta atrás · espejo y velocidad de cada clip · título antes o después. */
 export function RoundOptionsFields({ value, onChange, count, idPrefix }: RoundOptionsFieldsProps) {
   const set = onChange;
-  const max = Math.max(1, Math.min(MAX_ROUND, count?.max ?? MAX_ROUND));
   return (
     <div className="grid gap-5 sm:grid-cols-2">
       {count && (
@@ -26,36 +72,12 @@ export function RoundOptionsFields({ value, onChange, count, idPrefix }: RoundOp
           <p id={`${idPrefix}-count`} className="mb-1.5 text-[13px] font-medium text-washi-muted">
             Número de clips
           </p>
-          <div
-            role="group"
-            aria-labelledby={`${idPrefix}-count`}
-            className="well inline-flex items-center gap-1 rounded-[12px] p-1"
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Uno menos"
-              disabled={Math.min(value.count, max) <= 1}
-              onClick={() => set({ count: Math.max(1, Math.min(value.count, max) - 1) })}
-            >
-              <Minus className="size-4" />
-            </Button>
-            <output
-              aria-live="polite"
-              className="tabular min-w-[3ch] text-center font-display text-[22px] font-bold text-washi"
-            >
-              {Math.min(value.count, max)}
-            </output>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Uno más"
-              disabled={value.count >= max}
-              onClick={() => set({ count: Math.min(max, value.count + 1) })}
-            >
-              <Plus className="size-4" />
-            </Button>
-          </div>
+          <CountStepper
+            value={value.count}
+            available={count.max}
+            onChange={(n) => set({ count: n })}
+            labelledBy={`${idPrefix}-count`}
+          />
           <p className="mt-1 text-[12px] text-washi-subtle">Hay {count.max} disponibles.</p>
         </div>
       )}
