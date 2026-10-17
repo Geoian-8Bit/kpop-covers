@@ -286,6 +286,16 @@
     caret-color: var(--color-kin-300);
   }
 
+  /*
+   * A grid with no column template (the phone layout of most `grid sm:grid-cols-2` lists) gets one `auto`
+   * column, and an auto column grows to the widest line that can't wrap inside it (a nowrap caption, a chip):
+   * every card then pokes out of its frame. Default to one column that can shrink; any grid-cols-* utility
+   * (utilities layer) still wins, and grids that flow into columns keep their own sizing.
+   */
+  :where(.grid:not(.grid-flow-col)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   h1,
   h2,
   h3 {

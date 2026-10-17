@@ -46,6 +46,10 @@ export function LibraryPage() {
     [showingSnapshot, toast],
   );
   const [query, setQuery] = useState('');
+  // P38 · Cards only glide to new places once the user filters in this visit. Painting the kept list and then
+  // the fresh one (or coming back to the page) never runs a position animation, so no card can be left half way,
+  // shifted sideways out of the sheet.
+  const [filtering, setFiltering] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
   // Opening a video is the next step: warm the studio chunk and the YouTube API while the phone is idle.
@@ -88,7 +92,9 @@ export function LibraryPage() {
 
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
+      {/* P38 · `overflow-x-clip` is the last line of defence: nothing may ever stick out of the sheet sideways.
+          Vertical overflow stays visible, so nothing hanging or lifting over an edge is cut. */}
+      <div className="paper mx-auto max-w-[1500px] overflow-x-clip rounded-[10px] sm:rounded-[12px]">
         {/* Just the search: the app name is already in the top bar, and every pixel goes to the videos. */}
         <h1 className="sr-only">Biblioteca</h1>
         {/* F16 · Countdown to the nearest event (nothing without one). */}
@@ -100,7 +106,10 @@ export function LibraryPage() {
               <span className="sr-only">Buscar</span>
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setFiltering(true);
+                }}
                 placeholder="Buscar canción o artista"
                 className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
@@ -118,9 +127,9 @@ export function LibraryPage() {
           {quickFailed ? (
             <LoadError compact query={quick} what="el acceso rápido" />
           ) : quick.isPending ? (
-            <div className="flex gap-3">
+            <div className="flex gap-3 overflow-hidden">
               {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="skeleton h-[188px] w-[138px] rounded-[10px]" />
+                <div key={i} className="skeleton h-[188px] w-[138px] shrink-0 rounded-[10px]" />
               ))}
             </div>
           ) : (
@@ -136,7 +145,7 @@ export function LibraryPage() {
           {videosFailed ? (
             <LoadError query={videos} what="la biblioteca" />
           ) : videos.isPending ? (
-            <div className="grid gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4">
               <VideoCardSkeleton className="sm:col-span-2 xl:row-span-2" />
               {Array.from({ length: 4 }, (_, i) => (
                 <VideoCardSkeleton key={i} />
@@ -146,10 +155,12 @@ export function LibraryPage() {
             <EmptyLibrary onAdd={openAddVideo} />
           ) : (
             // No staggerChildren here: each card delays itself by index (capped) via its own variants.
+            // P38 · `grid-cols-1` (one minmax(0, 1fr) column) on phones, never an implicit `auto` one: an auto
+            // column grows to the widest caption that can't wrap and drags every card past the sheet's edge.
             <motion.div
               initial="hidden"
               animate="show"
-              className="grid grid-flow-dense gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4"
+              className="grid min-w-0 grid-flow-dense grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 xl:grid-cols-4"
             >
               <AnimatePresence mode="popLayout">
                 {filtered.map((video, index) => (
@@ -159,6 +170,7 @@ export function LibraryPage() {
                     onDelete={askDelete}
                     featured={index === 0 && !deferredQuery}
                     index={index}
+                    animateLayout={filtering}
                     className={index === 0 && !deferredQuery ? 'sm:col-span-2 xl:row-span-2' : undefined}
                   />
                 ))}

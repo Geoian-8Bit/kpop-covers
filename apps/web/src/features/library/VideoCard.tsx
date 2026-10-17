@@ -23,18 +23,22 @@ interface VideoCardProps {
   featured?: boolean;
   /** Position in the grid; drives the (capped) entrance cascade. */
   index?: number;
+  /** Glide to a new place when the list changes (only while the user filters; see LibraryPage). */
+  animateLayout?: boolean;
   className?: string;
 }
 
 /**
  * Memoised: typing in the search re-renders the library, but a card only changes with its own data.
  * `layout="position"`: a filtered grid only moves cards, so they are never measured for a size change.
+ * `min-w-0`: a grid item never grows past its column, whatever its caption holds (P38).
  */
 export const VideoCard = memo(function VideoCard({
   video,
   onDelete,
   featured = false,
   index = 0,
+  animateLayout = false,
   className,
 }: VideoCardProps) {
   const clipCount = video.clips[0]?.count ?? 0;
@@ -49,12 +53,12 @@ export const VideoCard = memo(function VideoCard({
 
   return (
     <motion.article
-      layout="position"
+      layout={animateLayout ? 'position' : false}
       variants={cardIn}
       custom={index}
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
       whileHover="hover"
-      className={cn('group relative', className)}
+      className={cn('group relative min-w-0', className)}
     >
       <Link
         to={`/v/${video.id}`}
@@ -106,25 +110,32 @@ export const VideoCard = memo(function VideoCard({
           </span>
         </div>
         <div className={cn('flex min-w-0 flex-1 items-end justify-between gap-3 px-1', featured ? 'pt-5' : 'sm:pt-4')}>
-          <div className="min-w-0">
+          <div className="@container min-w-0 flex-1">
             <h3
               className={cn(
-                'line-clamp-2 font-display font-bold leading-snug text-washi',
+                'line-clamp-2 font-display font-bold leading-snug text-washi [overflow-wrap:anywhere]',
                 featured ? 'text-[21px] sm:text-[26px]' : 'text-[16px] sm:text-[17px]',
               )}
             >
               {video.title}
             </h3>
-            <p className="mt-1 flex items-center gap-1.5 truncate text-[13px] text-washi-muted">
-              {video.source === 'youtube' ? (
-                <Youtube className="size-3.5 shrink-0 text-enji-300" aria-label="YouTube" />
-              ) : (
-                <HardDrive className="size-3.5 shrink-0 text-kin-300" aria-label="Archivo" />
-              )}
-              <span className="truncate">{video.artist || 'Artista sin especificar'}</span>
+            {/* P38 · Source + artist shrink (the artist truncates) and «con archivo» drops to its own line when a
+                phone row has no room for it: nothing here is a single line that can't fit. */}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-washi-muted">
+              <span className="flex min-w-0 max-w-full items-center gap-1.5">
+                {video.source === 'youtube' ? (
+                  <Youtube className="size-3.5 shrink-0 text-enji-300" aria-label="YouTube" />
+                ) : (
+                  <HardDrive className="size-3.5 shrink-0 text-kin-300" aria-label="Archivo" />
+                )}
+                <span className="truncate">{video.artist || 'Artista sin especificar'}</span>
+              </span>
               {hasLinkedFile(video) && (
-                <span className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-kin-300/15 px-2 py-0.5 text-[11px] font-bold text-kin-300">
-                  <HardDrive className="size-3" aria-hidden /> con archivo
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-kin-300/15 px-2 py-0.5 text-[11px] font-bold text-kin-300">
+                  <HardDrive className="size-3 shrink-0" aria-hidden />
+                  {/* Too narrow for the words (small phones, big system font): the icon stays, the words go to the
+                      screen reader only — never a clipped «con arc…». */}
+                  <span className="truncate @max-[6.5rem]:sr-only">con archivo</span>
                 </span>
               )}
             </p>
