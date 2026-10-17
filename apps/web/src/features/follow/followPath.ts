@@ -32,6 +32,8 @@ export interface Candidate {
   box: Box;
   id?: number | null;
   score?: number;
+  /** The span of the confident keypoints (MultiPose): lets single-pose boxes be sized like the model's own box. */
+  kp?: Box | null;
 }
 
 /** What the user chose on the paused video: a tap on the dancer, or a box drawn around them. */
@@ -142,15 +144,23 @@ export function boxAt(kfs: readonly FollowKeyframe[], t: number): Box | null {
   return { x: x - w / 2, y: y - h / 2, w, h };
 }
 
-/** Jitter out: each box becomes a weighted average of its neighbours (±`radius` keyframes); times stay. */
-export function smoothKeyframes(kfs: readonly FollowKeyframe[], radius = 2): FollowKeyframe[] {
+/**
+ * Jitter out: each box becomes a weighted average of its neighbours (±`radius` keyframes); times stay. The
+ * neighbourhood stops at a gap longer than `maxGap` seconds: across it (the dancer hidden for a while) is another
+ * moment of the dance, and averaging with it would pull the box towards where the dancer is not.
+ */
+export function smoothKeyframes(kfs: readonly FollowKeyframe[], radius = 2, maxGap = 1.25): FollowKeyframe[] {
   if (kfs.length < 3 || radius < 1) return kfs.slice();
   return kfs.map((k, i) => {
     let sw = 0;
     const acc = [0, 0, 0, 0];
-    for (let d = -radius; d <= radius; d++) {
-      const n = kfs[i + d];
-      if (!n) continue;
+    // How far each side reaches before a gap.
+    let lo = i;
+    while (lo > i - radius && lo > 0 && kfs[lo]![0] - kfs[lo - 1]![0] <= maxGap) lo--;
+    let hi = i;
+    while (hi < i + radius && hi < kfs.length - 1 && kfs[hi + 1]![0] - kfs[hi]![0] <= maxGap) hi++;
+    for (let d = lo - i; d <= hi - i; d++) {
+      const n = kfs[i + d]!;
       const weight = radius + 1 - Math.abs(d);
       // Centres are averaged (not corners), so a box that grows doesn't drift.
       acc[0]! += (n[1] + n[3] / 2) * weight;
@@ -278,6 +288,14 @@ const MAX_SPEED = 0.6;
  * Follows one dancer frame after frame, in either direction of time (`startT`: the moment they were chosen). While
  * they are not seen, the search looks where they were heading (their speed, for up to 1.5 s). Only frames where
  * they are seen give a keyframe: the gaps are glided over by the interpolation.
+ *
+ * The other people seen with them are remembered, each with the moment they were seen, and followed on every frame
+ * of the whole picture (also while ours is hidden); forgotten after OTHERS_TTL. When the dancer is hidden, the
+ * person standing about where one of the others is now is that other dancer, not ours (it used to grab the
+ * neighbour); and once ours has been hidden for a while, someone the others' memory follows without a break is not
+ * taken for them, even standing where ours was (a change of formation while ours is hidden) — unless that other has
+ * stood over ours' spot all along (ours was behind them) and the person is nearer that spot than the other's memory:
+ * ours coming out from behind them, which the memory had just jumped onto.
  */
 export function createFollower(start: Box, startId?: number | null, startT?: number) {
   let last = start;
@@ -286,17 +304,83 @@ export function createFollower(start: Box, startId?: number | null, startT?: num
   let vx = 0;
   let vy = 0;
   let moved = false;
+  let others: Other[] = [];
+  /** Some whole frame has already been looked at since ours was last seen (the others' `cover` is current). */
+  let lostChecked = false;
+  const fresh = (t: number, maxAge = OTHERS_TTL) => others.filter((o) => Math.abs(t - o.t) <= maxAge);
+  /** `c` is clearly closer to where someone else is than to where our dancer should be. */
+  const someoneElse = (c: Box, expected: Box, list: readonly Other[]) => {
+    if (!list.length) return false;
+    const size = Math.max(expected.w, expected.h) || 0.01;
+    const mine = centreDistance(expected, c);
+    if (mine < 0.15 * size) return false;
+    return list.some((o) => centreDistance(o.box, c) < mine * 0.8);
+  };
+  /** Where the dancer should be at `t`: the last place seen, moved on along their heading (up to 1.5 s). */
+  const expect = (t: number): Box => {
+    const dt = lastT == null ? 0 : t - lastT;
+    const ahead = Math.sign(dt) * Math.min(Math.abs(dt), 1.5);
+    return {
+      ...last,
+      x: clamp(last.x + vx * ahead, 0, Math.max(0, 1 - last.w)),
+      y: clamp(last.y + vy * ahead, 0, Math.max(0, 1 - last.h)),
+    };
+  };
   return {
-    step(t: number, candidates: readonly Candidate[]): { keyframe: FollowKeyframe | null; found: boolean } {
+    expect,
+    /**
+     * `whole`: the candidates are everyone in the frame (MultiPose), so they also say where the others are; false
+     * for a crop (one person, SinglePose).
+     */
+    step(
+      t: number,
+      candidates: readonly Candidate[],
+      whole = true,
+    ): { keyframe: FollowKeyframe | null; found: boolean; index: number | null } {
       const dt = lastT == null ? 0 : t - lastT;
-      const ahead = Math.sign(dt) * Math.min(Math.abs(dt), 1.5);
-      const expected: Box = {
-        ...last,
-        x: clamp(last.x + vx * ahead, 0, Math.max(0, 1 - last.w)),
-        y: clamp(last.y + vy * ahead, 0, Math.max(0, 1 - last.h)),
-      };
-      const i = associate(expected, id, candidates, Math.max(0, Math.abs(dt) - 0.25));
-      if (i == null) return { keyframe: null, found: false };
+      const expected = expect(t);
+      others = fresh(t);
+      // Who of the others is who in this frame (only the whole picture shows them).
+      const claims = whole ? matchOthers(others, candidates, t) : new Map<number, number>();
+      // Ours hidden for a while: whoever the others' memory follows without a break is one of them.
+      const lostFor = lastT == null ? 0 : Math.abs(dt);
+      const size = Math.max(expected.w, expected.h) || 0.01;
+      const taken = new Set<number>();
+      if (lostFor > CLAIM_AFTER) {
+        for (const [ci, oi] of claims) {
+          const o = others[oi]!;
+          if (Math.abs(t - o.t) > CLAIM_FRESH) continue;
+          // That other stood over our spot since ours was last seen (ours hidden behind them): someone back right
+          // where ours should be, nearer that spot than where that other was heading, is ours coming out, not them
+          // (the memory jumped onto ours as they went behind).
+          const c = candidates[ci]!.box;
+          const mine = centreDistance(expected, c);
+          if (o.cover && mine < COVER_REACH * size && mine < centreDistance(heading(o, t), c)) continue;
+          taken.add(ci);
+        }
+      }
+      const open = candidates.map((c, j) => ({ c, j })).filter(({ j }) => !taken.has(j));
+      const k = associate(
+        expected,
+        id,
+        open.map((o) => o.c),
+        Math.max(0, Math.abs(dt) - 0.25),
+      );
+      const i = k == null ? null : open[k]!.j;
+      const found = i != null && !someoneElse(candidates[i]!.box, expected, others);
+      if (whole) others = updateOthers(others, candidates, claims, found ? i : null, t);
+      if (found) {
+        lostChecked = false;
+        for (const o of others) o.cover = false;
+      } else if (whole) {
+        // Which of the others has stood over where ours should be on every whole frame since ours was lost.
+        for (const o of others) {
+          const near = centreDistance(o.box, expected) < COVER_REACH * size;
+          o.cover = (lostChecked ? o.cover === true : true) && near;
+        }
+        lostChecked = true;
+      }
+      if (!found || i == null) return { keyframe: null, found: false, index: null };
       const c = candidates[i]!;
       if (lastT != null && dt !== 0) {
         const nx = clamp((centreOf(c.box).x - centreOf(last).x) / dt, -MAX_SPEED, MAX_SPEED);
@@ -309,12 +393,121 @@ export function createFollower(start: Box, startId?: number | null, startT?: num
       last = c.box;
       lastT = t;
       if (c.id != null) id = c.id;
-      return { keyframe: keyframe(t, c.box), found: true };
+      return { keyframe: keyframe(t, c.box), found: true, index: i };
+    },
+    /** The time of the last frame where the dancer was seen. */
+    get lastSeen() {
+      return lastT;
     },
     get box() {
       return last;
     },
+    /** 15 · The others seen recently enough at `t` (to cover them in the crop: followTrack). */
+    othersAt(t: number, maxAge = OTHERS_MASK_AGE): Box[] {
+      return fresh(t, maxAge).map((o) => o.box);
+    },
+    /**
+     * 15 · The same, to cover in the crop: where each should be by now (moved on along their heading) and how long
+     * ago they were seen (the older, the less sure: followTrack leaves more room around ours).
+     */
+    masksAt(t: number, maxAge = OTHERS_MASK_AGE): { box: Box; age: number }[] {
+      return fresh(t, maxAge).map((o) => ({ box: heading(o, t), age: Math.abs(t - o.t) }));
+    },
   };
+}
+
+/** Someone else seen with the dancer: where, and when (song seconds). */
+interface Other {
+  box: Box;
+  t: number;
+  /** Has stood over where ours should be on every whole frame since ours was last seen (ours behind them). */
+  cover?: boolean;
+  /** Their move across the picture (per second), once seen twice. */
+  vx?: number;
+  vy?: number;
+}
+
+/** Where that other should be at `t`: their last place moved on along their heading (up to 0.75 s). */
+function heading(o: Other, t: number): Box {
+  const ahead = clamp(t - o.t, -0.75, 0.75);
+  return { ...o.box, x: o.box.x + (o.vx ?? 0) * ahead, y: o.box.y + (o.vy ?? 0) * ahead };
+}
+
+/** How near our expected spot (in dancer sizes) counts as standing over it. */
+const COVER_REACH = 0.3;
+
+/** 15 · The others are forgotten when not seen for this long (they may have moved anywhere since). */
+export const OTHERS_TTL = 1.5;
+/** Only others seen this recently are covered in the crop. */
+const OTHERS_MASK_AGE = 0.75;
+/** Ours hidden for longer than this: the others' unbroken claims win over ours. */
+const CLAIM_AFTER = 0.5;
+/** A claim is unbroken when that other was seen this recently. */
+const CLAIM_FRESH = 0.6;
+
+/**
+ * Each remembered other with the person of this frame they most likely are now: the nearest pairs first, one person
+ * each, within how far they could have moved since. Candidate index → other index.
+ */
+function matchOthers(
+  others: readonly Other[],
+  candidates: readonly Candidate[],
+  t: number,
+): Map<number, number> {
+  const pairs: { ci: number; oi: number; d: number }[] = [];
+  others.forEach((o, oi) => {
+    const size = Math.max(o.box.w, o.box.h) || 0.01;
+    const reach = size * 0.6 + 0.3 * Math.min(Math.abs(t - o.t), 1.5);
+    candidates.forEach((c, ci) => {
+      const hr = c.box.h / (o.box.h || 0.01);
+      if (hr < 0.6 || hr > 1.6) return;
+      const d = centreDistance(o.box, c.box);
+      if (d <= reach) pairs.push({ ci, oi, d });
+    });
+  });
+  pairs.sort((a, b) => a.d - b.d);
+  const byCandidate = new Map<number, number>();
+  const usedOthers = new Set<number>();
+  for (const p of pairs) {
+    if (byCandidate.has(p.ci) || usedOthers.has(p.oi)) continue;
+    byCandidate.set(p.ci, p.oi);
+    usedOthers.add(p.oi);
+  }
+  return byCandidate;
+}
+
+/**
+ * The others after a frame of the whole picture: those matched move to where they are now; those not seen keep their
+ * last place (until they are forgotten); and, when ours was found, everyone else new in the frame is added.
+ */
+function updateOthers(
+  others: readonly Other[],
+  candidates: readonly Candidate[],
+  claims: ReadonlyMap<number, number>,
+  mine: number | null,
+  t: number,
+): Other[] {
+  const next = others.map((o) => ({ ...o }));
+  for (const [ci, oi] of claims) {
+    if (ci === mine) continue; // that memory had drifted onto our dancer: keep it as it was
+    const o = next[oi]!;
+    const box = candidates[ci]!.box;
+    const dt = t - o.t;
+    let { vx, vy } = o;
+    if (dt !== 0) {
+      const nx = clamp((centreOf(box).x - centreOf(o.box).x) / dt, -MAX_SPEED, MAX_SPEED);
+      const ny = clamp((centreOf(box).y - centreOf(o.box).y) / dt, -MAX_SPEED, MAX_SPEED);
+      vx = vx == null ? nx : vx * 0.5 + nx * 0.5;
+      vy = vy == null ? ny : vy * 0.5 + ny * 0.5;
+    }
+    next[oi] = { ...o, box, t, vx, vy };
+  }
+  if (mine != null) {
+    candidates.forEach((c, ci) => {
+      if (ci !== mine && !claims.has(ci)) next.push({ box: c.box, t });
+    });
+  }
+  return next;
 }
 
 /** A whole sequence at once (the analysis does the same frame by frame): the keyframes where the dancer was seen. */
@@ -407,6 +600,20 @@ export function spliceFrom(
   const keep = old.filter((k) => k[0] < from - 0.001);
   const next = fresh.filter((k) => k[0] >= from - 0.001);
   return normalizeKeyframes([...keep, ...next]);
+}
+
+/**
+ * Only the stretch [from, to] replaced by the fresh keyframes; what was before and after stays. For a correction
+ * whose first part is ready (or that was stopped half way): the rest keeps the old path until it is recomputed.
+ */
+export function spliceRange(
+  old: readonly FollowKeyframe[],
+  from: number,
+  to: number,
+  fresh: readonly FollowKeyframe[],
+): FollowKeyframe[] {
+  const inside = (t: number) => t >= from - 0.001 && t <= to + 0.001;
+  return normalizeKeyframes([...old.filter((k) => !inside(k[0])), ...fresh.filter((k) => inside(k[0]))]);
 }
 
 /** Manual mode: the box placed at `t` (replaces one placed within `window` seconds). */
