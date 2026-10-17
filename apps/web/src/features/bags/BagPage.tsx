@@ -40,7 +40,6 @@ import {
 import { CLIP_SWATCH } from '@/data/clips';
 import { currentMemberId, useMembers } from '@/data/members';
 import { useVideos } from '@/data/videos';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { newDraft, setRoundDraft } from '@/features/rpd/roundDraft';
 import { cn } from '@/lib/cn';
@@ -131,7 +130,6 @@ function BagView({ bag }: { bag: BagWithCount }) {
   const items = useBagItems(bag.id);
   const draws = useBagDraws(bag.id);
   const members = useMembers();
-  const variant = useDesignVariant('bag-draw');
   const reduce = useReducedMotion();
   const toast = useToast();
   const navigate = useNavigate();
@@ -265,7 +263,6 @@ function BagView({ bag }: { bag: BagWithCount }) {
             Sacar
           </h2>
           <BagDrawStage
-            variant={variant}
             phase={phase}
             results={last?.shown ?? []}
             empty={items.isSuccess && inBag.length === 0 && phase === 'idle'}
@@ -282,7 +279,8 @@ function BagView({ bag }: { bag: BagWithCount }) {
               <motion.div
                 key="after"
                 initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0, transition: { ...snappy, delay: reduce ? 0 : 0.7 } }}
+                // Right after the prize card (BagDrawStage shows it at 0.85 s, as the ball lands).
+                animate={{ opacity: 1, y: 0, transition: { ...snappy, delay: reduce ? 0 : 0.95 } }}
                 exit={{ opacity: 0, transition: { duration: 0.1 } }}
                 className="mt-4 flex flex-col gap-3"
               >

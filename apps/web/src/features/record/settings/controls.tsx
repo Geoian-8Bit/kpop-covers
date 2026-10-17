@@ -13,33 +13,24 @@ import { jelly } from '@/lib/motion';
 import type { ChoiceField, Field, SwitchField } from './model';
 
 /**
- * Building blocks shared by the three settings panels: a radio group with a springing tab, a mochi switch,
- * a field block (label · explanation · control), focus handling for a modal panel and a size probe.
+ * Building blocks of the settings panel: a radio group with a springing tab, a mochi switch, a field block
+ * (label · explanation · control), a hanko seal, focus handling for a modal panel and a size probe.
  *
- * `tone`: 'ink' sits on the dark urushi lacquer, 'paper' on light washi (the makimono).
+ * `tone` (of the seal): 'ink' sits on the dark urushi lacquer, 'paper' on light washi (the fan's slips).
  */
 export type Tone = 'ink' | 'paper';
 
 // ───────────────────────── Radio group ─────────────────────────
 
-/** Radio group whose tab (washi on ink, sumi on paper) springs between options; arrows move the choice. */
-export function Choice({
+/** Radio group whose washi tab springs between options (side by side, equal widths); arrows move the choice. */
+function Choice({
   field,
-  tone = 'ink',
-  layout = 'row',
-  columns = 1,
   labelledBy,
   describedBy,
-  className,
 }: {
   field: ChoiceField;
-  tone?: Tone;
-  /** row: side by side, equal widths. stack: one under another (in `columns` columns). */
-  layout?: 'row' | 'stack';
-  columns?: number;
   labelledBy: string;
   describedBy?: string;
-  className?: string;
 }) {
   const tabId = useId();
   const reduce = useReducedMotion();
@@ -77,23 +68,13 @@ export function Choice({
     e.preventDefault();
   };
 
-  const ink = tone === 'ink';
   return (
     <div
       role="radiogroup"
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
-      className={cn(
-        'grid gap-1 p-1',
-        // The Kamon crest track only suits a horizontal pill; a stacked list keeps plain corners.
-        ink ? cn('well rounded-[12px]', layout === 'row' && 'skin-track') : 'rounded-[10px] border border-sumi-600/25',
-        className,
-      )}
-      style={
-        layout === 'row'
-          ? { gridAutoFlow: 'column', gridAutoColumns: 'minmax(0, 1fr)' }
-          : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
-      }
+      className="well skin-track grid gap-1 rounded-[12px] p-1"
+      style={{ gridAutoFlow: 'column', gridAutoColumns: 'minmax(0, 1fr)' }}
     >
       {options.map((option, index) => {
         const active = index === checked;
@@ -121,20 +102,12 @@ export function Choice({
             transition={shake === option.value ? { duration: 0.36 } : jelly}
             onAnimationComplete={() => shake === option.value && setShake(null)}
             className={cn(
-              'relative isolate flex min-h-11 items-center rounded-[9px] leading-tight transition-colors duration-200',
-              layout === 'row' ? 'justify-center px-1.5 text-center' : 'justify-start px-3 text-left',
-              ink ? 'text-[14px]' : 'text-[15px]',
+              'relative isolate flex min-h-11 items-center justify-center rounded-[9px] px-1.5 text-center text-[14px] leading-tight transition-colors duration-200',
               active
-                ? ink
-                  ? 'font-bold text-sumi-900'
-                  : 'font-bold text-washi'
+                ? 'font-bold text-sumi-900'
                 : option.disabled
-                  ? ink
-                    ? 'cursor-not-allowed text-washi-subtle/55 line-through decoration-1'
-                    : 'cursor-not-allowed text-sumi-600/60 line-through decoration-1'
-                  : ink
-                    ? 'font-medium text-washi-muted hover:text-washi'
-                    : 'font-medium text-sumi-800 hover:text-sumi-950',
+                  ? 'cursor-not-allowed text-washi-subtle/55 line-through decoration-1'
+                  : 'font-medium text-washi-muted hover:text-washi',
             )}
           >
             {active && (
@@ -142,12 +115,7 @@ export function Choice({
                 aria-hidden
                 layoutId={tabId}
                 transition={jelly}
-                className={cn(
-                  'absolute inset-0 -z-10 rounded-[9px]',
-                  ink
-                    ? 'skin-thumb bg-washi [--skin-fill:var(--color-washi)] shadow-[inset_0_0_0_2px_var(--color-washi),inset_0_0_0_3px_rgb(27_25_22/0.2),0_4px_10px_-4px_rgb(0_0_0/0.8)]'
-                    : 'bg-sumi-900 shadow-[inset_0_0_0_2px_var(--color-sumi-900),inset_0_0_0_3px_rgb(243_236_223/0.18)]',
-                )}
+                className="skin-thumb absolute inset-0 -z-10 rounded-[9px] bg-washi [--skin-fill:var(--color-washi)] shadow-[inset_0_0_0_2px_var(--color-washi),inset_0_0_0_3px_rgb(27_25_22/0.2),0_4px_10px_-4px_rgb(0_0_0/0.8)]"
               />
             )}
             <span className="tabular relative">{option.label}</span>
@@ -164,27 +132,18 @@ export function Choice({
  * The switch's drawing. Its parent is a motion element animating 'on' / 'off' with whileTap="pressed": the thumb
  * stretches like mochi while pressed (scaleX, never width) and the indigo fill fades in (opacity only).
  */
-export function SwitchTrack({ on, tone = 'ink' }: { on: boolean; tone?: Tone }) {
-  const ink = tone === 'ink';
+function SwitchTrack({ on }: { on: boolean }) {
   return (
     <span aria-hidden className="relative block h-8 w-[52px] shrink-0">
-      <span
-        className={cn(
-          'absolute inset-0 rounded-full border',
-          ink ? 'skin-track border-washi/20 bg-sumi-950' : 'border-sumi-600/40 bg-washi-muted/50',
-        )}
-      />
+      <span className="skin-track absolute inset-0 rounded-full border border-washi/20 bg-sumi-950" />
       <motion.span
-        className={cn('absolute inset-0 rounded-full border', ink ? 'skin-track border-ai-300/70 bg-ai-500' : 'border-ai-700 bg-ai-600')}
+        className="skin-track absolute inset-0 rounded-full border border-ai-300/70 bg-ai-500"
         custom={on}
         variants={{ off: { opacity: 0 }, on: { opacity: 1 }, pressed: (o: boolean) => ({ opacity: o ? 1 : 0 }) }}
         transition={{ duration: 0.2 }}
       />
       <motion.span
-        className={cn(
-          'absolute left-1 top-1 size-6 rounded-full bg-washi [--skin-fill:var(--color-washi)] shadow-[inset_0_-2px_0_rgb(0_0_0/0.12),0_2px_6px_rgb(0_0_0/0.45)]',
-          ink ? 'skin-thumb' : 'ring-1 ring-sumi-600/30',
-        )}
+        className="skin-thumb absolute left-1 top-1 size-6 rounded-full bg-washi [--skin-fill:var(--color-washi)] shadow-[inset_0_-2px_0_rgb(0_0_0/0.12),0_2px_6px_rgb(0_0_0/0.45)]"
         custom={on}
         variants={{
           off: { x: 0, scaleX: 1 },
@@ -198,10 +157,9 @@ export function SwitchTrack({ on, tone = 'ink' }: { on: boolean; tone?: Tone }) 
 }
 
 /** A whole row is the switch (≥ 48 px): label and explanation on the left, the switch on the right. */
-export function SwitchRow({ field, tone = 'ink', className }: { field: SwitchField; tone?: Tone; className?: string }) {
+function SwitchRow({ field, className }: { field: SwitchField; className?: string }) {
   const labelId = useId();
   const helpId = useId();
-  const ink = tone === 'ink';
   return (
     <motion.button
       type="button"
@@ -216,17 +174,14 @@ export function SwitchRow({ field, tone = 'ink', className }: { field: SwitchFie
       className={cn('flex min-h-12 w-full items-center gap-3 rounded-[12px] py-1.5 text-left', className)}
     >
       <span className="min-w-0 flex-1">
-        <span id={labelId} className={cn('block text-[15px] font-bold leading-tight', ink ? 'text-washi' : 'text-sumi-950')}>
+        <span id={labelId} className="block text-[15px] font-bold leading-tight text-washi">
           {field.label}
         </span>
-        <span
-          id={helpId}
-          className={cn('mt-0.5 block text-[12.5px] leading-snug', ink ? 'text-washi-subtle' : 'text-sumi-600')}
-        >
+        <span id={helpId} className="mt-0.5 block text-[12.5px] leading-snug text-washi-subtle">
           {field.help}
         </span>
       </span>
-      <SwitchTrack on={field.value} tone={tone} />
+      <SwitchTrack on={field.value} />
     </motion.button>
   );
 }
@@ -250,32 +205,15 @@ export function Seal({ glyph, tone = 'ink', className }: { glyph: string; tone?:
 }
 
 /** Label · what the current value does · why something is off · the control. */
-export function FieldBlock({
-  field,
-  tone = 'ink',
-  layout = 'row',
-  columns,
-  seal = false,
-  className,
-}: {
-  field: Field;
-  tone?: Tone;
-  layout?: 'row' | 'stack';
-  columns?: number;
-  /** Show the kanji seal next to the label. */
-  seal?: boolean;
-  className?: string;
-}) {
+export function FieldBlock({ field, className }: { field: Field; className?: string }) {
   const labelId = useId();
   const helpId = useId();
   const noteId = useId();
-  const ink = tone === 'ink';
-  if (field.kind === 'switch') return <SwitchRow field={field} tone={tone} className={className} />;
+  if (field.kind === 'switch') return <SwitchRow field={field} className={className} />;
   return (
     <div className={className}>
       <div className="flex items-center gap-2">
-        {seal && <Seal glyph={field.glyph} tone={tone} />}
-        <span id={labelId} className={cn('text-[15px] font-bold leading-tight', ink ? 'text-washi' : 'text-sumi-950')}>
+        <span id={labelId} className="text-[15px] font-bold leading-tight text-washi">
           {field.label}
         </span>
       </div>
@@ -285,29 +223,19 @@ export function FieldBlock({
         initial={{ opacity: 0.35 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.25 }}
-        className={cn('mt-1 text-[12.5px] leading-snug', ink ? 'text-washi-subtle' : 'text-sumi-600')}
+        className="mt-1 text-[12.5px] leading-snug text-washi-subtle"
       >
         {field.help}
       </motion.p>
       {field.note && (
-        <p
-          id={noteId}
-          className={cn(
-            'mt-1 flex items-start gap-1.5 text-[12.5px] font-medium leading-snug',
-            ink ? 'text-kin-300' : 'text-enji-600',
-          )}
-        >
+        <p id={noteId} className="mt-1 flex items-start gap-1.5 text-[12.5px] font-medium leading-snug text-kin-300">
           <span aria-hidden className="mt-[5px] size-1.5 shrink-0 rotate-45 bg-current" />
           {field.note}
         </p>
       )}
-      {/* mt-auto: in a flex column (bento cells of unequal text) the controls line up at the bottom. */}
       <div className="mt-auto pt-2">
         <Choice
           field={field}
-          tone={tone}
-          layout={layout}
-          columns={columns}
           labelledBy={labelId}
           describedBy={field.note ? `${helpId} ${noteId}` : helpId}
         />
@@ -383,7 +311,7 @@ export function useModalFocus(open: boolean, panelRef: RefObject<HTMLElement | n
   }, [open, panelRef]);
 }
 
-/** The size of a box (the recorder, or the lab's phone frame): the panels shape themselves to it, not the window. */
+/** The size of a box (the recorder): the panel shapes itself to it, not the window. */
 export function useBoxSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } | null {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   useLayoutEffect(() => {

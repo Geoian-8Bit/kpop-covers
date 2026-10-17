@@ -3,7 +3,6 @@ import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { useEvents } from '@/data/events';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { snappy } from '@/lib/motion';
 import { EventCountdown } from './EventCountdown';
 import { nearestEvent } from './eventRules';
@@ -18,7 +17,6 @@ export function NextEventBanner() {
   // already in place instead of arriving later and pushing the library down.
   const events = useEvents({ snapshot: true });
   const now = useNow();
-  const variant = useDesignVariant('event-countdown');
   const event = nearestEvent(events.data ?? [], now);
   if (!event) return null;
   return (
@@ -36,10 +34,8 @@ export function NextEventBanner() {
         className="group flex items-center gap-2 rounded-[12px] border border-line bg-sumi-900/60 px-3 py-3 transition-colors hover:border-line-strong hover:bg-washi/[0.04] sm:px-5"
       >
         <EventCountdown
-          variant={variant}
           name={event.name}
           startsAt={event.starts_at}
-          createdAt={event.created_at}
           place={event.place}
           now={now}
           compact

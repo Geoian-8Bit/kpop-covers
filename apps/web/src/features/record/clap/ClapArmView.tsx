@@ -15,14 +15,14 @@ import {
   type MotionValue,
 } from 'motion/react';
 import { X } from 'lucide-react';
-import { useCallback, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
 import { CLAP_LABEL } from '../settings/model';
-import { ClapFigure } from './ClapFigures';
+import { ClapTaiko } from './ClapFigures';
 
-/** What the arming screen shows, fed with the detector's readings (from the microphone or simulated). */
+/** What the arming screen shows, fed with the detector's readings (from the microphone). */
 export interface ClapUi {
   level: MotionValue<number>;
   threshold: MotionValue<number>;
@@ -73,7 +73,6 @@ export function useClapUi(sensitivity: ClapSensitivity): ClapUi {
 }
 
 export interface ClapArmViewProps {
-  variant: string;
   ui: ClapUi;
   /** Asking for the microphone, listening, or the signal was heard. */
   phase: 'asking' | 'listening' | 'fired';
@@ -82,9 +81,6 @@ export interface ClapArmViewProps {
   onCancel: () => void;
   /** Seconds before it disarms on its own; null to hide. */
   secondsLeft: number | null;
-  /** In the design lab: inside a phone-shaped box (upright or turned) instead of over the whole recorder. */
-  embedded?: false | 'column' | 'row';
-  children?: ReactNode;
 }
 
 function statusText(phase: ClapArmViewProps['phase'], ready: boolean, count: 0 | 1 | 2): string {
@@ -96,20 +92,10 @@ function statusText(phase: ClapArmViewProps['phase'], ready: boolean, count: 0 |
 }
 
 /**
- * F7 · The armed recorder: big «Esperando señal…» (readable from where the dancer stands), the figure of the chosen
- * design, the live level with the mark a clap must reach, the sensitivity and a big «Cancelar».
+ * F7 · The armed recorder: big «Esperando señal…» (readable from where the dancer stands), the taiko drum, the live
+ * level with the mark a clap must reach, the sensitivity and a big «Cancelar».
  */
-export function ClapArmView({
-  variant,
-  ui,
-  phase,
-  sensitivity,
-  onSensitivity,
-  onCancel,
-  secondsLeft,
-  embedded = false,
-  children,
-}: ClapArmViewProps) {
+export function ClapArmView({ ui, phase, sensitivity, onSensitivity, onCancel, secondsLeft }: ClapArmViewProps) {
   const reduce = useReducedMotion() ?? false;
   const fired = phase === 'fired' || ui.count === 2;
   const status = statusText(phase, ui.ready, ui.count);
@@ -122,28 +108,9 @@ export function ClapArmView({
   const mark = useTransform(ui.threshold, (v) => `${(v * 100).toFixed(1)}%`);
 
   return (
-    <div
-      className={cn(
-        'flex items-center justify-center text-washi',
-        embedded === 'row'
-          ? 'size-full flex-row gap-5 p-4'
-          : embedded === 'column'
-            ? 'size-full flex-col gap-3 p-4'
-            : 'min-h-full w-full flex-col gap-4 px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))] landscape:flex-row landscape:gap-8 landscape:pl-[max(16px,env(safe-area-inset-left))] landscape:pr-[max(16px,env(safe-area-inset-right))]',
-      )}
-    >
-      <div
-        className={cn(
-          'relative shrink-0',
-          embedded === 'row'
-            ? 'size-[min(40%,190px)]'
-            : embedded === 'column'
-              ? 'size-[min(56%,200px)]'
-              : 'size-[min(62vw,34vh,300px)] landscape:size-[min(38vw,62vh,280px)]',
-        )}
-      >
-        <ClapFigure
-          variant={variant}
+    <div className="flex min-h-full w-full flex-col items-center justify-center gap-4 px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-[max(18px,env(safe-area-inset-top))] text-washi landscape:flex-row landscape:gap-8 landscape:pl-[max(16px,env(safe-area-inset-left))] landscape:pr-[max(16px,env(safe-area-inset-right))]">
+      <div className="relative size-[min(62vw,34vh,300px)] shrink-0 landscape:size-[min(38vw,62vh,280px)]">
+        <ClapTaiko
           level={ui.level}
           threshold={ui.threshold}
           count={fired ? 2 : ui.count}
@@ -152,20 +119,11 @@ export function ClapArmView({
         />
       </div>
 
-      <div
-        className={cn(
-          'flex w-full flex-col items-center gap-3 text-center',
-          embedded === 'row' ? 'max-w-[260px] gap-2' : embedded ? 'max-w-sm' : 'max-w-sm landscape:gap-2',
-        )}
-      >
+      <div className="flex w-full max-w-sm flex-col items-center gap-3 text-center landscape:gap-2">
         <h2
           className={cn(
             'font-display font-extrabold leading-none [text-shadow:0_4px_24px_rgb(0_0_0/0.6)]',
-            embedded
-              ? embedded === 'row'
-                ? 'text-[22px]'
-                : 'text-[26px]'
-              : 'text-[clamp(30px,9vw,52px)] landscape:whitespace-nowrap landscape:text-[clamp(24px,4.2vw,34px)]',
+            'text-[clamp(30px,9vw,52px)] landscape:whitespace-nowrap landscape:text-[clamp(24px,4.2vw,34px)]',
             fired && 'text-kin-300',
           )}
         >
@@ -201,12 +159,7 @@ export function ClapArmView({
 
         {/* Live level with the trigger mark. */}
         <div className="w-full">
-          <div
-            className={cn(
-              'mb-1 flex items-baseline justify-between text-[12px] font-bold text-washi-subtle',
-              embedded === 'row' && 'sr-only',
-            )}
-          >
+          <div className="mb-1 flex items-baseline justify-between text-[12px] font-bold text-washi-subtle">
             <span id={labelId}>Nivel de sonido</span>
             <span>marca roja: nivel de una palmada</span>
           </div>
@@ -235,10 +188,7 @@ export function ClapArmView({
           aria-label="Sensibilidad del aplauso"
           className="flex w-full items-center gap-2"
         >
-          <span
-            aria-hidden
-            className={cn('shrink-0 text-[12px] font-bold text-washi-subtle', embedded === 'row' && 'hidden')}
-          >
+          <span aria-hidden className="shrink-0 text-[12px] font-bold text-washi-subtle">
             Sensibilidad
           </span>
           <div className="well grid flex-1 grid-cols-3 gap-1 rounded-[12px] p-1">
@@ -260,7 +210,7 @@ export function ClapArmView({
                 >
                   {active && (
                     <motion.span
-                      layoutId={embedded ? 'clap-sens-demo' : 'clap-sens'}
+                      layoutId="clap-sens"
                       transition={jelly}
                       className="absolute inset-0 -z-10 rounded-[9px] bg-washi"
                     />
@@ -273,7 +223,7 @@ export function ClapArmView({
         </div>
 
         <Button
-          autoFocus={!embedded}
+          autoFocus
           variant="secondary"
           size="lg"
           onClick={onCancel}
@@ -289,7 +239,6 @@ export function ClapArmView({
         >
           {secondsLeft != null && `Se desarma solo en ${formatTime(secondsLeft)}`}
         </motion.p>
-        {children}
       </div>
     </div>
   );

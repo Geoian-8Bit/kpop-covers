@@ -7,7 +7,6 @@ import {
   clampFit,
   clampReviewRate,
   clampSplit,
-  clampWipe,
   cleanNoteBody,
   clipsInTake,
   crossedNote,
@@ -41,12 +40,6 @@ describe('layout limits', () => {
     expect(clampSplit(0.9)).toBe(0.7);
     expect(clampSplit(0.55)).toBe(0.55);
     expect(clampSplit(Number.NaN)).toBe(0.5);
-  });
-
-  it('keeps the curtain grabbable', () => {
-    expect(clampWipe(0)).toBe(0.04);
-    expect(clampWipe(1)).toBe(0.96);
-    expect(clampWipe(Number.POSITIVE_INFINITY)).toBe(0.5);
   });
 
   it('limits the common speed to 0.5–1.25×', () => {
@@ -83,10 +76,10 @@ describe('view preferences', () => {
     expect(parseViewPrefs('[1,2]')).toEqual(DEFAULT_PREFS);
   });
 
-  it('repairs each field on its own', () => {
+  it('repairs each field on its own and drops fields no longer used', () => {
     expect(
       parseViewPrefs(JSON.stringify({ mode: 'overlay', order: 'take-first', split: 0.95, wipe: -1, opacity: 3, onTop: 'take' })),
-    ).toEqual({ mode: 'overlay', order: 'take-first', split: 0.7, wipe: 0.04, opacity: 1, onTop: 'take' });
+    ).toEqual({ mode: 'overlay', order: 'take-first', split: 0.7, opacity: 1, onTop: 'take' });
     expect(parseViewPrefs(JSON.stringify({ mode: 'side', split: '0.4', opacity: Number.NaN })).mode).toBe('stacked');
   });
 });

@@ -25,7 +25,6 @@ import {
 import { useVideos } from '@/data/videos';
 import { BagIcon } from '@/features/bags/BagIcon';
 import { SongPickList } from '@/features/bags/Pickers';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { positionPatches, reorder } from '@/features/rpd/roundRules';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
@@ -75,7 +74,6 @@ function EventDetail({ event }: { event: CrewEvent }) {
   const toast = useToast();
   const navigate = useNavigate();
   const now = useNow();
-  const variant = useDesignVariant('event-countdown');
   // From the cache at once when it's there: no flash of «Aún no hay canciones».
   const [order, setOrder] = useState<EventSongView[]>(() => songs.data ?? []);
   const [announcement, announce] = useAnnouncer();
@@ -153,10 +151,8 @@ function EventDetail({ event }: { event: CrewEvent }) {
           </div>
           <div className={cn('mt-4 rounded-[12px] border border-line bg-sumi-900/60 px-3 py-3 sm:px-5', !shown && 'opacity-75')}>
             <EventCountdown
-              variant={variant}
               name={shown ? 'Cuenta atrás' : 'Ya no sale en la portada'}
               startsAt={event.starts_at}
-              createdAt={event.created_at}
               place={event.place}
               now={now}
             />

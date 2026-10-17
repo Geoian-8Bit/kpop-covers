@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { renderDemoMix } from './voiceDemoMix';
 import {
   DEFAULT_RAMP_MS,
   DEFAULT_TUNING,
@@ -169,32 +168,5 @@ describe('isVoiceMode', () => {
     expect(VOICE_MODES.every(isVoiceMode)).toBe(true);
     expect(isVoiceMode('karaoke')).toBe(false);
     expect(isVoiceMode(undefined)).toBe(false);
-  });
-});
-
-describe('renderDemoMix', () => {
-  it('renders a stereo loop whose sides differ, and a mono one that the check calls mono', () => {
-    const rate = 8000;
-    const stereo = renderDemoMix(rate);
-    const mono = renderDemoMix(rate, { mono: true });
-    expect(stereo.left.length).toBe(Math.round(stereo.seconds * rate));
-    expect(mono.left).toEqual(mono.right);
-
-    const frames = (m: typeof stereo) => {
-      const out: FrameStats[] = [];
-      for (let i = 0; i + 1024 <= m.left.length; i += 1024) {
-        const s = frameStats(m.left.subarray(i, i + 1024), m.right.subarray(i, i + 1024));
-        if (s) out.push(s);
-      }
-      return out;
-    };
-    expect(judgeMono(frames(mono)).monoLike).toBe(true);
-    expect(judgeMono(frames(stereo)).monoLike).toBe(false);
-    // Loud enough to hear, never clipping.
-    let peak = 0;
-    for (let i = 0; i < stereo.left.length; i++)
-      peak = Math.max(peak, Math.abs(stereo.left[i]!), Math.abs(stereo.right[i]!));
-    expect(peak).toBeGreaterThan(0.2);
-    expect(peak).toBeLessThan(1);
   });
 });

@@ -16,7 +16,6 @@ import { recordSettings, useRecordSettings } from './settings';
 import { GridOverlay } from './settings/GridOverlay';
 import { LevelIndicator } from './settings/LevelIndicator';
 import { RecorderSettingsSheet } from './settings/RecorderSettingsSheet';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { currentMemberId, useMembers } from '@/data/members';
 import { useSaveTake } from '@/data/takes';
 import { friendlyError } from '@/lib/supabase';
@@ -263,7 +262,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const clapRes = useRef<{ ctx: AudioContext | null; track: MediaStreamTrack | null } | null>(null);
   const clapFiring = useRef(false);
   const fromClap = useRef(false);
-  const clapVariant = useDesignVariant('clap-arm');
 
   const unsaved = phase === 'paused' || (phase === 'review' && take != null && !saved && !kept);
   const rolling =
@@ -694,7 +692,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   // ───────────── A1 · recorder settings ─────────────
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsVariant = useDesignVariant('record-settings');
   /** Settings reopen the camera and change the format: only between takes. */
   const settingsAllowed = phase === 'idle' && !recorder.current;
   const summary = view.mode
@@ -1694,7 +1691,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       {showCamera && camReady && settings.level && <LevelIndicator className="pointer-events-none absolute inset-0 z-[5]" />}
 
       <RecorderSettingsSheet
-        variant={settingsVariant}
         open={settingsOpen && settingsAllowed && !confirm}
         onClose={() => setSettingsOpen(false)}
         maxSize={
@@ -2041,7 +2037,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         {clap && phase === 'idle' && (
           <ClapArm
             key="clap"
-            variant={clapVariant}
             ctx={clap.ctx}
             track={clap.track}
             sensitivity={settings.clapSensitivity}

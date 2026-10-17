@@ -235,8 +235,9 @@ de arriba.
    siempre lienzo (guardaba los vídeos tumbados).
 10. **Formatos que fallan se recuerdan por familia** (HEVC, H.264 High…), 30 días y por versión del navegador, y
     se pueden volver a probar desde el panel «i».
-11. **Laboratorio de diseño:** la variante elegida se aplica aunque se oculte el laboratorio (el laboratorio solo
-    oculta el selector). Lo pidió el prompt («la elección se guarda en el dispositivo»).
+11. **Diseños elegidos y laboratorio retirado (17-10).** Hubo un laboratorio de diseño con 3 variantes por momento.
+    El responsable del producto eligió una por momento (apartado 7); las demás y el laboratorio se han quitado del
+    código, así que ya no hay nada que elegir en Ajustes.
 12. **Panel «i» oculto por defecto** (A1: «Información técnica, desactivado»). Se activa en Ajustes del grabador.
 13. **Repaso: la toma manda el reloj.** El original sigue a la toma, con el desfase del archivo vinculado (F1). El
     ajuste fino de sincronía se guarda con la toma.
@@ -412,7 +413,7 @@ de arriba.
   `opacity` (4); toasts de error que se van a los 5,2 s (4); nombres ambiguos («Sacar a mano», «Uno más») (4);
   resultados asíncronos sin anunciar (4); controles tapados por «¿Preparados?» tabulables (4); copys incoherentes
   Eliminar/Borrar/Quitar y «Próxima coreo»/«Próxima cover» (4); objetivos táctiles de 32–36 px en la ronda (3);
-  detalles del laboratorio y de las reacciones (3).
+  detalles de las reacciones (3).
 - Revisión global, rendimiento (`revisiones/global-rendimiento.md`). Corregidos P1, P2, P3, P4, P8, P10, P11, P12 y
   P15. Pendientes: precargar las secciones del menú y dar señal al tocar (P5, 5); pósteres en base64 dentro de la
   fila del vídeo (P6, 5); quitar auth y realtime del cliente de Supabase (P7, 5); fuentes propias en vez de Google
@@ -505,22 +506,22 @@ cliente no puede escribir votos directamente, y la función comprueba la votaci�
 Quedan los índices sin usar y nada más nuevo. Tipos: 216 columnas reales comparadas con `database.types.ts`:
 coinciden.
 
-## 7. Laboratorio de diseño
+## 7. Diseños elegidos
 
-Ajustes → «Mostrar laboratorio de diseño». Cada momento clave tiene sus variantes con una demostración en vivo.
-La variante que se ve por defecto es la recomendada. Si no eliges otra, se aplica esa.
+Elegidos por el responsable del producto el 17-10 tras probar el laboratorio de diseño. El laboratorio y el resto de
+variantes se han eliminado; estos son los únicos diseños de la app.
 
-| Momento | Variantes | Recomendada y por qué |
-| --- | --- | --- |
-| A1 · Panel de ajustes del grabador | **Bandeja de laca** (hoja inferior con los ajustes en filas agrupadas) · **Abanico** (los ajustes se despliegan desde ⚙ como las varillas de un sensu) · **Makimono** (un rollo que se desenrolla de lado, con cada ajuste como una columna) | **Bandeja**: la más rápida de leer y tocar con el móvil en la mano; las otras dos son más vistosas pero esconden opciones tras un gesto |
-| F5 · Repaso: comparar la toma con el original | **Biombo** (dos paneles de laca con una bisagra dorada; en «Superpuesto», el original va en un marco de biombo) · **Cortina** (un noren: en «Apilado» una cortina índigo separa los dos) · **Linterna** (el original como silueta de tinta luminosa sobre la toma) | **Biombo**: es la que menos tapa el vídeo |
-| F7 · Armar y empezar con un aplauso | **Taiko** (el parche se hincha con el sonido y cada palmada gira el mitsudomoe) · **Hyōshigi** (dos tablillas de kabuki que chocan en cada palmada) · **Ensō** (un círculo de tinta que se dibuja hasta donde llega el sonido) | **Taiko**: es la de por defecto; el código no explica por qué |
-| F17 · Separar voz y música | **La ola partida** (la ola se parte en voz bermellón y música índigo) · **Puertas correderas** (dos puertas de washi tapan lo que se quita) · **Capas de grabado** (tres planchas de ukiyo-e apiladas) | **La ola partida**: enseña de un vistazo qué suena sin tapar la ola de la canción |
-| F13 · Sacar de una bolsa | **Omikuji** (se agita la caja hexagonal y sale una varilla con el resultado) · **Fukubiki** (la rueda de la feria suelta una bola del color de lo que ha salido) · **Daruma** (un daruma se tambalea y, al salir, se le pinta el ojo) | **Omikuji**: es la de por defecto; el código no explica por qué |
-| F14 · Pantalla de Random Play Dance | **Marquesina** (el título enorme en un cartel de laca; la cuenta atrás es un sello sobre el vídeo) · **Kamishibai** (la tarjeta con el título tapa el vídeo durante la cuenta atrás y se desliza al sonar) · **Taiko** (la cuenta atrás como golpes en un taiko; lo que viene después corre por una banda índigo) | **Marquesina**: es la de por defecto; el código no explica por qué |
-| F11 · Revelar la ganadora de una votación | **Hanabi** (fuegos de papel sobre un cielo índigo que dejan el título y el sello 当選) · **Noren** (una cortina índigo con 当 y 選 se abre para descubrir la ganadora) · **Kakejiku** (un rollo que se desenrolla con 決定 a pincel) | **Hanabi**: es la más festiva y la que mejor se ve de lejos |
-| F16 · Cuenta atrás al próximo evento | **Koyomi** (calendario de hojas con la anilla bermellón; cada día se arranca una hoja y el día del evento dice 今日) · **Chōchin** (siete farolillos; uno por día de la última semana, y todos brillan el día del evento) · **Sunadokei** (reloj de arena que baja desde que se creó el evento) | **Koyomi**: el número de días se lee de un vistazo |
-| F15 · Reacciones en las tomas compartidas | **Hanko** (cada reacción es un sello bermellón que se estampa al tocar) · **Kami-fubuki** (al reaccionar salta una lluvia de confeti alrededor del emoji) · **Sensu** (cada emoji va sobre un abanico que se abre más cuantas más reacciones tiene) | **Hanko**: es la más clara de leer en una fila pequeña |
+| Momento | Diseño |
+| --- | --- |
+| A1 · Panel de ajustes del grabador | **Abanico**: los ajustes se despliegan desde ⚙ como las varillas de un sensu |
+| F5 · Repaso: comparar la toma con el original | **Biombo**: dos paneles de laca con una bisagra dorada; en «Superpuesto», el original va en un marco de biombo |
+| F7 · Armar y empezar con un aplauso | **Taiko**: el parche se hincha con el sonido y cada palmada gira el mitsudomoe |
+| F17 · Separar voz y música | **La ola partida**: la ola se parte en voz bermellón y música índigo |
+| F13 · Sacar de una bolsa | **Fukubiki**: la rueda de la feria gira y suelta una bola del color de lo que ha salido |
+| F14 · Pantalla de Random Play Dance | **Kamishibai**: la tarjeta con el título tapa el vídeo durante la cuenta atrás y se desliza al sonar |
+| F11 · Revelar la ganadora de una votación | **Hanabi**: fuegos de papel sobre un cielo índigo que dejan el título y el sello 当選 |
+| F16 · Cuenta atrás al próximo evento | **Chōchin**: siete farolillos; uno encendido por día de la última semana y todos el día del evento |
+| F15 · Reacciones en las tomas compartidas | **Hanko**: cada reacción es un sello bermellón que se estampa al tocar |
 
 ## 8. Revisiones
 
@@ -577,7 +578,8 @@ pruebas tenía el sonido anulado y YouTube en mute.
    ranking con resultados en directo, reordenar con las flechas (el foco se queda y se anuncia el puesto), votar,
    cerrar (el diálogo abre en «Cancelar»), ganadora con 当選 y «Añadir a la biblioteca».
 7. Eventos: «PRUEBA evento» dentro de 7 días con lugar, repertorio con 2 canciones y cuenta atrás en la portada.
-8. Ajustes: laboratorio de diseño con los 9 momentos; privacidad con los modelos de postura. Cada página cambia el
+8. Ajustes: miembros y prueba de postura (el laboratorio de diseño se retiró después, apartado 7); privacidad con
+   los modelos de postura. Cada página cambia el
    título de la pestaña y lleva el foco a su encabezado; «Saltar al contenido» presente.
 
 **Encontrado y corregido durante la prueba:** el menú de velocidad de la barra mostraba «0.75» (ahora «0,75×»); al

@@ -1,34 +1,18 @@
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useId } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { MapPin } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
-import {
-  countdown,
-  countdownDetail,
-  countdownHeadline,
-  eventDateLabel,
-  litLanterns,
-  pageFace,
-  sandRun,
-  type Countdown,
-} from './eventRules';
+import { countdown, countdownDetail, countdownHeadline, eventDateLabel, litLanterns, type Countdown } from './eventRules';
 
 /**
- * F16 · The countdown to an event, in one of three designs from the lab (`event-countdown`):
- *  - koyomi (recommended): a tear-off day calendar (himekuri); each day a page is torn off and falls.
- *  - chochin: seven paper lanterns; one lights up for each day of the last week, all of them on the day.
- *  - sunadokei: a washi-and-wood hourglass whose sand runs from the event's creation until it starts.
- * The words are the same in all three: «Faltan 12 días», hours and minutes the last day, «Hoy».
+ * F16 · The countdown to an event («Chōchin»): seven paper lanterns with 祭; one lights up for each day of the last
+ * week, all of them glow and sway on the day. The lanterns are decoration: the words carry it all («Faltan 12 días»,
+ * hours and minutes the last day, «Hoy», «Ayer», «Ya pasó»), so an event further than a week away reads the same.
  */
 
-export type CountdownVariant = 'koyomi' | 'chochin' | 'sunadokei';
-
 export interface EventCountdownProps {
-  variant: string;
   name: string;
   startsAt: string;
-  createdAt: string;
   place: string | null;
   now: Date;
   /** Smaller words (the home banner on a phone). */
@@ -36,21 +20,14 @@ export interface EventCountdownProps {
   className?: string;
 }
 
-export function EventCountdown({ variant, name, startsAt, createdAt, place, now, compact, className }: EventCountdownProps) {
+export function EventCountdown({ name, startsAt, place, now, compact, className }: EventCountdownProps) {
   const c = countdown(startsAt, now);
   const detail = countdownDetail(c);
-  const Visual = variant === 'chochin' ? Chochin : variant === 'sunadokei' ? Sunadokei : Koyomi;
   const headline = countdownHeadline(c);
   return (
-    <div
-      className={cn(
-        'flex gap-4 sm:gap-5',
-        // The lanterns hang in a row across the top; the other two sit beside the words.
-        variant === 'chochin' ? 'flex-col gap-2 sm:flex-row sm:items-center' : 'items-center',
-        className,
-      )}
-    >
-      <Visual c={c} startsAt={startsAt} createdAt={createdAt} now={now} />
+    // The lanterns hang in a row across the top on a phone, beside the words from `sm`.
+    <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5', className)}>
+      <Lanterns c={c} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-washi-muted">{name}</p>
         <p
@@ -77,57 +54,7 @@ export function EventCountdown({ variant, name, startsAt, createdAt, place, now,
   );
 }
 
-interface VisualProps {
-  c: Countdown;
-  startsAt: string;
-  createdAt: string;
-  now: Date;
-}
-
-// ───────────── Koyomi ─────────────
-
-function Koyomi({ c }: VisualProps) {
-  const face = pageFace(c);
-  const key = `${face.big}-${face.unit}`;
-  return (
-    <div aria-hidden className="relative h-[96px] w-[80px] shrink-0">
-      {/* The stack of pages still to go, peeking under the top one. */}
-      <span className="absolute inset-x-1 bottom-0 top-4 rounded-b-[6px] bg-kin-200 shadow-[0_6px_14px_-6px_rgb(0_0_0/0.8)]" />
-      <span className="absolute inset-x-0.5 bottom-[3px] top-4 rounded-b-[6px] bg-washi-muted" />
-      <div className="absolute inset-x-0 bottom-[6px] top-4">
-        <AnimatePresence initial={false}>
-          <motion.div
-            key={key}
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1, rotate: 0, x: 0, y: 0, zIndex: 0 }}
-            exit={{ rotate: -38, x: -26, y: 70, opacity: 0, zIndex: 2, transition: { duration: 0.7, ease: [0.4, 0, 0.7, 1] } }}
-            style={{ transformOrigin: '8% 0%' }}
-            className="absolute inset-0 flex flex-col items-center justify-center rounded-b-[6px] bg-washi text-sumi-900 shadow-[inset_0_-10px_14px_-12px_rgb(0_0_0/0.35)]"
-          >
-            <span
-              className={cn(
-                'font-display font-extrabold leading-none',
-                face.kanji ? 'text-[26px] text-shu-500' : face.big.length > 2 ? 'text-[30px]' : 'text-[38px]',
-              )}
-            >
-              {face.big}
-            </span>
-            <span className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-sumi-600">{face.unit}</span>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-      {/* The binding: a vermilion bar with two rings. */}
-      <span className="absolute inset-x-0 top-0 z-10 flex h-5 items-center justify-around rounded-t-[6px] bg-shu-500 px-3 shadow-[inset_0_-2px_0_rgb(0_0_0/0.2)]">
-        <span className="size-2 rounded-full bg-sumi-900 ring-2 ring-kin-300/70" />
-        <span className="size-2 rounded-full bg-sumi-900 ring-2 ring-kin-300/70" />
-      </span>
-    </div>
-  );
-}
-
-// ───────────── Chōchin ─────────────
-
-function Chochin({ c }: VisualProps) {
+function Lanterns({ c }: { c: Countdown }) {
   const reduce = useReducedMotion();
   const lit = litLanterns(c);
   const festive = c.kind === 'today';
@@ -185,54 +112,6 @@ function Chochin({ c }: VisualProps) {
           </motion.g>
         );
       })}
-    </svg>
-  );
-}
-
-// ───────────── Sunadokei ─────────────
-
-function Sunadokei({ c, startsAt, createdAt, now }: VisualProps) {
-  const reduce = useReducedMotion();
-  const p = c.kind === 'days' || c.kind === 'hours' ? Math.min(0.97, sandRun(startsAt, createdAt, now)) : 1;
-  const running = p < 1 && !reduce;
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  // Top bulb holds sand from y=12+p*34 down to the neck (46); the pile below rises from 86 by p*34.
-  return (
-    <svg viewBox="0 0 64 98" aria-hidden className="h-[96px] w-[62px] shrink-0">
-      <defs>
-        <clipPath id={`sand-top-${uid}`}>
-          <motion.rect x={0} width={64} height={60} initial={false} animate={{ y: 12 + p * 34 }} transition={soft} />
-        </clipPath>
-        <clipPath id={`sand-bottom-${uid}`}>
-          <motion.rect x={0} width={64} height={60} initial={false} animate={{ y: 86 - p * 34 }} transition={soft} />
-        </clipPath>
-      </defs>
-      {/* Wooden ends and posts. */}
-      <rect x={4} y={2} width={56} height={7} rx={2} className="fill-kiji-400" />
-      <rect x={4} y={89} width={56} height={7} rx={2} className="fill-kiji-400" />
-      <rect x={6} y={9} width={3} height={80} className="fill-kiji-700" />
-      <rect x={55} y={9} width={3} height={80} className="fill-kiji-700" />
-      {/* Washi glass. */}
-      <path d="M12 11 H52 Q52 34 34 48 Q52 62 52 87 H12 Q12 62 30 48 Q12 34 12 11 Z" className="fill-washi/10 stroke-washi/40" strokeWidth={1} />
-      <path
-        d="M13 12 H51 Q51 34 33.5 47.6 L32 48 L30.5 47.6 Q13 34 13 12 Z"
-        className="fill-kin-300"
-        clipPath={`url(#sand-top-${uid})`}
-      />
-      <path d="M13 86 H51 Q51 62 33 50 L32 49.6 L31 50 Q13 62 13 86 Z" className="fill-kin-400" clipPath={`url(#sand-bottom-${uid})`} />
-      {running && (
-        <motion.line
-          x1={32}
-          y1={48}
-          x2={32}
-          y2={86 - p * 34}
-          className="stroke-kin-300"
-          strokeWidth={1.2}
-          strokeDasharray="2 3"
-          animate={{ strokeDashoffset: [0, -10] }}
-          transition={{ duration: 0.6, repeat: Infinity, ease: 'linear' }}
-        />
-      )}
     </svg>
   );
 }

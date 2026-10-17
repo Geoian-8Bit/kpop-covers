@@ -22,7 +22,6 @@ type WakeLockNavigator = Navigator & {
  * The parent owns the AudioContext and the microphone track (it asked for them in the tap that armed).
  */
 export function ClapArm({
-  variant,
   ctx,
   track,
   sensitivity,
@@ -31,7 +30,6 @@ export function ClapArm({
   onCancel,
   onTimeout,
 }: {
-  variant: string;
   ctx: AudioContext | null;
   /** Null while the microphone is being asked for. */
   track: MediaStreamTrack | null;
@@ -144,7 +142,6 @@ export function ClapArm({
       className="absolute inset-0 z-20 overflow-y-auto bg-sumi-950/85 backdrop-blur-sm"
     >
       <ClapArmView
-        variant={variant}
         ui={ui}
         phase={!track ? 'asking' : fired ? 'fired' : 'listening'}
         sensitivity={sensitivity}

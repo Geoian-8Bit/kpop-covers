@@ -141,25 +141,12 @@ export function eventDateLabel(startsAt: string, withYear = false): string {
   return `${day.charAt(0).toUpperCase()}${day.slice(1)} · ${time}`;
 }
 
-// ───────────── What the designs show ─────────────
+// ───────────── The lanterns (Chōchin) ─────────────
 
-/** Koyomi: the calendar page, a big number and a small unit (今日 on the day, 祭 yesterday, 終 when over). */
-export function pageFace(c: Countdown): { big: string; unit: string; kanji?: boolean } {
-  switch (c.kind) {
-    case 'days':
-      return { big: String(c.days), unit: c.days === 1 ? 'día' : 'días' };
-    case 'hours':
-      return c.hours > 0 ? { big: String(c.hours), unit: c.hours === 1 ? 'hora' : 'horas' } : { big: String(c.minutes), unit: 'min' };
-    case 'today':
-      return { big: '今日', unit: 'Hoy', kanji: true };
-    case 'recent':
-      return { big: '祭', unit: 'Ayer', kanji: true };
-    case 'past':
-      return { big: '終', unit: 'Pasó', kanji: true };
-  }
-}
-
-/** Chōchin: how many of the seven lanterns are lit (one per day of the last week, all on the day, none when over). */
+/**
+ * How many of the seven lanterns are lit: none while it's more than a week away, one more per day of the last
+ * week (six the day before), all on the day and the day after, none when over.
+ */
 export function litLanterns(c: Countdown): number {
   switch (c.kind) {
     case 'days':
@@ -172,14 +159,6 @@ export function litLanterns(c: Countdown): number {
     case 'past':
       return 0;
   }
-}
-
-/** Sunadokei: how much sand has run, from the event's creation (0) to its start (1). */
-export function sandRun(startsAt: string, createdAt: string, now: Date): number {
-  const start = Date.parse(startsAt);
-  const created = Math.min(Date.parse(createdAt), start - 60_000);
-  if (Number.isNaN(start) || Number.isNaN(created)) return 0;
-  return Math.max(0, Math.min(1, (now.getTime() - created) / (start - created)));
 }
 
 // ───────────── Form ─────────────
