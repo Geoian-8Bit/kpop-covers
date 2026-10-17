@@ -38,6 +38,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 15 | Seguir a un bailarín · velocidad | El análisis es demasiado lento (en el ordenador, unos 3 min para llegar al 50 % de una canción de 2:38). Tiene que ser lo más rápido posible | Alta | Pendiente |
 | 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente: al laboratorio de diseño (punto 17) |
 | 17 | Laboratorio de diseño | Volver a poner un laboratorio de diseño en Ajustes para elegir probando: las propuestas de la ola de voz y música (punto 16) y los 4 prototipos del menú de abajo a la derecha (punto 1). Cuando el responsable elija, se quita lo descartado | Alta | Pendiente |
+| 18 | Voz y música · separar de verdad | «Sin voz» y «Voz» no funcionan con su archivo: la app avisa de que la pista suena en mono y no se puede separar. Separar la voz con IA para que funcione con cualquier archivo | Alta | Pendiente (el responsable elige vía) |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -264,3 +265,28 @@ El responsable quiere elegir probando, como antes. Recuperar el laboratorio que 
 
 **Cuando el responsable elija** en cada momento: dejar solo el elegido, borrar el resto y el laboratorio otra vez (como
 en `5e5217a`), y apuntarlo en ESTADO (apartado 7, «Diseños elegidos»).
+
+### 18 · Separar voz y música con IA (prueba del 17-10)
+
+**Qué pasa.** F17 separa con mid/side: «Sin voz» resta lo común a los dos canales (la voz suele ir al centro). Con
+pistas mono o casi mono no hay nada que restar. `features/voice/voiceRules.ts` (`judgeMono`, `MONO_RULES`: correlación
+≥ 0,97 en la mayoría de los fragmentos) lo detecta y la app lo dice. Los audios de dance practice y los MP4 de webs
+conversoras suelen ser casi mono, así que la función casi nunca sirve en la práctica.
+
+**Vías** (el responsable elige):
+- **A · La app separa con IA una vez y comparte el resultado (recomendada).** En un dispositivo potente (el ordenador),
+  un modelo de separación (Demucs o MDX en ONNX, con WebGPU) saca dos pistas de audio de la canción: instrumental y voz.
+  Tarda unos minutos y se hace una sola vez por canción. Se suben a la nube como audio comprimido (3–6 MB cada una, muy
+  por debajo de los 50 MB) y todos los móviles usan esas pistas, sincronizadas con el vídeo, para «Sin voz» y «Voz».
+  El mid/side actual queda como respaldo cuando no hay pistas separadas.
+- **B · Adjuntar pistas hechas fuera.** El responsable separa con un programa gratuito (por ejemplo Ultimate Vocal
+  Remover, UVR5) y la app permite adjuntar «Instrumental» y «Voz» como archivos de audio a la canción. Más simple de
+  programar y con la mejor calidad, pero exige ese paso a mano.
+- Se pueden hacer las dos: B primero (rápida) y A después.
+**Detalles para cualquiera de las dos:** nueva tabla o columnas para las pistas de audio de un vídeo (migración nueva y
+reglas del bucket para audio), carga en el motor de audio de `features/voice/voiceSplit.ts`, sincronía con el desfase
+del archivo vinculado, y que funcione aunque el vídeo se vea desde YouTube (el audio separado puede sonar con el vídeo
+de YouTube en silencio). El espacio de todo el grupo es 1 GiB: avisar del tamaño.
+
+**Mientras tanto (consejo para el responsable, ya dado):** descargar en 720p en la web conversora o pasar el MP4 por
+HandBrake (gratuito) con «Fast 1080p30» o «Fast 720p30» para dejarlo por debajo de 50 MB.
