@@ -36,6 +36,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 13 | Archivo vinculado · nube | Un archivo vinculado desde el ordenador no llegó a la nube: en el móvil sale «está en otro dispositivo». Todos tienen que poder usarlo | Alta | Pendiente |
 | 14 | Seguir a un bailarín · pantalla completa | Poder elegir y seguir a un bailarín también con el vídeo en pantalla completa | Alta | Pendiente |
 | 15 | Seguir a un bailarín · velocidad | El análisis es demasiado lento (en el ordenador, unos 3 min para llegar al 50 % de una canción de 2:38). Tiene que ser lo más rápido posible | Alta | Pendiente |
+| 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente (el responsable elige propuesta) |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -212,3 +213,29 @@ Ideas, de más a menos impacto (medir cada una):
 - Mostrar el tiempo que queda («unos 40 s») en vez de solo el porcentaje.
 Objetivo orientativo: una canción de 3 min en menos de 30–40 s en un portátil normal, y el seguimiento usable en
 unos segundos para el tramo que se está practicando.
+
+### 16 · «La ola partida» (prueba del 17-10, en el ordenador)
+
+**Qué pasa.** `features/voice/VoiceOnda.tsx` dibuja la ola en un SVG de 240 de ancho (dos periodos) y se estira a todo
+el ancho de la fila: en el ordenador son ~1.400 px, así que las curvas se aplanan y quedan dos franjas casi rectas (voz
+en bermellón arriba, música en índigo abajo) que no se leen como olas. Además la ola es un dibujo fijo, no sale del
+audio.
+
+**Propuestas** (el responsable elige; se pueden combinar):
+- **A · Arreglar proporciones.** No estirar: repetir el periodo a lo ancho (patrón que se repite) y dar más alto (56–72
+  px), con más amplitud, cresta con espuma blanca y varias capas. Las olas se mueven despacio mientras suena. Es la más
+  barata y mantiene la idea.
+- **B · Olas del audio real.** Dibujar la envolvente real de la canción a lo largo del tiempo: la voz (centro, mid)
+  en bermellón como la cresta y la música (laterales, side) en índigo como el cuerpo, con la marca de reproducción
+  avanzando. Al elegir «Sin voz» la cresta se aplana en espuma; con «Voz», el cuerpo se hunde. Sirve además para ver
+  dónde canta y dónde no.
+- **C · Una gran ola estilo Hokusai.** Una sola ola grabada (líneas de ukiyo-e) donde la cresta es la voz y el cuerpo
+  la música; al cambiar de modo, la cresta se separa, se apaga o queda sola, con animación de muelle.
+- **D · Seigaiha + pincel.** La música como el patrón de olas concéntricas seigaiha (ya existe la utilidad `seigaiha`)
+  y la voz como un trazo de pincel bermellón ondulado encima; cada modo enciende o atenúa una capa.
+- **E · Compacta para el móvil.** Quitar la franja grande y dejar los tres botones con una mini ola animada dentro de
+  cada uno (ahorra espacio en el estudio).
+- **Volver a un diseño anterior:** «Puertas correderas» (`VoiceFusuma.tsx`) o «Capas de grabado» (`VoiceCapas.tsx`),
+  borrados en el commit `5e5217a`; se recuperan con `git show 5e5217a^:apps/web/src/features/voice/VoiceFusuma.tsx`
+  (y `VoiceCapas.tsx`, más sus ramas en `VoiceSplitControl.tsx`).
+Sea cual sea, revisar a 390 px de ancho y en escritorio, con «reducir movimiento».
