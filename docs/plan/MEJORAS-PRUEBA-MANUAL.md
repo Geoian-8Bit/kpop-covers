@@ -44,7 +44,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 21 | Aplauso · sensibilidad | Con «Baja», en una habitación tranquila, se disparó dos veces solo al mover la silla. Bajar todas las sensibilidades y pasar a cuatro: Baja, Media, Alta (más baja que la Alta de ahora) y Muy alta (la Alta de ahora). Que rechace mejor golpes que no son palmadas | Alta | Pendiente |
 | 22 | Grabador · «Inicio / 0:26» | No se entiende qué hace ese botón (desde dónde empieza la canción al grabar). Explicarlo mejor, y al mantenerlo pulsado mostrar los clips de la canción para empezar en uno | Media | Pendiente |
 | 23 | Grabador · lentes | «Lente 1/2» no se entiende: la 2 tiene un zoom de base que no gusta y solo una de ellas tiene flash. Explicarlo o cambiarlo por algo claro (ver detalle) | Alta | Pendiente |
-| 24 | Grabador · color de la luz | En «Imagen», la barra de luz sí se nota, pero «Color de la luz» (Cálida, Fluorescente…) no cambia nada visible | Media | Pendiente |
+| 24 | Grabador · color de la luz | Se quiere mantener. Fallo: al elegir Cálida, Fluorescente… no cambia nada; al pulsar después «Auto», entonces sí cambia el tono (el de la opción anterior). El control aplica tarde o en mal orden | Media | Pendiente |
 | 25 | Grabador · cámara al abrir | Quitar la opción «Visor / Cámara al abrir»: siempre la última usada | Baja | Pendiente |
 | 26 | Grabador · chip de calidad | Al tocar el chip de arriba a la derecha («1080p · 60 · Máxima») que abra directamente esa opción, no el abanico entero | Media | Pendiente |
 | 27 | Grabador · Abanico | Juntar «Calidad» y «Tamaño» en una sola opción, y meter «Imagen» (luz, color y enfoque) dentro del abanico | Media | Pendiente |
@@ -313,8 +313,8 @@ bien. Medir en un móvil real (o con una traza en Chrome remoto) dónde se va el
 navegador sin instalar, o con zoom digital) el dibujo en el canvas a 60 fps puede ser el cuello de botella; también la
 interfaz encima del visor (repintados por fotograma, filtros, desenfoques), el reloj del grabador y el audio. Objetivos:
 vista previa sin retraso perceptible a 1080p 60 en un Samsung de gama media, sin fotogramas perdidos en la toma
-(`presentedFrames` en el panel «i»), y si el móvil no da para 60 fps, bajar solo a 30 avisando. Preguntar al responsable
-si lo probó con la app instalada o en el navegador.
+(`presentedFrames` en el panel «i»), y si el móvil no da para 60 fps, bajar solo a 30 avisando. **Probado con la app
+instalada** (Samsung), así que no es solo el camino «por lienzo» del navegador: mirar también la imagen directa.
 
 **20 · Descartar.** Tras «Descartar» (y su confirmación), volver al visor listo para la siguiente toma.
 
@@ -333,9 +333,12 @@ va con la principal). Hacerlo como la cámara del móvil: botones de zoom 0,5× 
 debajo, con la principal (1×) por defecto, en vez de «Lente N». Si no se puede saber qué es cada una, nombrarlas
 («Gran angular», «Principal», «Tele») por su campo de visión. Explicar que el flash solo existe en una.
 
-**24 · Color de la luz.** Los ajustes «Cálida / Fluorescente / Día / Nublado» piden una temperatura de color
-(`camera.ts`, `colorTemperature`), pero en su móvil no cambia nada. Comprobar con `getSettings()` si se aplica (quizá
-hace falta `whiteBalanceMode: "manual"` antes); si el móvil lo ignora, ocultar la opción en ese móvil.
+**24 · Color de la luz (se mantiene).** Los ajustes «Cálida / Fluorescente / Día / Nublado» piden una temperatura de
+color (`camera.ts`, `colorTemperature`). En su Samsung el tono **sí puede cambiar**: al elegir una opción no pasa nada,
+pero al pulsar después «Auto» se ve el tono de la opción anterior. Parece que la temperatura se pide sin poner antes
+`whiteBalanceMode: "manual"` (o en la misma llamada en mal orden) y el cambio de modo de la siguiente pulsación es el que
+la aplica. Aplicar en dos pasos (primero modo manual, luego la temperatura) y comprobar con `getSettings()` que quedó;
+«Auto» vuelve a `continuous`. Si un móvil de verdad lo ignora, ocultar la opción solo en ese móvil.
 
 **25 · Cámara al abrir.** Quitar el ajuste: abrir siempre con la última cámara usada (la primera vez, la trasera).
 
