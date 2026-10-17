@@ -1,5 +1,6 @@
 import { formatBytes, pickMime, type Take } from '@coverscape/shared';
 import { backend, type UploadFailure } from '@/lib/backend';
+import { formatMaxLength } from '@/features/studio/cloudCopyRules';
 import { FriendlyError } from '@/lib/supabase';
 import {
   containerOf,
@@ -77,7 +78,7 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
   const videoBps = shareVideoBitrate(hint);
   if (videoBps == null) {
     throw new FriendlyError(
-      `La toma dura demasiado para compartirla: el máximo son unos ${Math.floor(maxShareSeconds() / 60)} minutos.`,
+      `La toma dura demasiado para compartirla (máximo: ${formatMaxLength(maxShareSeconds())}).`,
     );
   }
 
@@ -171,7 +172,7 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
     if (!duration) duration = await Promise.race([measureDuration(video), aborted]);
     if (duration && hint === 0 && shareVideoBitrate(duration) == null) {
       throw new FriendlyError(
-        `La toma dura demasiado para compartirla: el máximo son unos ${Math.floor(maxShareSeconds() / 60)} minutos.`,
+        `La toma dura demasiado para compartirla (máximo: ${formatMaxLength(maxShareSeconds())}).`,
       );
     }
     const bitrate = shareVideoBitrate(duration) ?? SHARE.minVideoBps;
@@ -333,7 +334,8 @@ const UPLOAD_COPY: Record<UploadFailure, string> = {
   network: 'Sin conexión. La toma sigue en este móvil: compártela cuando tengas red.',
   denied: 'La nube no aceptó la toma: puede que esté llena. Inténtalo más tarde.',
   exists: 'Esta toma ya tiene una copia en la nube.',
-  unavailable: 'Compartir con el grupo no está disponible en esta versión.',
+  // Also a server error (5xx), not only a version without the cloud.
+  unavailable: 'Ahora no se puede compartir: la nube no responde. La toma sigue en este móvil; inténtalo más tarde.',
 };
 
 export interface ShareTakeInput {

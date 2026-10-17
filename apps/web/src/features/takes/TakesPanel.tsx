@@ -37,6 +37,7 @@ import {
   type TakeItem,
 } from '@/data/takes';
 import { MemberSeal } from '@/features/members/MembersUI';
+import { formatMaxLength } from '@/features/studio/cloudCopyRules';
 import { TakeReactions } from '@/features/reactions/TakeReactions';
 import { defaultReviewTake } from '@/features/review/reviewRules';
 import { loadKeptTake } from '@/features/record/takeStore';
@@ -889,7 +890,7 @@ function ShareDialog({ take, onClose }: { take: TakeItem | null; onClose: () => 
 
         {tooLong && (
           <p role="alert" className="text-[14px] text-enji-300">
-            Esta toma dura demasiado para compartirla: el máximo son unos {Math.floor(maxShareSeconds() / 60)} minutos.
+            Esta toma dura demasiado para compartirla (máximo: {formatMaxLength(maxShareSeconds())}).
           </p>
         )}
         {noRoom && (
