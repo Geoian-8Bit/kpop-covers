@@ -230,7 +230,21 @@ export function FieldBlock({ field, className }: { field: Field; className?: str
       {field.note && (
         <p id={noteId} className="mt-1 flex items-start gap-1.5 text-[12.5px] font-medium leading-snug text-kin-300">
           <span aria-hidden className="mt-[5px] size-1.5 shrink-0 rotate-45 bg-current" />
-          {field.note}
+          <span>
+            {field.note}
+            {field.noteAction && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  onClick={field.noteAction.run}
+                  className="-my-3 inline-flex min-h-11 items-center font-bold text-washi underline underline-offset-2"
+                >
+                  {field.noteAction.label}
+                </button>
+              </>
+            )}
+          </span>
         </p>
       )}
       <div className="mt-auto pt-2">

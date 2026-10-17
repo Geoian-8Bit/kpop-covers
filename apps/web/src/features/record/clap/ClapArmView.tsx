@@ -15,7 +15,7 @@ import {
   type MotionValue,
 } from 'motion/react';
 import { X } from 'lucide-react';
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
@@ -28,6 +28,8 @@ export interface ClapUi {
   threshold: MotionValue<number>;
   count: 0 | 1 | 2;
   hitKey: number;
+  /** A loud sound just now that wasn't taken for a clap because it was dull or slow (a thump, a cupped clap). */
+  dullAt: number;
   ready: boolean;
   take(reading: ClapReading): void;
   clear(): void;
@@ -38,6 +40,7 @@ export function useClapUi(sensitivity: ClapSensitivity): ClapUi {
   const threshold = useMotionValue(levelToMeter(clapThreshold(0.01, sensitivity)));
   const [count, setCount] = useState<0 | 1 | 2>(0);
   const [hitKey, setHitKey] = useState(0);
+  const [dullAt, setDullAt] = useState(0);
   const [ready, setReady] = useState(false);
   const countRef = useRef<0 | 1 | 2>(0);
   const readyRef = useRef(false);
@@ -51,7 +54,9 @@ export function useClapUi(sensitivity: ClapSensitivity): ClapUi {
         readyRef.current = r.ready;
         setReady(r.ready);
       }
-      if (r.hit) setHitKey((k) => k + 1);
+      // Only a clap that counts strikes the drum (its echo is not a second clap).
+      if (r.hit === 'first' || r.hit === 'second') setHitKey((k) => k + 1);
+      if (r.rejected === 'dull' || r.rejected === 'attack') setDullAt(performance.now());
       const next = r.state === 'fired' ? 2 : r.state === 'first' ? 1 : 0;
       if (next !== countRef.current) {
         countRef.current = next;
@@ -69,7 +74,7 @@ export function useClapUi(sensitivity: ClapSensitivity): ClapUi {
     level.set(0);
   }, [level]);
 
-  return { level, threshold, count, hitKey, ready, take, clear };
+  return { level, threshold, count, hitKey, dullAt, ready, take, clear };
 }
 
 export interface ClapArmViewProps {
@@ -83,11 +88,12 @@ export interface ClapArmViewProps {
   secondsLeft: number | null;
 }
 
-function statusText(phase: ClapArmViewProps['phase'], ready: boolean, count: 0 | 1 | 2): string {
+function statusText(phase: ClapArmViewProps['phase'], ready: boolean, count: 0 | 1 | 2, dull: boolean): string {
   if (phase === 'asking') return 'Pidiendo el micrófono…';
   if (phase === 'fired' || count === 2) return 'Empieza la cuenta atrás.';
   if (!ready) return 'Escuchando la sala…';
   if (count === 1) return '¡Una! Falta la otra palmada.';
+  if (dull) return 'Eso no parece una palmada: da una más seca.';
   return 'Colócate y da dos palmadas seguidas.';
 }
 
@@ -98,7 +104,15 @@ function statusText(phase: ClapArmViewProps['phase'], ready: boolean, count: 0 |
 export function ClapArmView({ ui, phase, sensitivity, onSensitivity, onCancel, secondsLeft }: ClapArmViewProps) {
   const reduce = useReducedMotion() ?? false;
   const fired = phase === 'fired' || ui.count === 2;
-  const status = statusText(phase, ui.ready, ui.count);
+  // A dull sound's hint stays a couple of seconds, then the usual line comes back.
+  const [dull, setDull] = useState(false);
+  useEffect(() => {
+    if (!ui.dullAt) return;
+    setDull(true);
+    const t = setTimeout(() => setDull(false), 2500);
+    return () => clearTimeout(t);
+  }, [ui.dullAt]);
+  const status = statusText(phase, ui.ready, ui.count, dull);
   const meterRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
   useMotionValueEvent(ui.level, 'change', (v) =>
@@ -186,12 +200,12 @@ export function ClapArmView({ ui, phase, sensitivity, onSensitivity, onCancel, s
         <div
           role="radiogroup"
           aria-label="Sensibilidad del aplauso"
-          className="flex w-full items-center gap-2"
+          className="flex w-full flex-col items-stretch gap-1"
         >
-          <span aria-hidden className="shrink-0 text-[12px] font-bold text-washi-subtle">
+          <span aria-hidden className="text-left text-[12px] font-bold text-washi-subtle">
             Sensibilidad
           </span>
-          <div className="well grid flex-1 grid-cols-3 gap-1 rounded-[12px] p-1">
+          <div className="well grid w-full grid-cols-4 gap-1 rounded-[12px] p-1">
             {CLAP_SENSITIVITIES.map((s) => {
               const active = s === sensitivity;
               return (
@@ -204,7 +218,7 @@ export function ClapArmView({ ui, phase, sensitivity, onSensitivity, onCancel, s
                   whileTap={{ scale: 0.92 }}
                   transition={jelly}
                   className={cn(
-                    'relative isolate min-h-11 rounded-[9px] text-[14px] font-bold',
+                    'relative isolate min-h-11 whitespace-nowrap rounded-[9px] px-1 text-[14px] font-bold',
                     active ? 'text-sumi-900' : 'text-washi-muted hover:text-washi',
                   )}
                 >
