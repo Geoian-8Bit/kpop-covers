@@ -48,6 +48,13 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 25 | Grabador · cámara al abrir | Quitar la opción «Visor / Cámara al abrir»: siempre la última usada | Baja | Pendiente |
 | 26 | Grabador · chip de calidad | Al tocar el chip de arriba a la derecha («1080p · 60 · Máxima») que abra directamente esa opción, no el abanico entero | Media | Pendiente |
 | 27 | Grabador · Abanico | Juntar «Calidad» y «Tamaño» en una sola opción, y meter «Imagen» (luz, color y enfoque) dentro del abanico | Media | Pendiente |
+| 28 | Bolsas de canciones · añadir de YouTube | Además de elegir canciones de la biblioteca, poder buscar en YouTube (el mismo buscador de «Añadir vídeo») y añadir canciones nuevas directamente a la bolsa. Esas no se guardan en la biblioteca; si al salir del sorteo se decide hacerla, entonces sí se añade a la biblioteca | Alta | Pendiente |
+| 29 | Bolsas · icono | No gusta cómo se ve el icono de las bolsas (`BagIcon`). Rediseñarlo | Baja | Pendiente |
+| 30 | Bolsas · elegir bolsa | La lista de bolsas (pantalla «Bolsas») tiene que ser más creativa. Varias propuestas al laboratorio de diseño (punto 17) | Media | Pendiente |
+| 31 | Bolsa · estructura | En la pantalla de una bolsa, el título y «← Bolsas» ocupan mucho. Lo importante es el sorteo: la escena, «Sacar» y «Añadir» (que esté más a mano). Rehacer la jerarquía: listas «En la bolsa» e «Historial» con otra presentación, y mejor sitio para ajustes y borrar | Alta | Pendiente |
+| 32 | Bolsa · animación | Gusta el giro de la rueda (Fukubiki). Hacer más fluida la salida de la bola | Media | Pendiente |
+| 33 | Random Play Dance · crear ronda | La pantalla para crear la ronda tiene que ser más sencilla e intuitiva, con mejor estructura | Alta | Pendiente |
+| 34 | Random Play Dance · ronda | La pantalla de la ronda es «la peor»: fondo como el del resto de la app (no negro) y mejor jerarquía y estructura visual | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -125,6 +132,7 @@ Lo que el responsable ya probó y le parece bien, para no tocarlo sin motivo.
 | --- | --- |
 | Bloque 1 · Miembros y biblioteca (17-10) | Correcto: miembros y «¿Quién eres?», añadir vídeo (buscador, enlace, aviso de duplicado), portada, acceso rápido y borrar con confirmación |
 | Bloque 2 · Estudio (17-10) | Correcto lo no apuntado como mejora: reproductor, velocidad, espejo, clips (crear, fijar, bolsa, borrar), notas, archivo vinculado (sincronía, cambio YouTube/Archivo sin saltos), zoom a mano y «Guardar zoom con el clip». Seguir a un bailarín: el responsable lo volverá a probar cuando estén los puntos 14 y 15. Voz y música: ver puntos 16–18 |
+| Bloque 5 · Bolsas y Random Play Dance (17-10) | El funcionamiento va bien: crear bolsas, añadir, sacar, historial, sacar varios, rondas, pistas guardadas. La animación de la rueda (giro) gusta. Lo demás, en los puntos 28–34 |
 
 ### 3 a 11 · Estudio (bloque 2 de la prueba manual, 17-10)
 
@@ -270,7 +278,9 @@ El responsable quiere elegir probando, como antes. Recuperar el laboratorio que 
    - E · Compacta: tres botones con una mini ola animada dentro (pensada para el móvil);
    - y, como referencia, los dos diseños anteriores: Puertas correderas (`VoiceFusuma.tsx`) y Capas de grabado
      (`VoiceCapas.tsx`), que se recuperan del mismo commit.
-2. **Menú de acciones rápidas en el móvil** (punto 1): Sensu (abanico de esquina), Hanafuda (mano de cartas), Rueda de
+2. **Pantalla «Bolsas»: cómo se elige una bolsa** (punto 30), con 3 propuestas creativas; y, si se rediseña el icono
+   (punto 29), sus variantes.
+3. **Menú de acciones rápidas en el móvil** (punto 1): Sensu (abanico de esquina), Hanafuda (mano de cartas), Rueda de
    kamon (dial) y Origami. Como afecta a toda la app, en el laboratorio se elige y se aplica al momento en ese móvil.
 
 **Cuando el responsable elija** en cada momento: dejar solo el elegido, borrar el resto y el laboratorio otra vez (como
@@ -346,3 +356,36 @@ la aplica. Aplicar en dos pasos (primero modo manual, luego la temperatura) y co
 
 **27 · Abanico.** Una sola varilla «Calidad» que reúna calidad, tamaño y fotogramas, y una varilla «Imagen» con luz,
 color y enfoque (hoy es un botón aparte en la columna derecha).
+
+### 28 a 34 · Bolsas y Random Play Dance (bloque 5, prueba del 17-10)
+
+El funcionamiento va bien; lo apuntado es de presentación y de una función nueva.
+
+**28 · Canciones de YouTube en una bolsa.** Hoy una bolsa de canciones solo admite vídeos de la biblioteca (o deseos,
+`bag_items.wish_id`). Añadir en «Añadir» una pestaña «Buscar en YouTube» con el buscador de «Añadir vídeo»
+(`api/youtube-search.ts`, enlace o búsqueda). Esas canciones viven solo en la bolsa: hace falta guardarlas sin crear
+un vídeo de la biblioteca (por ejemplo, columnas `youtube_id`, `title`, `artist`, `thumbnail_url` en `bag_items` con
+`kind` propio, en una migración nueva, con las reglas de `guard_bag_item` y `draw_from_bag` para la etiqueta). Al salir
+en el sorteo, la tarjeta ofrece «Añadir a la biblioteca» (como la ganadora de una votación); si ya estaba en la
+biblioteca, la enlaza en vez de duplicarla.
+
+**29 y 30 · Icono y lista de bolsas.** Proponer al laboratorio 3 formas creativas de elegir bolsa, con la estética de
+la app (por ejemplo: bolsitas de tela furoshiki colgadas que se balancean, cajas omikuji en un estante, o farolillos con
+el nombre), y variantes del icono si se cambia.
+
+**31 · Pantalla de una bolsa.** Jerarquía de arriba abajo: cabecera mínima (atrás y nombre en una línea, ajustes y
+borrar en un menú o iconos pequeños), la escena del sorteo grande con «Sacar» y «Sacar varios» debajo, «Añadir» siempre
+a mano (botón fijo o junto a «Sacar»), y luego «En la bolsa» e «Historial» en pestañas o en tarjetas plegables, más
+compactas. Revisar a 390×844 que el sorteo y «Sacar» se vean sin desplazarse.
+
+**32 · Bola.** La rueda gira bien; la bola que sale y rueda hasta la bandeja tiene que ir más fluida (solo `transform`,
+curva y rebote con los presets de `lib/motion.ts`).
+
+**33 · Crear ronda.** `features/rpd/RpdPage.tsx`: hoy son muchas opciones seguidas. Hacerlo en pasos o con lo
+importante arriba («De dónde salen los clips» y «Empezar») y el resto (pausa, título, cuenta atrás, espejo y
+velocidad) en «Más opciones» con valores por defecto sensatos.
+
+**34 · Pantalla de la ronda.** `features/rpd/RpdPlayPage.tsx` y `RandomPlayScreen.tsx` (Kamishibai, que se mantiene):
+fondo como el del resto de la app (washi y seigaiha en vez de negro), el vídeo y la tarjeta como protagonistas,
+«Siguiente» y los controles con una jerarquía clara (los principales grandes, los secundarios agrupados), y que se lea
+bien de lejos en una tele. Revisar también en horizontal.
