@@ -33,16 +33,36 @@ Proyecto `kpop-covers` (https://kpop-covers.vercel.app) con **Root Directory = `
   10 min por IP; cupo por defecto de YouTube ≈ 100 búsquedas/día) se despliegan como funciones Node.
 - Fuera del código: en Google Cloud restringe `YOUTUBE_API_KEY` a la YouTube Data API v3 y pon una alerta de cuota.
 
-CLI:
+CLI (siempre desde la **raíz del repositorio**, que es la carpeta enlazada con `kpop-covers`; `apps/web/.vercel`
+apunta a otro proyecto y no se usa):
 
 ```bash
 vercel login
-cd apps/web && vercel link        # elegir "kpop-covers", root apps/web
+vercel link                       # en la raíz: elegir "kpop-covers" (Root Directory = apps/web)
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_PUBLISHABLE_KEY
 vercel env add YOUTUBE_API_KEY
-vercel --prod
+pnpm deploy:prod                  # despliegue a producción (no uses «vercel --prod» a secas)
 ```
+
+### Número de versión (P2)
+
+La app enseña «Versión N · fecha» (menú «⋯» y Ajustes) y «Buscar actualización» compara ese número con el de
+`/version.json`. N es el número de commits de la rama desplegada, así que sube solo en cada despliegue.
+
+- Vercel compila en remoto **sin `.git`** (la CLI no lo sube): no puede contar commits. Por eso el despliegue se
+  lanza con `pnpm deploy:prod` (`scripts/deploy.mjs`), que cuenta en local `git rev-list --count HEAD` y ejecuta
+  `vercel --prod --yes -b APP_BUILD=<N>`. Funciona igual en Windows. Los argumentos extra pasan a `vercel`;
+  `pnpm deploy:prod --dry-run` solo enseña el número y el comando.
+- El script se niega a desplegar desde un clon superficial (`git rev-parse --is-shallow-repository`): el número
+  saldría pequeño y no subiría. En ese caso, `git fetch --unshallow`.
+- Procedimiento habitual: copia limpia de `main` al día (clon completo), migraciones aplicadas antes, y un único
+  `pnpm deploy:prod` desde la raíz.
+- Si una compilación de producción sale sin número (alguien lanzó `vercel --prod` a mano, o un despliegue conectado a
+  Git, que clona con poca profundidad), el log de la compilación muestra un **AVISO** en amarillo y la app dice
+  «Versión de desarrollo». No rompe nada: «Buscar actualización» sigue funcionando con el service worker, pero sin
+  números que comparar. Se arregla desplegando otra vez con `pnpm deploy:prod`.
+- (No se llama `pnpm deploy` porque ese nombre es un comando propio de pnpm.)
 
 ## Argus (retirado)
 

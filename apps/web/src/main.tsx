@@ -5,19 +5,34 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { recoverFromStaleChunks, setWaitingUpdateApplier } from './components/ErrorBoundaryRecovery';
+import {
+  isManualCheckRunning,
+  noteRegistration,
+  noteUpdateWaiting,
+  savingCount,
+  setUpdateApplier,
+} from './features/nav/version/appUpdate';
+import { reloadNeedsConfirm } from './features/nav/version/versionRules';
 import { unlockAudio } from './lib/metronome';
 import { keepViewportFitted } from './lib/viewport';
 import './index.css';
 
 // PWA ('prompt' mode): a new deploy installs in the background and waits. It is applied (fresh service worker
-// + one reload) only at a safe moment: outside the studio (/v/…) and with no dialog open, so a rehearsal, a
-// recording or an upload is never cut short. Installed apps also check for a new version every hour.
+// + one reload) only at a safe moment: outside the studio (/v/…), with no dialog open and nothing being saved, so a
+// rehearsal, a recording or an upload is never cut short. Installed apps also check for a new version every hour.
+// P2 · «Buscar actualización» (menu «⋯», Ajustes) does the same on demand; while it runs it owns the update.
 keepViewportFitted();
 
 let updateWaiting = false;
 let updatePoll: ReturnType<typeof setInterval> | undefined;
 
-const isSafeMoment = () => !window.location.pathname.startsWith('/v/') && !document.querySelector('[role="dialog"]');
+// The same rule «Buscar actualización» uses to ask first (versionRules.ts, tested), plus: not while a check runs.
+const isSafeMoment = () =>
+  !reloadNeedsConfirm({
+    pathname: window.location.pathname,
+    dialogOpen: Boolean(document.querySelector('[role="dialog"]')),
+    saving: savingCount(),
+  }) && !isManualCheckRunning();
 
 /** Applies the waiting update now (fresh service worker + one reload); false when none is waiting. */
 const applyUpdate = () => {
@@ -36,15 +51,19 @@ const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
     updateWaiting = true;
+    noteUpdateWaiting();
     applyUpdateIfSafe();
     // In-app navigation (pushState) fires no event: check now and then until the user leaves the studio.
     if (updateWaiting && !updatePoll) updatePoll = setInterval(applyUpdateIfSafe, 2000);
   },
   onRegisteredSW(_url, registration) {
-    if (registration) setInterval(() => void registration.update(), 60 * 60 * 1000);
+    if (!registration) return;
+    noteRegistration(registration);
+    setInterval(() => void registration.update(), 60 * 60 * 1000);
   },
 });
 window.addEventListener('popstate', applyUpdateIfSafe);
+setUpdateApplier(applyUpdate);
 
 // A lazy chunk this page asked for is gone (a new deploy replaced it): move to the new version once, through
 // the waiting update if there is one. Not with a dialog open (a take, an upload): the error boundary's

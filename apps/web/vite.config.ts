@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -5,6 +6,50 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { GET as youtubeMeta } from './api/youtube-meta';
 import { GET as youtubeSearch } from './api/youtube-search';
+import { resolveBuildNumber } from './src/features/nav/version/versionRules';
+
+/**
+ * P2 · Build number that grows with every deploy: `APP_BUILD` from the deploy (`pnpm deploy:prod`, see
+ * docs/DEPLOY.md), else the commit count of this checkout. Vercel's build has no .git, so git may fail; a shallow
+ * clone (a Git-connected Vercel build) would give a small count that never grows. Both → null («Versión de
+ * desarrollo»), with a warning in the build log (below).
+ */
+function buildNumber(): number | null {
+  const git = (args: string) =>
+    execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).toString();
+  return resolveBuildNumber(
+    process.env.APP_BUILD,
+    () => git('rev-list --count HEAD'),
+    () => git('rev-parse --is-shallow-repository'),
+  );
+}
+
+/** A production build without a number is a deploy that will say «Versión de desarrollo»: say so, loudly. */
+function warnMissingVersion(): void {
+  const where = process.env.VERCEL_ENV ? ` (Vercel, ${process.env.VERCEL_ENV})` : '';
+  const lines = [
+    `AVISO${where}: esta compilación no tiene número de versión (APP_BUILD vacío y sin historial de git completo).`,
+    'La app dirá «Versión de desarrollo» y «Buscar actualización» no podrá comparar números.',
+    'Despliega con «pnpm deploy:prod» desde la raíz del repositorio (docs/DEPLOY.md).',
+  ];
+  const bar = '!'.repeat(Math.max(...lines.map((l) => l.length)));
+  const yellow = (text: string) => `\x1b[33m${text}\x1b[0m`;
+  console.warn(['', bar, ...lines, bar, ''].map(yellow).join('\n'));
+}
+
+/**
+ * P2 · `/version.json`: what this build is, for «Buscar actualización» to compare with the running app. Not in the
+ * precache (json isn't in `globPatterns`) and read with `cache: 'no-store'`, so it always comes from the server.
+ */
+function versionFile(version: number | null, builtAt: string): Plugin {
+  return {
+    name: 'one-shoot-version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version, builtAt }) });
+    },
+  };
+}
 
 /** Sample results so the search UI works locally without a YouTube API key. */
 const MOCK_SEARCH = [
@@ -42,15 +87,24 @@ function devApi(): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Server-only secrets (no VITE_ prefix) for the dev API, e.g. YOUTUBE_API_KEY in .env.local.
   const ytKey = process.env.YOUTUBE_API_KEY || loadEnv(mode, process.cwd(), '').YOUTUBE_API_KEY;
   if (ytKey) process.env.YOUTUBE_API_KEY = ytKey; // assigning undefined would store the string "undefined"
+  // The dev server is always «Versión de desarrollo»: only a build gets a number.
+  const appVersion = command === 'build' ? buildNumber() : null;
+  if (command === 'build' && mode === 'production' && appVersion == null) warnMissingVersion();
+  const builtAt = new Date().toISOString();
   return {
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_BUILD_DATE__: JSON.stringify(builtAt),
+  },
   plugins: [
     react(),
     tailwindcss(),
     devApi(),
+    versionFile(appVersion, builtAt),
     // Installable app: manifest + service worker that precaches the shell so it opens instantly and offline.
     VitePWA({
       // 'prompt': a new version waits until main.tsx applies it at a safe moment (never mid-rehearsal).
@@ -80,7 +134,11 @@ export default defineConfig(({ mode }) => {
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         // The pose models' code (~1 MB) is only for whoever uses F10 or the pose test: cached when first used instead.
-        globIgnores: ['**/pose-*.js'],
+        // P17 · The design lab's demos (every `*Demo.tsx` / `*Demo-*.tsx` file → `*Demo-<hash>.js` chunk) are for
+        // whoever opens the lab: cached when first opened (runtime cache below), not downloaded by every install.
+        // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
+        // .wasm isn't in globPatterns either. The HTTP cache keeps both (hashed, immutable).
+        globIgnores: ['**/pose-*.js', '**/*Demo-*.js', '**/stemSeparator.worker-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -90,6 +148,8 @@ export default defineConfig(({ mode }) => {
             // are used, then kept, so following a dancer again doesn't download them again.
             urlPattern: ({ url, sameOrigin }) =>
               (sameOrigin && /^\/assets\/pose-[^/]+\.js$/.test(url.pathname)) ||
+              // 15 · TensorFlow.js's WASM binaries (only fetched on a computer that uses them).
+              (sameOrigin && /^\/assets\/tfjs-backend-wasm[^/]*\.wasm$/.test(url.pathname)) ||
               url.origin === 'https://tfhub.dev' ||
               (url.origin === 'https://storage.googleapis.com' && url.pathname.startsWith('/mediapipe-models/')) ||
               (url.origin === 'https://cdn.jsdelivr.net' && url.pathname.startsWith('/npm/@mediapipe/tasks-vision@')),
@@ -98,6 +158,16 @@ export default defineConfig(({ mode }) => {
               cacheName: 'pose-models',
               cacheableResponse: { statuses: [200] },
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true },
+            },
+          },
+          {
+            // P17 · Lab demos (hashed names: a cached one never changes).
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'lab-demos',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 30, purgeOnQuotaError: true },
             },
           },
           {
@@ -147,6 +217,8 @@ export default defineConfig(({ mode }) => {
     },
   },
   server: { port: 5173 },
+  // 18 · Module workers (the voice separator imports onnxruntime-web, which needs import.meta and import()).
+  worker: { format: 'es' },
   build: {
     target: 'es2022',
     rollupOptions: {
@@ -162,6 +234,8 @@ export default defineConfig(({ mode }) => {
           if (pkg.startsWith('@tanstack/')) return 'query';
           if (pkg.startsWith('lucide-react/')) return 'icons';
           // F10 · 5.5 · Pose models' code: only loaded when used, and kept out of the offline precache (below).
+          // 15 · The WASM backend only for computers without a graphics chip: its own chunk, loaded when chosen.
+          if (pkg.startsWith('@tensorflow/tfjs-backend-wasm/')) return 'pose-tf-wasm';
           if (/^@tensorflow(-models)?\//.test(pkg)) return 'pose-tf';
           if (pkg.startsWith('@mediapipe/')) return 'pose-mediapipe';
         },
