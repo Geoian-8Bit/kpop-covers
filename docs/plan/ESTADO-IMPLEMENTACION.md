@@ -72,8 +72,8 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 
 ### Grabación · pasos 3 a 6
 
-7. **Cámara al abrir:** ahora abre la trasera. En Ajustes del grabador (botón «Ajustes» o tocando el chip
-   «1080p · 60 · Auto» de arriba) se puede elegir frontal o «última usada».
+7. **Cámara al abrir:** abre siempre la última cámara usada (la trasera la primera vez), en su lente principal (1×).
+   Ya no hay ajuste «Cámara al abrir» (mejora 25). Tocar el chip «1080p · 60 · …» de arriba abre solo «Calidad».
 8. **60 fps:** con «Fotogramas 60» el chip debe decir «· 60 ·». Si la cámara no da 60 a esa resolución, sale un
    aviso y el chip se pone dorado.
 9. **4K:** Calidad «Máxima» pide 4K a 30. Comprueba en «i» la resolución real y que la toma no se corte en
@@ -121,9 +121,10 @@ de arriba.
     en el suelo o en un trípode, aléjate unos metros y da dos palmadas: empieza la cuenta atrás y la toma. Cancela
     con «Cancelar» o con Escape. Tras una toma que empezó con aplauso aparece «Armar otra vez». Si no llega señal
     en 3 minutos, se desarma solo.
-27. **Sensibilidad del aplauso.** En Ajustes del grabador: Baja, Media o Alta. Prueba cada una a varias distancias
+27. **Sensibilidad del aplauso.** En Ajustes del grabador: Baja, Media (por defecto), Alta o Muy alta (mejora 21). Prueba cada una a varias distancias
     y anota desde dónde dispara. «Media» promete dos palmadas normales a unos metros, y esa distancia no está
-    medida (apartado 5). Si no dispara, prueba «Alta» y mira la marca roja del medidor.
+    medida (apartado 5). Si no dispara, prueba «Alta» o «Muy alta» y mira la marca roja del medidor. Con «Información
+    técnica» activada, el panel «i» lista los últimos sonidos juzgados y por qué se rechazaron.
 
 ### Clips y zoom · F8 y F9 (navegador; el pellizco, en el móvil)
 
@@ -132,7 +133,8 @@ de arriba.
     el original repiten ese tramo a la vez. Si marcas A y B, «Guardar el tramo como clip» o «Guardar como clip»
     abren el diálogo «Guardar clip» con el tramo, su velocidad y el espejo. El clip aparece en la lista de clips
     del estudio.
-29. **Zoom (F9).** Con un archivo, la fila «Zoom» bajo el vídeo tiene «Reducir el zoom», el porcentaje,
+29. **Zoom (F9, mejora 7).** Con un archivo, pellizca el vídeo con dos dedos (también en pantalla completa) o usa
+    «Ampliar» en la fila «Zoom»; la fila muestra el porcentaje y «Ver completo» solo con zoom. Antes había «Reducir el zoom», el porcentaje,
     «Ampliar el centro del vídeo» y «Ver completo». Con la rueda o arrastrando amplías y mueves. Con dos dedos
     (en el móvil) también. Doble clic o doble toque vuelve al vídeo entero. Con el foco en el vídeo: «+» amplía,
     las flechas mueven la vista si hay zoom, «−» reduce y «0» muestra el vídeo entero. Guarda un clip con zoom
@@ -183,7 +185,7 @@ de arriba.
 35. **Random Play Dance (F14).** Menú «Random Play Dance» (/rpd). En «De dónde salen los clips» eliges «Una bolsa»,
     «A mano» o «Canciones». Ajusta «Uno menos» y «Uno más» (número de clips), «Pausa entre clips», «Cuándo se ve
     el título» («Antes de sonar» o «Después (adivinar)»), la cuenta atrás y el espejo y la velocidad de cada clip.
-    Pulsa «Mezclar» (luego «Volver a mezclar») y «Empezar». En la ronda: «Pausa» (o «Seguir»), «Repetir»,
+    La mezcla se hace sola al cambiar la fuente o el número; «Volver a mezclar» la rehace. «Empezar» va fijo abajo; el resto, en «Más opciones». En la ronda: «Pausa» (o «Seguir»), «Repetir»,
     «Saltar», «Terminar» y «Pantalla completa». También Espacio, R y la flecha derecha. Al acabar: «Otra vez»,
     «Volver a mezclar», «Guardar como pista» y «Salir». Las pistas guardadas aparecen en la misma página.
 
@@ -221,7 +223,7 @@ de arriba.
 5. **Formato que falla.** Si el navegador dice que puede grabar HEVC o H.264 High pero el codificador del móvil
    falla, la app lo recuerda en ese móvil y la siguiente toma usa el siguiente formato. Alternativa descartada:
    volver siempre al formato básico (Baseline), que pierde la mejora de calidad.
-6. **Cámara al abrir: trasera** (plan Q8). Antes era la frontal.
+6. **Cámara al abrir: la última usada** (mejora 25, 17-10). Antes, trasera por defecto (plan Q8) con ajuste para elegir; el ajuste se quitó.
 7. **Pasos 1 a 6 de grabación se cerraron y desplegaron juntos.** Los seis tocan los mismos archivos del
    grabador y varios arreglos de revisión cruzaban pasos; desplegar a medias habría dejado versiones con fallos
    ya conocidos (por ejemplo, más compresión sin guardar la toma en el móvil).
