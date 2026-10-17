@@ -547,6 +547,9 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
 | 16-10 23:50 | `20261016070000_follow_paths` | Recorridos del bailarín (`follow_paths`), tope de 500 vivos y 2000 en total | Aplicada y verificada (6 PASS en F10, todo revertido) |
 | 17-10 00:00 | `20261016080000_close_poll_zero_votes` | `close_poll` cuenta como 0 una opción sin votos (antes contaba 1) | Aplicada. Idempotente: producción ya tenía esta versión |
 | 17-10 02:16 | `20261017010000_close_poll_live_rank` | `close_poll` con ranking: renumera los puestos sobre las candidatas vivas (archivar una candidata ya no da puntos 0 o negativos); no cuenta los votos de miembros archivados | Aplicada y verificada (empates esperados en producción, todo revertido) |
+| 17-10 21:15 | `20261017120000_bag_youtube_items` | Canciones de YouTube en una bolsa (columnas en `bag_items`, una fuente por fila, enlace a la biblioteca) | Aplicada y verificada (12 PASS, todo revertido) |
+| 17-10 21:18 | `20261017130000_video_stems` | Pistas de voz y música separadas con IA (`video_stems`, reglas del bucket) | Aplicada y verificada (20 PASS, todo revertido) |
+| 17-10 21:20 | `20261017140000_videos_storage_cap` | Tope de 1 GiB del grupo en el servidor para el bucket `videos`, reservando 50 MB para tomas | Aplicada y verificada (7 PASS; copia 5 PASS; archivado 12 PASS) |
 
 Las fechas son la hora de aplicación en producción. El commit que añade cada migración está en `git log`:
 `683e39c` (takes), `cfc6296` y `7bd80cd` (020000, 030000, 035000), `675a775` (040000 a 070000) y `85d6bf6` (080000).
@@ -701,6 +704,8 @@ datos del grupo igual que antes (2 vídeos vivos, 3 clips, 2 notas, 0 archivos).
 | Estudio con un clip en bucle | 58 fps, p95 16,9 ms | igual |
 | Chunk del estudio (gzip) | 73,8 kB | 48,9 kB (el grabador va aparte: 20,8 kB) |
 | Lighthouse móvil (accesibilidad / buenas prácticas / SEO) | 95 / 100 / 80 | 100 / 100 / 100 |
+
+**Ronda de mejoras (17-10 21:26–21:40, versiones 137 y 139).** En producción, a 390×844 táctil y con todo el sonido anulado: portada sin desbordes; menú flotante; «⋯» con «Versión 137» y «Ya tienes la última versión»; «Añadir vídeo» con el buscador (0,8 s); estudio sin botón propio sobre el vídeo, tocar para reproducir y pausar, «Guardar clip» compacto (443 px), «Editar clip», panel de pausa del bucle visible; bolsa con una canción de YouTube (sacar 0,8 s, «Añadir a la biblioteca»); dos propuestas con el buscador sin crear vídeos, votación, voto y cierre con 当選; evento a 20 días con Koyomi en la portada; ronda de RPD y «¿Salir de la ronda?»; 0 errores de consola. Datos «PRUEBA» (2 vídeos, 1 clip, 1 bolsa, 2 deseos, 1 votación, 1 evento, 1 miembro) borrados desde la app; el voto colgado de la votación archivada se archivó a mano. Después: 0 «PRUEBA» vivos y el grupo igual (2 vídeos, 3 clips, 2 bolsas, 5 elementos, 1 miembro, 1 archivo). Lighthouse móvil: accesibilidad 94, buenas prácticas 100, SEO 100; LCP 360 ms (visita repetida), CLS 0. No probado aquí (sin cámara, micro ni GPU): grabar, aplauso, lentes, color de la luz, separar voz y los tiempos de seguir.
 
 ## 10. Texto del correo
 

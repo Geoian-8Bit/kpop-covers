@@ -20,6 +20,9 @@ YouTube (si las condiciones de YouTube lo permiten), punto 13 copia reducida aut
 | 14:30 | Punto 38 hecho (2a29b94): rejillas con una columna que encoge, chip «con archivo» que pasa a icono si no cabe. Revisión ronda 1 ([informe](revisiones/mejoras-38-ronda-1.md)): un 6 (chip a 360–384 px) corregido y medido a 360, 390 y en giro. |
 | 15:00–19:30 | Oleada 2: seguir (14, 15), archivo grande (13), bolsas (28–32), voz IA (18), ola (16), RPD (33, 34), eventos (39). Revisiones con nota por bloque (de 2 a 3 rondas), informes en `revisiones/mejoras-*-ronda-*.md`; todo lo ≥6 corregido. |
 | 19:45 | Commits por zona: caa8abe (nav, versión, laboratorio), af63e2b (grabador), 684c3c8 (estudio), a926739 (seguir), baf83fe (copia para la nube y tope del bucket), daf2f35 (voz IA y olas), d389da9 (bolsas), 87759a0 (próxima cover y RPD), 81d6e0e (cuenta atrás). Árbol entero: typecheck 0, 860 tests, 129 PASS en BD, build. Migraciones nuevas sin aplicar: 20261017120000, 130000 y 140000. |
+| 21:12–21:25 | Copia de seguridad en `~/one-shoot-backups/20261017-2112-mejoras/` (`backup.json`, `rollback.sql`). Migraciones `20261017120000`, `130000` y `140000` aplicadas; comprobaciones en producción, todo revertido: bolsas 12 PASS, tope 7 PASS, pistas 20 PASS, archivado 12 PASS, copia 5 PASS. Advisors sin novedades; tipos iguales a la base. |
+| 21:26 | Desplegado main 7edb09e (versión 137, `dpl_21jeJXZsU43PAyFwreuqdUArwQKX`). Verificación en producción a 390×844 en silencio con datos «PRUEBA», todo borrado desde la app. |
+| 21:40 | Desplegado main ca04a7f (versión 139): nombres accesibles de los enlaces. Lighthouse móvil: accesibilidad 94 (viewport `maximum-scale=1` de 2fa8679 y kanji decorativos en logo y botón flotante), buenas prácticas 100, SEO 100. LCP 360 ms, CLS 0. |
 
 ## Antes (2026-10-17 02:50): todo el plan hecho
 
