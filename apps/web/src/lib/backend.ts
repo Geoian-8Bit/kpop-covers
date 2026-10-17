@@ -11,11 +11,16 @@ import type {
   Video,
 } from '@coverscape/shared';
 import { supabase, TAKE_BUCKET, VIDEO_BUCKET } from './supabase';
+import { MAX_CLOUD_UPLOAD_BYTES } from '@coverscape/shared';
+import { demoCloudBytes, demoCloudUrl, saveDemoCloudFile } from './localVideos';
 import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from '@coverscape/shared';
 import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coverscape/shared';
 import type { FollowKeyframe, FollowPath, FollowSource } from '@coverscape/shared';
+import type { Tables } from '@coverscape/shared';
 import { drawOrder } from '@/features/bags/drawRules';
+import { videosBucketHasRoom } from '@/features/studio/cloudCopyRules';
+import { cutChars, songYoutubeId, youtubeSongRow } from '@/features/bags/songRules';
 
 /**
  * Data access behind one interface so the app can run against Supabase (normal) or against
@@ -51,6 +56,87 @@ export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
 export type UploadFailure = 'too-big' | 'type' | 'network' | 'denied' | 'unavailable' | 'exists';
 export type UploadResult = { ok: true; path: string } | { ok: false; reason: UploadFailure };
 
+/** 13 · A long upload (a ~48 MB copy over mobile data): say how far it is, and let it be cancelled. */
+export interface UploadOptions {
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}
+
+const isDuplicate = (error: unknown) => {
+  const e = (error ?? {}) as { status?: number; statusCode?: string; message?: string; error?: string };
+  return Number(e.status ?? e.statusCode) === 409 || /already exists|duplicate/i.test(`${e.message ?? ''} ${e.error ?? ''}`);
+};
+
+/**
+ * One upload to Storage's REST endpoint with XMLHttpRequest, which (unlike fetch) reports the bytes sent. Same
+ * request supabase-js makes (POST, no upsert), with the session's token or the public key.
+ */
+async function uploadWithProgress(bucket: string, path: string, file: Blob, options: UploadOptions): Promise<UploadResult> {
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/+$/, '');
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+  if (!base || !key) return { ok: false, reason: 'unavailable' };
+  const token = (await supabase.auth.getSession().catch(() => null))?.data.session?.access_token ?? key;
+  const url = `${base}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  if (options.signal?.aborted) throw new DOMException('Subida cancelada', 'AbortError');
+  return new Promise<UploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const onAbort = () => xhr.abort();
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    const done = () => options.signal?.removeEventListener('abort', onAbort);
+    xhr.open('POST', url);
+    xhr.setRequestHeader('authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('apikey', key);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('cache-control', 'max-age=3600');
+    xhr.setRequestHeader('content-type', file.type || 'video/mp4');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) options.onProgress?.(Math.min(1, e.loaded / e.total));
+    };
+    xhr.onload = () => {
+      done();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress?.(1);
+        resolve({ ok: true, path });
+        return;
+      }
+      let body: { statusCode?: string; error?: string; message?: string } = {};
+      try {
+        body = JSON.parse(xhr.responseText) as typeof body;
+      } catch {
+        /* not JSON */
+      }
+      const error = { status: Number(body.statusCode) || xhr.status, message: body.message ?? body.error ?? '', error: body.error };
+      console.error('[uploadFile]', error);
+      resolve(isDuplicate(error) ? { ok: false, reason: 'exists' } : { ok: false, reason: uploadFailure(error) });
+    };
+    xhr.onerror = () => {
+      done();
+      resolve({ ok: false, reason: 'network' });
+    };
+    xhr.onabort = () => {
+      done();
+      reject(new DOMException('Subida cancelada', 'AbortError'));
+    };
+    xhr.send(file);
+  });
+}
+
+/**
+ * 13 · Biggest file the group's cloud takes (50 MB, free plan). Only the local demo can lower it to try the reduced
+ * copy with small files: `localStorage['oneshoot.dev.cloudLimitMB'] = '5'`.
+ */
+export function cloudLimitBytes(): number {
+  if (IS_DEMO) {
+    try {
+      const mb = Number(localStorage.getItem('oneshoot.dev.cloudLimitMB'));
+      if (mb >= 1 && mb < 50) return Math.round(mb * 1024 * 1024);
+    } catch {
+      /* the real limit */
+    }
+  }
+  return MAX_CLOUD_UPLOAD_BYTES;
+}
+
 /**
  * Every row of a list, page by page: the server answers at most 1000 rows per request, so a longer list would be
  * cut short without a word (review round 1). `page(from, to)` must order by a unique key so pages don't overlap.
@@ -77,6 +163,8 @@ function uploadFailure(error: unknown): UploadFailure {
     return 'too-big';
   }
   if (status === 415 || e.code === 'InvalidMimeType' || /mime type/i.test(message)) return 'type';
+  // A server or gateway error (e.g. a 504 on a slow 48 MB upload) is not a refusal: never «no room».
+  if (status >= 500) return 'unavailable';
   if (e.name === 'StorageUnknownError' || !status || /failed to fetch|network|load failed/i.test(message)) return 'network';
   return 'denied';
 }
@@ -116,7 +204,11 @@ export interface Backend {
    * Never overwrites (each name is unique per video). Failures come back typed so the UI can say why.
    * There is deliberately no way to delete cloud files from the client: deleting archives, files stay.
    */
-  uploadFile(path: string, file: File): Promise<UploadResult>;
+  /**
+   * Never overwrites: `exists` when a file with that name is already in the bucket (an earlier try that got
+   * through). With `options`: progress (0–1) as the bytes go out, and an abort that rejects with an AbortError.
+   */
+  uploadFile(path: string, file: File, options?: UploadOptions): Promise<UploadResult>;
   signedUrl(path: string): Promise<string | null>;
   /** F2 · the group's members (name + colour), oldest first. */
   listMembers(): Promise<Member[]>;
@@ -231,11 +323,14 @@ const supabaseBackend: Backend = {
     const { error } = await supabase.from('notes').delete().eq('id', id);
     if (error) throw error;
   },
-  async uploadFile(path, file) {
+  async uploadFile(path, file, options) {
+    if (options?.onProgress || options?.signal) return uploadWithProgress(VIDEO_BUCKET, path, file, options);
     // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
     const { error } = await supabase.storage.from(VIDEO_BUCKET).upload(path, file, { contentType: file.type || 'video/mp4' });
     if (!error) return { ok: true, path };
     console.error('[uploadFile]', error);
+    // 409: the file is already there (an earlier try got through; the row just didn't get its path).
+    if (isDuplicate(error)) return { ok: false, reason: 'exists' };
     return { ok: false, reason: uploadFailure(error) };
   },
   async signedUrl(path) {
@@ -492,8 +587,24 @@ const demoBackend: Backend = {
     mutate((db) => {
       db.notes = (db.notes ?? []).filter((n) => n.id !== id);
     }),
-  uploadFile: () => Promise.resolve({ ok: false, reason: 'unavailable' }),
-  signedUrl: () => Promise.resolve(null),
+  // 13 · A pretend cloud on this browser (IndexedDB), with the bucket's size limit, «never overwrite» and the
+  // database's room rule (H1: the upload counts as the per-file limit and 50 MB stay free for one take).
+  uploadFile: async (path, file, options) => {
+    if (options?.signal?.aborted) throw new DOMException('Subida cancelada', 'AbortError');
+    if (file.size > cloudLimitBytes()) return { ok: false, reason: 'too-big' };
+    const db = readDb();
+    const videoId = /\/([0-9a-f-]{36})(--[0-9a-z]+)?\.[A-Za-z0-9]+$/.exec(path)?.[1];
+    const video = db.videos.find((v) => v.id === videoId);
+    if (!video || (video.storage_path && video.storage_path !== path)) return { ok: false, reason: 'denied' };
+    if ((await demoCloudUrl(path)) != null) return { ok: false, reason: 'exists' };
+    if (video.storage_path) return { ok: false, reason: 'denied' };
+    const takes = (db.takes ?? []).reduce((s, t) => s + (t.shared_size ?? 0), 0);
+    if (!videosBucketHasRoom(takes + (await demoCloudBytes()), cloudLimitBytes())) return { ok: false, reason: 'denied' };
+    const saved = await saveDemoCloudFile(path, file);
+    if (saved) options?.onProgress?.(1);
+    return saved ? { ok: true, path } : { ok: false, reason: 'denied' };
+  },
+  signedUrl: (path) => demoCloudUrl(path),
   listMembers: () => query((db) => [...(db.members ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))),
   insertMember: (row) =>
     mutate((db) => {
@@ -578,11 +689,11 @@ const demoBackend: Backend = {
   uploadTakeFile: () => Promise.resolve({ ok: false, reason: 'unavailable' }),
   signedTakeUrl: () => Promise.resolve(null),
   getTake: (id) => query((db) => (db.takes ?? []).find((t) => t.id === id) ?? null),
-  storageUsage: () =>
-    query((db) => {
-      const takes = (db.takes ?? []).reduce((s, t) => s + (t.shared_size ?? 0), 0);
-      return { takes, total: takes };
-    }),
+  storageUsage: async () => {
+    const takes = (readDb().takes ?? []).reduce((s, t) => s + (t.shared_size ?? 0), 0);
+    // The pretend cloud's videos count too (13), as in the real one.
+    return { takes, total: takes + (await demoCloudBytes()) };
+  },
 };
 
 /** Demo twin of the database's one-best-take trigger (F4). */
@@ -619,7 +730,19 @@ export type TrackWithCount = Track & { items: number };
 export type TrackItemView = TrackItem & { clip: ClipWithVideo | null };
 export type NewBag = { name: string; kind: BagKind; draw_mode: DrawMode; no_repeat: boolean };
 export type BagPatch = Partial<Pick<Bag, 'name' | 'draw_mode' | 'no_repeat'>>;
-export type NewBagItem = { bag_id: string; video_id?: string; clip_id?: string; member_id?: string; wish_id?: string };
+/** Exactly one source. A YouTube song (point 28) lives only in its bag: youtube_id with its title and details. */
+export type NewBagItem = {
+  bag_id: string;
+  video_id?: string;
+  clip_id?: string;
+  member_id?: string;
+  wish_id?: string;
+  youtube_id?: string;
+  title?: string;
+  artist?: string | null;
+  thumbnail_url?: string | null;
+  duration_seconds?: number | null;
+};
 export type TrackOptionsRow = Pick<Track, 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>;
 export type TrackPatch = Partial<Pick<Track, 'name' | 'pause_seconds' | 'countdown' | 'use_clip_settings' | 'title_mode'>>;
 
@@ -646,6 +769,17 @@ export interface BagsBackend {
   drawFromBag(bagId: string, count: number, remove: boolean | null, memberId: string | null): Promise<BagDraw[]>;
   /** «Quitar de la bolsa» / «Devolver» after a draw: the draw's record and its item follow. */
   setDrawRemoved(draw: Pick<BagDraw, 'id' | 'item_id'>, removed: boolean): Promise<void>;
+  /**
+   * «Añadir a la biblioteca» for a YouTube song of a bag: the item now points at the library video with the same
+   * YouTube id (same row, so its history stays). Anything else is refused (`bag_item_invalid`).
+   */
+  linkBagItemVideo(itemId: string, videoId: string): Promise<void>;
+  /**
+   * «Añadir a la biblioteca», for every bag at once: each live YouTube song of the group with this YouTube id points
+   * at the library video (one link per row, each checked by the trigger); in a bag that already holds the video, the
+   * YouTube copy leaves the bag instead. Returns the bags it touched.
+   */
+  linkYoutubeSongs(youtubeId: string, videoId: string): Promise<string[]>;
   /** Every live clip of the group with its song (pickers, rounds). */
   listAllClips(): Promise<ClipWithVideo[]>;
   listTracks(): Promise<TrackWithCount[]>;
@@ -747,6 +881,45 @@ const supabaseBags: BagsBackend = {
     const { error } = await supabase.from('bag_draws').update({ removed }).eq('id', draw.id);
     if (error) throw error;
     if (draw.item_id) await supabaseBags.setBagItemOut(draw.item_id, removed);
+  },
+  async linkBagItemVideo(itemId, videoId) {
+    // The trigger checks the video is the same YouTube song and clears the item's own YouTube columns.
+    const { error } = await supabase.from('bag_items').update({ video_id: videoId }).eq('id', itemId);
+    if (error) throw error;
+  },
+  async linkYoutubeSongs(youtubeId, videoId) {
+    // RLS limits both reads to the group's live items in live bags.
+    const { data: songs, error } = await supabase
+      .from('bag_items')
+      .select('id, bag_id')
+      .eq('youtube_id', youtubeId)
+      .is('video_id', null);
+    if (error) throw error;
+    if (!songs.length) return [];
+    const bagIds = [...new Set(songs.map((s) => s.bag_id))];
+    const { data: holding, error: holdingError } = await supabase
+      .from('bag_items')
+      .select('bag_id')
+      .eq('video_id', videoId)
+      .in('bag_id', bagIds);
+    if (holdingError) throw holdingError;
+    const holds = new Set(holding.map((h) => h.bag_id));
+    let failure: unknown = null;
+    for (const song of songs) {
+      try {
+        if (holds.has(song.bag_id)) await supabaseBags.deleteBagItem(song.id);
+        else await supabaseBags.linkBagItemVideo(song.id, videoId);
+      } catch (linkError) {
+        // The video went into that bag meanwhile: the YouTube copy just leaves it.
+        if ((linkError as { code?: string }).code === '23505') {
+          await supabaseBags.deleteBagItem(song.id).catch((e: unknown) => (failure ??= e));
+        } else {
+          failure ??= linkError;
+        }
+      }
+    }
+    if (failure) throw failure;
+    return bagIds;
   },
   async listAllClips() {
     return fetchAll<ClipWithVideo>((from, to) =>
@@ -862,6 +1035,12 @@ function demoItemView(db: BagsDemoDb, item: BagItem): BagItemView | null {
     return null;
   return {
     ...item,
+    // Rows saved by a demo older than the YouTube songs of point 28 lack these columns.
+    youtube_id: item.youtube_id ?? null,
+    title: item.title ?? null,
+    artist: item.artist ?? null,
+    thumbnail_url: item.thumbnail_url ?? null,
+    duration_seconds: item.duration_seconds ?? null,
     video: video
       ? {
           id: video.id,
@@ -972,24 +1151,60 @@ const demoBags: BagsBackend = {
         .map((i) => demoItemView(db, i))
         .filter((i): i is BagItemView => i != null);
     }),
-  insertBagItem: async (row) =>
+  insertBagItem: async (asked) =>
     mutate((raw) => {
       const db = raw as BagsDemoDb;
-      const bag = db.bags?.find((b) => b.id === row.bag_id);
+      const bag = db.bags?.find((b) => b.id === asked.bag_id);
       if (!bag) throw demoError('bag_not_found');
-      const refs = [row.video_id, row.clip_id, row.member_id, row.wish_id].filter(Boolean);
+      // Point 28, as guard_bag_item: a YouTube song already in the library goes in as the library video.
+      const library =
+        bag.kind === 'songs' && asked.youtube_id && !asked.video_id
+          ? db.videos.find((v) => v.youtube_id === asked.youtube_id)
+          : undefined;
+      const row: NewBagItem = library ? { bag_id: asked.bag_id, video_id: library.id } : asked;
+      const yt = row.youtube_id
+        ? youtubeSongRow({
+            youtubeId: row.youtube_id,
+            title: row.title ?? '',
+            artist: row.artist,
+            thumbnailUrl: row.thumbnail_url,
+            durationSeconds: row.duration_seconds,
+          })
+        : null;
+      if (row.youtube_id && !yt) throw demoError('bag_items_youtube_fields', '23514');
+      const refs = [row.video_id, row.clip_id, row.member_id, row.wish_id, row.youtube_id].filter(Boolean);
       const ok =
         refs.length === 1 &&
         ((bag.kind === 'songs' && row.video_id && db.videos.some((v) => v.id === row.video_id)) ||
           (bag.kind === 'songs' &&
             row.wish_id &&
             ((db as { wishes?: Wish[] }).wishes ?? []).some((w) => w.id === row.wish_id && w.archived_at == null)) ||
+          (bag.kind === 'songs' && yt != null) ||
           (bag.kind === 'clips' && row.clip_id && db.clips.some((c) => c.id === row.clip_id)) ||
           (bag.kind === 'people' && row.member_id && (db.members ?? []).some((m) => m.id === row.member_id)));
       if (!ok) throw demoError('bag_item_invalid');
       const ref = refs[0];
-      if (liveBagItems(db, bag.id).some((i) => (i.video_id ?? i.clip_id ?? i.member_id ?? i.wish_id) === ref)) {
+      const live = liveBagItems(db, bag.id);
+      if (live.some((i) => (i.video_id ?? i.clip_id ?? i.member_id ?? i.wish_id ?? i.youtube_id) === ref)) {
         throw demoError('duplicate key value violates unique constraint "bag_items_once_key"', '23505');
+      }
+      // The same YouTube video by another source (a library song, a wish or a YouTube-only copy).
+      const ytId =
+        yt?.youtube_id ??
+        (row.video_id
+          ? db.videos.find((v) => v.id === row.video_id)?.youtube_id
+          : row.wish_id
+            ? ((db as { wishes?: Wish[] }).wishes ?? []).find((w) => w.id === row.wish_id)?.youtube_id
+            : null);
+      if (
+        bag.kind === 'songs' &&
+        ytId &&
+        live.some((i) => {
+          const view = demoItemView(db, i);
+          return view != null && songYoutubeId(view) === ytId;
+        })
+      ) {
+        throw demoError('bag_item_duplicate', '23505');
       }
       const item: BagItem = {
         id: crypto.randomUUID(),
@@ -999,6 +1214,11 @@ const demoBags: BagsBackend = {
         clip_id: row.clip_id ?? null,
         member_id: row.member_id ?? null,
         wish_id: row.wish_id ?? null,
+        youtube_id: yt?.youtube_id ?? null,
+        title: yt?.title ?? null,
+        artist: yt?.artist ?? null,
+        thumbnail_url: yt?.thumbnail_url ?? null,
+        duration_seconds: yt?.duration_seconds ?? null,
         removed_at: null,
         created_at: now(),
         archived_at: null,
@@ -1043,13 +1263,16 @@ const demoBags: BagsBackend = {
       return picked.map((item) => {
         const view = demoItemView(db, item)!;
         const label =
-          view.video?.title ?? view.wish?.title ?? (view.clip ? `${view.clip.name} · ${view.clip.video?.title ?? ''}` : view.member?.name) ?? '—';
+          view.video?.title ??
+          view.wish?.title ??
+          (view.clip ? `${view.clip.name} · ${view.clip.video?.title ?? ''}` : view.member?.name) ??
+          (view.title?.trim() || '—');
         const draw: BagDraw = {
           id: crypto.randomUUID(),
           crew_id: bag.crew_id,
           bag_id: bag.id,
           item_id: item.id,
-          label: label.slice(0, 200),
+          label: cutChars(label, 200),
           removed: removes,
           member_id: member,
           drawn_at: now(),
@@ -1067,6 +1290,56 @@ const demoBags: BagsBackend = {
       if (row) row.removed = removed;
       const item = draw.item_id ? db.bag_items?.find((i) => i.id === draw.item_id) : null;
       if (item) item.removed_at = removed ? now() : null;
+    }),
+  linkBagItemVideo: async (itemId, videoId) =>
+    mutate((raw) => {
+      // As guard_bag_item_link: only a YouTube song, only to the library video of the same YouTube id.
+      const db = raw as BagsDemoDb;
+      const item = db.bag_items?.find((i) => i.id === itemId);
+      if (!item) return;
+      const video = db.videos.find((v) => v.id === videoId);
+      if (!item.youtube_id || item.video_id || !video || video.youtube_id !== item.youtube_id) {
+        throw demoError('bag_item_invalid');
+      }
+      if (liveBagItems(db, item.bag_id).some((i) => i.id !== item.id && i.video_id === videoId)) {
+        throw demoError('duplicate key value violates unique constraint "bag_items_once_key"', '23505');
+      }
+      Object.assign(item, {
+        video_id: videoId,
+        youtube_id: null,
+        title: null,
+        artist: null,
+        thumbnail_url: null,
+        duration_seconds: null,
+      });
+    }),
+  linkYoutubeSongs: async (youtubeId, videoId) =>
+    mutate((raw) => {
+      // As linkYoutubeSongs on Supabase: every live YouTube song with this id, in every bag.
+      const db = raw as BagsDemoDb;
+      const video = db.videos.find((v) => v.id === videoId);
+      if (!video || video.youtube_id !== youtubeId) throw demoError('bag_item_invalid');
+      const songs = (db.bag_items ?? []).filter(
+        (i) => i.archived_at == null && i.youtube_id === youtubeId && !i.video_id,
+      );
+      const bagIds = [...new Set(songs.map((s) => s.bag_id))];
+      const holds = new Set(
+        (db.bag_items ?? []).filter((i) => i.archived_at == null && i.video_id === videoId).map((i) => i.bag_id),
+      );
+      const leaving = new Set(songs.filter((s) => holds.has(s.bag_id)).map((s) => s.id));
+      db.bag_items = (db.bag_items ?? []).filter((i) => !leaving.has(i.id));
+      for (const song of songs) {
+        if (leaving.has(song.id)) continue;
+        Object.assign(song, {
+          video_id: videoId,
+          youtube_id: null,
+          title: null,
+          artist: null,
+          thumbnail_url: null,
+          duration_seconds: null,
+        });
+      }
+      return bagIds;
     }),
   listAllClips: () =>
     query((raw) => {
@@ -2079,3 +2352,166 @@ const demoFollow: FollowBackend = {
 };
 
 export const followBackend: FollowBackend = IS_DEMO ? demoFollow : supabaseFollow;
+
+// ───────────────────────────── 18 · voice and music, separated with AI ─────────────────────────────
+
+/** One separation of a video's file: two tracks (voice, instrumental) in the `videos` bucket, shared by the group. */
+export type VideoStems = Tables<'video_stems'>;
+/** What the device that separated says about it (the database sets the group, the date and the files). */
+export type NewVideoStems = Pick<
+  VideoStems,
+  'id' | 'video_id' | 'member_id' | 'source_file_name' | 'source_file_size' | 'model' | 'duration_seconds' | 'delay_seconds' | 'mime_type'
+>;
+
+/**
+ * 18 · Separating happens once on a powerful device; this keeps the result for everyone: a row (born without
+ * files), the two uploads under `<group>/stems/<row id>/`, then both paths at once (the database checks the files
+ * are there and records their real sizes). Deleting archives; files are never deleted from the client.
+ */
+export interface StemsBackend {
+  listStems(videoId: string): Promise<VideoStems[]>;
+  insertStems(row: NewVideoStems): Promise<VideoStems>;
+  /** Never overwrites. `exists` means an earlier attempt already uploaded it (fine to carry on). */
+  uploadStemFile(path: string, file: Blob): Promise<UploadResult>;
+  completeStems(id: string, paths: { vocals_path: string; instrumental_path: string }): Promise<VideoStems>;
+  deleteStems(id: string): Promise<void>;
+  signedStemUrl(path: string): Promise<string | null>;
+}
+
+const STEM_COLUMNS =
+  'id, crew_id, video_id, member_id, source_file_name, source_file_size, model, duration_seconds, delay_seconds, mime_type, vocals_path, instrumental_path, vocals_size, instrumental_size, created_at, archived_at';
+
+const supabaseStems: StemsBackend = {
+  async listStems(videoId) {
+    const { data, error } = await supabase
+      .from('video_stems')
+      .select(STEM_COLUMNS)
+      .eq('video_id', videoId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as unknown as VideoStems[];
+  },
+  async insertStems(row) {
+    const { data, error } = await supabase.from('video_stems').insert(row).select(STEM_COLUMNS).single();
+    if (error) throw error;
+    return data as unknown as VideoStems;
+  },
+  async uploadStemFile(path, file) {
+    const { error } = await supabase.storage.from(VIDEO_BUCKET).upload(path, file, { contentType: file.type || 'audio/mp4' });
+    if (!error) return { ok: true, path };
+    console.error('[uploadStemFile]', error);
+    const e = error as { status?: number; statusCode?: string; message?: string };
+    if (Number(e.status ?? e.statusCode) === 409 || /already exists|duplicate/i.test(e.message ?? '')) {
+      return { ok: false, reason: 'exists' };
+    }
+    return { ok: false, reason: uploadFailure(error) };
+  },
+  async completeStems(id, paths) {
+    const { data, error } = await supabase.from('video_stems').update(paths).eq('id', id).select(STEM_COLUMNS).single();
+    if (error) throw error;
+    return data as unknown as VideoStems;
+  },
+  async deleteStems(id) {
+    const { error } = await supabase.from('video_stems').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async signedStemUrl(path) {
+    const { data, error } = await supabase.storage.from(VIDEO_BUCKET).createSignedUrl(path, 6 * 60 * 60);
+    return error ? null : data.signedUrl;
+  },
+};
+
+// Demo twin: the same rules (group from the video, never born with files, both paths at once and only once, files
+// under the row's folder and ≤ 16 MiB, deleting archives); the files go to the demo's pretend cloud.
+
+type StemsDemoDb = DemoDb & { video_stems?: VideoStems[] };
+const STEM_FILE_CAP = 16 * 1024 * 1024;
+
+const demoStems: StemsBackend = {
+  listStems: (videoId) =>
+    query((raw) => {
+      const db = raw as StemsDemoDb;
+      if (!db.videos.some((v) => v.id === videoId)) return [];
+      return (db.video_stems ?? [])
+        .filter((s) => s.video_id === videoId && isLive(s))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    }),
+  insertStems: async (row) =>
+    mutate((raw) => {
+      const db = raw as StemsDemoDb;
+      const video = db.videos.find((v) => v.id === row.video_id);
+      if (!video) throw demoError(`video ${row.video_id} not found`);
+      const rows = (db.video_stems ??= []);
+      if (rows.filter(isLive).length >= 300) throw demoError('video_stems_cap_reached');
+      const stems: VideoStems = {
+        ...row,
+        crew_id: video.crew_id,
+        member_id: row.member_id && (db.members ?? []).some((m) => m.id === row.member_id && m.archived_at == null) ? row.member_id : null,
+        vocals_path: null,
+        instrumental_path: null,
+        vocals_size: null,
+        instrumental_size: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      rows.push(stems);
+      return stems;
+    }),
+  // Same order as `stem_object_allowed` and then the unique name: a live row with no tracks yet, no second copy of
+  // this kind under another extension, then «already there» (409) before the room check, then the room.
+  uploadStemFile: async (path, file) => {
+    const parts = /^([0-9a-f-]{36})\/stems\/([0-9a-f-]{36})\/(vocals|instrumental)\.(m4a|mp4|webm|ogg)$/.exec(path);
+    if (!parts) return { ok: false, reason: 'denied' };
+    const [, crewId, rowId, kind, ext] = parts as unknown as [string, string, string, string, string];
+    const db = readDb() as StemsDemoDb;
+    const row = db.video_stems?.find((s) => s.id === rowId && isLive(s) && s.crew_id === crewId);
+    // (The demo removes a deleted video outright.)
+    if (!row || !db.videos.some((v) => v.id === row.video_id) || row.vocals_path || row.instrumental_path) {
+      return { ok: false, reason: 'denied' };
+    }
+    const dir = `${crewId}/stems/${rowId}`;
+    const stored = async (k: string) => {
+      for (const e of ['m4a', 'mp4', 'webm', 'ogg']) if ((await demoCloudUrl(`${dir}/${k}.${e}`)) != null) return e;
+      return null;
+    };
+    const sameKind = await stored(kind);
+    if (sameKind != null && sameKind !== ext) return { ok: false, reason: 'denied' };
+    if (sameKind === ext) return { ok: false, reason: 'exists' };
+    // The database's room rule: the tracks still missing (16 MiB each) and 50 MB left for one take.
+    const missing = (await stored(kind === 'vocals' ? 'instrumental' : 'vocals')) != null ? 1 : 2;
+    const takes = (readDb().takes ?? []).reduce((s, t) => s + (t.shared_size ?? 0), 0);
+    if (!videosBucketHasRoom(takes + (await demoCloudBytes()), missing * STEM_FILE_CAP)) return { ok: false, reason: 'denied' };
+    return (await saveDemoCloudFile(path, file)) ? { ok: true, path } : { ok: false, reason: 'denied' };
+  },
+  completeStems: async (id, paths) => {
+    const sizes = await Promise.all(
+      [paths.vocals_path, paths.instrumental_path].map(async (p) => {
+        const url = await demoCloudUrl(p);
+        return url ? (await fetch(url).then((r) => r.blob())).size : null;
+      }),
+    );
+    return mutate((raw) => {
+      const db = raw as StemsDemoDb;
+      const stems = db.video_stems?.find((s) => s.id === id && isLive(s));
+      if (!stems) throw demoError('PGRST116 0 rows');
+      if (stems.vocals_path || stems.instrumental_path) throw demoError('stems_locked');
+      const own = (p: string, kind: string) => new RegExp(`^${stems.crew_id}/stems/${stems.id}/${kind}\.(m4a|mp4|webm|ogg)$`).test(p);
+      if (!own(paths.vocals_path, 'vocals') || !own(paths.instrumental_path, 'instrumental')) {
+        throw demoError('new row for relation "video_stems" violates check constraint "video_stems_vocals_path_own"', '23514');
+      }
+      const [vocals, instrumental] = sizes;
+      if (vocals == null || instrumental == null) throw demoError('stems_file_missing');
+      if (vocals > STEM_FILE_CAP || instrumental > STEM_FILE_CAP) throw demoError('stems_too_big');
+      Object.assign(stems, paths, { vocals_size: Math.max(1, vocals), instrumental_size: Math.max(1, instrumental) });
+      return stems;
+    });
+  },
+  deleteStems: async (id) =>
+    mutate((raw) => {
+      const stems = (raw as StemsDemoDb).video_stems?.find((s) => s.id === id && isLive(s));
+      if (stems) stems.archived_at = now();
+    }),
+  signedStemUrl: (path) => demoCloudUrl(path),
+};
+
+export const stemsBackend: StemsBackend = IS_DEMO ? demoStems : supabaseStems;

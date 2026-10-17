@@ -77,39 +77,54 @@ export type Database = {
       bag_items: {
         Row: {
           archived_at: string | null;
+          artist: string | null;
           bag_id: string;
           clip_id: string | null;
           created_at: string;
           crew_id: string;
+          duration_seconds: number | null;
           id: string;
           member_id: string | null;
           removed_at: string | null;
+          thumbnail_url: string | null;
+          title: string | null;
           video_id: string | null;
           wish_id: string | null;
+          youtube_id: string | null;
         };
         Insert: {
           archived_at?: string | null;
+          artist?: string | null;
           bag_id: string;
           clip_id?: string | null;
           created_at?: string;
           crew_id?: string;
+          duration_seconds?: number | null;
           id?: string;
           member_id?: string | null;
           removed_at?: string | null;
+          thumbnail_url?: string | null;
+          title?: string | null;
           video_id?: string | null;
           wish_id?: string | null;
+          youtube_id?: string | null;
         };
         Update: {
           archived_at?: string | null;
+          artist?: string | null;
           bag_id?: string;
           clip_id?: string | null;
           created_at?: string;
           crew_id?: string;
+          duration_seconds?: number | null;
           id?: string;
           member_id?: string | null;
           removed_at?: string | null;
+          thumbnail_url?: string | null;
+          title?: string | null;
           video_id?: string | null;
           wish_id?: string | null;
+          youtube_id?: string | null;
         };
         Relationships: [
           {
@@ -1055,6 +1070,85 @@ export type Database = {
             columns: ['crew_id'];
             isOneToOne: false;
             referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      video_stems: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          delay_seconds: number;
+          duration_seconds: number;
+          id: string;
+          instrumental_path: string | null;
+          instrumental_size: number | null;
+          member_id: string | null;
+          mime_type: string;
+          model: string;
+          source_file_name: string;
+          source_file_size: number;
+          video_id: string;
+          vocals_path: string | null;
+          vocals_size: number | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          delay_seconds?: number;
+          duration_seconds: number;
+          id: string;
+          instrumental_path?: string | null;
+          instrumental_size?: number | null;
+          member_id?: string | null;
+          mime_type?: string;
+          model: string;
+          source_file_name: string;
+          source_file_size: number;
+          video_id: string;
+          vocals_path?: string | null;
+          vocals_size?: number | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          delay_seconds?: number;
+          duration_seconds?: number;
+          id?: string;
+          instrumental_path?: string | null;
+          instrumental_size?: number | null;
+          member_id?: string | null;
+          mime_type?: string;
+          model?: string;
+          source_file_name?: string;
+          source_file_size?: number;
+          video_id?: string;
+          vocals_path?: string | null;
+          vocals_size?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'video_stems_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'video_stems_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'video_stems_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
             referencedColumns: ['id'];
           },
         ];
