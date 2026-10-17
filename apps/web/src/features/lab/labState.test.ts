@@ -11,6 +11,7 @@ import {
   STORAGE_KEY,
   writeChoices,
 } from './labState';
+import { MOMENT_IDS } from './labIds';
 import { MOMENTS } from './registry';
 import type { LabMoment } from './types';
 
@@ -147,6 +148,12 @@ describe('MOMENTS registry', () => {
       'a: sin variantes',
       'a: la variante por defecto no existe',
     ]);
+  });
+
+  it('says the same as the light list of ids the app reads (labIds.ts)', () => {
+    const shape = (list: readonly { id: string; defaultVariant: string; variants: readonly { id: string }[] }[]) =>
+      list.map((m) => ({ id: m.id, defaultVariant: m.defaultVariant, variants: m.variants.map((v) => v.id) }));
+    expect(shape(MOMENT_IDS)).toEqual(shape(MOMENTS));
   });
 
   it('has the four quick-menu prototypes, applied live', () => {

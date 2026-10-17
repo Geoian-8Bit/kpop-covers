@@ -15,7 +15,7 @@ interface CountStepperProps {
   labelledBy: string;
 }
 
-/** «Uno menos» · N · «Uno más», within 1…what the source offers (and the round's top). */
+/** «Un clip menos» · N · «Un clip más», within 1…what the source offers (and the round's top). */
 export function CountStepper({ value, available, onChange, labelledBy }: CountStepperProps) {
   const max = Math.max(1, Math.min(MAX_ROUND, available));
   const shown = Math.min(value, max);
@@ -28,7 +28,7 @@ export function CountStepper({ value, available, onChange, labelledBy }: CountSt
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Uno menos"
+        aria-label="Un clip menos"
         disabled={shown <= 1}
         onClick={() => onChange(Math.max(1, shown - 1))}
       >
@@ -43,7 +43,7 @@ export function CountStepper({ value, available, onChange, labelledBy }: CountSt
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Uno más"
+        aria-label="Un clip más"
         disabled={value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
       >

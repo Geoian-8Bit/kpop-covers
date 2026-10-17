@@ -10,9 +10,19 @@ export interface RunRequest {
   right: Float32Array;
 }
 
+/** Global review [6] · Hold before the next segment (the recorder is open) or go on. */
+export interface PauseRequest {
+  type: 'pause';
+  paused: boolean;
+}
+
+export type PageMessage = RunRequest | PauseRequest;
+
 export type WorkerMessage =
   | { type: 'progress'; phase: 'model'; loaded: number; total: number }
   | { type: 'progress'; phase: 'compile' }
+  /** The worker stopped between segments, as asked (nothing runs on the GPU until it is told to go on). */
+  | { type: 'held' }
   | { type: 'progress'; phase: 'separate'; done: number; total: number; etaSeconds: number | null }
   | {
       type: 'done';

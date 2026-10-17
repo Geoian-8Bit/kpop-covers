@@ -13,6 +13,7 @@ import {
   setUpdateApplier,
 } from './features/nav/version/appUpdate';
 import { reloadNeedsConfirm } from './features/nav/version/versionRules';
+import { reloadBusy } from './lib/heavyWork';
 import { unlockAudio } from './lib/metronome';
 import { keepViewportFitted } from './lib/viewport';
 import './index.css';
@@ -32,6 +33,8 @@ const isSafeMoment = () =>
     pathname: window.location.pathname,
     dialogOpen: Boolean(document.querySelector('[role="dialog"]')),
     saving: savingCount(),
+    // Not halfway through the copy for the group or the voice separation (they outlive the song's screen).
+    busy: reloadBusy(),
   }) && !isManualCheckRunning();
 
 /** Applies the waiting update now (fresh service worker + one reload); false when none is waiting. */

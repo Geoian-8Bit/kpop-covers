@@ -1,5 +1,5 @@
 import { buildMp4, type Mp4Codec } from './mp4';
-import { estimateLag, stemBitrate } from './separateRules';
+import { estimateLag, headFrameCount, LAG_HEAD_SECONDS, monoHead, stemBitrate } from './separateRules';
 
 /**
  * 18 · The two separated tracks as small audio files (3–6 MB each for a 4-minute song): WebCodecs' AudioEncoder
@@ -145,16 +145,22 @@ async function encodeFrames(left: Float32Array, right: Float32Array, choice: Cod
   return { frames, frameSamples, description };
 }
 
-const mono = (left: Float32Array, right: Float32Array) => {
-  const out = new Float32Array(Math.min(left.length, right.length));
-  for (let i = 0; i < out.length; i++) out[i] = (left[i]! + right[i]!) / 2;
-  return out;
-};
+/** Lets the page breathe between the heavy steps (the studio's loop and clips run on this thread). */
+const breathe = () =>
+  new Promise<void>((resolve) => {
+    const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+    if (s?.yield) void s.yield().then(resolve, () => setTimeout(resolve, 0));
+    else setTimeout(resolve, 0);
+  });
 
 /**
  * Encodes one track. `left`/`right` are at `inputRate` (44.1 kHz from the model). Throws when the result can't be
  * decoded back here (better to stop than to share a broken file). `primingSamples`: what the other track of the same
  * song settled on (same encoder, same priming), so both tracks always start the same way.
+ *
+ * Global review [5] · Light on the page: the delay is measured on the first seconds only (a short file of the first
+ * frames, decoded back, against a mono mix of the same seconds), the whole file is decoded once only to prove it
+ * plays (and let go at once), and the thread is given back between steps.
  */
 export async function encodeStem(
   left: Float32Array,
@@ -163,44 +169,89 @@ export async function encodeStem(
   choice: CodecChoice,
   primingSamples?: number,
 ): Promise<EncodedStem> {
-  const [l, r] = await resample(left, right, inputRate, choice.sampleRate);
-  const { frames, frameSamples, description } = await encodeFrames(l, r, choice);
+  const rate = choice.sampleRate;
+  const maxLag = Math.round(rate * 0.15);
+  const headSamples = LAG_HEAD_SECONDS * rate;
+  // The resampled song only lives inside this block: once encoded, only its first seconds (mono) are kept.
+  const { encoded, reference } = await (async () => {
+    const [l, r] = await resample(left, right, inputRate, rate);
+    await breathe();
+    const out = await encodeFrames(l, r, choice);
+    return { encoded: out, reference: monoHead(l, r, headSamples + 2 * maxLag) };
+  })();
+  await breathe();
+  const { frames, frameSamples, description } = encoded;
   const build = (primingSamples = 0) =>
-    buildMp4({ codec: choice.codec, sampleRate: choice.sampleRate, channels: 2, frames, frameSamples, description, primingSamples });
+    buildMp4({ codec: choice.codec, sampleRate: rate, channels: 2, frames, frameSamples, description, primingSamples });
+  const headCount = headFrameCount(frameSamples, headSamples + 2 * maxLag);
+  const buildHead = (primingSamples = 0) =>
+    buildMp4({
+      codec: choice.codec,
+      sampleRate: rate,
+      channels: 2,
+      frames: frames.slice(0, headCount),
+      frameSamples: frameSamples.slice(0, headCount),
+      description,
+      primingSamples,
+    });
 
-  // Decode it back: it must play, and the comparison tells the encoder's delay.
   const Ctor = offlineCtor();
-  const reference = mono(l, r);
-  const measure = async (file: Uint8Array) => {
-    const ctx = new Ctor(2, 1, choice.sampleRate);
-    const decoded = await ctx.decodeAudioData(file.slice().buffer);
-    const back = mono(decoded.getChannelData(0), decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : decoded.getChannelData(0));
-    const lag = estimateLag(reference, back, Math.round(choice.sampleRate * 0.15), choice.sampleRate);
+  const decode = async (file: Uint8Array) => {
+    const ctx = new Ctor(2, 1, rate);
+    return ctx.decodeAudioData(file.slice().buffer);
+  };
+  // The encoder's delay, on the first seconds of the track.
+  const measure = async (primingSamples = 0) => {
+    const decoded = await decode(buildHead(primingSamples));
+    const back = monoHead(
+      decoded.getChannelData(0),
+      decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : decoded.getChannelData(0),
+      reference.length,
+    );
+    await breathe();
+    const lag = estimateLag(reference, back, maxLag, rate);
+    await breathe();
     return lag && lag.confidence > 0.5 ? lag.lag : null;
   };
+  // It must play here, whole (the decoded sound is dropped right away: only its length is read).
+  const provePlays = async (file: Uint8Array) => {
+    const seconds = (await decode(file)).duration;
+    await breathe();
+    if (!(seconds > 0)) throw new Error('empty track');
+  };
+  const result = (bytes: Uint8Array, delaySeconds: number, priming: number): EncodedStem => ({
+    blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'audio/mp4' }),
+    mime: 'audio/mp4',
+    ext: 'm4a',
+    codec: choice.codec,
+    delaySeconds,
+    primingSamples: priming,
+  });
+
   if (primingSamples != null) {
     const bytes = build(primingSamples);
-    const lag = await measure(bytes);
-    return { blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'audio/mp4' }), mime: 'audio/mp4', ext: 'm4a', codec: choice.codec, delaySeconds: lag == null ? Number.NaN : lag / choice.sampleRate, primingSamples };
+    await provePlays(bytes);
+    const lag = await measure(primingSamples);
+    return result(bytes, lag == null ? Number.NaN : lag / rate, primingSamples);
   }
   let bytes = build();
+  await provePlays(bytes);
   let priming = 0;
-  const lag = await measure(bytes);
+  const lag = await measure();
   // A quiet track (an instrumental-only song's voice) can't be measured: same encoder, so the other's delay holds.
-  let delaySeconds = lag == null ? Number.NaN : lag / choice.sampleRate;
+  let delaySeconds = lag == null ? Number.NaN : lag / rate;
   // AAC priming: written as an edit list (the standard every player follows), so the file itself starts with the
   // sound on any browser, not only on one that decodes like this one. Kept only if this browser honours it too
   // (then what's left to compensate is ~0); otherwise the plain file and the measured delay, as before.
-  if (choice.codec === 'aac' && lag != null && lag > 0 && lag < choice.sampleRate * 0.15) {
-    const edited = build(lag);
-    const left = await measure(edited).catch(() => null);
-    if (left != null && Math.abs(left) <= Math.round(choice.sampleRate * 0.002)) {
-      bytes = edited;
+  if (choice.codec === 'aac' && lag != null && lag > 0 && lag < maxLag) {
+    const left = await measure(lag).catch(() => null);
+    if (left != null && Math.abs(left) <= Math.round(rate * 0.002)) {
+      bytes = build(lag);
       priming = lag;
-      delaySeconds = left / choice.sampleRate;
+      delaySeconds = left / rate;
     } else {
       console.info('[stems] this browser ignores the AAC edit list; the measured delay is kept instead', lag, left);
     }
   }
-  return { blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'audio/mp4' }), mime: 'audio/mp4', ext: 'm4a', codec: choice.codec, delaySeconds, primingSamples: priming };
+  return result(bytes, delaySeconds, priming);
 }

@@ -3,6 +3,8 @@
 -- prints `PASS …`, raises `FAIL …` on the first problem, ends with ROLLBACK.
 
 begin;
+-- Supabase refuses direct deletes from storage tables unless this is on (no effect where that trigger is missing).
+select set_config('storage.allow_delete_query', 'true', true);
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
@@ -70,7 +72,10 @@ begin
   begin
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'vocals.m4a', '{"size": 4000000}');
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'instrumental.m4a', '{"size": 4100000}');
-  exception when others then
+  exception when insufficient_privilege then
+    -- RLS refused an upload the app makes: a real regression, not an inconclusive test.
+    raise exception 'FAIL an allowed track upload was refused by RLS: %', sqlerrm;
+  when others then
     raise notice 'INCONCLUSIVE direct insert into storage.objects failed: % (%)', sqlerrm, sqlstate;
     return;
   end;
@@ -184,7 +189,10 @@ begin
   begin
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'vocals.m4a', '{"size": 20000000}');
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'instrumental.m4a', '{"size": 3000000}');
-  exception when others then
+  exception when insufficient_privilege then
+    -- RLS refused an upload the app makes: a real regression, not an inconclusive test.
+    raise exception 'FAIL an allowed track upload was refused by RLS: %', sqlerrm;
+  when others then
     raise notice 'INCONCLUSIVE direct insert into storage.objects failed: % (%)', sqlerrm, sqlstate;
     return;
   end;
@@ -248,7 +256,10 @@ begin
   begin
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'vocals.m4a', '{"size": 1000}');
     insert into storage.objects (bucket_id, name, metadata) values ('videos', v_dir || 'instrumental.m4a', '{"size": 1000}');
-  exception when others then
+  exception when insufficient_privilege then
+    -- RLS refused an upload the app makes: a real regression, not an inconclusive test.
+    raise exception 'FAIL an allowed track upload was refused by RLS: %', sqlerrm;
+  when others then
     raise notice 'INCONCLUSIVE direct insert into storage.objects failed: % (%)', sqlerrm, sqlstate;
     return;
   end;

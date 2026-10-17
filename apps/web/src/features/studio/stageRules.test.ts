@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialStage, needsLocalCheck } from './stageRules';
+import { groupCopyLabel, initialStage, needsLocalCheck, playsGroupCopy } from './stageRules';
 
 describe('initialStage', () => {
   it('opens YouTube when there is no linked file', () => {
@@ -31,5 +31,28 @@ describe('needsLocalCheck', () => {
     expect(needsLocalCheck({ linked: true, choice: null, inCloud: true })).toBe(false);
     expect(needsLocalCheck({ linked: true, choice: 'youtube', inCloud: false })).toBe(false);
     expect(needsLocalCheck({ linked: false, choice: null, inCloud: false })).toBe(false);
+  });
+});
+
+describe('playsGroupCopy', () => {
+  const limit = 50 * 1024 * 1024;
+  it('is the copy when the cloud file stands for an original too big for the cloud', () => {
+    expect(playsGroupCopy({ fromCloud: true, originalBytes: limit * 3, limitBytes: limit })).toBe(true);
+  });
+  it('is the original when it fits the cloud, or when this device plays its own file', () => {
+    expect(playsGroupCopy({ fromCloud: true, originalBytes: limit, limitBytes: limit })).toBe(false);
+    expect(playsGroupCopy({ fromCloud: false, originalBytes: limit * 3, limitBytes: limit })).toBe(false);
+    expect(playsGroupCopy({ fromCloud: true, originalBytes: null, limitBytes: limit })).toBe(false);
+  });
+});
+
+describe('groupCopyLabel', () => {
+  it('names the picture by its short side', () => {
+    expect(groupCopyLabel({ width: 1280, height: 720 })).toBe('Copia del grupo · 720p');
+    expect(groupCopyLabel({ width: 1080, height: 1920 })).toBe('Copia del grupo · 1080p');
+  });
+  it('says only that it is the copy until the size is known', () => {
+    expect(groupCopyLabel(null)).toBe('Copia del grupo');
+    expect(groupCopyLabel({ width: 0, height: 0 })).toBe('Copia del grupo');
   });
 });

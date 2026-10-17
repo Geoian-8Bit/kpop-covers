@@ -49,9 +49,17 @@ export const GROUP_LABEL = 'Voz y música';
 /** Copy per mode. `seal`: the kanji stamped on it (全 all · 楽 music · 声 voice). */
 export const MODE_COPY: Record<VoiceMode, { label: string; hint: string; seal: string }> = {
   original: { label: 'Todo', hint: 'La canción tal cual', seal: '全' },
-  'sin-voz': { label: 'Sin voz', hint: 'Baja la voz centrada (en mono)', seal: '楽' },
+  // Neutral: true both with the approximate split (centre lowered) and with the AI tracks (see `modeHint`).
+  'sin-voz': { label: 'Sin voz', hint: 'La música sin la voz', seal: '楽' },
   voz: { label: 'Voz', hint: 'Sube el centro: la voz y poco más', seal: '声' },
 };
+
+/** A mode's hint, saying so when the video has voice and music separated with AI. */
+export function modeHint(mode: VoiceMode, separated = false): string {
+  if (separated && mode === 'sin-voz') return 'Música sin voz (separada con IA)';
+  if (separated && mode === 'voz') return 'Solo la voz (separada con IA)';
+  return MODE_COPY[mode].hint;
+}
 
 export const UNAVAILABLE_COPY = 'Solo con el archivo del vídeo (YouTube no deja tocar su sonido)';
 export const MONO_COPY =
@@ -198,8 +206,13 @@ export function ModeSeals({
   onChange,
   available,
   compact,
+  separated,
   className,
-}: Pick<VoiceVariantProps, 'mode' | 'onChange' | 'available' | 'compact'> & { className?: string }) {
+}: Pick<VoiceVariantProps, 'mode' | 'onChange' | 'available' | 'compact'> & {
+  /** The video has AI-separated tracks: the hints say so. */
+  separated?: boolean;
+  className?: string;
+}) {
   const uid = useId();
   const radio = useModeRadios(mode, onChange, !available);
   const { reduce, transition: tab } = useVoiceMotion(jelly);
@@ -245,7 +258,7 @@ export function ModeSeals({
             <span className="min-w-0 text-center">
               <span className="block truncate text-[14px] font-bold leading-tight">{copy.label}</span>
               {!compact && (
-                <span className="block text-[11px] leading-tight text-washi-subtle">{copy.hint}</span>
+                <span className="block text-[11px] leading-tight text-washi-subtle">{modeHint(option, separated)}</span>
               )}
             </span>
           </motion.button>

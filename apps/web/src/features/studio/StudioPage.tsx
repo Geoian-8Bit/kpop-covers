@@ -36,7 +36,7 @@ import { askWho, useMe } from '@/data/members';
 import { songNotes } from '@/features/review/reviewRules';
 import { forgetStage, readStage, rememberStage } from '@/lib/stagePref';
 import { loadLocalVideo } from '@/lib/localVideos';
-import { initialStage, needsLocalCheck } from './stageRules';
+import { groupCopyLabel, initialStage, needsLocalCheck, playsGroupCopy } from './stageRules';
 import { fsChrome, useFsChrome, useFsChromeDriver } from './fullscreenChrome';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -66,7 +66,6 @@ import { useToast } from '@/providers/ToastProvider';
 import { PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
 import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
 import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
-import { FollowFsButton } from '@/features/follow/FollowFsMenu';
 import { useFollowUi } from '@/features/follow/followUi';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
@@ -75,10 +74,8 @@ import { LinkFilePanel } from './LinkFilePanel';
 import { CloudCopyStatus } from './CloudCopyStatus';
 import { cloudLimitBytes } from '@/lib/backend';
 import { useFileSource } from './fileSource';
-import { releaseTakeUrl } from '@/data/takes';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
-import { SeparateVoiceButton } from '@/features/voice/SeparateVoiceButton';
 import { useStageStems } from '@/data/stems';
 import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
@@ -99,6 +96,20 @@ const RecordStudio = lazy(() => loadRecordStudio().then((m) => ({ default: m.Rec
 const warmRecordStudio = () => void loadRecordStudio().catch(() => undefined);
 /** P4 · «Tomas» loads when its tab is first opened. */
 const TakesPanel = lazy(() => import('@/features/takes/TakesPanel').then((m) => ({ default: m.TakesPanel })));
+/** «Seguir a un bailarín» in fullscreen's top bar: loads when fullscreen first opens. */
+const FollowFsButton = lazy(() => import('@/features/follow/FollowFsMenu').then((m) => ({ default: m.FollowFsButton })));
+/** 18 · «Separar voz y música»: loads only where the voice can be split (a file on the stage). */
+const SeparateVoiceButton = lazy(() =>
+  import('@/features/voice/SeparateVoiceButton').then((m) => ({ default: m.SeparateVoiceButton })),
+);
+
+/**
+ * Same as `releaseTakeUrl` (data/takes): a take's object URL is let go. Here so the studio doesn't import data/takes
+ * (with the recorder's store and sharing) to open: that loads with «Tomas», the review or the recorder.
+ */
+const releaseTakeUrl = (url: string | null | undefined) => {
+  if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+};
 
 /** Stable empty list, so the stage never re-renders for a new [] while notes load. */
 const NO_NOTES: Note[] = [];
@@ -173,6 +184,8 @@ export function StudioPage() {
   const loaded = video.data != null && !video.isPlaceholderData;
   const hasRow = video.data != null;
   const [stageFor, setStageFor] = useState<string | null>(null);
+  // [4] · «Copia del grupo · 720p» while the stage plays the group's lighter copy (set by the stage), else null.
+  const [copyLabel, setCopyLabel] = useState<string | null>(null);
   const decidedFor = useRef<string | null>(null);
   const rowRef = useRef(video.data);
   rowRef.current = video.data;
@@ -413,6 +426,7 @@ export function StudioPage() {
                 notes={songNoteList}
                 onClipSelect={tapClipLine}
                 hold={stageHeld}
+                onCopyLabel={setCopyLabel}
               />
             </div>
             <Dormant>
@@ -424,9 +438,9 @@ export function StudioPage() {
               onNoteOpen={openNote}
             />
             <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
-            {hasLinkedFile(current) && <SourceRow video={current} />}
+            {hasLinkedFile(current) && <SourceRow video={current} copyLabel={copyLabel} />}
             {/* 13 · Only on this device: send a lighter copy to the group (shows only when there's something to say). */}
-            <CloudCopyStatus video={current} variant="studio" />
+            <CloudCopyStatus video={current} variant="studio" announce={!linking} />
             <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
             <FollowRow video={current} onLink={() => setLinking(true)} />
             <VoiceRow video={current} />
@@ -561,7 +575,11 @@ function VoiceRow({ video }: { video: Video }) {
         monoLike={monoLike}
         compact
       />
-      <SeparateVoiceButton video={video} available={available} />
+      {available && (
+        <Suspense fallback={null}>
+          <SeparateVoiceButton video={video} available />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -581,7 +599,7 @@ const SOURCES = [
  * F1 · 12 · «Archivo | YouTube» for a YouTube entry with its own file: under the controls, with the video's
  * settings, so it never takes room from the video. The person's pick is remembered for this video on this device.
  */
-function SourceRow({ video }: { video: Video }) {
+function SourceRow({ video, copyLabel }: { video: Video; copyLabel: string | null }) {
   const stage = usePlayer((s) => s.stage);
   const choose = (next: 'youtube' | 'file') => {
     rememberStage(video.id, next);
@@ -627,7 +645,7 @@ function SourceRow({ video }: { video: Video }) {
         })}
       </div>
       <span className="min-w-0 flex-1 truncate text-[12px] text-washi-subtle">
-        {stage === 'file' ? (video.file_name ?? '') : 'Con el archivo: sin anuncios ni esperas'}
+        {stage === 'file' ? (copyLabel ?? video.file_name ?? '') : 'Con el archivo: sin anuncios ni esperas'}
       </span>
     </div>
   );
@@ -639,6 +657,7 @@ function MediaStage({
   notes,
   onClipSelect,
   hold = false,
+  onCopyLabel,
 }: {
   video: Video;
   clips: Clip[];
@@ -646,6 +665,8 @@ function MediaStage({
   onClipSelect: (clip: Clip) => void;
   /** 12 · The stage isn't decided yet (looking for a device copy): no player mounts until it is. */
   hold?: boolean;
+  /** [4] · Tells the page when the file on the stage is the group's lighter copy (its «Vídeo» row says so). */
+  onCopyLabel?: (label: string | null) => void;
 }) {
   // 5 · Only what the stage itself needs: buffering, speed and the controls' visibility live in small components,
   // so none of them repaints the stage (and the players inside it).
@@ -697,6 +718,19 @@ function MediaStage({
   const swallowClickUntil = useRef(0);
   const zoomTap = useRef<{ last: { at: number; x: number; y: number } | null; timer?: ReturnType<typeof setTimeout> }>({ last: null });
   const zoomResetAt = useRef(0);
+  // [4] · The group's lighter copy (not the original) on the stage: the «Vídeo» row names it, with its real size.
+  const copyLabel =
+    playsFile &&
+    !hold &&
+    file.status === 'ready' &&
+    !file.local &&
+    playsGroupCopy({ fromCloud: Boolean(video.storage_path), originalBytes: video.file_size, limitBytes: cloudLimitBytes() })
+      ? groupCopyLabel(media)
+      : null;
+  useEffect(() => {
+    onCopyLabel?.(copyLabel);
+  }, [copyLabel, onCopyLabel]);
+  useEffect(() => () => onCopyLabel?.(null), [onCopyLabel]);
   const geometry = useRef({ box, media, mirrored });
   geometry.current = { box, media, mirrored };
   useEffect(() => () => clearTimeout(zoomTap.current.timer), []);
@@ -891,7 +925,8 @@ function MediaStage({
       data-fs={fullscreen || undefined}
       className={cn(
         fullscreen &&
-          'fixed inset-0 z-[70] grid place-items-center bg-black [&[data-idle]]:cursor-none [&[data-idle]_*]:!cursor-none',
+          // The idle pointer hides over the video, never over a dialog (or its backdrop) open on top of it.
+          'fixed inset-0 z-[70] grid place-items-center bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
       )}
     >
       <div
@@ -969,7 +1004,8 @@ function MediaStage({
               onClick={(e) => {
                 e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
               }}
-              className="pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/75 transition-colors duration-200 hover:text-washi"
+              // Solid ink under the text (readable over a white frame) and a 44 px hit area around the chip.
+              className="pointer-events-auto relative flex items-center gap-1.5 rounded-[6px] bg-sumi-900/90 px-2 py-1 text-[12px] font-medium text-washi-muted transition-colors duration-200 before:absolute before:-inset-x-1 before:-inset-y-2.5 before:content-[''] hover:text-washi"
             >
               <Youtube className="size-3.5" /> YouTube
             </a>
@@ -979,10 +1015,10 @@ function MediaStage({
               type="button"
               onClick={() => void sendToCloud()}
               disabled={upload.isPending}
-              className="pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/85 transition-colors hover:text-washi disabled:opacity-60"
+              className="pointer-events-auto relative flex items-center gap-1.5 rounded-[6px] bg-sumi-900/90 px-2 py-1 text-[12px] font-medium text-washi transition-colors before:absolute before:-inset-x-1 before:-inset-y-2.5 before:content-[''] disabled:opacity-60"
             >
               {upload.isPending ? <Spinner className="size-3.5" label="Subiendo" /> : <CloudUpload className="size-3.5" />}
-              {upload.isPending ? 'Subiendo…' : 'Solo en este móvil · Subir a la nube'}
+              {upload.isPending ? 'Subiendo…' : 'Solo en este dispositivo · Subir a la nube'}
             </button>
           )}
           <RateFlash />
@@ -1275,13 +1311,15 @@ function FsTopBar({ video }: { video: Video }) {
           onClick={(e) => {
             e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
           }}
-          className="fs-hit pointer-events-none flex shrink-0 items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/80 hover:text-washi"
+          className="fs-hit pointer-events-none relative flex shrink-0 items-center gap-1.5 rounded-[6px] bg-sumi-900/90 px-2 py-1 text-[12px] font-medium text-washi-muted before:absolute before:-inset-x-1 before:-inset-y-2.5 before:content-[''] hover:text-washi"
         >
           <Youtube className="size-3.5" /> YouTube
         </a>
       )}
       {/* 14 · Follow a dancer without leaving fullscreen: one button, a compact panel under the bar. */}
-      <FollowFsButton video={video} />
+      <Suspense fallback={<span aria-hidden className="-my-1.5 size-11 shrink-0" />}>
+        <FollowFsButton video={video} />
+      </Suspense>
     </div>
   );
 }

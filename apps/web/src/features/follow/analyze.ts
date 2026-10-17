@@ -97,8 +97,8 @@ export interface AnalyzeProgress {
   total: number;
 }
 
-/** 15 · Why the analysis is waiting: a take being recorded, or the AI voice separation running. */
-export type HoldReason = 'recording' | 'voice';
+/** 15 · Why the analysis is waiting: a take being recorded, the AI voice separation, or the copy for the group. */
+export type HoldReason = 'recording' | 'voice' | 'copy';
 
 /** 15 · The studio around the analysis (features/follow/analysisHold.ts). */
 export interface AnalysisHost {

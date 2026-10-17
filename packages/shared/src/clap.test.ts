@@ -9,6 +9,7 @@ import {
   clapsAlike,
   clapThreshold,
   createClapDetector,
+  DECIDE_AFTER,
   levelToMeter,
   migrateClapSensitivity,
   peakOf,
@@ -541,5 +542,13 @@ describe('log of judged sounds («i» panel)', () => {
 
   it('nothing judged, nothing kept', () => {
     expect(entries({ sounds: [] })).toEqual([]);
+  });
+});
+
+describe('decision delay', () => {
+  it('covers the peak search (20 hops) and the longest decay of any level, plus 4 hops', () => {
+    const hopMs = 0.5;
+    const longest = Math.max(...Object.values(CLAP_LEVELS).map((l) => l.maxDecayMs));
+    expect(DECIDE_AFTER).toBe(20 + Math.ceil(longest / hopMs) + 4);
   });
 });

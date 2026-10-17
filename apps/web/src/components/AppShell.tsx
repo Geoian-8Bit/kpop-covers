@@ -27,6 +27,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { InstallAppButton, InstallAppHelp } from './InstallApp';
 import { ButtonSkin } from './ui/ButtonSkin';
 import { Logo } from './Logo';
+import { useFabScrollPadding } from './stickyBarPadding';
 import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
 import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
@@ -177,6 +178,8 @@ export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
   useRouteFocus(mainRef);
   const quickNav = useQuickNavShown();
+  // Focus scrolled to the bottom edge is never left under the button (WCAG 2.4.11; see `html` in index.css).
+  useFabScrollPadding(quickNav);
 
   return (
     <div

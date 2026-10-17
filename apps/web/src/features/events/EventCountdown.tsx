@@ -1,9 +1,18 @@
-import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ComponentType,
+  type LazyExoticComponent,
+  type ReactNode,
+} from 'react';
 import { MapPin } from 'lucide-react';
 import { useDesignVariant } from '@/features/lab/labState';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
+import { instant, type LongProps } from './countdownBand';
 import {
   countdown,
   countdownDetail,
@@ -14,12 +23,6 @@ import {
   litLanterns,
   LONG_COUNTDOWN_MOMENT,
   longVariantOf,
-  MOON_COUNT,
-  moonLitPath,
-  moonPhase,
-  pageFace,
-  sandRun,
-  tornPages,
   type Countdown,
   type CountdownStage,
   type LongCountdownVariant,
@@ -121,229 +124,26 @@ function Band({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-interface LongProps {
-  c: Countdown;
-  startsAt: string;
-  createdAt: string;
-  now: Date;
-}
+/**
+ * The three long designs, one chunk each: only the one chosen on this device loads (they're in the precache, so
+ * offline too). While it loads the band stays empty at its fixed size: nothing below moves (P8). A chunk that
+ * can't load (a deploy swapped it mid-visit) leaves the band empty: it is decoration, the words say it all.
+ */
+const NoDesign: ComponentType<LongProps> = () => null;
+const longDesign = (load: () => Promise<ComponentType<LongProps>>) =>
+  lazy(() => load().then((Design) => ({ default: Design }), () => ({ default: NoDesign })));
+const LONG: Record<LongCountdownVariant, LazyExoticComponent<ComponentType<LongProps>>> = {
+  koyomi: longDesign(() => import('./CountdownKoyomi').then((m) => m.Koyomi)),
+  sunadokei: longDesign(() => import('./CountdownSunadokei').then((m) => m.Sunadokei)),
+  tsuki: longDesign(() => import('./CountdownTsuki').then((m) => m.Tsuki)),
+};
 
 function LongVisual({ variant, ...props }: LongProps & { variant: LongCountdownVariant }) {
-  if (variant === 'sunadokei') return <Sunadokei {...props} />;
-  if (variant === 'tsuki') return <Tsuki {...props} />;
-  return <Koyomi {...props} />;
-}
-
-const BAND = 'h-full w-full overflow-visible';
-const instant: Transition = { duration: 0 };
-
-// ───────────── Koyomi ─────────────
-
-/** Fixed spots of the torn pages lying beside the pad (newest first). */
-const TORN_SPOTS = [
-  { x: 82, y: 30, r: -9 },
-  { x: 126, y: 36, r: 7 },
-  { x: 170, y: 29, r: -4 },
-  { x: 214, y: 37, r: 11 },
-] as const;
-
-function Koyomi({ c, createdAt, now }: LongProps) {
-  const reduce = useReducedMotion();
-  const face = pageFace(c);
-  const torn = tornPages(c, createdAt, now, TORN_SPOTS.length);
-  const small = face.big.length > 2;
+  const Design = LONG[variant] ?? LONG.koyomi;
   return (
-    <svg viewBox="0 0 280 66" className={BAND}>
-      {/* The pages torn off on earlier days, lying on the floor, fainter the older. */}
-      {torn.map((day, i) => {
-        const spot = TORN_SPOTS[i]!;
-        return (
-          <g key={i} transform={`translate(${spot.x} ${spot.y}) rotate(${spot.r} 17 14)`} opacity={0.62 - i * 0.12}>
-            <path d="M0 3 L4 0 L8 3 L12 0 L16 3 L20 0 L24 3 L28 0 L32 3 L34 1 V28 H0 Z" className="fill-washi-muted" />
-            <text
-              x={17}
-              y={21}
-              textAnchor="middle"
-              fontSize={day > 99 ? 11 : 13}
-              className="tabular fill-sumi-600 font-display font-extrabold"
-            >
-              {day}
-            </text>
-          </g>
-        );
-      })}
-      {/* The pad: the pages still to go peeking under the top one. */}
-      <rect x={10} y={16} width={48} height={49} rx={4} className="fill-kin-200" />
-      <rect x={8} y={14} width={52} height={48} rx={4} className="fill-washi-muted" />
-      <AnimatePresence initial={false}>
-        <motion.g
-          key={face.big}
-          style={{ transformBox: 'fill-box', transformOrigin: '8% 0%' }}
-          initial={{ opacity: 1 }}
-          animate={{ opacity: 1, rotate: 0, x: 0, y: 0 }}
-          // Torn off at the right ring first: it swings down from the left one and drops onto the pile.
-          exit={reduce ? { opacity: 0, transition: instant } : { rotate: 28, x: 62, y: 26, opacity: 0, transition: soft }}
-        >
-          <rect x={6} y={11} width={56} height={49} rx={4} className="fill-washi" />
-          <text
-            x={34}
-            y={small ? 41 : 44}
-            textAnchor="middle"
-            fontSize={small ? 22 : 30}
-            className="tabular fill-sumi-900 font-display font-extrabold"
-          >
-            {face.big}
-          </text>
-          <text x={34} y={55} textAnchor="middle" fontSize={7.5} letterSpacing={1.2} className="fill-sumi-600 font-bold uppercase">
-            {face.unit}
-          </text>
-        </motion.g>
-      </AnimatePresence>
-      {/* The binding: a vermilion bar with two rings. */}
-      <rect x={6} y={3} width={56} height={10} rx={3} className="fill-shu-500" />
-      <circle cx={21} cy={8} r={2.4} className="fill-sumi-900 stroke-kin-300" strokeWidth={1.2} />
-      <circle cx={47} cy={8} r={2.4} className="fill-sumi-900 stroke-kin-300" strokeWidth={1.2} />
-    </svg>
-  );
-}
-
-// ───────────── Sunadokei ─────────────
-
-function Sunadokei({ c, startsAt, createdAt, now }: LongProps) {
-  const reduce = useReducedMotion();
-  const p = c.kind === 'days' || c.kind === 'hours' ? Math.min(0.97, sandRun(startsAt, createdAt, now)) : 1;
-  const running = p < 1;
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const days = c.kind === 'days' ? c.days : 0;
-  const move = reduce ? instant : soft;
-  return (
-    <svg viewBox="0 0 280 66" className={BAND}>
-      <defs>
-        <clipPath id={`sand-top-${uid}`}>
-          <motion.rect x={0} width={64} height={60} initial={false} animate={{ y: 12 + p * 34 }} transition={move} />
-        </clipPath>
-        <clipPath id={`sand-bottom-${uid}`}>
-          <motion.rect x={0} width={64} height={60} initial={false} animate={{ y: 86 - p * 34 }} transition={move} />
-        </clipPath>
-      </defs>
-      {/* The dunes: the sand that has run piles up along the way to the festival. */}
-      <motion.path
-        d="M58 66 V60 C96 50 128 58 160 53 S226 42 280 52 V66 Z"
-        className="fill-kin-400"
-        fillOpacity={0.28}
-        style={{ transformBox: 'fill-box', transformOrigin: '50% 100%' }}
-        initial={false}
-        animate={{ scaleY: 0.35 + p * 0.65 }}
-        transition={move}
-      />
-      <motion.path
-        d="M92 66 V62 C128 56 170 62 204 57 S252 52 280 58 V66 Z"
-        className="fill-kin-300"
-        fillOpacity={0.32}
-        style={{ transformBox: 'fill-box', transformOrigin: '50% 100%' }}
-        initial={false}
-        animate={{ scaleY: 0.3 + p * 0.7 }}
-        transition={move}
-      />
-      {/* Days left, big. */}
-      <text x={150} y={40} textAnchor="end" fontSize={32} className="tabular fill-kin-300 font-display font-extrabold">
-        {days}
-      </text>
-      <text x={156} y={40} fontSize={12} className="fill-washi-muted font-bold">
-        {days === 1 ? 'día' : 'días'}
-      </text>
-      {/* The festival banner (nobori) waiting at the end of the dunes. */}
-      <line x1={262} y1={14} x2={262} y2={52} className="stroke-kiji-300" strokeWidth={1.4} />
-      <rect x={263} y={15} width={13} height={27} rx={1} className="fill-shu-500" />
-      <text x={269.5} y={32} textAnchor="middle" fontSize={10} className="fill-washi font-display font-extrabold">
-        祭
-      </text>
-      {/* The hourglass: wooden ends and posts, washi glass (the 64×98 drawing at two thirds). */}
-      <g transform="translate(8 0) scale(0.673)">
-        <rect x={4} y={2} width={56} height={7} rx={2} className="fill-kiji-400" />
-        <rect x={4} y={89} width={56} height={7} rx={2} className="fill-kiji-400" />
-        <rect x={6} y={9} width={3} height={80} className="fill-kiji-700" />
-        <rect x={55} y={9} width={3} height={80} className="fill-kiji-700" />
-        <path
-          d="M12 11 H52 Q52 34 34 48 Q52 62 52 87 H12 Q12 62 30 48 Q12 34 12 11 Z"
-          className="fill-washi/10 stroke-washi/40"
-          strokeWidth={1}
-        />
-        <path
-          d="M13 12 H51 Q51 34 33.5 47.6 L32 48 L30.5 47.6 Q13 34 13 12 Z"
-          className="fill-kin-300"
-          clipPath={`url(#sand-top-${uid})`}
-        />
-        <path
-          d="M13 86 H51 Q51 62 33 50 L32 49.6 L31 50 Q13 62 13 86 Z"
-          className="fill-kin-400"
-          clipPath={`url(#sand-bottom-${uid})`}
-        />
-        {/* The thread of falling sand: still (it sits on the home page for weeks; no endless repaint). */}
-        {running && (
-          <line
-            x1={32}
-            y1={48}
-            x2={32}
-            y2={86 - p * 34}
-            className="stroke-kin-300"
-            strokeWidth={1.2}
-            strokeDasharray="2 3"
-          />
-        )}
-      </g>
-    </svg>
-  );
-}
-
-// ───────────── Tsuki ─────────────
-
-const STARS = [
-  [8, 9],
-  [61, 6],
-  [118, 11],
-  [149, 4],
-  [196, 9],
-] as const;
-
-function Tsuki({ c }: LongProps) {
-  const reduce = useReducedMotion();
-  const days = c.kind === 'days' ? c.days : 0;
-  const { illumination, index } = moonPhase(days);
-  const move = reduce ? instant : jelly;
-  return (
-    <svg viewBox="0 0 280 66" className={BAND}>
-      {STARS.map(([x, y]) => (
-        <circle key={x} cx={x} cy={y} r={0.9} className="fill-washi" fillOpacity={0.45} />
-      ))}
-      {/* The row of phases, new to full: the moons passed are lit, the current one bigger, the rest still faint. */}
-      {Array.from({ length: MOON_COUNT }, (_, i) => {
-        const current = i === index;
-        const f = current ? illumination : i / (MOON_COUNT - 1);
-        const cx = 16 + i * 27;
-        const r = current ? 12 : 8.5;
-        return (
-          <motion.g
-            key={i}
-            initial={false}
-            animate={{ opacity: i > index ? 0.42 : 1, scale: current ? 1 : 0.94 }}
-            transition={move}
-            style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}
-            className={current ? 'drop-shadow-[0_0_6px_rgb(228_200_143/0.7)]' : undefined}
-          >
-            <circle cx={cx} cy={34} r={r} className="fill-sumi-700 stroke-washi/25" strokeWidth={0.8} />
-            {f > 0 && <path d={moonLitPath(cx, 34, r, f)} className="fill-kin-200" />}
-          </motion.g>
-        );
-      })}
-      {/* Days left, big beside the moons. */}
-      <text x={248} y={44} textAnchor="end" fontSize={days > 99 ? 26 : 32} className="tabular fill-washi font-display font-extrabold">
-        {days}
-      </text>
-      <text x={252} y={44} fontSize={11} className="fill-washi-muted font-bold">
-        {days === 1 ? 'día' : 'días'}
-      </text>
-    </svg>
+    <Suspense fallback={null}>
+      <Design {...props} />
+    </Suspense>
   );
 }
 

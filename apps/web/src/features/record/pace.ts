@@ -14,6 +14,7 @@ import {
   type ResolutionClass,
 } from '@coverscape/shared';
 import { create } from 'zustand';
+import { heavyWorkBusySince } from '@/lib/heavyWork';
 import { watchPresentedFrames } from './compositor';
 import type { RecordFormat } from './recorder';
 import { recordSettings } from './settings';
@@ -119,10 +120,28 @@ function writePending(next: PacePending | null): void {
 }
 
 /**
+ * A take is judged when it ends and this module doesn't see it start: heavy work that loaded the phone within this
+ * long before counts as having loaded the take (it pauses while the recorder is open, so this mostly catches work
+ * that was still finishing a step; not judging is harmless, learning a lighter mode for 30 days isn't).
+ */
+const HEAVY_LOOKBACK_MS = 60_000;
+
+/** The app's own heavy work (copy for the group, voice separation) loaded the phone at some moment since `since`. */
+export function loadedByHeavyWork(since: number): boolean {
+  return heavyWorkBusySince(since);
+}
+
+/**
  * A measurement's verdict (rehearsal or take): 'learnt' when it confirmed a step down seen before (the camera
  * reopens lighter), 'pending' when it is the first one (said, not acted on), 'none' otherwise.
  */
 export function judgePace(verdict: PaceVerdict, resolution: ResolutionClass): 'learnt' | 'pending' | 'none' {
+  // Global review [6] · Heavy work of the app's own (the copy for the group, the voice separation) loaded the phone
+  // during the measurement or just before it ended: the measurement says nothing about the camera mode.
+  if (loadedByHeavyWork(performance.now() - HEAVY_LOOKBACK_MS)) {
+    paceLog('not judged: heavy work running', { verdict });
+    return 'none';
+  }
   const before = readPending();
   const { learn, pending } = confirmPace(before, verdict, resolution);
   if (pending !== before) writePending(pending);
@@ -371,7 +390,7 @@ export function runBench(opts: {
           const seconds = (performance.now() - started) / 1000;
           const fps = framesPerSecond(read() - startFrames, seconds);
           const lagMs = w.lag.median();
-          const verdict = paceVerdict({
+          const measured = paceVerdict({
             wantFps: opts.wantFps,
             // What this camera gives here at rest, never more than its mode.
             cameraFps: Math.min(opts.mode.fps || restFps, restFps),
@@ -381,7 +400,10 @@ export function runBench(opts: {
             lagMs,
             restLagMs,
           });
-          rememberRest(opts.mode, { fps: restFps, lagMs: restLagMs });
+          // Global review [6] · The app's own heavy work loaded the phone meanwhile: nothing judged nor remembered.
+          const loaded = loadedByHeavyWork(restStart);
+          const verdict: PaceVerdict = loaded ? 'unknown' : measured;
+          if (!loaded) rememberRest(opts.mode, { fps: restFps, lagMs: restLagMs });
           const result: BenchResult = { verdict, fps, restFps, lagMs, restLagMs };
           paceLog('rehearsal', { path: opts.path, mode: modeKey(opts.mode), format: opts.format.mimeType, ...result });
           end(result);

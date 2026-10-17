@@ -49,7 +49,8 @@ function Fan({ api }: { api: QuickNavApi }) {
   const reduce = api.reduce;
 
   return (
-    <div className="absolute inset-0" aria-label="Secciones" role="group">
+    // No name of its own: the dialog around it is already «Secciones».
+    <div className="absolute inset-0" role="group">
       {/* Guard sticks (oya-bone): two lacquer ribs at both ends, and a gold rim. Decorative. */}
       {[-90, 0].map((angle) => (
         <motion.span
@@ -114,23 +115,32 @@ function Fan({ api }: { api: QuickNavApi }) {
                   transform: 'rotate(90deg)',
                 }}
               >
-                {/* Turned back so the kanji stands upright whatever the stick's angle. */}
-                <span
-                  aria-hidden
-                  className={cn(
-                    'grid size-7 shrink-0 place-items-center rounded-[5px] font-display text-[15px] font-extrabold',
-                    entry.active ? 'bg-washi text-shu-600' : 'bg-shu-600 text-washi',
-                  )}
-                  style={{ transform: `rotate(${-(angle + 90)}deg)` }}
-                >
-                  {entry.kanji}
-                </span>
+                {/* Short fans (landscape, a zoomed page): name only, on up to two lines, so it is never cut. */}
                 {!g.compact && (
-                  <span aria-hidden className="grid shrink-0">
-                    <EntryIcon entry={entry} />
-                  </span>
+                  <>
+                    {/* Turned back so the kanji stands upright whatever the stick's angle. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'grid size-7 shrink-0 place-items-center rounded-[5px] font-display text-[15px] font-extrabold',
+                        entry.active ? 'bg-washi text-shu-600' : 'bg-shu-600 text-washi',
+                      )}
+                      style={{ transform: `rotate(${-(angle + 90)}deg)` }}
+                    >
+                      {entry.kanji}
+                    </span>
+                    <span aria-hidden className="grid shrink-0">
+                      <EntryIcon entry={entry} />
+                    </span>
+                  </>
                 )}
-                <span className="min-w-0 truncate text-[14px] font-bold">{entry.short}</span>
+                {g.compact ? (
+                  <span lang="es" className="min-w-0 hyphens-auto text-[12px] font-bold leading-[1.1] [overflow-wrap:anywhere]">
+                    {entry.short}
+                  </span>
+                ) : (
+                  <span className="min-w-0 truncate text-[14px] font-bold">{entry.short}</span>
+                )}
               </span>
             </EntryLink>
           </motion.div>

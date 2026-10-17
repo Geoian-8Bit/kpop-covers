@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import { MOMENTS } from './registry';
+import { MOMENT_IDS } from './labIds';
 import type { LabMoment } from './types';
 
 /**
  * Design lab state: which variant this device uses for each moment (momentId → variantId), kept in localStorage.
  * The functions taking `moments` are pure (covered by `labState.test.ts`); the store below binds them to the
- * registry.
+ * moments' ids (`labIds.ts`: the full registry, with every name and description, stays in the lab's own chunk).
  */
 
 export const STORAGE_KEY = 'oneshoot.lab.v2';
@@ -109,11 +109,11 @@ interface LabStore {
   choices: LabChoices;
 }
 
-export const useLabStore = create<LabStore>(() => ({ choices: readChoices(deviceStorage(), MOMENTS) }));
+export const useLabStore = create<LabStore>(() => ({ choices: readChoices(deviceStorage(), MOMENT_IDS) }));
 
 /** Saves a variant for a moment on this device, at once. Unknown moments or variants are ignored. */
 export function setVariant(momentId: string, variantId: string): void {
-  if (!isKnownVariant(MOMENTS, momentId, variantId)) return;
+  if (!isKnownVariant(MOMENT_IDS, momentId, variantId)) return;
   const { choices } = useLabStore.getState();
   if (choices[momentId] === variantId) return;
   const next = { ...choices, [momentId]: variantId };
@@ -123,19 +123,19 @@ export function setVariant(momentId: string, variantId: string): void {
 
 /** The variant that applies to a moment on this device (the saved choice, else the default). '' for an unknown id. */
 export function useDesignVariant(momentId: string): string {
-  return useLabStore((state) => resolveVariant(state.choices, MOMENTS, momentId) ?? '');
+  return useLabStore((state) => resolveVariant(state.choices, MOMENT_IDS, momentId) ?? '');
 }
 
 /** Same as `useDesignVariant`, outside React. */
 export function getDesignVariant(momentId: string): string {
-  return resolveVariant(useLabStore.getState().choices, MOMENTS, momentId) ?? '';
+  return resolveVariant(useLabStore.getState().choices, MOMENT_IDS, momentId) ?? '';
 }
 
 // Another tab changed the lab: follow it.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (event) => {
     if (event.key === STORAGE_KEY || event.key === null) {
-      useLabStore.setState({ choices: readChoices(deviceStorage(), MOMENTS) });
+      useLabStore.setState({ choices: readChoices(deviceStorage(), MOMENT_IDS) });
     }
   });
 }

@@ -3,6 +3,7 @@ import {
   cutChars,
   itemSource,
   roundClipIds,
+  roundSkipText,
   songYoutubeId,
   youtubeSongRow,
   youtubeSongStatus,
@@ -114,13 +115,13 @@ describe('roundClipIds', () => {
       { ...base, member_id: 'm' },
       undefined,
     ];
-    expect(roundClipIds(drawn, clips, () => 0)).toEqual({ clipIds: ['cX', 'c1', 'c3'], skipped: 4 });
+    expect(roundClipIds(drawn, clips, () => 0)).toEqual({ clipIds: ['cX', 'c1', 'c3'], skipped: 4, notInLibrary: 1 });
     expect(roundClipIds([lib('v1', 'a')], clips, () => 0.99).clipIds).toEqual(['c2']);
   });
 
   it('a wish already in the library plays its video’s clips', () => {
     const wish: SongLike = { ...base, wish_id: 'w', wish: { youtube_id: 'x', added_video_id: 'v2' } };
-    expect(roundClipIds([wish], clips, () => 0)).toEqual({ clipIds: ['c3'], skipped: 0 });
+    expect(roundClipIds([wish], clips, () => 0)).toEqual({ clipIds: ['c3'], skipped: 0, notInLibrary: 0 });
   });
 });
 
@@ -139,5 +140,38 @@ describe('cutChars', () => {
     const row = youtubeSongRow({ youtubeId: 'dQw4w9WgXcQ', title: '💃'.repeat(250) })!;
     expect(Array.from(row.title)).toHaveLength(200);
     expect(row.title).toBe('💃'.repeat(200));
+  });
+});
+
+describe('roundSkipText', () => {
+  it('a YouTube song only in the bag is «aún no está en la biblioteca», not «no tiene clips»', () => {
+    expect(roundSkipText({ playable: 2, skipped: 1, notInLibrary: 1 })).toBe(
+      'Una aún no está en la biblioteca: se queda fuera de la ronda.',
+    );
+    expect(roundSkipText({ playable: 0, skipped: 3, notInLibrary: 3 })).toBe(
+      'Aún no están en la biblioteca: añádelas y guarda clips para jugarlas.',
+    );
+  });
+
+  it('library songs without clips keep saying so; both kinds together say both', () => {
+    expect(roundSkipText({ playable: 1, skipped: 2, notInLibrary: 0 })).toBe('2 no tienen clips: se quedan fuera de la ronda.');
+    expect(roundSkipText({ playable: 1, skipped: 3, notInLibrary: 2 })).toBe(
+      '2 aún no están en la biblioteca y una no tiene clips: se quedan fuera de la ronda.',
+    );
+    expect(roundSkipText({ playable: 0, skipped: 2, notInLibrary: 0 })).toBe(
+      'Ninguna tiene clips todavía: guarda alguno en el estudio para jugarla.',
+    );
+    expect(roundSkipText({ playable: 0, skipped: 2, notInLibrary: 1 })).toMatch(/aún no están en la biblioteca/);
+  });
+
+  it('says nothing when every one plays', () => {
+    expect(roundSkipText({ playable: 3, skipped: 0, notInLibrary: 0 })).toBeNull();
+  });
+
+  it('counts the round with the songs drawn', () => {
+    const { clipIds, skipped, notInLibrary } = roundClipIds([yt('ccccccccccc'), lib('v9', 'd')], [], () => 0);
+    expect(roundSkipText({ playable: clipIds.length, skipped, notInLibrary })).toBe(
+      'Ninguna se puede jugar: unas aún no están en la biblioteca y otras no tienen clips.',
+    );
   });
 });

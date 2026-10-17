@@ -5,7 +5,7 @@
  * covered by `separateRules.test.ts`.
  */
 
-import { videosBucketHasRoom } from '@/features/studio/cloudCopyRules';
+import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 
 /** HTDemucs (Hybrid Transformer Demucs, Meta) as exported for the browser: fixed 7.8 s stereo segments at 44.1 kHz. */
 export const DEMUCS = {
@@ -199,6 +199,22 @@ export function stemBitrate(durationSeconds: number, codec: StemCodec): number |
   return rate >= min ? rate : null;
 }
 
+/** A track the database takes (16 MiB at most, `video_stems_files`). */
+export function stemFits(bytes: number): boolean {
+  return bytes > 0 && bytes <= STEM_MAX_BYTES;
+}
+
+/**
+ * After a track came out of the encoder too big (VBR can overshoot): a bitrate that lands it under the cap with
+ * room, always lower than before. Null when that would go under the floor (then the song is too long).
+ */
+export function smallerStemBitrate(bitrate: number, bytes: number): number | null {
+  if (!(bytes > 0) || !(bitrate > 0)) return null;
+  const scaled = Math.floor(((bitrate * (STEM_MAX_BYTES * 0.88)) / bytes) / 1000) * 1000;
+  const next = Math.min(scaled, Math.floor((bitrate * 0.9) / 1000) * 1000);
+  return next >= 64_000 ? next : null;
+}
+
 /** Bytes of one track: the bitrate, ~2 % of frame overhead and a few KB of container. */
 export function estimateStemBytes(durationSeconds: number, bitrate: number): number {
   return Math.ceil((Math.max(0, durationSeconds) * bitrate) / 8 * 1.02 + 8192);
@@ -371,9 +387,34 @@ export function estimateLag(
   return { lag: best, confidence: Math.max(0, bestScore) };
 }
 
+/**
+ * The encoder's delay is measured on the start of the track only (like the copy for the group does): a few seconds
+ * of sound hold a loud second and every lag that can happen, and the page never mixes or decodes back a whole song
+ * for it (a 7-minute song is ~80 MB per mono mix).
+ */
+export const LAG_HEAD_SECONDS = 30;
+
+/** Mono mix of the first `length` samples of a stereo track (both halves averaged). */
+export function monoHead(left: ArrayLike<number>, right: ArrayLike<number>, length: number): Float32Array {
+  const n = Math.max(0, Math.min(left.length, right.length, Math.floor(length)));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (left[i]! + right[i]!) / 2;
+  return out;
+}
+
+/** How many encoded frames (each `frameSamples[i]` long) cover at least the first `samples` samples. */
+export function headFrameCount(frameSamples: readonly number[], samples: number): number {
+  let n = 0;
+  let covered = 0;
+  while (n < frameSamples.length && covered < samples) covered += frameSamples[n++]!;
+  return n;
+}
+
 // ───────────────────────── Progress copy ─────────────────────────
 
 export type ProgressState =
+  /** One encoder at a time: the copy for the group is being made on this device. */
+  | { phase: 'wait-copy' }
   | { phase: 'read' }
   | { phase: 'model'; loaded: number; total: number }
   | { phase: 'compile' }
@@ -390,6 +431,8 @@ export function progressPercent(p: ProgressState): number | null {
 
 export function progressLabel(p: ProgressState): string {
   switch (p.phase) {
+    case 'wait-copy':
+      return 'Esperando a que acabe la copia para el grupo…';
     case 'read':
       return 'Leyendo el audio de la canción…';
     case 'model':

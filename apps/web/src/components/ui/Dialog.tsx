@@ -7,7 +7,7 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { soft } from '@/lib/motion';
 import { Button } from './Button';
 import { initialFocusIndex } from './dialogFocus';
-import { overlayHost } from './overlayHost';
+import { useOverlayContainer } from './overlayPlacement';
 
 interface DialogProps {
   open: boolean;
@@ -46,6 +46,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
     if (!busyRef.current) onCloseRef.current();
   };
   useBackToClose(open, onClose, busy);
+  const container = useOverlayContainer(open);
 
   useEffect(() => {
     if (!open) return;
@@ -160,7 +161,8 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
         </div>
       )}
     </AnimatePresence>,
-    // Inside the fullscreen stage (native or CSS) when there is one, else the page's body.
-    overlayHost(),
+    // Inside the fullscreen stage (native or CSS) when there is one, else the page's body: chosen when it opens and
+    // moved (not mounted again) if that changes while open — see overlayPlacement.ts.
+    container,
   );
 }

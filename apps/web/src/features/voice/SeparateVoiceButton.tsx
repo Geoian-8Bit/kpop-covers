@@ -135,8 +135,8 @@ export function SeparateVoiceButton({ video, available }: { video: Video; availa
         <p
           ref={focusOnMount('stems-done')}
           tabIndex={-1}
+          // Not a live region: it takes the focus when the separation ends, and that already reads it out once.
           className="flex items-start gap-2 text-[13px] leading-snug text-washi-muted outline-none"
-          role="status"
         >
           <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-kin-300" />
           <span>Voz y música separadas con IA: «Sin voz» y «Voz» usan las pistas separadas.</span>

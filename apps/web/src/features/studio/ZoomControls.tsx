@@ -1,6 +1,6 @@
 import { hasLinkedFile, type Clip, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bookmark, BookmarkX, FileVideo, Scan, ZoomIn } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bookmark, BookmarkX, FileVideo, Scan, ZoomIn } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { useUpdateClip } from '@/data/clips';
 import { cn } from '@/lib/cn';
@@ -13,6 +13,7 @@ import { ZoomLayer } from '@/player/ZoomLayer';
 import {
   clipHasZoom,
   clipZoomColumns,
+  keyZoom,
   NO_ZOOM,
   sameZoom,
   stepZoom,
@@ -141,6 +142,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
             <Button variant="ghost" className="min-h-11" onClick={() => usePlayer.getState().setZoom(NO_ZOOM)}>
               <Scan className="size-4" /> Ver completo
             </Button>
+            <PanArrows />
           </>
         )}
         {clip && zoomed && !saved && (
@@ -191,7 +193,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         ) : clip && saved && clipHasZoom(clip) ? (
           `«${clip.name}» se abre así de ampliado. Pellizca para cambiarlo; dos toques para verlo entero.`
         ) : zoomed ? (
-          'Arrastra para mover la zona; dos toques en el vídeo para verlo entero.'
+          'Arrastra o usa las flechas para mover la zona; dos toques en el vídeo para verlo entero.'
         ) : (
           'Pulsa «Ampliar» o pellizca el vídeo con dos dedos, también en pantalla completa. En el ordenador, la rueda o + y −.'
         )}
@@ -202,6 +204,46 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * A nominal 16:9 box for the arrows: the move is a tenth of the view whatever the real box, and every view holds the
+ * zoomed spot inside its own box when drawing.
+ */
+const PAN_BOX: Size = { width: 1600, height: 900 };
+
+const PAN_KEYS = [
+  { key: 'ArrowLeft', label: 'Mover la zona a la izquierda', Icon: ArrowLeft },
+  { key: 'ArrowUp', label: 'Mover la zona hacia arriba', Icon: ArrowUp },
+  { key: 'ArrowDown', label: 'Mover la zona hacia abajo', Icon: ArrowDown },
+  { key: 'ArrowRight', label: 'Mover la zona a la derecha', Icon: ArrowRight },
+] as const;
+
+/**
+ * While zoomed: moves the zoomed spot with single taps, no dragging needed (WCAG 2.5.7). Same steps as the arrow
+ * keys on the video, and the way they point on screen (the mirror is taken into account).
+ */
+function PanArrows() {
+  const move = (key: string) => {
+    const { zoom, mirrored, setZoom } = usePlayer.getState();
+    const next = keyZoom(zoom, key, PAN_BOX, null, mirrored);
+    if (next) setZoom(next);
+  };
+  return (
+    <span role="group" aria-label="Mover la zona ampliada" className="inline-flex gap-1">
+      {PAN_KEYS.map(({ key, label, Icon }) => (
+        <button
+          key={key}
+          type="button"
+          aria-label={label}
+          onClick={() => move(key)}
+          className="grid size-11 place-items-center rounded-[10px] border border-line-strong text-washi hover:bg-washi/[0.06]"
+        >
+          <Icon aria-hidden className="size-4.5" />
+        </button>
+      ))}
+    </span>
   );
 }
 

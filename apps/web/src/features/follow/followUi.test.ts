@@ -35,6 +35,7 @@ describe('15 · while the analysis waits', () => {
   it('says why, instead of a time left', () => {
     expect(jobLine({ ...job, held: 'recording', remaining: 40 })).toBe('En pausa mientras grabas · 42 %');
     expect(jobLine({ ...job, held: 'voice' })).toBe('En pausa mientras se separa la voz · 42 %');
+    expect(jobLine({ ...job, held: 'copy' })).toBe('En pausa mientras se hace la copia para el grupo · 42 %');
     expect(jobShort({ ...job, held: 'recording' })).toBe('En pausa 42 %');
     expect(jobMilestone({ ...job, held: 'recording' })).toBe('En pausa mientras grabas');
   });

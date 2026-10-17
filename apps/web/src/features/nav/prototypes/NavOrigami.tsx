@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/lib/cn';
 import { snappy, soft } from '@/lib/motion';
+import { origamiLayout } from '../navRules';
 import {
   CurrentGlyph,
   EntryIcon,
@@ -25,7 +26,7 @@ export default function NavOrigami(props: QuickNavProps) {
   return (
     <QuickNavRoot api={api}>
       <QuickNavScrim api={api} />
-      <AnimatePresence>{api.open && <Paper key="paper" api={api} />}</AnimatePresence>
+      <AnimatePresence>{api.open && api.stage && <Paper key="paper" api={api} />}</AnimatePresence>
       <QuickNavTrigger
         api={api}
         face={
@@ -43,27 +44,31 @@ export default function NavOrigami(props: QuickNavProps) {
   );
 }
 
-const COLS = 2;
-
 function Paper({ api }: { api: QuickNavApi }) {
+  const stage = api.stage!;
+  // Short screens (landscape, or the page zoomed by large system text): 3 × 2 short faces, and a height cap that
+  // scrolls rather than pushing the top row off screen.
+  const { cols, faceH, maxHeight } = origamiLayout(api.entries.length, stage.buttonTop, api.top);
   const rows: NavEntry[][] = [];
-  for (let i = 0; i < api.entries.length; i += COLS) rows.push(api.entries.slice(i, i + COLS));
+  for (let i = 0; i < api.entries.length; i += cols) rows.push(api.entries.slice(i, i + cols));
   const reduce = api.reduce;
   const last = rows.length - 1;
 
   return (
     <div
       className={cn(
-        'pointer-events-none absolute w-[min(340px,calc(100%-32px))]',
+        'pointer-events-none absolute',
+        cols === 2 ? 'w-[min(340px,calc(100%-32px))]' : 'w-[min(440px,calc(100%-32px))]',
         TRIGGER_POSITION,
         // Sits just above the button: 56 px button + 12 px gap.
         'mb-[68px]',
       )}
     >
       <motion.div
+        // No name of its own: the dialog around it is already «Secciones».
         role="group"
-        aria-label="Secciones"
-        className="pointer-events-auto origin-bottom-right overflow-hidden rounded-[6px] bg-kin-400/50 shadow-[0_24px_48px_-16px_rgb(0_0_0/0.95)]"
+        className="pointer-events-auto origin-bottom-right overflow-y-auto overflow-x-hidden overscroll-contain rounded-[6px] bg-kin-400/50 shadow-[0_24px_48px_-16px_rgb(0_0_0/0.95)]"
+        style={{ maxHeight }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1, transition: { duration: 0.12 } }}
         exit={{ opacity: 0, transition: { duration: 0.12, delay: reduce ? 0 : 0.22 } }}
@@ -81,7 +86,7 @@ function Paper({ api }: { api: QuickNavApi }) {
             return (
               <motion.div
                 key={ri}
-                className="grid origin-bottom grid-cols-2 gap-px"
+                className={cn('grid origin-bottom gap-px', cols === 2 ? 'grid-cols-2' : 'grid-cols-3')}
                 style={{ transformPerspective: 900 }}
                 initial={reduce ? { opacity: 0 } : { rotateX: -96, opacity: 0 }}
                 animate={reduce ? { opacity: 1 } : { rotateX: 0, opacity: 1 }}
@@ -90,7 +95,7 @@ function Paper({ api }: { api: QuickNavApi }) {
               >
                 {row.map((entry, ci) => {
                   // In each row, the face by the corner (right) opens first, the other swings out of it.
-                  const fromCorner = ci === COLS - 1;
+                  const fromCorner = ci === row.length - 1;
                   return (
                     <motion.div
                       key={entry.id}
@@ -101,7 +106,7 @@ function Paper({ api }: { api: QuickNavApi }) {
                       exit={reduce || fromCorner ? undefined : { rotateY: -110, opacity: 0, transition: snappy }}
                       transition={reduce ? { duration: 0 } : { ...soft, delay: order * 0.09 + 0.12 }}
                     >
-                      <Face api={api} entry={entry} shade={(ri + ci) % 2 === 1} />
+                      <Face api={api} entry={entry} shade={(ri + ci) % 2 === 1} height={faceH} />
                     </motion.div>
                   );
                 })}
@@ -114,15 +119,16 @@ function Paper({ api }: { api: QuickNavApi }) {
   );
 }
 
-function Face({ api, entry, shade }: { api: QuickNavApi; entry: NavEntry; shade: boolean }) {
+function Face({ api, entry, shade, height }: { api: QuickNavApi; entry: NavEntry; shade: boolean; height: number }) {
   return (
     <EntryLink
       api={api}
       entry={entry}
       aria-label={entry.label}
       whileTap={api.reduce ? undefined : { scale: 0.96 }}
+      style={{ height }}
       className={cn(
-        'relative flex h-[84px] flex-col justify-between overflow-hidden px-3 py-2 outline-none',
+        'relative flex flex-col justify-between overflow-hidden px-3 py-2 outline-none',
         'focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kin-300',
         entry.active ? 'bg-shu-600 text-washi' : shade ? 'bg-kin-200 text-sumi-900' : 'bg-washi text-sumi-900',
       )}

@@ -2,10 +2,11 @@ import { formatTime } from '@coverscape/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, ListMusic, Pencil, Play, Save, Shuffle } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
+import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Segmented } from '@/components/ui/Segmented';
@@ -104,6 +105,9 @@ function RoundBuilder() {
   const [fullOrder, setFullOrder] = useState(false);
   const [seed, setSeed] = useState(0);
   const [saving, setSaving] = useState(false);
+  // The pinned «Empezar» bar: focus scrolled to the bottom edge is never left under it (WCAG 2.4.11).
+  const startBarRef = useRef<HTMLDivElement>(null);
+  useStickyBarPadding(startBarRef, true, 0);
 
   useEffect(() => {
     writeRoundSetup({ kind, bagId, clipIds: [...manual], videoIds: [...songs], options });
@@ -359,7 +363,7 @@ function RoundBuilder() {
 
       {/* «Empezar», always at hand: pinned to the bottom (above the home bar) while the builder is on screen. The
           right edge leaves room for a floating corner button if the shell has one (`--fab-clearance`). */}
-      <div className="sticky bottom-0 z-20 -mx-5 mt-6 border-t border-line bg-sumi-850/95 px-5 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-[6px] sm:-mx-9 sm:px-9">
+      <div ref={startBarRef} className="sticky bottom-0 z-20 -mx-5 mt-6 border-t border-line bg-sumi-850 px-5 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 sm:-mx-9 sm:px-9">
         <div className="flex items-center gap-3 max-lg:pr-[var(--fab-clearance,0px)]">
           <p className="min-w-0 flex-1 text-[13px] leading-snug text-washi-muted">
             {round.length ? (

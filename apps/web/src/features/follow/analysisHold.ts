@@ -1,15 +1,16 @@
-import { heavyWorkRunning, onHeavyWorkChange } from '@/lib/heavyWork';
+import { heavyWorkBusy, heavyWorkRunning, onHeavyWorkChange } from '@/lib/heavyWork';
 import { usePlayer } from '@/player/store';
 import type { AnalysisHost, HoldReason } from './analyze';
 
 /**
  * 15 · What the follow analysis needs to know about the studio around it: when to wait (the recorder covers the
- * studio and is recording a take; the AI voice separation is running) and whether the studio is playing (the
- * background part leaves it more room then).
+ * studio and is recording a take; the AI voice separation is running; the copy for the group is being made — not
+ * while it only uploads) and whether the studio is playing (the background part leaves it more room then).
  */
 export function holdReason(): HoldReason | null {
   if (usePlayer.getState().covered) return 'recording';
   if (heavyWorkRunning('voice')) return 'voice';
+  if (heavyWorkBusy('copy')) return 'copy';
   return null;
 }
 

@@ -9,9 +9,9 @@ import { cloudLimitBytes } from '@/lib/backend';
 import { cn } from '@/lib/cn';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { snappy } from '@/lib/motion';
-import { canMakeCloudCopy, UNSUPPORTED_COPY } from './cloudCopy';
+import { canMakeCloudCopy, UNSUPPORTED_COPY } from './cloudCopySupport';
 import { cancelCloudCopy, clearCloudCopy, startCloudCopy, useCopyJob, type CopyJob, type CopyJobPhase } from './cloudCopyJob';
-import { estimateCopySeconds, formatEta } from './cloudCopyRules';
+import { copyHoldText, estimateCopySeconds, formatEta } from './cloudCopyRules';
 
 /**
  * 13 · The group's file of a video that only lives on this device: «Subir una copia para el grupo» on the device
@@ -56,6 +56,7 @@ const PHASE: Record<CopyJobPhase, string> = {
 };
 
 function phaseLabel(job: Extract<CopyJob, { status: 'working' }>): string {
+  if (job.held) return copyHoldText(job.held);
   if (job.phase === 'uploading') return job.mode === 'original' ? 'Subiendo a la nube…' : 'Subiendo la copia a la nube…';
   if (job.phase === 'picture' && job.height) {
     return `Haciendo la copia a ${job.height}p${job.attempt > 1 ? ` (intento ${job.attempt}, más ligera)` : ''}…`;
@@ -66,11 +67,14 @@ function phaseLabel(job: Extract<CopyJob, { status: 'working' }>): string {
 export function CloudCopyStatus({
   video,
   variant,
+  announce = true,
   className,
 }: {
   video: Video;
   /** 'studio': a row of its own that only shows while there's something to say. 'panel': inside the link panel. */
   variant: 'studio' | 'panel';
+  /** Reads its phases out. Off for the studio's row while the link panel (with its own row) is open: said once. */
+  announce?: boolean;
   className?: string;
 }) {
   const queryClient = useQueryClient();
@@ -113,7 +117,11 @@ export function CloudCopyStatus({
       {job?.status === 'working' ? (
         <motion.div key="working" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={snappy}>
           <div className="flex items-center justify-between gap-3 text-[13px]">
-            <span role="status" aria-live="polite" className="min-w-0 text-washi-muted">
+            <span
+              role={announce ? 'status' : undefined}
+              aria-live={announce ? 'polite' : undefined}
+              className="min-w-0 text-washi-muted"
+            >
               {phaseLabel(job)}
             </span>
             {job.phase !== 'preparing' && (
@@ -155,7 +163,7 @@ export function CloudCopyStatus({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
           transition={snappy}
-          role="status"
+          role={announce ? 'status' : undefined}
           className="flex items-start gap-2.5"
         >
           <Check className="mt-0.5 size-4 shrink-0 text-rokusho" aria-hidden />

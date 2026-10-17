@@ -10,7 +10,7 @@ import * as ort from 'onnxruntime-web/webgpu';
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import { demucsSpec, twoStems } from './dsp';
 import { clearModelCache, expectedFileBytes, fetchModelFile, isManifest, MODELS, type ModelDescriptor } from './model';
-import type { RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
+import type { PageMessage, RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
 import {
   accumulate,
   DEMUCS,
@@ -23,7 +23,7 @@ import {
 
 const scope = self as unknown as {
   postMessage(message: WorkerMessage, transfer?: Transferable[]): void;
-  onmessage: ((event: MessageEvent<RunRequest>) => void) | null;
+  onmessage: ((event: MessageEvent<PageMessage>) => void) | null;
   navigator: { gpu?: unknown };
 };
 
@@ -46,6 +46,16 @@ class SeparationError extends Error {
 }
 
 const post = (message: WorkerMessage, transfer?: Transferable[]) => scope.postMessage(message, transfer);
+
+// Global review [6] · The page asks to hold between segments while the recorder is open (it needs the phone).
+let paused = false;
+let wake: (() => void) | null = null;
+
+async function untilGoOn() {
+  if (!paused) return;
+  post({ type: 'held' });
+  while (paused) await new Promise<void>((resolve) => (wake = resolve));
+}
 
 interface Runner {
   run(mix: Float32Array, mag: Float32Array): Promise<{ x: Float32Array; xt: Float32Array }>;
@@ -229,6 +239,7 @@ async function separate({ engine, left, right }: RunRequest) {
   post({ type: 'progress', phase: 'separate', done: 0, total: plan.length, etaSeconds: null });
 
   for (let i = 0; i < plan.length; i++) {
+    await untilGoOn();
     const { start, length } = plan[i]!;
     const t0 = performance.now();
     // The model always takes a full segment: the last one is padded with silence.
@@ -270,6 +281,14 @@ async function separate({ engine, left, right }: RunRequest) {
 }
 
 scope.onmessage = (event) => {
+  if (event.data?.type === 'pause') {
+    paused = event.data.paused;
+    if (!paused) {
+      wake?.();
+      wake = null;
+    }
+    return;
+  }
   if (event.data?.type !== 'run') return;
   separate(event.data).catch((error: unknown) => {
     const code = error instanceof SeparationError ? error.code : 'unknown';

@@ -263,6 +263,17 @@
      * a stray pinch while dancing doesn't blow the studio up. The video's own zoom (F9) handles its gestures.
      */
     touch-action: pan-x pan-y;
+    /*
+     * WCAG 2.4.11: a control that focus scrolls into view never ends up under a sticky bar pinned to the bottom
+     * (`--sticky-bar-h`, kept by `useStickyBarPadding`) or, on phones, the quick-menu button (`--fab-scroll-pad`,
+     * set by the shell while it shows). The bars sit beside the button, so the larger of the two counts.
+     */
+    scroll-padding-bottom: calc(var(--sticky-bar-h, 0px) + 8px);
+  }
+  @media (width < 64rem) {
+    html {
+      scroll-padding-bottom: calc(max(var(--fab-scroll-pad, 0px), var(--sticky-bar-h, 0px)) + 8px);
+    }
   }
 
   /* Press-and-hold buttons (pause pickers) must not select text or pop the iOS callout. */

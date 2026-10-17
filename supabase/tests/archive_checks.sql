@@ -4,6 +4,9 @@
 -- Needs the default group row to exist (private.default_group() not null).
 
 begin;
+-- Supabase refuses direct deletes from storage tables unless this is on, which would hide what RLS does (no
+-- effect where that trigger is missing).
+select set_config('storage.allow_delete_query', 'true', true);
 
 -- ── Act as a visitor through the API ──────────────────────────────────────────
 set local role anon;

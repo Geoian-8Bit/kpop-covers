@@ -10,7 +10,6 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { usePlayer } from '@/player/store';
 import { NO_ZOOM, sameZoom, type Pt, type Size, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
-import { peopleInFrame } from './analyze';
 import {
   boxAt,
   boxFromDrag,
@@ -276,7 +275,9 @@ function PickOverlay({
       return;
     }
     let alive = true;
-    peopleInFrame(el)
+    // The analysis module loads the first time the picker looks for people, not with the studio.
+    import('./analyze')
+      .then(({ peopleInFrame }) => peopleInFrame(el))
       .then(({ candidates }) => {
         if (!alive) return;
         setPeople(candidates);

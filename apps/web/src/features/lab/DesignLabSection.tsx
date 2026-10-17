@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronDown } from 'lucide-react';
-import { Component, Suspense, useId, useState, type ReactNode } from 'react';
+import { Component, Suspense, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Spinner } from '@/components/ui/Spinner';
@@ -46,6 +46,8 @@ function MomentPanel({ moment }: { moment: LabMoment }) {
   const shown = moment.variants.find((v) => v.id === viewing) ?? moment.variants[0]!;
   const inUseLabel = moment.variants.find((v) => v.id === inUse)?.label ?? '';
   const Demo = shown.Demo;
+  /** «Usar esta» was just pressed: the confirmation that replaces it takes the focus. */
+  const choseRef = useRef(false);
 
   return (
     <article aria-labelledby={titleId} className="sep-t py-4 first:pt-0 last:pb-0">
@@ -97,7 +99,8 @@ function MomentPanel({ moment }: { moment: LabMoment }) {
                       whileTap={{ scale: 0.97 }}
                       transition={jelly}
                       className={cn(
-                        'relative isolate flex min-h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3 py-2 transition-colors',
+                        // Under 400 px «En uso» goes under the name, so the name is never cut.
+                        'relative isolate flex min-h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3 py-2 transition-colors max-[400px]:flex-col max-[400px]:items-start max-[400px]:justify-center max-[400px]:gap-0.5',
                         'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-kin-300',
                         active ? 'border-transparent' : 'border-line hover:border-line-strong',
                       )}
@@ -118,7 +121,12 @@ function MomentPanel({ moment }: { moment: LabMoment }) {
                           className="absolute inset-0 -z-10 rounded-[10px] border border-ai-400/80 bg-ai-800/45"
                         />
                       )}
-                      <span className={cn('min-w-0 flex-1 truncate text-[14px] font-bold', active ? 'text-washi' : 'text-washi-muted')}>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate text-[14px] font-bold max-[400px]:w-full max-[400px]:flex-none max-[400px]:whitespace-normal max-[400px]:break-words',
+                          active ? 'text-washi' : 'text-washi-muted',
+                        )}
+                      >
                         {variant.label}
                       </span>
                       {variant.id === inUse && (
@@ -140,11 +148,28 @@ function MomentPanel({ moment }: { moment: LabMoment }) {
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
               {shown.id === inUse ? (
-                <p className="inline-flex h-11 items-center gap-2 text-sm font-bold text-kin-300">
-                  <Check className="size-4" /> Es la que usas{moment.appliesLive ? ' en la app' : ''}
+                // «Usar esta» gives way to this line: focus follows it there (not to the page), and it is read out.
+                <p
+                  ref={(node) => {
+                    if (node && choseRef.current) {
+                      choseRef.current = false;
+                      node.focus();
+                    }
+                  }}
+                  tabIndex={-1}
+                  className="inline-flex h-11 items-center gap-2 rounded-[8px] text-sm font-bold text-kin-300 outline-offset-2"
+                >
+                  <Check aria-hidden className="size-4" /> Es la que usas{moment.appliesLive ? ' en la app' : ''}
                 </p>
               ) : (
-                <Button onClick={() => setVariant(moment.id, shown.id)}>Usar esta</Button>
+                <Button
+                  onClick={() => {
+                    choseRef.current = true;
+                    setVariant(moment.id, shown.id);
+                  }}
+                >
+                  Usar esta
+                </Button>
               )}
             </div>
 

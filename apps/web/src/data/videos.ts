@@ -1,6 +1,6 @@
 import { round3, youTubeThumbnail, type TablesUpdate, type Video } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { videosBucketHasRoom } from '@/features/studio/cloudCopyRules';
+import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 import {
   backend,
   cloudLimitBytes,

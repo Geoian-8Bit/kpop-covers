@@ -13,6 +13,7 @@ import {
   savingCount,
   useUpdateStatus,
 } from './appUpdate';
+import { reloadBusy } from '@/lib/heavyWork';
 import { reloadNeedsConfirm, updateMessage, versionLabel } from './versionRules';
 
 const needsConfirm = () =>
@@ -20,6 +21,7 @@ const needsConfirm = () =>
     pathname: window.location.pathname,
     dialogOpen: Boolean(document.querySelector('[role="dialog"]')),
     saving: savingCount(),
+    busy: reloadBusy(),
   });
 
 /**
@@ -29,7 +31,8 @@ const needsConfirm = () =>
 export function VersionCheck({ className, inMenu = false }: { className?: string; inMenu?: boolean }) {
   const status = useUpdateStatus((s) => s.status);
   const busy = status.kind === 'checking' || status.kind === 'downloading' || status.kind === 'applying';
-  const message = updateMessage(status);
+  // The confirmation says what an update would cut short (the copy for the group, the separation).
+  const message = updateMessage(status, status.kind === 'confirm' ? reloadBusy() : null);
   const role = inMenu ? 'menuitem' : undefined;
 
   // A finished answer doesn't stay for the next time the menu opens.

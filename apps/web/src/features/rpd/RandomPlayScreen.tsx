@@ -107,7 +107,8 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
                       initial={reduce ? { opacity: 0 } : { scale: 1.6, opacity: 0 }}
                       animate={reduce ? { opacity: 1 } : { scale: 1, opacity: 1 }}
                       transition={reduce ? { duration: 0.12 } : jelly}
-                      aria-label={`Empieza en ${lead.count}`}
+                      // Seen, not read out each second: the round's own status line says which clip comes next.
+                      aria-hidden
                       className="grid size-[clamp(44px,13cqw,150px)] shrink-0 place-items-center rounded-full bg-shu-500 font-display text-[clamp(26px,8cqw,96px)] font-extrabold text-washi"
                     >
                       {lead.count}

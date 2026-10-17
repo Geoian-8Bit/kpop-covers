@@ -106,15 +106,17 @@ export function youtubeSongStatus(
  * «Sacar varios» → a Random Play Dance round. A round plays clips: a clip item is itself; a library song (or a
  * wish already added to the library) brings one of its clips at random, like «Canciones» in /rpd; a song with no
  * clips — every YouTube song kept only in the bag, and wishes not yet in the library — and people can't play, and
- * are counted in `skipped`.
+ * are counted in `skipped`. `notInLibrary`: how many of those are songs not in the library yet (only in the bag,
+ * or a wish not added), which have no clips because they can't have any yet.
  */
 export function roundClipIds(
   drawn: readonly (SongLike | undefined)[],
   clips: readonly { id: string; video_id: string }[],
   random: () => number = Math.random,
-): { clipIds: string[]; skipped: number } {
+): { clipIds: string[]; skipped: number; notInLibrary: number } {
   const clipIds: string[] = [];
   let skipped = 0;
+  let notInLibrary = 0;
   for (const item of drawn) {
     if (!item) {
       skipped++;
@@ -128,9 +130,40 @@ export function roundClipIds(
     const options = videoId ? clips.filter((c) => c.video_id === videoId && !clipIds.includes(c.id)) : [];
     if (!options.length) {
       skipped++;
+      if (!videoId && songYoutubeId(item)) notInLibrary++;
       continue;
     }
     clipIds.push(options[Math.min(options.length - 1, Math.floor(random() * options.length))]!.id);
   }
-  return { clipIds, skipped };
+  return { clipIds, skipped, notInLibrary };
+}
+
+/**
+ * What a «Sacar varios» round says about the songs it leaves out: a YouTube song only in the bag isn't in the library
+ * yet (it can't have clips), which is not the same as a library song without clips. Null when none is left out.
+ */
+export function roundSkipText({
+  playable,
+  skipped,
+  notInLibrary,
+}: {
+  playable: number;
+  skipped: number;
+  notInLibrary: number;
+}): string | null {
+  if (skipped <= 0) return null;
+  const outside = Math.min(Math.max(0, notInLibrary), skipped);
+  const noClips = skipped - outside;
+  if (playable <= 0) {
+    if (noClips === 0) return 'Aún no están en la biblioteca: añádelas y guarda clips para jugarlas.';
+    if (outside === 0) return 'Ninguna tiene clips todavía: guarda alguno en el estudio para jugarla.';
+    return 'Ninguna se puede jugar: unas aún no están en la biblioteca y otras no tienen clips.';
+  }
+  const parts: string[] = [];
+  if (outside) parts.push(outside === 1 ? 'Una aún no está en la biblioteca' : `${outside} aún no están en la biblioteca`);
+  if (noClips) {
+    const text = noClips === 1 ? 'una no tiene clips' : `${noClips} no tienen clips`;
+    parts.push(parts.length ? text : text.charAt(0).toUpperCase() + text.slice(1));
+  }
+  return `${parts.join(' y ')}: ${skipped === 1 ? 'se queda' : 'se quedan'} fuera de la ronda.`;
 }

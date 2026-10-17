@@ -9,7 +9,7 @@ import {
 import { friendlyError } from '@/lib/supabase';
 import { hasRange, usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
-import { analyzeFollow, FollowError, type AnalyzeResult } from './analyze';
+import type { AnalyzeResult } from './analyze';
 import {
   cleanManualKeyframes,
   compressKeyframes,
@@ -102,6 +102,9 @@ export function useFollowActions(video: Video) {
       try {
         await before;
         if (abort.signal.aborted) throw new DOMException('Cancelado', 'AbortError');
+        // The analysis (pose models' glue, tracker, planner) loads when the first one starts, not with the studio.
+        const { analyzeFollow } = await import('./analyze');
+        if (abort.signal.aborted) throw new DOMException('Cancelado', 'AbortError');
         const result = await analyzeFollow({
           src,
           offset,
@@ -165,7 +168,7 @@ export function useFollowActions(video: Video) {
         if (isAbort(err)) toast('Análisis cancelado', 'info');
         else
           toast(
-            err instanceof Error && (err instanceof FollowError || err.name === 'ModelLoadError')
+            err instanceof Error && (err.name === 'FollowError' || err.name === 'ModelLoadError')
               ? err.message
               : friendlyError(err),
             'error',

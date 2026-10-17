@@ -1,13 +1,14 @@
 import { formatBytes, type Video } from '@coverscape/shared';
 import { isStaleCopy } from '@/data/videos';
 import { backend, stemsBackend, type UploadFailure, type VideoStems } from '@/lib/backend';
-import { beginHeavyWork } from '@/lib/heavyWork';
+import { beginHeavyWork, heavyWorkBusy, untilHeavyWork, type HeavyWork } from '@/lib/heavyWork';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { FriendlyError } from '@/lib/supabase';
+import { usePlayer } from '@/player/store';
 import { canEncodeStems, encodeStem, pickCodec } from './encode';
 import { formatMaxLength, maxOriginalBytes } from '@/features/studio/cloudCopyRules';
 import { clearModelCache, hasModelCache, isModelCached, MODELS } from './model';
-import type { RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
+import type { PauseRequest, RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
 import {
   chooseEngine,
   DEMUCS,
@@ -16,6 +17,8 @@ import {
   maxSeparateSeconds,
   modelCacheLooksBroken,
   reusablePendingStems,
+  smallerStemBitrate,
+  stemFits,
   spaceVerdict,
   stemBitrate,
   type DeviceCaps,
@@ -188,20 +191,66 @@ function writePending(key: string, id: string | null): void {
   }
 }
 
+const covered = () => usePlayer.getState().covered;
+
+/**
+ * Global review [6] · Waits while the recorder covers the studio (it needs the whole phone for the camera and the
+ * take); meanwhile the work counts as idle, so the recorder's own measurements can trust what they see.
+ */
+async function whileCovered(signal: AbortSignal, work: HeavyWork): Promise<void> {
+  if (!covered() || signal.aborted) return;
+  work.idle(true);
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      off();
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const off = usePlayer.subscribe((s) => {
+      if (!s.covered) done();
+    });
+    signal.addEventListener('abort', done);
+  });
+  work.idle(false);
+  if (signal.aborted) throw new DOMException('cancelled', 'AbortError');
+}
+
 function runWorker(
   request: RunRequest,
   onProgress: (p: SeparationProgress) => void,
   signal: AbortSignal,
+  work: HeavyWork,
 ): Promise<Extract<WorkerMessage, { type: 'done' }>> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./stemSeparator.worker.ts', import.meta.url), { type: 'module' });
+    // Global review [6] · The recorder open: the worker holds before its next segment (idle once it says it has).
+    let paused = false;
+    const syncCover = () => {
+      const now = covered();
+      if (now === paused) return;
+      paused = now;
+      worker.postMessage({ type: 'pause', paused: now } satisfies PauseRequest);
+      if (!now) work.idle(false);
+    };
+    const offCover = usePlayer.subscribe((s, prev) => {
+      if (s.covered !== prev.covered) syncCover();
+    });
+    const finish = () => {
+      offCover();
+      work.idle(false);
+    };
     const stop = () => {
+      finish();
       worker.terminate(); // frees the GPU and the worker's memory at once
       reject(new DOMException('cancelled', 'AbortError'));
     };
     signal.addEventListener('abort', stop, { once: true });
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       const msg = event.data;
+      if (msg.type === 'held') {
+        if (paused) work.idle(true);
+        return;
+      }
       if (msg.type === 'progress') {
         if (msg.phase === 'model') onProgress({ phase: 'model', loaded: msg.loaded, total: msg.total });
         else if (msg.phase === 'compile') onProgress({ phase: 'compile' });
@@ -209,6 +258,7 @@ function runWorker(
         return;
       }
       signal.removeEventListener('abort', stop);
+      finish();
       worker.terminate();
       if (msg.type === 'done') resolve(msg);
       else {
@@ -223,10 +273,12 @@ function runWorker(
     worker.onerror = (event) => {
       console.error('[separate] worker', event.message);
       signal.removeEventListener('abort', stop);
+      finish();
       worker.terminate();
       reject(new FriendlyError(WORKER_ERRORS.unknown));
     };
     worker.postMessage(request, [request.left.buffer, request.right.buffer]);
+    syncCover();
   });
 }
 
@@ -238,17 +290,48 @@ type SeparationRequest = {
   signal: AbortSignal;
 };
 
-/** F10 · 15 · Marked as heavy work while it runs: the follow analysis waits for it (lib/heavyWork). */
+/**
+ * F10 · 15 · Marked as heavy work while it runs: the follow analysis waits for it, the copy for the group pauses
+ * (lib/heavyWork). Global review [6] · It first waits for a copy being made (one encoder at a time).
+ */
 export async function runSeparation(opts: SeparationRequest): Promise<VideoStems> {
-  const release = beginHeavyWork('voice');
+  if (heavyWorkBusy('copy')) {
+    opts.onProgress({ phase: 'wait-copy' });
+    await untilHeavyWork(() => heavyWorkBusy('copy'), opts.signal);
+    if (opts.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+    opts.onProgress({ phase: 'read' });
+  }
+  const work = beginHeavyWork('voice');
   try {
-    return await separate(opts);
+    return await separate(opts, work);
   } finally {
-    release();
+    work();
   }
 }
 
-async function separate(opts: SeparationRequest): Promise<VideoStems> {
+const STEMS_TOO_BIG =
+  'Las pistas han salido demasiado grandes para la nube del grupo (16 MB cada una como mucho). Vuelve a intentarlo; si pasa otra vez, prueba con una canción más corta.';
+
+type StemCodecChoice = NonNullable<Awaited<ReturnType<typeof pickCodec>>>;
+
+/**
+ * Global review BD [3] · Encodes a track, and again with less bitrate if the encoder (VBR) overshot the 16 MiB the
+ * database takes: a little less quality rather than two tracks uploaded for nothing.
+ */
+async function encodeFitting(left: Float32Array, right: Float32Array, choice: StemCodecChoice, primingSamples?: number) {
+  let current = choice;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const stem = await encodeStem(left, right, DEMUCS.sampleRate, current, primingSamples);
+    if (stemFits(stem.blob.size)) return stem;
+    const next = smallerStemBitrate(current.config.bitrate ?? 128_000, stem.blob.size);
+    console.info('[separate] track too big, encoding it again', stem.blob.size, next);
+    if (next == null) break;
+    current = { ...current, config: { ...current.config, bitrate: next } };
+  }
+  throw new FriendlyError(STEMS_TOO_BIG);
+}
+
+async function separate(opts: SeparationRequest, work: HeavyWork): Promise<VideoStems> {
   const { video, engine, signal, onProgress } = opts;
   if (!video.file_name || video.file_size == null) throw new FriendlyError('Esta canción no tiene archivo.');
   const fileName = video.file_name;
@@ -268,19 +351,22 @@ async function separate(opts: SeparationRequest): Promise<VideoStems> {
     const { left, right } = await decodeSong(await readSongFile(video), maxSeconds);
     check();
     durationSeconds = left.length / DEMUCS.sampleRate;
-    return runWorker({ type: 'run', engine, left, right }, onProgress, signal);
+    return runWorker({ type: 'run', engine, left, right }, onProgress, signal, work);
   })();
   check();
 
+  // Encoding runs on this thread: not while the recorder is open.
+  await whileCovered(signal, work);
   onProgress({ phase: 'encode' });
   const choice = await pickCodec(durationSeconds, DEMUCS.sampleRate);
   if (!choice) throw new FriendlyError('Este navegador no puede guardar las pistas; prueba con Chrome en el ordenador.');
   // Each track's raw samples are let go as soon as it is encoded (a 10-minute song is ~200 MB per track).
-  const instrumental = await encodeStem(done.instrumental[0], done.instrumental[1], DEMUCS.sampleRate, choice);
+  const instrumental = await encodeFitting(done.instrumental[0], done.instrumental[1], choice);
   done = { ...done, instrumental: [new Float32Array(0), new Float32Array(0)] };
   check();
+  await whileCovered(signal, work);
   // The voice gets the instrumental's edit list (a quiet voice can't be measured on its own).
-  const vocals = await encodeStem(done.vocals[0], done.vocals[1], DEMUCS.sampleRate, choice, instrumental.primingSamples);
+  const vocals = await encodeFitting(done.vocals[0], done.vocals[1], choice, instrumental.primingSamples);
   done = null;
   check();
   const measured = [instrumental.delaySeconds, vocals.delaySeconds].find((d) => Number.isFinite(d));
@@ -322,6 +408,23 @@ async function separate(opts: SeparationRequest): Promise<VideoStems> {
   };
   let row = earlier ?? (await newRow());
   let reused = earlier != null;
+  /**
+   * Records the tracks on the row. Global review BD [3] · `stems_too_big` (a track over 16 MiB, e.g. left by an
+   * earlier try): that row can never be completed, so it is archived and forgotten (a retry starts afresh).
+   */
+  const complete = async (paths: { vocals_path: string; instrumental_path: string }) => {
+    try {
+      const completed = await stemsBackend.completeStems(row.id, paths);
+      writePending(key, null);
+      return completed;
+    } catch (err) {
+      if (!/stems_too_big/.test(String((err as { message?: string })?.message ?? err))) throw err;
+      console.error('[separate] tracks too big for the row', err);
+      await stemsBackend.deleteStems(row.id).catch(() => undefined);
+      writePending(key, null);
+      throw new FriendlyError(STEMS_TOO_BIG);
+    }
+  };
   for (;;) {
     const dir = `${row.crew_id}/stems/${row.id}`;
     const paths = { vocals_path: `${dir}/vocals.${vocals.ext}`, instrumental_path: `${dir}/instrumental.${instrumental.ext}` };
@@ -336,21 +439,16 @@ async function separate(opts: SeparationRequest): Promise<VideoStems> {
         break;
       }
     }
-    if (!refused) {
-      const complete = await stemsBackend.completeStems(row.id, paths);
-      writePending(key, null);
-      return complete;
-    }
+    if (!refused) return complete(paths);
     // Safety net for a retry on an earlier row the cloud refuses (like sharing a take): its tracks may already be
     // up, and the database only completes it if both really are. If one is missing, that row can't be finished:
     // archive it, forget it and start a fresh one (once).
     if (refused !== 'denied' || !reused) throw new FriendlyError(stemUploadCopy(refused));
     reused = false;
     try {
-      const complete = await stemsBackend.completeStems(row.id, paths);
-      writePending(key, null);
-      return complete;
+      return await complete(paths);
     } catch (err) {
+      if (err instanceof FriendlyError) throw err;
       if (!/stems_file_missing/.test(String((err as { message?: string })?.message ?? err))) {
         console.error('[separate] complete earlier row', err);
         throw new FriendlyError(stemUploadCopy('denied'));

@@ -48,7 +48,7 @@ import { AddItemsDialog } from './AddItemsDialog';
 import { BagDrawStage, SHAKE_MS, type DrawPhase } from './BagDrawStage';
 import { BagSettingsDialog } from './BagSettingsDialog';
 import { historyDay, historyState, KIND_COPY, MODE_COPY, MULTI_DRAW_MAX, MULTI_DRAW_MIN } from './drawRules';
-import { roundClipIds } from './songRules';
+import { roundClipIds, roundSkipText } from './songRules';
 import { clipTone, memberTone, type DrawShown } from './tones';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -221,28 +221,23 @@ function BagView({ bag }: { bag: BagWithCount }) {
     const now = new Map(all.map((i) => [i.id, i]));
     return last.draws.map((d, k) => last.items[k] ?? (d.item_id ? now.get(d.item_id) : undefined));
   }, [last, all]);
-  const playable = useMemo(
-    () => (multi ? roundClipIds(drawnNow, clips.data ?? [], () => 0).clipIds.length : 0),
+  const preview = useMemo(
+    () => (multi ? roundClipIds(drawnNow, clips.data ?? [], () => 0) : null),
     [multi, drawnNow, clips.data],
   );
+  const playable = preview?.clipIds.length ?? 0;
+  // A YouTube song only in the bag «aún no está en la biblioteca»: not the same as a library song without clips.
+  const skipText = preview ? roundSkipText({ playable, skipped: preview.skipped, notInLibrary: preview.notInLibrary }) : null;
 
   function playRound() {
     if (!last) return;
-    const { clipIds, skipped } = roundClipIds(drawnNow, clips.data ?? []);
+    const { clipIds, skipped, notInLibrary } = roundClipIds(drawnNow, clips.data ?? []);
+    const note = roundSkipText({ playable: clipIds.length, skipped, notInLibrary });
     if (!clipIds.length) {
-      toast(
-        bag.kind === 'songs'
-          ? 'Ninguna tiene clips todavía: guarda alguno en el estudio para jugarla.'
-          : 'No se pudo preparar la ronda',
-        'info',
-      );
+      toast(bag.kind === 'songs' ? (note ?? 'No se pudo preparar la ronda') : 'No se pudo preparar la ronda', 'info');
       return;
     }
-    if (skipped)
-      toast(
-        `${skipped === 1 ? 'Una no tiene clips y se queda' : `${skipped} no tienen clips y se quedan`} fuera de la ronda`,
-        'info',
-      );
+    if (note) toast(note, 'info');
     setRoundDraft(newDraft(clipIds, {}, `Bolsa «${bag.name}»`));
     // Opened from inside the app (OPENED_IN_APP): «Salir» steps back to this bag.
     navigate('/rpd/jugar', { state: { openedFrom: 'app' } });
@@ -373,7 +368,7 @@ function BagView({ bag }: { bag: BagWithCount }) {
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Uno menos"
+              aria-label="Sacar uno menos a la vez"
               onClick={() => setMany((n) => Math.max(MULTI_DRAW_MIN, n - 1))}
               disabled={many <= MULTI_DRAW_MIN}
             >
@@ -395,7 +390,7 @@ function BagView({ bag }: { bag: BagWithCount }) {
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Uno más"
+              aria-label="Sacar uno más a la vez"
               onClick={() => setMany((n) => Math.min(MULTI_DRAW_MAX, n + 1))}
               disabled={many >= MULTI_DRAW_MAX}
             >
@@ -485,12 +480,8 @@ function BagView({ bag }: { bag: BagWithCount }) {
                     clips.
                   </p>
                 )}
-                {multi && bag.kind === 'songs' && !clips.isPending && playable < last.draws.length && (
-                  <p className="text-center text-[13px] text-washi-subtle">
-                    {playable === 0
-                      ? 'Ninguna tiene clips todavía, así que no hay ronda.'
-                      : 'Las que no tienen clips (las de YouTube, por ejemplo) se quedan fuera de la ronda.'}
-                  </p>
+                {multi && bag.kind === 'songs' && !clips.isPending && skipText && (
+                  <p className="text-center text-[13px] text-washi-subtle">{skipText}</p>
                 )}
                 <div
                   role="group"
@@ -750,13 +741,22 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
   const remove = useRemoveBagItem();
   const toast = useToast();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // The delete button that has the focus: its «Confirmar» never runs out while a keyboard or screen reader is on it.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   useEffect(() => {
-    if (!confirmId) return;
-    const t = setTimeout(() => setConfirmId(null), 4000);
+    if (!confirmId || focusedId === confirmId) return;
+    // Long enough to reach the second tap without hurry (A11Y-12): 10 s.
+    const t = setTimeout(() => setConfirmId(null), 10_000);
     return () => clearTimeout(t);
-  }, [confirmId]);
+  }, [confirmId, focusedId]);
+  const confirmItem = confirmId ? items.find((i) => i.id === confirmId) : undefined;
 
   return (
+    <>
+      {/* A new name on the focused button isn't always read out: the second step is said here too. */}
+      <p className="sr-only" aria-live="polite">
+        {confirmItem ? `Toca otra vez para borrar «${itemTitle(confirmItem).title}» de la bolsa.` : ''}
+      </p>
     <ul className="-mx-1 space-y-0.5">
       <AnimatePresence initial={false}>
         {items.map((item) => {
@@ -770,8 +770,8 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
               exit={{ opacity: 0, x: -24, transition: { duration: 0.15 } }}
               transition={snappy}
               className={cn(
+                // «Fuera» rows aren't faded: the strike-through marks them and the text keeps its contrast.
                 'flex items-center gap-2.5 rounded-[10px] px-1.5 py-1 hover:bg-washi/[0.03]',
-                out && 'opacity-80',
               )}
             >
               <ItemThumb item={item} />
@@ -784,7 +784,7 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
                 >
                   {title}
                 </span>
-                <span className="block truncate text-[12px] text-washi-subtle">
+                <span className={cn('block truncate text-[12px]', out ? 'text-washi-muted' : 'text-washi-subtle')}>
                   {out ? `Salió el ${historyDay(item.removed_at!)}` : sub}
                 </span>
               </span>
@@ -812,6 +812,14 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
                     setConfirmId(null);
                     remove.mutate(item, { onError: (err) => toast(bagError(err), 'error') });
                   }}
+                  onFocus={() => setFocusedId(item.id)}
+                  onBlur={() => setFocusedId((id) => (id === item.id ? null : id))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && confirming) {
+                      e.stopPropagation();
+                      setConfirmId(null);
+                    }
+                  }}
                   whileTap={{ scale: 0.88 }}
                   transition={jelly}
                   className={cn(
@@ -830,6 +838,7 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
         })}
       </AnimatePresence>
     </ul>
+    </>
   );
 }
 

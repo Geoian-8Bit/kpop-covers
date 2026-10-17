@@ -120,6 +120,31 @@ export function handLayout(n: number, w: number, buttonTop: number): HandLayout 
   return { cardW, cardH, cards };
 }
 
+// ───────────── Origami: a folded sheet that opens above the button ─────────────
+
+export interface OrigamiLayout {
+  cols: number;
+  /** Height of each face, px. */
+  faceH: number;
+  /** Cap on the panel's height (it scrolls past it): never above the stage, whatever the zoom. */
+  maxHeight: number;
+}
+
+/** Header strip of the sheet («Secciones · 折»), px. */
+export const ORIGAMI_HEADER = 30;
+
+/**
+ * Two columns of tall faces when they fit between `top` (kept clear above) and the button (`buttonTop`, 12 px gap).
+ * When they don't (landscape, or the page zoomed by large system text), three columns of short faces, allowed up to
+ * 8 px from the top; and the panel scrolls rather than going off screen if even that is too tall.
+ */
+export function origamiLayout(n: number, buttonTop: number, top: number): OrigamiLayout {
+  const bottom = buttonTop - 12;
+  const tall = ORIGAMI_HEADER + Math.ceil(n / 2) * 85;
+  if (tall <= bottom - top) return { cols: 2, faceH: 84, maxHeight: bottom - top };
+  return { cols: 3, faceH: 64, maxHeight: Math.max(120, bottom - 8) };
+}
+
 // ───────────── Rueda de kamon: a dial turned with the thumb ─────────────
 
 export interface DialConfig {
@@ -166,4 +191,38 @@ export function angleDelta(from: number, to: number): number {
 /** The dial's ring radius: as large as fits in the quarter it shows, `top` px kept clear above. */
 export function dialRadius(ax: number, ay: number, top: number): number {
   return Math.round(Math.max(140, Math.min(230, Math.min(ax - 40, ay - top - 40) * 0.72)));
+}
+
+export interface DialStepPlaces {
+  /** Centre of «Sección anterior» (the entry before the notch sits counter-clockwise). */
+  prev: { x: number; y: number };
+  /** Centre of «Sección siguiente» (clockwise). */
+  next: { x: number; y: number };
+}
+
+/**
+ * The two 44 px step buttons that turn the dial one entry with a single tap (no circular drag needed): just outside
+ * the seal's rim, either side of the notch, so each sits on the side the dial turns towards. Kept `size / 2 + 4` px
+ * inside the stage (w × h) so neither is ever cut off.
+ */
+export function dialStepPlaces(
+  ax: number,
+  ay: number,
+  discR: number,
+  notch: number,
+  w: number,
+  h: number,
+  size = 44,
+  spread = 11,
+): DialStepPlaces {
+  const reach = discR + size / 2 + 6;
+  const margin = size / 2 + 4;
+  const keep = ({ x, y }: { x: number; y: number }) => ({
+    x: Math.max(margin, Math.min(w - margin, x)),
+    y: Math.max(margin, Math.min(h - margin, y)),
+  });
+  return {
+    prev: keep(polar(ax, ay, reach, notch - spread)),
+    next: keep(polar(ax, ay, reach, notch + spread)),
+  };
 }

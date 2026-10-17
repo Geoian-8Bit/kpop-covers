@@ -13,12 +13,14 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { openWho, useMe } from '@/data/members';
+import { MemberSeal } from '@/features/members/MembersUI';
 import { useDesignVariant } from '@/features/lab/labState';
 import { cn } from '@/lib/cn';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { useNavDemoOnScreen } from './navDemoPresence';
 import { MAIN_NAV } from './navItems';
-import { activeSectionIndex, quickNavHidden, quickNavLabel } from './navRules';
+import { activeSectionIndex, quickNavHidden, quickNavLabel, trapFocusIndex } from './navRules';
 import type { QuickNavProps } from './quickNavCore';
 
 /**
@@ -138,8 +140,8 @@ export function QuickNav({ shown }: { shown: boolean }) {
 }
 
 /**
- * Fallback when the chosen prototype can't load: the same corner button, opening a plain list of the sections. It
- * behaves like the prototypes (back, Escape, a tap outside and picking close it; picking replaces the menu's
+ * Fallback when the chosen prototype can't load: the same corner button, opening a plain list of the sections and
+ * «¿Quién eres?» (the top bar no longer has it on phones). It behaves like the prototypes (back, Escape, a tap outside and picking close it; picking replaces the menu's
  * history entry), with nothing but the entry chunk.
  */
 function PlainQuickNav() {
@@ -150,6 +152,7 @@ function PlainQuickNav() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const index = activeSectionIndex(pathname, MAIN_NAV);
   const current = MAIN_NAV[index];
+  const me = useMe();
 
   const close = (returnFocus: boolean) => {
     setOpen(false);
@@ -163,6 +166,17 @@ function PlainQuickNav() {
       rootRef.current?.querySelector<HTMLElement>('[aria-current="page"], a')?.focus({ preventScroll: true }),
     );
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') {
+        // Kept inside, like the prototypes: the links and the close button.
+        const root = rootRef.current;
+        if (!root) return;
+        const nodes = Array.from(root.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'));
+        const next = trapFocusIndex(nodes.indexOf(document.activeElement as HTMLElement), nodes.length, event.shiftKey);
+        if (next < 0) return;
+        event.preventDefault();
+        nodes[next]?.focus({ preventScroll: true });
+        return;
+      }
       if (event.key !== 'Escape') return;
       event.stopPropagation();
       setOpen(false);
@@ -190,6 +204,11 @@ function PlainQuickNav() {
     navigate(to, { replace: true });
     setOpen(false);
   };
+  const who = () => {
+    close(true);
+    // After focus is back on the button (and the menu's history entry is gone), like the prototypes.
+    requestAnimationFrame(() => requestAnimationFrame(openWho));
+  };
 
   return (
     <div
@@ -204,7 +223,7 @@ function PlainQuickNav() {
       )}
       {open && (
         <nav
-          aria-label="Secciones"
+          // No name of its own: the dialog around it is already «Secciones».
           className="paper-raised pointer-events-auto absolute bottom-[calc(max(16px,calc(env(safe-area-inset-bottom)+12px))+68px)] right-[max(16px,calc(env(safe-area-inset-right)+12px))] w-60 max-w-[calc(100vw-32px)] rounded-[14px] p-1.5"
         >
           <ul>
@@ -224,12 +243,23 @@ function PlainQuickNav() {
                 </a>
               </li>
             ))}
+            <li className="mt-1 border-t border-line pt-1">
+              <button
+                type="button"
+                onClick={who}
+                className="flex min-h-12 w-full items-center gap-3 rounded-[10px] px-3 text-left text-[15px] font-bold text-washi hover:bg-washi/5"
+              >
+                <MemberSeal member={me} size="sm" />
+                <span className="min-w-0 truncate">{me ? `Eres ${me.name}` : '¿Quién eres?'}</span>
+              </button>
+            </li>
           </ul>
         </nav>
       )}
       <button
         ref={triggerRef}
         type="button"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={open ? 'Cerrar secciones' : quickNavLabel(current?.label)}
         onClick={() => setOpen((v) => !v)}

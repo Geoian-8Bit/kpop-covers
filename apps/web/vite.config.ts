@@ -138,7 +138,18 @@ export default defineConfig(({ mode, command }) => {
         // whoever opens the lab: cached when first opened (runtime cache below), not downloaded by every install.
         // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
         // .wasm isn't in globPatterns either. The HTTP cache keeps both (hashed, immutable).
-        globIgnores: ['**/pose-*.js', '**/*Demo-*.js', '**/stemSeparator.worker-*.js'],
+        // P1 · The quick-menu prototypes on trial other than the default (Sensu): only for whoever picks one in the
+        // lab, cached when first loaded (runtime cache `lab-demos` below). Offline before that, QuickNav falls back to
+        // its plain list of sections. Delete with the losing files.
+        // The voice-split variants stay: VoiceSplitControl has no fallback if one can't load.
+        globIgnores: [
+          '**/pose-*.js',
+          '**/*Demo-*.js',
+          '**/stemSeparator.worker-*.js',
+          '**/NavHanafuda-*.js',
+          '**/NavKamon-*.js',
+          '**/NavOrigami-*.js',
+        ],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -161,8 +172,23 @@ export default defineConfig(({ mode, command }) => {
             },
           },
           {
-            // P17 · Lab demos (hashed names: a cached one never changes).
-            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname),
+            // 18 · onnxruntime's WASM for the voice separation (26,8 MB, hashed name): only in the HTTP cache it is
+            // evicted early on Android and a later separation downloads it again. One entry: a new version replaces it.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/ort-wasm[^/]*\.wasm$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'voice-runtime',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true },
+            },
+          },
+          {
+            // P17 · Lab demos (hashed names: a cached one never changes). P1 · Also the quick-menu prototypes left
+            // out of the precache: the one picked keeps working offline once it has loaded.
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin &&
+              (/^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname) ||
+                /^\/assets\/Nav(Hanafuda|Kamon|Origami)-[^/]+\.js$/.test(url.pathname)),
             handler: 'CacheFirst',
             options: {
               cacheName: 'lab-demos',

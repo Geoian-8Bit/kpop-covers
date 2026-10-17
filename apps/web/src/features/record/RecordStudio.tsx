@@ -1991,8 +1991,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               ariaLabel={
                 view.torchAvailable
                   ? view.torch
-                    ? 'Apagar la linterna'
-                    : 'Encender la linterna'
+                    ? 'Apagar el flash'
+                    : 'Encender el flash'
                   : `Flash no disponible: ${cam.noTorchHint ?? 'esta lente no tiene flash.'}`
               }
               pressed={view.torchAvailable && view.torch}
@@ -2365,7 +2365,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             <div
               role="group"
               aria-label="Lentes y zoom"
-              className="flex items-center gap-1 rounded-full bg-black/45 p-1 landscape:flex-col"
+              // Solid ink behind the 12 px numbers: readable over a white wall too (WCAG 1.4.3).
+              className="flex items-center gap-1 rounded-full bg-sumi-900/90 p-1 landscape:flex-col"
             >
               {cam.chips
                 .filter((c) => canTweak || c.key === cam.activeChip || !c.switches)
@@ -2386,7 +2387,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
                       }}
                       className={cn(
                         'tabular grid h-11 min-w-11 place-items-center rounded-full px-1.5 font-mono text-[12px] font-bold transition-colors',
-                        active ? 'bg-washi text-sumi-900' : 'text-washi/90',
+                        active ? 'bg-washi text-sumi-900' : 'text-washi',
                       )}
                     >
                       {shown}
@@ -2413,7 +2414,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               )}
               {phase === 'paused' && (
                 <RailButton
-                  label="Borrar"
+                  // Same verb as its dialog («¿Descartar la toma?»).
+                  label="Descartar"
                   ariaLabel="Descartar la toma"
                   onClick={() => setConfirm('discard')}
                 >

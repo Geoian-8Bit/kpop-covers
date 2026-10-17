@@ -1,10 +1,11 @@
 import type { Member, Poll, PollOption, Wish, WishInterest } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronRight, Library, ListChecks, Pencil, Plus, Search, Trash2, Vote, X } from 'lucide-react';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
+import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -271,6 +272,9 @@ function WishList({
   const members = useMembers();
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
+  // The «Elegir para votar» bar pinned at the bottom: focus scrolled to the edge is never left under it.
+  const selectBarRef = useRef<HTMLDivElement>(null);
+  useStickyBarPadding(selectBarRef, selecting);
 
   const byWish = useMemo(() => interestByWish(interest.data ?? []), [interest.data]);
   const list = useMemo(
@@ -398,6 +402,7 @@ function WishList({
         <AnimatePresence>
           {selecting && (
             <motion.div
+              ref={selectBarRef}
               role="region"
               aria-label="Elegir para votar"
               initial={{ opacity: 0, y: 24 }}

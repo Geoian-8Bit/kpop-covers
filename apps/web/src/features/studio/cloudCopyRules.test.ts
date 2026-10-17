@@ -6,6 +6,8 @@ import {
   cloudDecision,
   COPY,
   copyEncoding,
+  copyHoldText,
+  copyPace,
   estimateCopySeconds,
   etaSeconds,
   formatEta,
@@ -21,7 +23,9 @@ import {
   shiftSamples,
   videosBucketHasRoom,
   videosUploadNeeds,
+  workingSeconds,
 } from './cloudCopyRules';
+import * as space from './cloudSpace';
 
 const MB = 1024 ** 2;
 const LIMIT = 50 * MB;
@@ -227,5 +231,34 @@ describe('same video', () => {
     expect(shiftSamples(-0.005, 48000)).toBe(-240);
     expect(shiftSamples(0.0001, 48000)).toBe(0);
     expect(shiftSamples(Number.NaN, 48000)).toBe(0);
+  });
+});
+
+describe('global review [6] · the copy shares the device', () => {
+  const free = { covered: false, separating: false, studioPlaying: false };
+  it('goes at up to 2× while nothing else needs the phone', () => {
+    expect(copyPace(free)).toEqual({ hold: null, maxRate: COPY.maxRate });
+    expect(COPY.maxRate).toBe(2);
+  });
+  it('no faster than 1× while the studio plays', () => {
+    expect(copyPace({ ...free, studioPlaying: true })).toEqual({ hold: null, maxRate: 1 });
+  });
+  it('waits while the recorder covers the studio, and while the voice is separated', () => {
+    expect(copyPace({ ...free, covered: true }).hold).toBe('recording');
+    expect(copyPace({ ...free, separating: true }).hold).toBe('voice');
+    expect(copyPace({ covered: true, separating: true, studioPlaying: true }).hold).toBe('recording');
+  });
+  it('says why it waits', () => {
+    expect(copyHoldText('recording')).toBe('En pausa mientras grabas…');
+    expect(copyHoldText('voice')).toBe('En pausa mientras se separa la voz…');
+  });
+  it('the time left leaves the pauses out', () => {
+    expect(workingSeconds(90_000, 30_000)).toBe(60);
+    expect(workingSeconds(10_000, 20_000)).toBe(0);
+    expect(workingSeconds(5000, -1)).toBe(5);
+  });
+  it('the group space rules are the small module the data layer uses', () => {
+    expect(videosBucketHasRoom).toBe(space.videosBucketHasRoom);
+    expect(CLOUD_SPACE).toBe(space.CLOUD_SPACE);
   });
 });

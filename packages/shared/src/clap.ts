@@ -109,8 +109,12 @@ const DECAY_TO = 0.4;
 /** Brightness and crest window around the peak (hops: −2 ms … +25 ms). */
 const BODY_BEFORE = 4;
 const BODY_AFTER = 50;
-/** An event is judged this many hops after it crossed (~80 ms): the longest decay plus a margin. */
-const DECIDE_AFTER = PEAK_SEARCH + Math.ceil(Math.max(...Object.values(CLAP_LEVELS).map((l) => l.maxDecayMs)) / HOP_MS) + 4;
+/**
+ * An event is judged this many hops after it crossed (~80 ms): the peak search, the longest decay (`max`, 70 ms =
+ * 140 hops) plus a margin of 4. A literal, not computed from `CLAP_LEVELS`: module-level code keeps the whole
+ * detector in whatever chunk imports the barrel (the app's entry). `clap.test.ts` checks it against the levels.
+ */
+export const DECIDE_AFTER = 164;
 /** Background estimate: rises slowly (a burst of noise barely moves it), falls fast (the room went quiet). */
 const NOISE_TAU_UP = 1.5;
 const NOISE_TAU_DOWN = 0.3;

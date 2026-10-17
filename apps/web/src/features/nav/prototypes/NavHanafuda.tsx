@@ -45,6 +45,8 @@ const FLY_MS = 340;
 function Hand({ api }: { api: QuickNavApi }) {
   const stage = api.stage!;
   const { cardW, cardH, cards } = handLayout(api.entries.length, stage.w, stage.buttonTop);
+  // Under 66 px (360 px screens, a zoomed page) a card can't hold kanji, icon and a two-line name: the icon goes.
+  const narrow = cardW < 66;
   const [lifted, setLiftedState] = useState<number | null>(null);
   const liftedRef = useRef<number | null>(null);
   const setLifted = (index: number | null) => {
@@ -103,8 +105,8 @@ function Hand({ api }: { api: QuickNavApi }) {
 
   return (
     <div
+      // No name of its own: the dialog around it is already «Secciones».
       role="group"
-      aria-label="Secciones"
       className="pointer-events-auto absolute inset-x-0 touch-none"
       style={{ top: Math.max(0, cards[0]!.y - cardH), height: cardH * 2 + 40 }}
       onPointerDown={onPointerDown}
@@ -169,13 +171,26 @@ function Hand({ api }: { api: QuickNavApi }) {
                   entry.active ? 'bg-shu-500' : 'bg-washi/15',
                 )}
               />
-              <span aria-hidden className={cn('relative mt-1 font-display text-[30px] font-extrabold leading-none', entry.active ? 'text-washi' : entry.tone.ink)}>
+              <span
+                aria-hidden
+                className={cn(
+                  'relative mt-1 font-display font-extrabold leading-none',
+                  narrow ? 'text-[24px]' : 'text-[30px]',
+                  entry.active ? 'text-washi' : entry.tone.ink,
+                )}
+              >
                 {entry.kanji}
               </span>
-              <span aria-hidden className={cn('relative mt-2 grid', entry.active ? 'text-washi' : entry.tone.ink)}>
-                <EntryIcon entry={entry} />
-              </span>
-              <span className="relative mt-auto w-full rounded-[4px] bg-washi px-0.5 py-0.5 text-[10.5px] font-bold leading-[1.15] text-sumi-900">
+              {/* Narrow cards (360 px screens, or the page zoomed): no icon, so the name has room for two lines. */}
+              {!narrow && (
+                <span aria-hidden className={cn('relative mt-2 grid', entry.active ? 'text-washi' : entry.tone.ink)}>
+                  <EntryIcon entry={entry} />
+                </span>
+              )}
+              <span
+                lang="es"
+                className="relative mt-auto w-full hyphens-auto rounded-[4px] bg-washi px-0.5 py-0.5 text-[11px] font-bold leading-[1.15] text-sumi-900 [overflow-wrap:anywhere]"
+              >
                 {entry.short}
               </span>
               {entry.active && (

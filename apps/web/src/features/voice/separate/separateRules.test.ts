@@ -11,18 +11,23 @@ import {
   formatMinutes,
   formatRange,
   GROUP_STORAGE_BYTES,
+  headFrameCount,
+  LAG_HEAD_SECONDS,
   MAX_SEPARATE_SECONDS,
   maxSeparateSeconds,
   modelCacheLooksBroken,
+  monoHead,
   normalize,
   planSegments,
   progressLabel,
   progressMilestone,
   progressPercent,
   reusablePendingStems,
+  smallerStemBitrate,
   spaceVerdict,
   STEM_MAX_BYTES,
   stemBitrate,
+  stemFits,
   triangleWeights,
   type DeviceCaps,
 } from './separateRules';
@@ -264,5 +269,73 @@ describe('modelCacheLooksBroken', () => {
     expect(modelCacheLooksBroken('Failed to create session: GPU buffer allocation failed')).toBe(false);
     expect(modelCacheLooksBroken('Could not find an implementation for operator ScatterND (kernel not found)')).toBe(false);
     expect(modelCacheLooksBroken('')).toBe(false);
+  });
+});
+
+describe('global review [5] · the delay measured on the start only', () => {
+  const noise = (n: number, seed = 1) => {
+    let x = seed;
+    return Float32Array.from({ length: n }, () => {
+      x = (x * 16807) % 2147483647;
+      return (x / 2147483647) * 2 - 1;
+    });
+  };
+
+  it('mixes only the first seconds to mono', () => {
+    const left = Float32Array.from([1, 1, 0, 4]);
+    const right = Float32Array.from([0, 1, 2, 4]);
+    expect([...monoHead(left, right, 3)]).toEqual([0.5, 1, 1]);
+    expect(monoHead(left, right, 99).length).toBe(4);
+    expect(monoHead(left, right, -1).length).toBe(0);
+  });
+
+  it('counts the frames that cover the start', () => {
+    expect(headFrameCount([1024, 1024, 1024, 1024], 2048)).toBe(2);
+    expect(headFrameCount([1024, 1024, 1024, 1024], 2049)).toBe(3);
+    expect(headFrameCount([1024, 1024], 1e9)).toBe(2);
+    expect(headFrameCount([], 10)).toBe(0);
+  });
+
+  it('the start of a long track gives the same delay as the whole track', () => {
+    const rate = 48000;
+    const whole = noise(rate * 40, 5);
+    const delay = 2112;
+    const late = new Float32Array(whole.length);
+    for (let i = delay; i < whole.length; i++) late[i] = whole[i - delay]! * 0.8;
+    const maxLag = Math.round(rate * 0.15);
+    const head = 10 * rate + 2 * maxLag;
+    const fromHead = estimateLag(monoHead(whole, whole, head), monoHead(late, late, head), maxLag, rate);
+    expect(fromHead?.lag).toBe(delay);
+    expect(LAG_HEAD_SECONDS).toBeLessThanOrEqual(45);
+  });
+});
+
+describe('global review BD [3] · a track over 16 MiB is never uploaded', () => {
+  it('fits up to the cap', () => {
+    expect(stemFits(STEM_MAX_BYTES)).toBe(true);
+    expect(stemFits(STEM_MAX_BYTES + 1)).toBe(false);
+    expect(stemFits(0)).toBe(false);
+  });
+
+  it('encodes again with less bitrate, under the cap with room', () => {
+    const next = smallerStemBitrate(160_000, STEM_MAX_BYTES * 1.05)!;
+    expect(next).toBeLessThan(160_000);
+    expect(next % 1000).toBe(0);
+    // The same song at the new rate lands under the cap.
+    expect((STEM_MAX_BYTES * 1.05 * next) / 160_000).toBeLessThan(STEM_MAX_BYTES);
+    // Always lower, even when only a byte over.
+    expect(smallerStemBitrate(160_000, STEM_MAX_BYTES + 1)!).toBeLessThanOrEqual(144_000);
+  });
+
+  it('gives up under the floor', () => {
+    expect(smallerStemBitrate(64_000, STEM_MAX_BYTES * 2)).toBeNull();
+    expect(smallerStemBitrate(160_000, 0)).toBeNull();
+  });
+});
+
+describe('global review [6] · the separation waits for the copy for the group', () => {
+  it('says so', () => {
+    expect(progressLabel({ phase: 'wait-copy' })).toBe('Esperando a que acabe la copia para el grupo…');
+    expect(progressPercent({ phase: 'wait-copy' })).toBeNull();
   });
 });

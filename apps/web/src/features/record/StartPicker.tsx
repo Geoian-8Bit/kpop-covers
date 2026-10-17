@@ -100,11 +100,10 @@ export function StartButton({
       >
         <Icon className="size-5" />
       </span>
-      <span className="flex flex-col items-center leading-none [text-shadow:0_1px_4px_rgb(0_0_0/0.8)]">
-        <span className="text-[9.5px] font-bold text-washi/80">Empieza en</span>
-        <span className="tabular mt-0.5 max-w-14 truncate text-[11px] font-bold text-washi">
-          {label.short}
-        </span>
+      {/* On a pill of solid ink: readable over the camera's picture whatever it shows (WCAG 1.4.3). */}
+      <span className="flex flex-col items-center rounded-[6px] bg-sumi-900/90 px-1 py-0.5 leading-none">
+        <span className="whitespace-nowrap text-[11px] font-bold text-washi-muted">Empieza en</span>
+        <span className="tabular mt-0.5 max-w-14 truncate text-[12px] font-bold text-washi">{label.short}</span>
       </span>
     </motion.button>
   );

@@ -19,7 +19,7 @@ import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coversc
 import type { FollowKeyframe, FollowPath, FollowSource } from '@coverscape/shared';
 import type { Tables } from '@coverscape/shared';
 import { drawOrder } from '@/features/bags/drawRules';
-import { videosBucketHasRoom } from '@/features/studio/cloudCopyRules';
+import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 import { cutChars, songYoutubeId, youtubeSongRow } from '@/features/bags/songRules';
 
 /**

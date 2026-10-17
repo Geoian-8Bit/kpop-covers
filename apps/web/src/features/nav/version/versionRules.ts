@@ -83,9 +83,27 @@ export function decideUpdate(input: {
   return { kind: 'latest', version: current ?? remote };
 }
 
-/** Reloading would cut something short: inside the studio (/v/…), with a dialog open or with saves in flight. */
-export function reloadNeedsConfirm(input: { pathname: string; dialogOpen: boolean; saving: number }): boolean {
-  return input.pathname.startsWith('/v/') || input.dialogOpen || input.saving > 0;
+/** Long work an update would cut short (lib/heavyWork): the copy for the group, the AI voice separation. */
+export type ReloadBusy = 'copy' | 'voice';
+
+/**
+ * Reloading would cut something short: inside the studio (/v/…), with a dialog open, with saves in flight, or while
+ * the copy for the group or the voice separation runs (they outlive the song's screen).
+ */
+export function reloadNeedsConfirm(input: {
+  pathname: string;
+  dialogOpen: boolean;
+  saving: number;
+  busy?: ReloadBusy | null;
+}): boolean {
+  return input.pathname.startsWith('/v/') || input.dialogOpen || input.saving > 0 || input.busy != null;
+}
+
+/** What the confirmation says when long work is running. */
+export function busyReloadText(busy: ReloadBusy): string {
+  return busy === 'copy'
+    ? 'Hay una copia para el grupo en marcha: si actualizas ahora, se pierde y habrá que repetirla.'
+    : 'Se está separando la voz: si actualizas ahora, se pierde y habrá que repetirla.';
 }
 
 export type UpdateStatus =
@@ -104,7 +122,7 @@ export type UpdateStatus =
 const withNumber = (text: string, version: number | null) => (version != null ? `${text} (${version})` : text);
 
 /** The sentence shown (and announced) for each state. '' while idle. */
-export function updateMessage(status: UpdateStatus): string {
+export function updateMessage(status: UpdateStatus, busy?: ReloadBusy | null): string {
   switch (status.kind) {
     case 'idle':
       return '';
@@ -115,6 +133,7 @@ export function updateMessage(status: UpdateStatus): string {
     case 'downloading':
       return `${withNumber('Hay una versión nueva', status.version)}. Descargando…`;
     case 'confirm':
+      if (busy) return `${withNumber('Hay una versión nueva', status.version)}. ${busyReloadText(busy)}`;
       return `${withNumber('Hay una versión nueva', status.version)}. Al actualizar, la app se recarga y se corta lo que estés haciendo.`;
     case 'applying':
       return `${withNumber('Hay una versión nueva', status.version)}. Actualizando…`;

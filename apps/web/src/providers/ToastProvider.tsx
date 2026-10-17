@@ -64,10 +64,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={toast}>
       {children}
       {createPortal(
+      // Above whatever is pinned to the bottom, so a toast never covers (or takes the taps of) a sticky action bar
+      // («Empezar», «Crear votación», «Votar»: `--sticky-bar-h`) or, on phones, the quick-menu button
+      // (`--fab-scroll-pad`). Both live on <html> (stickyBarPadding.ts), so they also reach a fullscreen host.
+      // Only the toasts themselves take pointer events, never the strip around them.
       <div
         data-toast-host
         aria-live="polite"
-        className="pointer-events-none fixed inset-x-0 bottom-[max(20px,calc(env(safe-area-inset-bottom)+12px))] z-[100] flex flex-col items-center gap-2 px-4"
+        className="pointer-events-none fixed inset-x-0 bottom-[max(20px,calc(env(safe-area-inset-bottom)+12px),calc(var(--sticky-bar-h,0px)+8px))] z-[100] flex flex-col items-center gap-2 px-4 max-lg:bottom-[max(20px,calc(env(safe-area-inset-bottom)+12px),calc(var(--sticky-bar-h,0px)+8px),var(--fab-scroll-pad,0px))]"
       >
         <AnimatePresence initial={false}>
           {toasts.map((t) => (

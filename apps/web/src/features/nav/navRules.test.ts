@@ -6,7 +6,10 @@ import {
   dialIndexAt,
   dialRadius,
   dialRotationFor,
+  dialStepPlaces,
   handLayout,
+  ORIGAMI_HEADER,
+  origamiLayout,
   pointerAngle,
   polar,
   quickNavHidden,
@@ -134,6 +137,24 @@ describe('handLayout', () => {
   });
 });
 
+describe('origamiLayout', () => {
+  it('keeps two tall columns in portrait, also zoomed', () => {
+    expect(origamiLayout(6, 772, 76)).toMatchObject({ cols: 2, faceH: 84 });
+    expect(origamiLayout(6, 578, 76)).toMatchObject({ cols: 2, faceH: 84 });
+  });
+
+  it('switches to 3 × 2 short faces when the height is short, and still fits', () => {
+    // 844×390, the same zoomed to 130 % (650×300) and 150 % (562×260), and the lab stage in landscape (294 high).
+    for (const buttonTop of [318, 228, 188, 222]) {
+      const layout = origamiLayout(6, buttonTop, 76);
+      expect(layout).toMatchObject({ cols: 3, faceH: 64 });
+      const height = ORIGAMI_HEADER + 2 * (layout.faceH + 1);
+      expect(height).toBeLessThanOrEqual(layout.maxHeight);
+      expect(layout.maxHeight).toBeLessThanOrEqual(buttonTop - 12 - 8);
+    }
+  });
+});
+
 describe('dial', () => {
   const config = { step: 32, notch: -45, count: 6 };
 
@@ -168,5 +189,33 @@ describe('dial', () => {
   it('fits its ring in the visible quarter', () => {
     expect(dialRadius(346, 800, 72)).toBe(220);
     expect(dialRadius(200, 500, 72)).toBe(140);
+  });
+
+  it('puts the step buttons outside the rim, either side of the notch, on screen', () => {
+    // Portrait 390×844, landscape 844×390, and both with the page zoomed to 130 %.
+    for (const [w, h] of [
+      [390, 844],
+      [844, 390],
+      [300, 650],
+      [650, 300],
+    ] as const) {
+      const ax = w - 44;
+      const ay = h - 44;
+      const r = dialRadius(ax, ay, 76);
+      const discR = r + 62;
+      const { prev, next } = dialStepPlaces(ax, ay, discR, -45, w, h);
+      for (const p of [prev, next]) {
+        expect(p.x).toBeGreaterThanOrEqual(26);
+        expect(p.x).toBeLessThanOrEqual(w - 26);
+        expect(p.y).toBeGreaterThanOrEqual(26);
+        expect(p.y).toBeLessThanOrEqual(h - 26);
+      }
+      // «Anterior» is the counter-clockwise one: lower and further left than «Siguiente».
+      expect(prev.y).toBeGreaterThan(next.y);
+      expect(prev.x).toBeLessThan(next.x);
+      // Never under the seal (44 px button wholly outside the disc), and 44 px targets don't overlap.
+      expect(Math.hypot(prev.x - ax, prev.y - ay)).toBeGreaterThanOrEqual(discR + 22);
+      expect(Math.hypot(next.x - prev.x, next.y - prev.y)).toBeGreaterThanOrEqual(44);
+    }
   });
 });

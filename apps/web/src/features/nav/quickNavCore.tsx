@@ -335,6 +335,7 @@ export function QuickNavTrigger({
     <motion.button
       ref={api.triggerRef}
       type="button"
+      aria-haspopup="dialog"
       aria-expanded={open}
       aria-label={open ? 'Cerrar secciones' : quickNavLabel(current?.label)}
       onClick={api.toggle}
@@ -378,9 +379,11 @@ export function QuickNavTrigger({
           <motion.span
             key={current.id}
             aria-hidden
-            className="pointer-events-none absolute right-[calc(100%+8px)] top-1/2 -mt-3.5 whitespace-nowrap rounded-full border border-kin-400/40 bg-sumi-950/90 px-2.5 py-1 text-[12px] font-bold leading-[18px] text-washi shadow-[0_6px_14px_-6px_rgb(0_0_0/0.9)]"
-            initial={reduce ? { opacity: 0 } : { opacity: 0, x: 8 }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, x: 0 }}
+            // Above the button, not beside it: pages put their sticky action bars (/rpd «Empezar», /deseos) to the
+            // left of the button, and the tag would cover their text.
+            className="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 whitespace-nowrap rounded-full border border-kin-400/40 bg-sumi-950/90 px-2.5 py-1 text-[12px] font-bold leading-[18px] text-washi shadow-[0_6px_14px_-6px_rgb(0_0_0/0.9)]"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
             exit={{ opacity: 0, transition: { duration: 0.3 } }}
             transition={jelly}
           >

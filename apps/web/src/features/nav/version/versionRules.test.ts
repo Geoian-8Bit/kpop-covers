@@ -140,6 +140,22 @@ describe('reloadNeedsConfirm', () => {
   it('reloads straight away elsewhere', () => {
     expect(reloadNeedsConfirm({ pathname: '/', dialogOpen: false, saving: 0 })).toBe(false);
     expect(reloadNeedsConfirm({ pathname: '/ajustes', dialogOpen: false, saving: 0 })).toBe(false);
+    expect(reloadNeedsConfirm({ pathname: '/', dialogOpen: false, saving: 0, busy: null })).toBe(false);
+  });
+
+  it('asks anywhere while the copy for the group or the voice separation runs', () => {
+    expect(reloadNeedsConfirm({ pathname: '/', dialogOpen: false, saving: 0, busy: 'copy' })).toBe(true);
+    expect(reloadNeedsConfirm({ pathname: '/bolsas', dialogOpen: false, saving: 0, busy: 'voice' })).toBe(true);
+  });
+
+  it('the confirmation says what would be lost', () => {
+    expect(updateMessage({ kind: 'confirm', version: 150 }, 'copy')).toBe(
+      'Hay una versión nueva (150). Hay una copia para el grupo en marcha: si actualizas ahora, se pierde y habrá que repetirla.',
+    );
+    expect(updateMessage({ kind: 'confirm', version: null }, 'voice')).toBe(
+      'Hay una versión nueva. Se está separando la voz: si actualizas ahora, se pierde y habrá que repetirla.',
+    );
+    expect(updateMessage({ kind: 'confirm', version: 150 }, null)).toContain('se corta lo que estés haciendo');
   });
 });
 

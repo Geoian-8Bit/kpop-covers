@@ -7,7 +7,14 @@ import {
   useTransform,
   type MotionValue,
 } from 'motion/react';
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
 import {
@@ -16,6 +23,7 @@ import {
   dialIndexAt,
   dialRadius,
   dialRotationFor,
+  dialStepPlaces,
   pointerAngle,
   polar,
   type DialConfig,
@@ -36,7 +44,8 @@ import {
 /**
  * P1 · Prototype «Rueda de kamon»: a large lacquer seal peeks out of the corner (a quarter shows). The sections sit
  * on its rim like a dial: turn it with the thumb and the one in the golden notch lights up, with a tiny vibration
- * at each step when the phone allows it. Tapping any of them also takes you there; arrows turn it from the keyboard.
+ * at each step when the phone allows it. Tapping any of them also takes you there; arrows turn it from the keyboard,
+ * and two step buttons by the notch turn it one section per tap, so no circular drag is ever needed (WCAG 2.5.7).
  * Delete this file if another prototype is chosen.
  */
 export default function NavKamon(props: QuickNavProps) {
@@ -71,6 +80,8 @@ function Dial({ api }: { api: QuickNavApi }) {
   const start = Math.max(0, entries.findIndex((e) => e.active));
   const rotation = useMotionValue(dialRotationFor(start, config));
   const [notchIndex, setNotchIndex] = useState(start);
+  /** Said politely only after a step button turns the dial (focus and the drag already speak for themselves). */
+  const [stepNote, setStepNote] = useState('');
   const notchRef = useRef(start);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
   const drag = useRef<{ cx: number; cy: number; last: number; value: number; x: number; y: number; moved: boolean } | null>(null);
@@ -130,14 +141,21 @@ function Dial({ api }: { api: QuickNavApi }) {
     itemRefs.current[k]?.focus({ preventScroll: true });
   };
 
+  const step = (by: number) => {
+    const k = turnTo(notchRef.current + by);
+    const entry = entries[k];
+    if (entry) setStepNote(`En la muesca: ${entry.label}. Tócala para ir.`);
+  };
+  const steps = dialStepPlaces(stage.ax, stage.ay, discR, NOTCH, stage.w, stage.h);
+
   const notchPoint = polar(stage.ax, stage.ay, r + 44, NOTCH);
   // The hint sits just above the seal, right-aligned with the button.
   const hint = { x: stage.ax - 8, y: stage.ay - discR - 10 };
 
   return (
     <motion.div
+      // No name of its own: the dialog around it is already «Secciones».
       role="group"
-      aria-label="Secciones"
       aria-roledescription="rueda"
       className="absolute inset-0"
       initial={{ opacity: 0 }}
@@ -213,9 +231,72 @@ function Dial({ api }: { api: QuickNavApi }) {
         animate={{ opacity: 1, transition: { delay: reduce ? 0 : 0.35 } }}
         exit={{ opacity: 0, transition: { duration: 0.1 } }}
       >
-        Gira la rueda · toca para ir
+        Gira o usa las flechas · toca para ir
       </motion.p>
+
+      <StepButton
+        label="Sección anterior"
+        at={steps.prev}
+        disabled={notchIndex <= 0}
+        reduce={reduce}
+        onStep={() => step(-1)}
+        icon={<ChevronDown aria-hidden className="size-5 rotate-45" />}
+      />
+      <StepButton
+        label="Sección siguiente"
+        at={steps.next}
+        disabled={notchIndex >= entries.length - 1}
+        reduce={reduce}
+        onStep={() => step(1)}
+        icon={<ChevronUp aria-hidden className="size-5 rotate-45" />}
+      />
+      <p aria-live="polite" className="sr-only">
+        {stepNote}
+      </p>
     </motion.div>
+  );
+}
+
+/**
+ * Turns the dial one section. At the ends it is `aria-disabled` rather than `disabled`, so focus isn't dropped when
+ * a tap reaches the last section.
+ */
+function StepButton({
+  label,
+  at,
+  disabled,
+  reduce,
+  onStep,
+  icon,
+}: {
+  label: string;
+  at: { x: number; y: number };
+  disabled: boolean;
+  reduce: boolean;
+  onStep: () => void;
+  icon: ReactNode;
+}) {
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onClick={() => {
+        if (!disabled) onStep();
+      }}
+      className={cn(
+        'pointer-events-auto absolute -ml-[22px] -mt-[22px] grid size-11 place-items-center rounded-full border-2 bg-sumi-950 shadow-[0_8px_16px_-8px_rgb(0_0_0/0.9)] outline-offset-2',
+        disabled ? 'border-line-strong text-washi-subtle' : 'border-kin-400 text-kin-200',
+      )}
+      style={{ left: at.x, top: at.y }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: { delay: reduce ? 0 : 0.25 } }}
+      exit={{ opacity: 0, transition: { duration: 0.1 } }}
+      whileTap={disabled || reduce ? undefined : { scale: 0.9 }}
+      transition={snappy}
+    >
+      {icon}
+    </motion.button>
   );
 }
 

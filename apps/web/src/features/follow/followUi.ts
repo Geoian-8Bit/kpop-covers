@@ -121,7 +121,9 @@ type JobView = Pick<FollowJob, 'phase' | 'done' | 'total' | 'label' | 'pathId'> 
 
 /** 15 · «En pausa mientras grabas»: why the analysis waits. */
 export function holdText(reason: HoldReason): string {
-  return reason === 'recording' ? 'En pausa mientras grabas' : 'En pausa mientras se separa la voz';
+  if (reason === 'recording') return 'En pausa mientras grabas';
+  if (reason === 'copy') return 'En pausa mientras se hace la copia para el grupo';
+  return 'En pausa mientras se separa la voz';
 }
 
 /** What a screen reader hears about the analysis: each phase, and the progress only every 25 %. */

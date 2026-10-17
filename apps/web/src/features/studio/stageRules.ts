@@ -38,3 +38,29 @@ export function needsLocalCheck({
 }): boolean {
   return linked && choice !== 'youtube' && !inCloud;
 }
+
+/**
+ * [4] · Whether the file on the stage is the group's lighter copy and not the original: it came from the cloud (this
+ * device has no copy of its own) and the original, as the row describes it, is bigger than one cloud file may be, so
+ * what the cloud holds can only be the reduced copy (13). An original that fits was uploaded as it is.
+ */
+export function playsGroupCopy({
+  fromCloud,
+  originalBytes,
+  limitBytes,
+}: {
+  fromCloud: boolean;
+  originalBytes: number | null | undefined;
+  limitBytes: number;
+}): boolean {
+  return fromCloud && originalBytes != null && originalBytes > limitBytes;
+}
+
+/**
+ * «Copia del grupo · 720p»: what the «Vídeo» row says for the group's copy, with the picture's real size (its short
+ * side, so a vertical video reads the same) once the player knows it.
+ */
+export function groupCopyLabel(media: { width: number; height: number } | null): string {
+  const side = media ? Math.min(media.width, media.height) : 0;
+  return side > 0 ? `Copia del grupo · ${Math.round(side)}p` : 'Copia del grupo';
+}

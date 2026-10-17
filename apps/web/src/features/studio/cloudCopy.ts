@@ -2,7 +2,6 @@ import { FriendlyError } from '@/lib/supabase';
 import { measureShift } from './audioAlign';
 import {
   acceptableBytes,
-  avcLevel,
   COPY,
   copyEncoding,
   overshooting,
@@ -13,7 +12,18 @@ import {
   SHIFT_TOLERANCE_SECONDS,
   shiftSamples,
   type CopyEncoding,
+  type CopyHold,
 } from './cloudCopyRules';
+import {
+  hasApis,
+  offlineAudio,
+  pickAudioConfig,
+  pickVideoConfig,
+  SAMPLE_RATE,
+  UNSUPPORTED_COPY,
+  type PickedAudio,
+  type PickedVideo,
+} from './cloudCopySupport';
 import { muxMp4, vpcConfig, type MuxAudioTrack, type MuxSample, type MuxVideoTrack } from './mp4Mux';
 
 /**
@@ -25,22 +35,18 @@ import { muxMp4, vpcConfig, type MuxAudioTrack, type MuxSample, type MuxVideoTra
  *    very first sample. Then the encoded sound is decoded back and compared with the original: if the encoder
  *    delayed it (AAC adds some silence at the start), the sound is encoded again moved by exactly that much, and
  *    checked again. So the copy's sound starts with the original's, to the sample.
- *  - Picture: the original plays muted in a hidden <video> (1× to 2×, slower if frames get lost) and each frame is
- *    drawn smaller and encoded (H.264, or VP9) with the frame's own time in the original (`mediaTime`). Pausing
- *    (hidden app, busy encoder) can't shift anything: times come from the original, not from the clock.
+ *  - Picture: the original plays muted in a hidden <video> (1× to 2×, slower if frames get lost, at most 1× while
+ *    the studio plays) and each frame is drawn smaller and encoded (H.264, or VP9) with the frame's own time in the
+ *    original (`mediaTime`). Pausing (hidden app, busy encoder, the recorder open, the voice being separated) can't
+ *    shift anything: times come from the original, not from the clock.
  *  - Our own MP4 writer puts both together with those exact times.
  *  - Check: the finished file must open in the browser and last as long as the original.
  * Too big after an attempt (or heading there): again with less bitrate, up to 3 times.
  */
 
-const SAMPLE_RATE = 48_000;
-const MAX_RATE = 2;
 const MIN_RATE = 0.5;
 /** Seconds of sound compared to find the start shift. */
 const CHECK_SECONDS = 45;
-
-export const UNSUPPORTED_COPY =
-  'Este navegador no puede preparar la copia para el grupo. Hazlo desde un ordenador con Chrome o Edge: abre allí esta canción y elige el mismo archivo.';
 
 export type CopyPhase = 'sound' | 'picture' | 'checking';
 
@@ -62,12 +68,24 @@ export interface CloudCopyResult {
   correctedShiftSeconds: number;
 }
 
+/** What the rest of the device allows the copy right now (see `copyPace`). */
+export interface CopyPaceNow {
+  hold: CopyHold | null;
+  maxRate: number;
+}
+
 export interface CloudCopyOptions {
   targetBytes: number;
   limitBytes: number;
   signal?: AbortSignal;
   onProgress?: (p: CopyProgress) => void;
+  /** Asked several times a second: wait (no frames, no encoder) or go no faster than `maxRate`. */
+  pace?: () => CopyPaceNow;
+  /** The copy started waiting (why) or goes on (null). */
+  onHold?: (hold: CopyHold | null) => void;
 }
+
+const FREE: CopyPaceNow = { hold: null, maxRate: COPY.maxRate };
 
 const abortError = () => new DOMException('Copia cancelada', 'AbortError');
 
@@ -86,103 +104,6 @@ function toBytes(source: AllowSharedBufferSource | undefined): Uint8Array | unde
   if (source instanceof ArrayBuffer) return new Uint8Array(source.slice(0));
   const view = source as ArrayBufferView;
   return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer);
-}
-
-// ───────────── What this browser can do ─────────────
-
-type OfflineCtor = typeof OfflineAudioContext;
-
-function offlineAudio(): OfflineCtor | undefined {
-  if (typeof window === 'undefined') return undefined;
-  return (window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: OfflineCtor }).webkitOfflineAudioContext) as
-    | OfflineCtor
-    | undefined;
-}
-
-function hasApis(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof VideoEncoder !== 'undefined' &&
-    typeof AudioEncoder !== 'undefined' &&
-    typeof VideoFrame !== 'undefined' &&
-    typeof AudioData !== 'undefined' &&
-    offlineAudio() != null &&
-    typeof HTMLVideoElement !== 'undefined' &&
-    'requestVideoFrameCallback' in HTMLVideoElement.prototype
-  );
-}
-
-interface PickedVideo {
-  codec: 'avc1' | 'vp09';
-  config: VideoEncoderConfig;
-}
-
-
-async function pickVideoConfig(enc: Pick<CopyEncoding, 'width' | 'height' | 'videoBps' | 'fps'>): Promise<PickedVideo | null> {
-  const base = {
-    width: enc.width,
-    height: enc.height,
-    bitrate: enc.videoBps,
-    framerate: enc.fps,
-    bitrateMode: 'variable' as const,
-    latencyMode: 'quality' as const,
-  };
-  const level = avcLevel(enc.width, enc.height);
-  const candidates: PickedVideo[] = [
-    // High, Main, Baseline: phones' hardware encoders often only do the last two.
-    ...['6400', '4d00', '42e0'].map((p) => ({
-      codec: 'avc1' as const,
-      config: { ...base, codec: `avc1.${p}${level}`, avc: { format: 'avc' as const } } as VideoEncoderConfig,
-    })),
-    { codec: 'vp09' as const, config: { ...base, codec: enc.width * enc.height > 1280 * 720 ? 'vp09.00.40.08' : 'vp09.00.31.08' } },
-  ];
-  for (const candidate of candidates) {
-    for (const hardwareAcceleration of ['no-preference', 'prefer-software'] as const) {
-      const config = { ...candidate.config, hardwareAcceleration };
-      try {
-        const support = await VideoEncoder.isConfigSupported(config);
-        if (support.supported) return { codec: candidate.codec, config: (support.config as VideoEncoderConfig) ?? config };
-      } catch {
-        /* this one isn't */
-      }
-    }
-  }
-  return null;
-}
-
-interface PickedAudio {
-  codec: 'mp4a' | 'Opus';
-  config: AudioEncoderConfig;
-}
-
-async function pickAudioConfig(channels: number, bitrate: number): Promise<PickedAudio | null> {
-  const candidates: PickedAudio[] = [
-    // AAC first: every phone plays it in MP4 (iPhone included).
-    {
-      codec: 'mp4a',
-      config: { codec: 'mp4a.40.2', sampleRate: SAMPLE_RATE, numberOfChannels: channels, bitrate, aac: { format: 'aac' } } as AudioEncoderConfig,
-    },
-    { codec: 'Opus', config: { codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: channels, bitrate } },
-  ];
-  for (const candidate of candidates) {
-    try {
-      const support = await AudioEncoder.isConfigSupported(candidate.config);
-      if (support.supported) return candidate;
-    } catch {
-      /* this one isn't */
-    }
-  }
-  return null;
-}
-
-/** Whether this browser can make the copy (asks the encoders; a few milliseconds). */
-export async function canMakeCloudCopy(): Promise<boolean> {
-  if (!hasApis()) return false;
-  const [video, audio] = await Promise.all([
-    pickVideoConfig({ width: 1280, height: 720, videoBps: 2_000_000, fps: COPY.fps }),
-    pickAudioConfig(2, COPY.audioBps),
-  ]);
-  return video != null && audio != null;
 }
 
 // ───────────── Reading the original ─────────────
@@ -476,6 +397,7 @@ async function encodePicture(
   guard: { audioBytes: number; limitBytes: number },
   signal: AbortSignal | undefined,
   onProgress: (fraction: number) => void,
+  share: Pick<CloudCopyOptions, 'pace' | 'onHold'> = {},
 ): Promise<PictureResult> {
   throwIfAborted(signal);
   const url = URL.createObjectURL(source);
@@ -532,6 +454,9 @@ async function encodePicture(
     let lastFrameAt = performance.now();
     let held = false; // paused by us: the encoder is behind
     let hiddenPause = false;
+    let paced = false; // paused for the rest of the device (the recorder open, the voice being separated)
+    let shownHold: CopyHold | null = null;
+    let rateCap: number = COPY.maxRate;
     let rate = 1;
     let windowStart = 0;
     let drops = 0;
@@ -575,7 +500,7 @@ async function encodePicture(
       capture(t);
       // Speed: up while nothing is lost and the encoder keeps up; down when frames go missing.
       if (t - windowStart >= 4) {
-        if (drops === 0 && maxQueue <= 3 && rate < MAX_RATE) rate = Math.min(MAX_RATE, rate + 0.25);
+        if (drops === 0 && maxQueue <= 3 && rate < rateCap) rate = Math.min(rateCap, rate + 0.25);
         else if (drops >= 2 && rate > MIN_RATE) rate = Math.max(MIN_RATE, rate - 0.25);
         video.playbackRate = rate;
         windowStart = t;
@@ -584,8 +509,32 @@ async function encodePicture(
       }
     };
 
+    /** Reads what the rest of the device allows now; true while the copy has to wait. */
+    const readPace = () => {
+      const now = share.pace?.() ?? FREE;
+      rateCap = now.maxRate;
+      if (rate > rateCap) {
+        rate = Math.max(MIN_RATE, rateCap);
+        video.playbackRate = rate;
+      }
+      if (now.hold) {
+        if (!paced) video.pause();
+        paced = true;
+        // Waiting for someone else is no sign of being stuck.
+        lastFrameAt = performance.now();
+      } else if (paced) {
+        paced = false;
+        lastFrameAt = performance.now();
+      }
+      if (now.hold !== shownHold) {
+        shownHold = now.hold;
+        share.onHold?.(now.hold);
+      }
+      return paced;
+    };
+
     const resume = () => {
-      if (finished || video.ended || hiddenPause) return;
+      if (finished || video.ended || hiddenPause || paced) return;
       if (held && enc2.encodeQueueSize > 2) return;
       held = false;
       lastFrameAt = performance.now();
@@ -603,7 +552,7 @@ async function encodePicture(
     };
     document.addEventListener('visibilitychange', onVisibility);
     pump = setInterval(() => {
-      if (finished || document.hidden) return;
+      if (finished || readPace() || document.hidden) return;
       resume();
       // Nothing new for a long while with the app in sight: stuck (longer if it's the encoder that's behind).
       if (performance.now() - lastFrameAt > (held ? 60_000 : 25_000)) {
@@ -624,7 +573,7 @@ async function encodePicture(
     capture(0);
     frameHandle = video.requestVideoFrameCallback(onFrame);
     hiddenPause = document.hidden;
-    if (!hiddenPause) {
+    if (!readPace() && !hiddenPause) {
       try {
         await video.play();
       } catch {
@@ -651,12 +600,26 @@ async function encodePicture(
     if (pump) clearInterval(pump);
     if (onVisibility) document.removeEventListener('visibilitychange', onVisibility);
     signal?.removeEventListener('abort', onAbort);
+    // A hold shown by this attempt ends with it (the next one asks again).
+    share.onHold?.(null);
     if (encoder && encoder.state !== 'closed') encoder.close();
     releaseVideo(video, url);
   }
 }
 
 // ───────────── The whole copy ─────────────
+
+/** Waits while the rest of the device asks the copy to (the recorder open, the voice being separated). */
+async function untilFree(opts: CloudCopyOptions): Promise<void> {
+  let shown: CopyHold | null = null;
+  for (let hold = opts.pace?.().hold ?? null; hold; hold = opts.pace?.().hold ?? null) {
+    throwIfAborted(opts.signal);
+    if (hold !== shown) opts.onHold?.((shown = hold));
+    await sleep(250);
+  }
+  throwIfAborted(opts.signal);
+  if (shown) opts.onHold?.(null);
+}
 
 /**
  * The copy for the group: resolves with an MP4 under the limit, rejects with an AbortError when cancelled or a
@@ -683,6 +646,9 @@ export async function makeCloudCopy(source: Blob, opts: CloudCopyOptions): Promi
 
   const pickedAudio = await pickAudioConfig(2, enc.audioBps);
   if (!pickedAudio) throw new FriendlyError(UNSUPPORTED_COPY);
+
+  // The sound is encoded on this thread too: not while the recorder or the separation needs the device.
+  await untilFree(opts);
 
   // Sound: 0–8 % of the bar. The decoded original (~90 MB of samples for 4 min) only lives inside this block: it
   // is let go before the picture pass, which takes most of the time and memory.
@@ -712,6 +678,7 @@ export async function makeCloudCopy(source: Blob, opts: CloudCopyOptions): Promi
       { audioBytes: sound.bytes, limitBytes: opts.limitBytes },
       signal,
       (f) => report({ phase: 'picture', progress: 0.08 + 0.88 * f, attempt, width: current.width, height: current.height }),
+      { pace: opts.pace, onHold: opts.onHold },
     );
     let projected: number;
     if (result.ok) {

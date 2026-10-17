@@ -7,26 +7,10 @@
  * (1080p or 720p, lower bitrate) and sends it, and keeps playing its original.
  */
 
-/**
- * The group's cloud as the database enforces it (migration 20261017140000): 1 GiB for videos and takes together,
- * and a file in the videos bucket is only accepted if, once stored, 50 MB are still free for one shared take. The
- * database can't see a file's size before it arrives, so it counts every upload as the per-file limit (50 MB).
- */
-export const CLOUD_SPACE = {
-  quotaBytes: 1024 ** 3,
-  /** Kept free for one shared take (what the takes bucket asks for, counted once). */
-  takesReserveBytes: 52_428_800,
-} as const;
+import { CLOUD_SPACE, videosBucketHasRoom, videosUploadNeeds } from './cloudSpace';
 
-/** Mirror of `private.videos_bucket_has_room`: one more file (counted as `limitBytes`) fits in the group. */
-export function videosBucketHasRoom(usedBytes: number, limitBytes: number, quotaBytes: number = CLOUD_SPACE.quotaBytes): boolean {
-  return Math.max(0, usedBytes) + Math.max(0, limitBytes) < quotaBytes - CLOUD_SPACE.takesReserveBytes;
-}
-
-/** What has to be free in the group for an upload to the videos bucket: the file (as the limit) and the reserve. */
-export function videosUploadNeeds(limitBytes: number): number {
-  return Math.max(0, limitBytes) + CLOUD_SPACE.takesReserveBytes;
-}
+// The group's space lives in `cloudSpace.ts` (the data layer, in the app's entry, needs only that).
+export { CLOUD_SPACE, videosBucketHasRoom, videosUploadNeeds };
 
 /**
  * Biggest original this device reads whole into memory (the copy and the separation decode its whole sound): a
@@ -64,7 +48,39 @@ export const COPY = {
   maxAttempts: 3,
   /** Check an attempt's size once this share of it is done. */
   projectFrom: 0.15,
+  /** The hidden original plays at most this fast while nothing else needs the phone… */
+  maxRate: 2,
+  /** …and at most at 1× while the studio plays (its A–B loop and clips need the main thread on time). */
+  playingRate: 1,
 } as const;
+
+// ───────────── Sharing the device ─────────────
+
+/** Why the copy waits: the recorder covers the studio, or the AI voice separation is running (one encoder at a time). */
+export type CopyHold = 'recording' | 'voice';
+
+/**
+ * How the copy may go given what else this device is doing: paused (no frames drawn or encoded; the copy's times
+ * come from the original, so a pause shifts nothing) while the recorder is open or the voice is being separated,
+ * and no faster than 1× while the studio plays.
+ */
+export function copyPace(input: { covered: boolean; separating: boolean; studioPlaying: boolean }): {
+  hold: CopyHold | null;
+  maxRate: number;
+} {
+  const hold: CopyHold | null = input.covered ? 'recording' : input.separating ? 'voice' : null;
+  return { hold, maxRate: input.studioPlaying ? COPY.playingRate : COPY.maxRate };
+}
+
+/** «En pausa mientras grabas»: what the copy's row says while it waits. */
+export function copyHoldText(hold: CopyHold): string {
+  return hold === 'recording' ? 'En pausa mientras grabas…' : 'En pausa mientras se separa la voz…';
+}
+
+/** The copy's own clock without its pauses (for the time left). */
+export function workingSeconds(elapsedMs: number, pausedMs: number): number {
+  return Math.max(0, elapsedMs - Math.max(0, pausedMs)) / 1000;
+}
 
 export interface CopyEncoding {
   width: number;

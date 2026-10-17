@@ -1,25 +1,17 @@
-import { formatBytes, type Video } from '@coverscape/shared';
+import type { Video } from '@coverscape/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
-import { takeKeys } from '@/data/takes';
-import { fileIdentity, uploadGroupFile, videoKeys } from '@/data/videos';
-import { backend, cloudLimitBytes } from '@/lib/backend';
-import { friendlyError } from '@/lib/supabase';
-import { canMakeCloudCopy, isAbort, makeCloudCopy, probeVideo, UNSUPPORTED_COPY, type CopyPhase } from './cloudCopy';
-import {
-  CLOUD_SPACE,
-  cloudDecision,
-  COPY,
-  estimateCopySeconds,
-  etaSeconds,
-  formatMaxLength,
-  maxOriginalBytes,
-} from './cloudCopyRules';
+import { beginHeavyWork } from '@/lib/heavyWork';
+import type { CopyPhase } from './cloudCopy';
+import type { CopyHold } from './cloudCopyRules';
 
 /**
  * 13 · The «copy for the group» jobs of this device, one per video. They live outside React: closing the panel or
  * leaving the song doesn't stop them (closing the app does, and the browser asks first). The UI reads them with
  * `useCopyJob`.
+ *
+ * Only the jobs' state lives here (small: it is in the studio's chunk). The work itself (`cloudCopyRun.ts`, with
+ * the encoder and the MP4 writer) is loaded when a copy starts.
  */
 
 export type CopyJobPhase = 'preparing' | CopyPhase | 'uploading';
@@ -37,6 +29,8 @@ export type CopyJob =
       attempt: number;
       /** 'original': it fits as it is, only the upload is left. */
       mode: 'copy' | 'original';
+      /** Waiting for the rest of the device (the recorder open, the voice being separated). */
+      held?: CopyHold | null;
     }
   | { status: 'done'; mode: 'copy' | 'original'; bytes: number; height?: number }
   /** 'too-long' / 'too-heavy' / 'unsupported': trying again here gives the same answer (no «Reintentar»). */
@@ -46,18 +40,23 @@ interface JobsState {
   jobs: Record<string, CopyJob>;
 }
 
+const LOAD_FAILED = 'No se pudo empezar la copia. Revisa la conexión y vuelve a intentarlo.';
+
 const useJobs = create<JobsState>(() => ({ jobs: {} }));
 const controllers = new Map<string, AbortController>();
-/** Files already in the cloud whose row update failed: a retry only writes the row. Key: video + file identity. */
-const uploaded = new Map<string, string>();
 
-function setJob(videoId: string, job: CopyJob | null) {
+/** For the copy's own work (`cloudCopyRun.ts`): the job's new state, or none. */
+export function setCopyJob(videoId: string, job: CopyJob | null): void {
   useJobs.setState((s) => {
     const jobs = { ...s.jobs };
     if (job) jobs[videoId] = job;
     else delete jobs[videoId];
     return { jobs };
   });
+}
+
+export function copyJob(videoId: string): CopyJob | undefined {
+  return useJobs.getState().jobs[videoId];
 }
 
 export function useCopyJob(videoId: string): CopyJob | undefined {
@@ -75,60 +74,7 @@ export function cancelCloudCopy(videoId: string): void {
 
 /** Forgets a finished or failed job (the offer shows again). */
 export function clearCloudCopy(videoId: string): void {
-  if (!controllers.has(videoId)) setJob(videoId, null);
-}
-
-// ── While a copy is being made: ask before leaving, and keep the screen on (a locked phone pauses it). ──
-
-function onBeforeUnload(e: BeforeUnloadEvent) {
-  e.preventDefault();
-  e.returnValue = '';
-}
-
-type WakeLock = { release: () => Promise<void> };
-let wakeLock: WakeLock | null = null;
-
-async function keepAwake() {
-  if (wakeLock || document.hidden || !controllers.size) return;
-  try {
-    const nav = navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLock> } };
-    wakeLock = (await nav.wakeLock?.request('screen')) ?? null;
-    (wakeLock as unknown as EventTarget | null)?.addEventListener?.('release', () => {
-      wakeLock = null;
-    });
-  } catch {
-    wakeLock = null;
-  }
-}
-
-function onVisible() {
-  if (!document.hidden) void keepAwake();
-}
-
-function guardsOn() {
-  if (controllers.size !== 1) return;
-  window.addEventListener('beforeunload', onBeforeUnload);
-  document.addEventListener('visibilitychange', onVisible);
-  void keepAwake();
-}
-
-function guardsOff() {
-  if (controllers.size) return;
-  window.removeEventListener('beforeunload', onBeforeUnload);
-  document.removeEventListener('visibilitychange', onVisible);
-  void wakeLock?.release().catch(() => undefined);
-  wakeLock = null;
-}
-
-/** This device as far as memory goes (a phone reads less into memory before closing the tab). */
-function deviceShape(): { mobile: boolean; memoryGb: number | null } {
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return { mobile: coarse && Math.min(screen.width, screen.height) < 820, memoryGb: typeof memory === 'number' ? memory : null };
-}
-
-function extensionOf(name: string | null | undefined): string {
-  return name?.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'mp4';
+  if (!controllers.has(videoId)) setCopyJob(videoId, null);
 }
 
 export interface StartCopyInput {
@@ -142,145 +88,25 @@ export interface StartCopyInput {
  * Makes the group's file of `video` from this device's original and sends it: a reduced copy when the original
  * doesn't fit (over 50 MB, or over what's left of the group's 1 GiB), else the original itself.
  */
-export function startCloudCopy({ video, source, queryClient }: StartCopyInput): void {
-  if (controllers.has(video.id)) return;
+export function startCloudCopy(input: StartCopyInput): void {
+  const id = input.video.id;
+  if (controllers.has(id)) return;
   const controller = new AbortController();
-  controllers.set(video.id, controller);
-  guardsOn();
-  setJob(video.id, { status: 'working', phase: 'preparing', progress: 0, etaSeconds: null, attempt: 1, mode: 'copy' });
-  void run(video, source, queryClient, controller.signal).finally(() => {
-    controllers.delete(video.id);
-    guardsOff();
-  });
-}
-
-async function run(video: Video, source: Blob, queryClient: QueryClient, signal: AbortSignal) {
-  const identity = fileIdentity(video);
-  const key = `${video.id}|${identity}`;
-  try {
-    let blob: Blob | null = null;
-    let extension = 'mp4';
-    let mode: 'copy' | 'original' = 'copy';
-    let height: number | undefined;
-
-    if (!uploaded.has(key)) {
-      const usage = await backend.storageUsage().catch(() => null);
-      const limit = cloudLimitBytes();
-      // A YouTube entry's own length is YouTube's; the file's is the one that counts.
-      let duration =
-        Number(video.source === 'youtube' ? video.file_duration_seconds : (video.duration_seconds ?? video.file_duration_seconds)) || null;
-      if (!duration) duration = (await probeVideo(source, signal).catch(() => null))?.duration ?? null;
-      if (signal.aborted) throw new DOMException('Copia cancelada', 'AbortError');
-      const device = deviceShape();
-      const decision = cloudDecision({
-        fileBytes: source.size,
-        durationSeconds: duration,
-        usedBytes: usage?.total ?? null,
-        limitBytes: limit,
-        maxOriginalBytes: maxOriginalBytes(device),
-      });
-
-      if (decision.kind === 'no-space') {
-        setJob(video.id, {
-          status: 'error',
-          kind: 'space',
-          message: `No cabe en la nube del grupo: para subir un archivo hacen falta ${formatBytes(decision.needBytes)} libres (${formatBytes(CLOUD_SPACE.takesReserveBytes)} se guardan para compartir tomas) y quedan ${formatBytes(decision.freeBytes)} de ${formatBytes(COPY.quotaBytes)}. Avisad a quien administra la app para hacer sitio.`,
-        });
-        return;
-      }
-      if (decision.kind === 'too-long') {
-        setJob(video.id, {
-          status: 'error',
-          kind: 'too-long',
-          message: `El vídeo dura demasiado para que su copia quepa en la nube (máximo: ${formatMaxLength(decision.maxSeconds)}). Recórtalo, o pásalo a 720p con HandBrake y vincula ese archivo.`,
-        });
-        return;
-      }
-      if (decision.kind === 'too-heavy') {
-        setJob(video.id, {
-          status: 'error',
-          kind: 'too-heavy',
-          message: `Este archivo pesa ${formatBytes(source.size)}: es demasiado para hacer la copia en ${device.mobile ? 'un móvil' : 'este dispositivo'} (hasta ${formatBytes(decision.maxBytes)}). Hazla desde el ordenador: abre allí esta canción y elige el mismo archivo.`,
-        });
-        return;
-      }
-
-      if (decision.kind === 'original') {
-        mode = 'original';
-        blob = source;
-        extension = extensionOf(video.file_name);
-      } else {
-        if (!(await canMakeCloudCopy())) {
-          setJob(video.id, { status: 'error', kind: 'unsupported', message: UNSUPPORTED_COPY });
-          return;
-        }
-        const started = performance.now();
-        const estimate = estimateCopySeconds(duration ?? 0);
-        let lastPaint = 0;
-        let lastPhase = '';
-        const result = await makeCloudCopy(source, {
-          targetBytes: decision.targetBytes,
-          limitBytes: limit,
-          signal,
-          onProgress: (p) => {
-            // A few repaints a second are plenty for a bar.
-            const now = performance.now();
-            if (p.phase === lastPhase && now - lastPaint < 400 && p.progress < 1) return;
-            lastPaint = now;
-            lastPhase = p.phase;
-            height = p.height ?? height;
-            setJob(video.id, {
-              status: 'working',
-              phase: p.phase,
-              progress: p.progress,
-              etaSeconds: etaSeconds({ elapsedSeconds: (now - started) / 1000, progress: p.progress, estimateSeconds: estimate }),
-              height: p.height,
-              attempt: p.attempt,
-              mode: 'copy',
-            });
-          },
-        });
-        blob = result.blob;
-        height = result.height;
-        if (Math.abs(result.correctedShiftSeconds) > 0) {
-          console.info('[cloudCopy] sound start corrected by', result.correctedShiftSeconds.toFixed(4), 's');
-        }
-      }
-    }
-
-    if (signal.aborted) throw new DOMException('Copia cancelada', 'AbortError');
-    setJob(video.id, { status: 'working', phase: 'uploading', progress: 0, etaSeconds: null, height, attempt: 1, mode });
-    const upStarted = performance.now();
-    let upPaint = 0;
-    const updated = await uploadGroupFile({
-      video,
-      blob: blob ?? new Blob(),
-      extension,
-      identity,
-      uploadedPath: uploaded.get(key) ?? null,
-      onUploaded: (path) => uploaded.set(key, path),
-      signal,
-      onProgress: (fraction) => {
-        const now = performance.now();
-        if (now - upPaint < 400 && fraction < 1) return;
-        upPaint = now;
-        const elapsed = (now - upStarted) / 1000;
-        // Time left from the pace so far (no estimate before a few seconds: mobile data varies a lot).
-        const eta = fraction > 0.03 && elapsed > 3 ? Math.round((elapsed * (1 - fraction)) / fraction) : null;
-        setJob(video.id, { status: 'working', phase: 'uploading', progress: fraction, etaSeconds: eta, height, attempt: 1, mode });
-      },
+  controllers.set(id, controller);
+  // Heavy work for as long as the job lasts (busy while it encodes, idle while it waits or uploads): the follow
+  // analysis and the separation wait for it, the recorder doesn't learn from its load, an update doesn't cut it.
+  const work = beginHeavyWork('copy');
+  setCopyJob(id, { status: 'working', phase: 'preparing', progress: 0, etaSeconds: null, attempt: 1, mode: 'copy' });
+  void import('./cloudCopyRun')
+    .then((m) => m.runCloudCopy(input, controller.signal, work))
+    .catch((error: unknown) => {
+      // Only when the work itself couldn't be loaded (offline, a new version replaced it): it reports its own errors.
+      console.error('[cloudCopy] load', error);
+      if (controller.signal.aborted) setCopyJob(id, null);
+      else setCopyJob(id, { status: 'error', kind: 'other', message: LOAD_FAILED });
+    })
+    .finally(() => {
+      controllers.delete(id);
+      work();
     });
-    uploaded.delete(key);
-    queryClient.setQueryData(videoKeys.detail(updated.id), updated);
-    void queryClient.invalidateQueries({ queryKey: videoKeys.list(updated.crew_id) });
-    void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
-    setJob(video.id, { status: 'done', mode, bytes: blob?.size ?? 0, height });
-  } catch (error) {
-    if (isAbort(error)) {
-      setJob(video.id, null);
-      return;
-    }
-    console.error('[cloudCopy]', error);
-    setJob(video.id, { status: 'error', kind: 'other', message: friendlyError(error) });
-  }
 }
