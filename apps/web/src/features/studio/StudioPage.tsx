@@ -21,20 +21,23 @@ import {
   Keyboard,
   Maximize2,
   Minimize2,
+  Pause,
+  Play,
   Repeat,
   Repeat1,
-  RotateCcw,
-  RotateCw,
   Video as VideoIcon,
   WifiOff,
   Youtube,
 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { markOpened } from '@/lib/recent';
 import { askWho, useMe } from '@/data/members';
 import { songNotes } from '@/features/review/reviewRules';
-import { readStage, rememberStage } from '@/lib/stagePref';
+import { forgetStage, readStage, rememberStage } from '@/lib/stagePref';
+import { loadLocalVideo } from '@/lib/localVideos';
+import { initialStage, needsLocalCheck } from './stageRules';
+import { fsChrome, useFsChrome, useFsChromeDriver } from './fullscreenChrome';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
@@ -42,6 +45,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
 import {
+  isStaleCopy,
   useLinkLocalFile,
   useUpdateVideo,
   useUploadToCloud,
@@ -62,19 +66,27 @@ import { useToast } from '@/providers/ToastProvider';
 import { PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
 import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
 import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
+import { FollowFsButton } from '@/features/follow/FollowFsMenu';
+import { useFollowUi } from '@/features/follow/followUi';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
+import { CloudCopyStatus } from './CloudCopyStatus';
+import { cloudLimitBytes } from '@/lib/backend';
 import { useFileSource } from './fileSource';
 import { releaseTakeUrl } from '@/data/takes';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
+import { SeparateVoiceButton } from '@/features/voice/SeparateVoiceButton';
+import { useStageStems } from '@/data/stems';
 import { Segmented } from '@/components/ui/Segmented';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { assignLanes, Timeline, useNoteAlert } from './Timeline';
-import { GapPicker, PlayerBar, useLongPress } from './Transport';
+import { GapBadge, GapPicker, PlayerBar, useLongPress } from './Transport';
+import { Dormant, useUnlessCovered } from './studioAsleep';
 import { useShortcuts } from './useShortcuts';
+import { useMenuFocus } from './useMenuFocus';
 
 /** F5 · The review screen, loaded when a take is first opened. */
 const ReviewScreen = lazy(() => import('@/features/review/ReviewScreen').then((m) => ({ default: m.ReviewScreen })));
@@ -102,6 +114,24 @@ export function StudioPage() {
   const notes = useNotes(videoId);
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [recording, setRecording] = useState(false);
+  const recordButton = useRef<HTMLButtonElement>(null);
+  /**
+   * Closing the recorder: back to «Grabar». While the recorder covered the studio, «Grabar» sat in a Dormant part
+   * (content-visibility: hidden) and the browser dropped its focus to body. Tried for a few frames, until that part
+   * shows again; never over a focus something else already took.
+   */
+  const closeRecorder = useCallback(() => {
+    setRecording(false);
+    let tries = 0;
+    const refocus = () => {
+      const el = recordButton.current;
+      const active = document.activeElement;
+      if (!el || (active && active !== document.body) || tries++ > 5) return;
+      el.focus({ preventScroll: true });
+      if (document.activeElement !== el) requestAnimationFrame(refocus);
+    };
+    requestAnimationFrame(refocus);
+  }, []);
   const [linking, setLinking] = useState(false);
   const [sideTab, setSideTab] = useState<'clips' | 'takes'>('clips');
   /** F5 · The take open in «Repaso» (its URL is released when the review closes). */
@@ -136,15 +166,46 @@ export function StudioPage() {
   // Reset only on cleanup: child stages attach their engine in effects that run *before* this
   // parent effect, so resetting on mount could wipe a freshly attached engine.
   useEffect(() => () => usePlayer.getState().reset(), [videoId]);
-  // F1: the stage this device last used for this video (YouTube by default, the file only if still linked).
+  // 12 · What a linked entry opens on: the file when this device can play it, unless the person chose YouTube
+  // for this video here. Decided once per video, before any player mounts (no YouTube iframe started for nothing).
   const linkedFile = video.data ? hasLinkedFile(video.data) : false;
-  // P3 · The library's row (placeholder) opens the stage, but only the real row may forget «Archivo».
+  // P3 · The library's row (placeholder) opens the stage, but only the real row may forget the choice.
   const loaded = video.data != null && !video.isPlaceholderData;
+  const hasRow = video.data != null;
+  const [stageFor, setStageFor] = useState<string | null>(null);
+  const decidedFor = useRef<string | null>(null);
+  const rowRef = useRef(video.data);
+  rowRef.current = video.data;
   useEffect(() => {
-    if (!videoId) return;
-    if (loaded && !linkedFile) rememberStage(videoId, 'youtube'); // removed on another phone: forget «Archivo»
-    usePlayer.setState({ stage: linkedFile ? readStage(videoId) : 'youtube' });
-  }, [videoId, linkedFile, loaded]);
+    const row = rowRef.current;
+    if (!videoId || !row) return;
+    if (!linkedFile) {
+      if (loaded) forgetStage(videoId); // removed (here or on another phone): back to the default
+      usePlayer.setState({ stage: 'youtube' });
+      // Only the real row settles it: a stale placeholder without the file must not keep YouTube once the row says
+      // the file was linked (on another phone).
+      decidedFor.current = loaded ? videoId : null;
+      setStageFor(videoId);
+      return;
+    }
+    // Linked during this visit: keep what is playing (the link panel syncs on YouTube).
+    if (decidedFor.current === videoId) return;
+    const choice = readStage(videoId);
+    const inCloud = Boolean(row.storage_path);
+    let cancelled = false;
+    const decide = (reachable: boolean) => {
+      if (cancelled) return;
+      decidedFor.current = videoId;
+      usePlayer.setState({ stage: initialStage({ linked: true, choice, reachable }) });
+      setStageFor(videoId);
+    };
+    if (!needsLocalCheck({ linked: true, choice, inCloud })) decide(inCloud);
+    else void hasDeviceCopy(row).then(decide);
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId, linkedFile, loaded, hasRow]);
+  const stageHeld = stageFor !== videoId;
   // Remember this video as the last one opened on this device (the library leads with it).
   useEffect(() => {
     if (videoId) markOpened(videoId);
@@ -272,7 +333,8 @@ export function StudioPage() {
   return (
     <Page className="px-2.5 pb-16 pt-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
-        {/* Title bar */}
+        {/* Title bar (held still with the rest of the page, the stage aside, while the recorder covers it) */}
+        <Dormant>
         <div className="sep-b flex items-center gap-3 px-4 py-4 sm:px-6">
           <Link
             to="/"
@@ -321,7 +383,7 @@ export function StudioPage() {
               <span className="max-sm:sr-only">{hasLinkedFile(current) ? 'Archivo' : 'Añadir archivo'}</span>
             </Button>
           )}
-          <Button size="sm" aria-label="Grabar baile con la canción" onClick={() => askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () => setRecording(true))}
+          <Button ref={recordButton} size="sm" aria-label="Grabar baile con la canción" onClick={() => askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () => setRecording(true))}
             disabled={!ready}
             onPointerEnter={warmRecordStudio}
             onPointerDown={warmRecordStudio}
@@ -331,15 +393,29 @@ export function StudioPage() {
             <span className="max-sm:sr-only">Grabar</span>
           </Button>
         </div>
+        </Dormant>
 
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
           {/* Work area */}
           <div className="min-w-0">
-            {/* On phones the stage stays pinned under the top bar while the controls scroll. */}
-            <div className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none">
-              {hasLinkedFile(current) && <StageSwitch video={current} />}
-              <MediaStage video={current} clips={clips.data ?? []} notes={songNoteList} onClipSelect={tapClipLine} />
+            {/*
+              On phones the stage stays pinned under the top bar while the controls scroll. Menus below open clear of it
+              (data-popover-ceiling). Its z-20 is a stacking context: in the CSS fullscreen (iPhone, data-fs) it rises
+              over the top bar (z-40) and the quick menu, or they would cover the fullscreen bar and its YouTube credit.
+            */}
+            <div
+              data-popover-ceiling
+              className="sticky top-16 z-20 rounded-t-[9px] bg-sumi-850 px-2.5 pb-2.5 pt-2.5 shadow-[0_12px_18px_-12px_rgb(0_0_0/0.85)] has-[[data-fs]]:z-[75] sm:static sm:rounded-none sm:bg-transparent sm:px-5 sm:pb-1 sm:pt-5 sm:shadow-none"
+            >
+              <MediaStage
+                video={current}
+                clips={clips.data ?? []}
+                notes={songNoteList}
+                onClipSelect={tapClipLine}
+                hold={stageHeld}
+              />
             </div>
+            <Dormant>
             <Timeline
               seed={current.id}
               clips={clips.data ?? []}
@@ -348,13 +424,17 @@ export function StudioPage() {
               onNoteOpen={openNote}
             />
             <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
+            {hasLinkedFile(current) && <SourceRow video={current} />}
+            {/* 13 · Only on this device: send a lighter copy to the group (shows only when there's something to say). */}
+            <CloudCopyStatus video={current} variant="studio" />
             <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
             <FollowRow video={current} onLink={() => setLinking(true)} />
-            <VoiceRow />
+            <VoiceRow video={current} />
+            </Dormant>
           </div>
 
           {/* Clips | Tomas column */}
-          <div className="sep-t lg:sep-l">
+          <Dormant className="sep-t lg:sep-l">
             <div className="px-4 pt-4 sm:px-5">
               <Segmented
                 label="Clips o tomas"
@@ -393,7 +473,7 @@ export function StudioPage() {
                 />
               </Suspense>
             )}
-          </div>
+          </Dormant>
         </div>
       </div>
 
@@ -414,7 +494,7 @@ export function StudioPage() {
             </div>
           }
         >
-          <RecordStudio open onClose={() => setRecording(false)} video={current} />
+          <RecordStudio open onClose={closeRecorder} video={current} />
         </Suspense>
       )}
       {current.source === 'youtube' && (
@@ -454,8 +534,11 @@ export function StudioPage() {
   );
 }
 
-/** F17 · Voice and music apart: on files only (YouTube's sound can't be reached). */
-function VoiceRow() {
+/**
+ * F17 · Voice and music apart: on files only (YouTube's sound can't be reached). 18 · Below it, «Separar voz y
+ * música» (AI, once per song) or a line saying the separated tracks are in use.
+ */
+function VoiceRow({ video }: { video: Video }) {
   const mode = usePlayer((s) => s.voiceMode);
   const available = usePlayer((s) => Boolean(s.engine?.setVoiceMode));
   const [monoLike, setMonoLike] = useState(false);
@@ -478,31 +561,73 @@ function VoiceRow() {
         monoLike={monoLike}
         compact
       />
+      <SeparateVoiceButton video={video} available={available} />
     </div>
   );
 }
 
-/** F1 · «YouTube | Archivo» for a YouTube entry with its own file. */
-function StageSwitch({ video }: { video: Video }) {
+/** 12 · Whether this device keeps a current copy of the entry's linked file. */
+async function hasDeviceCopy(video: Video): Promise<boolean> {
+  const blob = await loadLocalVideo(video.id);
+  return blob != null && !isStaleCopy(video);
+}
+
+const SOURCES = [
+  { value: 'file', label: 'Archivo', Icon: FileVideo },
+  { value: 'youtube', label: 'YouTube', Icon: Youtube },
+] as const;
+
+/**
+ * F1 · 12 · «Archivo | YouTube» for a YouTube entry with its own file: under the controls, with the video's
+ * settings, so it never takes room from the video. The person's pick is remembered for this video on this device.
+ */
+function SourceRow({ video }: { video: Video }) {
   const stage = usePlayer((s) => s.stage);
+  const choose = (next: 'youtube' | 'file') => {
+    rememberStage(video.id, next);
+    usePlayer.getState().setStage(next);
+  };
   return (
-    <div className="mb-2 flex items-center justify-between gap-3 sm:mb-3">
-      <Segmented
-        size="md"
-        label="Qué se reproduce"
-        layoutId={`stage-${video.id}`}
-        value={stage}
-        onChange={(next) => {
-          usePlayer.getState().setStage(next);
-          rememberStage(video.id, next);
+    <div className="sep-t flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 sm:px-5">
+      <p id="source-row-title" className="text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">
+        Vídeo
+      </p>
+      <div
+        role="radiogroup"
+        aria-labelledby="source-row-title"
+        className="well skin-track inline-flex items-center gap-0.5 rounded-[12px] p-0.5"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          const next = stage === 'file' ? 'youtube' : 'file';
+          choose(next);
+          e.currentTarget.querySelector<HTMLButtonElement>(`[data-source="${next}"]`)?.focus();
         }}
-        options={[
-          { value: 'youtube', label: 'YouTube' },
-          { value: 'file', label: 'Archivo' },
-        ]}
-      />
-      <span className="truncate text-[12px] text-washi-subtle">
-        {stage === 'file' ? (video.file_name ?? '') : 'El archivo: mismos clips y notas, sin anuncios ni esperas'}
+      >
+        {SOURCES.map(({ value, label, Icon }) => {
+          const active = stage === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              tabIndex={active ? 0 : -1}
+              data-source={value}
+              onClick={() => !active && choose(value)}
+              className={cn(
+                'flex min-h-11 items-center gap-1.5 rounded-[10px] px-3.5 text-[13px] font-medium transition-colors duration-150',
+                active ? 'bg-washi font-bold text-sumi-900' : 'text-washi-muted hover:text-washi',
+              )}
+            >
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-washi-subtle">
+        {stage === 'file' ? (video.file_name ?? '') : 'Con el archivo: sin anuncios ni esperas'}
       </span>
     </div>
   );
@@ -513,31 +638,39 @@ function MediaStage({
   clips,
   notes,
   onClipSelect,
+  hold = false,
 }: {
   video: Video;
   clips: Clip[];
   notes: Note[];
   onClipSelect: (clip: Clip) => void;
+  /** 12 · The stage isn't decided yet (looking for a device copy): no player mounts until it is. */
+  hold?: boolean;
 }) {
+  // 5 · Only what the stage itself needs: buffering, speed and the controls' visibility live in small components,
+  // so none of them repaints the stage (and the players inside it).
   const mirrored = usePlayer((s) => s.mirrored);
   const playing = usePlayer((s) => s.playing);
   const ready = usePlayer((s) => s.ready);
-  const buffering = usePlayer((s) => s.buffering);
   const error = usePlayer((s) => s.error);
-  const rate = usePlayer((s) => s.rate);
-  const counting = usePlayer((s) => s.countdownEndsAt != null);
-  const recentToggle = useRecentToggle(playing);
   const [reloadKey, setReloadKey] = useState(0);
   const stage = usePlayer((s) => s.stage);
   /** Uploaded videos play their file; a YouTube entry plays its linked file when «Archivo» is chosen (F1). */
   const playsFile = video.source === 'upload' || (stage === 'file' && hasLinkedFile(video));
-  const file = useFileSource(video, reloadKey, playsFile);
+  const file = useFileSource(video, reloadKey, playsFile && !hold);
+  // 18 · The group's AI-separated tracks for this file, for «Sin voz» / «Voz» (never with YouTube).
+  useStageStems(video, playsFile && !hold && file.status === 'ready' ? file.url : null);
   const link = useLinkLocalFile();
   const upload = useUploadToCloud();
   /** Only on this device (the upload failed or was too big): offer to send it to the group from here. */
   // Uploaded videos only: a YouTube entry's file reaches the cloud through the link panel (described and synced).
+  // 13 · Too big for the cloud: the «Nube del grupo» row below offers a lighter copy instead.
   const localOnly =
-    video.source === 'upload' && !video.storage_path && file.status === 'ready' && file.local != null;
+    video.source === 'upload' &&
+    !video.storage_path &&
+    file.status === 'ready' &&
+    file.local != null &&
+    file.local.size <= cloudLimitBytes();
 
   async function sendToCloud() {
     if (file.status !== 'ready' || !file.local || upload.isPending) return;
@@ -653,10 +786,8 @@ function MediaStage({
   const missing = playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const scrubbing = usePlayer((s) => s.scrubbing);
-  // A finger dragging the progress line keeps the controls up, however long it takes.
-  const chrome = useAutoHideChrome(fullscreen, playing, menuOpen || scrubbing);
+  // 5 · The controls' visibility lives in its own small store: showing them never repaints this stage.
+  useFsChromeDriver(fullscreen);
   const pointerType = useRef<string>('mouse');
   const tap = useRef<{
     at: number;
@@ -664,23 +795,12 @@ function MediaStage({
     streak: 'left' | 'right' | null;
     streakUntil: number;
   }>({ at: 0, streak: null, streakUntil: 0 });
-  const [seekFlash, setSeekFlash] = useState<{ side: 'left' | 'right'; seconds: number; key: number } | null>(null);
-  // Plain timer, not an animation callback, so the badge can never get stranded on screen.
-  useEffect(() => {
-    if (!seekFlash) return;
-    const id = setTimeout(() => setSeekFlash(null), 700);
-    return () => clearTimeout(id);
-  }, [seekFlash]);
   useEffect(() => () => clearTimeout(tap.current.timer), []);
 
   /** ±5 s with a YouTube-style badge; taps that keep coming on the same side add up (−5, −10, −15…). */
   const seekBy = useCallback((side: 'left' | 'right') => {
     usePlayer.getState().nudge(side === 'left' ? -5 : 5);
-    setSeekFlash((prev) => ({
-      side,
-      seconds: prev && prev.side === side ? prev.seconds + 5 : 5,
-      key: performance.now(),
-    }));
+    fsChrome.flashSeek(side);
   }, []);
 
   /**
@@ -718,7 +838,7 @@ function MediaStage({
     // detail 0: a keyboard press, whatever the last pointer was.
     if (!fullscreen || pointerType.current !== 'touch' || detail === 0) {
       player.togglePlay();
-      chrome.wake();
+      if (fullscreen) fsChrome.wake();
       return;
     }
     const x = (clientX - rect.left) / rect.width;
@@ -736,7 +856,7 @@ function MediaStage({
       t.at = 0;
       if (side === 'center') {
         player.togglePlay();
-        chrome.wake();
+        fsChrome.wake();
       } else {
         t.streak = side;
         t.streakUntil = now + 700;
@@ -746,11 +866,11 @@ function MediaStage({
     }
     t.at = now;
     t.streak = null;
-    if (!chrome.visible) {
-      chrome.wake();
+    if (!fsChrome.isVisible()) {
+      fsChrome.wake();
       return;
     }
-    t.timer = setTimeout(() => chrome.hide(), 260);
+    t.timer = setTimeout(() => fsChrome.hide(), 260);
   }
 
   async function onPick(picked: File | undefined) {
@@ -767,9 +887,11 @@ function MediaStage({
   return (
     <div
       ref={stageRef}
+      // Lifts the pinned container over the top bar in the CSS fullscreen; menus inside it mind only the screen.
+      data-fs={fullscreen || undefined}
       className={cn(
-        fullscreen && 'fixed inset-0 z-[70] grid place-items-center bg-black',
-        fullscreen && !chrome.visible && 'cursor-none',
+        fullscreen &&
+          'fixed inset-0 z-[70] grid place-items-center bg-black [&[data-idle]]:cursor-none [&[data-idle]_*]:!cursor-none',
       )}
     >
       <div
@@ -787,7 +909,7 @@ function MediaStage({
           animate={{ scaleX: mirrored ? -1 : 1 }}
           transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
         >
-          {!playsFile && video.youtube_id ? (
+          {hold ? null : !playsFile && video.youtube_id ? (
             <YouTubeStage key={reloadKey} videoId={video.youtube_id} />
           ) : file.status === 'ready' ? (
             // F9 · Inside the mirror: the zoom follows the picture when it flips.
@@ -827,8 +949,9 @@ function MediaStage({
             canZoom && (zoomed ? 'cursor-grab touch-none active:cursor-grabbing' : 'touch-pan-y'),
           )}
         />
-        <ZoomBadge visible={canZoom && !fullscreen} className="bottom-3 left-3" />
-        <FollowStageLayer video={video} box={box} media={media} canZoom={canZoom} />
+        {/* 4 · Over the video only what is needed, and only briefly: the zoom amount fades out after a moment. */}
+        <ZoomBadge visible={canZoom} className={fullscreen ? 'left-4 top-[max(16px,env(safe-area-inset-top))]' : 'bottom-3 left-3'} />
+        <FollowStageLayer video={video} box={box} media={media} canZoom={canZoom} fullscreen={fullscreen} />
 
         <div
           className={cn(
@@ -846,10 +969,7 @@ function MediaStage({
               onClick={(e) => {
                 e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
               }}
-              className={cn(
-                'pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/75 transition-[opacity,color] duration-200 hover:text-washi',
-                fullscreen && !chrome.visible && 'pointer-events-none opacity-0',
-              )}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/75 transition-colors duration-200 hover:text-washi"
             >
               <Youtube className="size-3.5" /> YouTube
             </a>
@@ -865,47 +985,14 @@ function MediaStage({
               {upload.isPending ? 'Subiendo…' : 'Solo en este móvil · Subir a la nube'}
             </button>
           )}
-          <AnimatePresence>
-            {rate !== 1 && (
-              <motion.span
-                key="rate"
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={jelly}
-                className="tabular ml-auto rounded-[8px] bg-sumi-950/85 px-2.5 py-1.5 font-mono text-sm font-semibold text-washi"
-              >
-                {formatSpeed(rate)}
-              </motion.span>
-            )}
-          </AnimatePresence>
+          <RateFlash />
         </div>
 
         {/*
-          Our crest in the middle of the small player. Always mounted and driven by a CSS transition:
-          YouTube fires PAUSED/BUFFERING/PLAYING in quick bursts and a mount/unmount exit animation could
-          get stranded mid-way. Paused it invites a tap; right after play/pause it also sits (softened) on
-          top of YouTube's own plain play/pause for as long as YouTube shows it.
+          4 · No play/pause of ours over the video: a tap on the picture plays or pauses, and the buttons live in the
+          bar below (and in fullscreen's bottom bar).
         */}
-        <div
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute inset-0 z-20 m-auto size-20 drop-shadow-[0_12px_20px_rgb(0_0_0/0.65)] transition-[opacity,scale] duration-300 ease-out',
-            !fullscreen && ready && !buffering && !counting && !error && (!playing || recentToggle)
-              ? playing
-                ? 'scale-100 opacity-60'
-                : 'scale-100 opacity-100'
-              : 'scale-110 opacity-0',
-          )}
-        >
-          <ButtonSkin kind={playing ? 'pause' : 'play'} />
-        </div>
-
-        {(loading || buffering) && (
-          <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
-            <Spinner className="size-10 text-washi" label="Cargando vídeo" />
-          </div>
-        )}
+        <StageSpinner loading={loading} />
 
         <Countdown />
 
@@ -959,7 +1046,7 @@ function MediaStage({
             aria-label="Pantalla completa"
             title="Pantalla completa (F)"
             onClick={() => void toggleFullscreen()}
-            className="absolute bottom-3 right-3 z-20 grid size-10 place-items-center rounded-[8px] bg-sumi-950/80 text-washi transition-colors hover:bg-sumi-950"
+            className="absolute bottom-2.5 right-2.5 z-20 grid size-11 place-items-center rounded-[10px] bg-sumi-950/55 text-washi/85 transition-colors hover:bg-sumi-950/80 hover:text-washi"
           >
             <Maximize2 className="size-4.5" />
           </button>
@@ -967,51 +1054,12 @@ function MediaStage({
       </div>
       {fullscreen && (
         <>
-          <AnimatePresence>
-            {seekFlash && (
-              <motion.span
-                key={seekFlash.key}
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className={cn(
-                  'tabular pointer-events-none absolute top-1/2 z-40 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-black/60 px-4 py-2.5 font-mono text-base font-semibold text-washi',
-                  seekFlash.side === 'left' ? 'left-[10%]' : 'right-[10%]',
-                )}
-              >
-                {seekFlash.side === 'left' ? (
-                  <>
-                    <ChevronsLeft className="size-5" /> −{seekFlash.seconds} s
-                  </>
-                ) : (
-                  <>
-                    +{seekFlash.seconds} s <ChevronsRight className="size-5" />
-                  </>
-                )}
-              </motion.span>
-            )}
-          </AnimatePresence>
-          <div
-            // Touching any control keeps the controls up; the layer itself lets taps through to the video.
-            onPointerDownCapture={() => chrome.wake()}
-            className={cn(
-              'pointer-events-none absolute inset-0 z-30 transition-opacity duration-200',
-              chrome.visible ? 'opacity-100' : 'opacity-0',
-            )}
-          >
-            <FsTopBar video={video} visible={chrome.visible} />
-            <FsCenter visible={chrome.visible} onSeek={seekBy} />
-            <FullscreenBar
-              visible={chrome.visible}
-              onMenuChange={setMenuOpen}
-              clips={clips}
-              onClipSelect={onClipSelect}
-              onExit={() => void toggleFullscreen()}
-            />
-          </div>
+          <FsSeekFlash />
+          <FsChromeLayer stageRef={stageRef}>
+            <FsTopBar video={video} />
+            <FullscreenBar clips={clips} onClipSelect={onClipSelect} onExit={() => void toggleFullscreen()} />
+          </FsChromeLayer>
           <FsNoteBubble notes={notes} />
-          {video.source === 'youtube' && <YouTubeCover hidden={!chrome.visible} onWake={chrome.wake} />}
         </>
       )}
     </div>
@@ -1094,69 +1142,129 @@ function useFullscreen() {
 }
 
 /**
- * Controls visibility in fullscreen, YouTube-style: shown on any activity, hidden 3 s after the last
- * touch while playing. Pausing brings them back; a tap can still hide them. `hold` keeps them up while
- * a speed or pause menu is open.
+ * 5 · The fullscreen controls layer. Only this wrapper follows the controls' visibility: its children are elements
+ * made by the stage, so React keeps them as they are, and the stage itself never repaints. Always composited
+ * (`will-change`), so showing it is an opacity change on a ready layer, not a fresh paint over a playing video.
+ * Hit areas inside carry `fs-hit` and only take touches while the layer shows.
  */
-function useAutoHideChrome(active: boolean, playing: boolean, hold = false) {
-  const [visible, setVisible] = useState(true);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const playingRef = useRef(playing);
-  playingRef.current = playing;
-
-  const schedule = useCallback(() => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      if (playingRef.current) setVisible(false);
-    }, 3000);
-  }, []);
-
-  const wake = useCallback(() => {
-    setVisible(true);
-    schedule();
-  }, [schedule]);
-
-  const hide = useCallback(() => {
-    clearTimeout(timer.current);
-    setVisible(false);
-  }, []);
-
+function FsChromeLayer({ stageRef, children }: { stageRef: React.RefObject<HTMLDivElement | null>; children: ReactNode }) {
+  const shown = useFsChrome((s) => s.shown || s.menu);
+  const scrubbing = usePlayer((s) => s.scrubbing);
+  // 14 · While a dancer is being chosen on the video, the controls step aside (the pointer stays).
+  const picking = useFollowUi((s) => s.picking != null);
+  const awake = shown || scrubbing;
+  const visible = awake && !picking;
+  useLayoutEffect(() => {
+    // The pointer hides with the controls (desktop): an attribute, not a re-render of the stage.
+    stageRef.current?.toggleAttribute('data-idle', !awake);
+  }, [awake, stageRef]);
   useEffect(() => {
-    if (!active) return;
-    wake();
-    const onMouse = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') wake();
-    };
-    window.addEventListener('pointermove', onMouse);
-    window.addEventListener('keydown', wake);
-    return () => {
-      clearTimeout(timer.current);
-      window.removeEventListener('pointermove', onMouse);
-      window.removeEventListener('keydown', wake);
-    };
-  }, [active, wake]);
+    const el = stageRef.current;
+    return () => el?.removeAttribute('data-idle');
+  }, [stageRef]);
+  return (
+    <div
+      // Touching any control keeps the controls up; the layer itself lets taps through to the video.
+      onPointerDownCapture={fsChrome.wake}
+      className={cn(
+        'pointer-events-none absolute inset-0 z-30 transition-opacity will-change-[opacity] motion-reduce:transition-none',
+        visible ? 'opacity-100 duration-100 [&_.fs-hit]:pointer-events-auto' : 'opacity-0 duration-200',
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
+/** Double-tap seeks in fullscreen: «−10 s» / «+5 s» for a moment, on the side tapped. */
+function FsSeekFlash() {
+  const flash = useFsChrome((s) => s.flash);
+  return (
+    <AnimatePresence>
+      {flash && (
+        <motion.span
+          key={flash.key}
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className={cn(
+            'tabular pointer-events-none absolute top-1/2 z-40 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-black/60 px-4 py-2.5 font-mono text-base font-semibold text-washi',
+            flash.side === 'left' ? 'left-[10%]' : 'right-[10%]',
+          )}
+        >
+          {flash.side === 'left' ? (
+            <>
+              <ChevronsLeft className="size-5" /> −{flash.seconds} s
+            </>
+          ) : (
+            <>
+              +{flash.seconds} s <ChevronsRight className="size-5" />
+            </>
+          )}
+        </motion.span>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** How long a new speed stays on the video before it fades (the bar below always shows it). */
+const RATE_FLASH_MS = 1500;
+
+/** 4 · The speed over the video only right after it changes (or when the song opens at another speed). */
+function RateFlash() {
+  const rate = usePlayer((s) => s.rate);
+  const [shown, setShown] = useState(false);
   useEffect(() => {
-    if (!playing) {
-      clearTimeout(timer.current);
-      setVisible(true);
-    } else if (active) {
-      schedule();
+    if (rate === 1) {
+      setShown(false);
+      return;
     }
-  }, [playing, active, schedule]);
+    setShown(true);
+    const id = setTimeout(() => setShown(false), RATE_FLASH_MS);
+    return () => clearTimeout(id);
+  }, [rate]);
+  return (
+    <AnimatePresence>
+      {shown && (
+        <motion.span
+          key="rate"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.2 } }}
+          transition={{ duration: 0.12 }}
+          className="tabular ml-auto rounded-[8px] bg-sumi-950/85 px-2.5 py-1.5 font-mono text-sm font-semibold text-washi"
+        >
+          {formatSpeed(rate)}
+        </motion.span>
+      )}
+    </AnimatePresence>
+  );
+}
 
-  // When a menu closes, start the hide countdown again from that moment.
-  useEffect(() => {
-    if (!hold && active) wake();
-  }, [hold, active, wake]);
+/** Waiting this long before the spinner shows: quick seeks and loop jumps never flash it over the picture. */
+const SPINNER_DELAY_S = 0.35;
 
-  return { visible: visible || hold, wake, hide };
+/** Loading or buffering: its own component, so YouTube's bursts of buffering states never repaint the stage. */
+function StageSpinner({ loading }: { loading: boolean }) {
+  const buffering = usePlayer((s) => s.buffering);
+  if (!loading && !buffering) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: loading ? 0 : SPINNER_DELAY_S, duration: 0.15 }}
+      className="pointer-events-none absolute inset-0 z-20 grid place-items-center"
+    >
+      <Spinner className="size-10 text-washi" label="Cargando vídeo" />
+    </motion.div>
+  );
 }
 
 /** Title and source credit across the top of the fullscreen video. */
-function FsTopBar({ video, visible }: { video: Video; visible: boolean }) {
+function FsTopBar({ video }: { video: Video }) {
   return (
-    <div className="absolute inset-x-0 top-0 flex items-start gap-3 bg-[linear-gradient(to_bottom,rgb(0_0_0/0.7),transparent)] px-4 pb-10 pt-[max(12px,env(safe-area-inset-top))] sm:px-6">
+    <div className="absolute inset-x-0 top-0 flex items-start gap-3 bg-[linear-gradient(to_bottom,rgb(0_0_0/0.7),transparent)] pb-10 pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[max(12px,env(safe-area-inset-top))] sm:pl-[max(24px,env(safe-area-inset-left))] sm:pr-[max(24px,env(safe-area-inset-right))]">
       <p className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-washi sm:text-xl">{video.title}</p>
       {video.source === 'youtube' && video.youtube_id && (
         <a
@@ -1167,65 +1275,33 @@ function FsTopBar({ video, visible }: { video: Video; visible: boolean }) {
           onClick={(e) => {
             e.currentTarget.href = youTubeWatchUrl(video.youtube_id!, usePlayer.getState().time);
           }}
-          className={cn(
-            'flex shrink-0 items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/80 hover:text-washi',
-            visible ? 'pointer-events-auto' : 'pointer-events-none',
-          )}
+          className="fs-hit pointer-events-none flex shrink-0 items-center gap-1.5 rounded-[6px] bg-black/55 px-2 py-1 text-[11px] font-medium text-washi/80 hover:text-washi"
         >
           <Youtube className="size-3.5" /> YouTube
         </a>
       )}
+      {/* 14 · Follow a dancer without leaving fullscreen: one button, a compact panel under the bar. */}
+      <FollowFsButton video={video} />
     </div>
   );
 }
 
-/** Big centre transport, like YouTube on phones: −5 · play/pause · +5. */
-function FsCenter({ visible, onSeek }: { visible: boolean; onSeek: (side: 'left' | 'right') => void }) {
+/** 4 · Play/pause in fullscreen's bottom bar (a plain icon: nothing of ours sits in the middle of the video). */
+function FsPlayButton() {
   const playing = usePlayer((s) => s.playing);
   const counting = usePlayer((s) => s.countdownEndsAt != null);
   const active = playing || counting;
-  const round =
-    'relative grid size-14 place-items-center rounded-full bg-black/45 text-washi shadow-[0_8px_20px_-8px_rgb(0_0_0/0.8)] sm:size-16';
   return (
-    <div
-      className={cn(
-        'absolute inset-0 m-auto flex h-24 w-max items-center gap-10 sm:gap-16',
-        visible ? 'pointer-events-auto' : 'pointer-events-none',
-      )}
+    <motion.button
+      type="button"
+      aria-label={active ? 'Pausar' : 'Reproducir'}
+      onClick={() => usePlayer.getState().togglePlay()}
+      whileTap={{ scale: 0.86 }}
+      transition={jelly}
+      className="grid size-11 shrink-0 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15 active:bg-washi/20"
     >
-      <motion.button
-        type="button"
-        aria-label="Retroceder 5 segundos"
-        onClick={() => onSeek('left')}
-        whileTap={{ scale: 0.82, rotate: -25 }}
-        transition={jelly}
-        className={round}
-      >
-        <RotateCcw className="size-7" strokeWidth={1.7} />
-        <span className="tabular absolute font-mono text-[10px] font-bold">5</span>
-      </motion.button>
-      <motion.button
-        type="button"
-        aria-label={active ? 'Pausar' : 'Reproducir'}
-        onClick={() => usePlayer.getState().togglePlay()}
-        whileTap={{ scale: 0.86, rotate: -6 }}
-        transition={jelly}
-        className="size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24"
-      >
-        <ButtonSkin kind={active ? 'pause' : 'play'} />
-      </motion.button>
-      <motion.button
-        type="button"
-        aria-label="Avanzar 5 segundos"
-        onClick={() => onSeek('right')}
-        whileTap={{ scale: 0.82, rotate: 25 }}
-        transition={jelly}
-        className={round}
-      >
-        <RotateCw className="size-7" strokeWidth={1.7} />
-        <span className="tabular absolute font-mono text-[10px] font-bold">5</span>
-      </motion.button>
-    </div>
+      {active ? <Pause className="size-[22px] fill-current" /> : <Play className="size-[22px] fill-current" />}
+    </motion.button>
   );
 }
 
@@ -1295,7 +1371,12 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
       repaint();
     });
     resize.observe(bar);
-    const unsubscribe = usePlayer.subscribe((s) => paint(s.time, s.duration));
+    // Under the recorder (`covered`) nothing is painted; uncovering repaints once.
+    const unsubscribe = usePlayer.subscribe((s, prev) => {
+      if (s.covered) return;
+      if (prev.covered) repaint();
+      else paint(s.time, s.duration);
+    });
     return () => {
       unsubscribe();
       resize.disconnect();
@@ -1440,18 +1521,13 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
 
 /** Compact fullscreen transport: progress line + one small row of controls. */
 function FullscreenBar({
-  visible,
   clips,
   onClipSelect,
   onExit,
-  onMenuChange,
 }: {
-  visible: boolean;
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
   onExit: () => void;
-  /** Reports whether a menu is open so the controls never auto-hide underneath it. */
-  onMenuChange: (open: boolean) => void;
 }) {
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
@@ -1462,7 +1538,9 @@ function FullscreenBar({
   const [speedOpen, setSpeedOpen] = useState(false);
   const [gapMenu, setGapMenu] = useState<'all' | 'clip' | null>(null);
   const menuOpen = speedOpen || gapMenu != null;
-  useEffect(() => onMenuChange(menuOpen), [menuOpen, onMenuChange]);
+  // An open menu keeps the controls up (they never auto-hide underneath it).
+  useEffect(() => fsChrome.setMenu(menuOpen), [menuOpen]);
+  useEffect(() => () => fsChrome.setMenu(false), []);
   const allPress = useLongPress(
     () => setGapMenu('all'),
     () => usePlayer.getState().toggleLoopAll(),
@@ -1472,13 +1550,15 @@ function FullscreenBar({
     () => usePlayer.getState().toggleLoop(),
   );
   const p = usePlayer.getState();
-  const btn = 'grid size-11 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15 active:bg-washi/20';
-
-  useEffect(() => {
-    if (!visible) setSpeedOpen(false);
-  }, [visible]);
+  const btnBase = 'rounded-full text-washi transition-colors hover:bg-washi/15 active:bg-washi/20';
+  const btn = `grid size-11 place-items-center ${btnBase}`;
+  /** With a pause set, the seconds sit beside the icon (Transport's badge, same as the bar below). */
+  const badged = 'flex h-11 w-auto min-w-11 items-center justify-center gap-1 px-2';
 
   const speedRef = useRef<HTMLDivElement>(null);
+  const speedMenuRef = useRef<HTMLDivElement>(null);
+  // Keyboard: focus into the menu, arrows between speeds, back to the button on closing.
+  useMenuFocus(speedMenuRef, speedOpen);
   // The phone's back button closes the menu instead of leaving fullscreen and the song.
   useBackToClose(speedOpen, () => setSpeedOpen(false));
   useEffect(() => {
@@ -1501,11 +1581,12 @@ function FullscreenBar({
   }, [speedOpen]);
 
   return (
-    <div className={cn('absolute inset-x-0 bottom-0', visible ? 'pointer-events-auto' : 'pointer-events-none')}>
+    <div className="fs-hit pointer-events-none absolute inset-x-0 bottom-0">
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)]" />
       <div className="px-3 pb-[max(6px,env(safe-area-inset-bottom))] pt-10 sm:px-5">
         <FsProgress clips={clips} onClipSelect={onClipSelect} />
         <div className="flex items-center gap-0.5 sm:gap-1">
+          <FsPlayButton />
           <FsClock />
 
           <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
@@ -1516,19 +1597,21 @@ function FullscreenBar({
                 aria-haspopup="menu"
                 aria-expanded={speedOpen}
                 onClick={() => setSpeedOpen((v) => !v)}
-                className="tabular h-10 rounded-full px-3 font-mono text-[13px] font-semibold text-washi transition-colors hover:bg-washi/15"
+                className="tabular h-11 rounded-full px-3 font-mono text-[13px] font-semibold text-washi transition-colors hover:bg-washi/15"
               >
                 {formatSpeed(rate)}
               </button>
               <AnimatePresence>
                 {speedOpen && (
                   <motion.div
+                    ref={speedMenuRef}
                     role="menu"
+                    aria-label="Velocidad"
                     initial={{ opacity: 0, y: 6, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 4, transition: { duration: 0.1 } }}
                     transition={jelly}
-                    className="absolute bottom-12 right-0 w-28 rounded-[12px] bg-sumi-950/95 p-1.5 shadow-xl ring-1 ring-washi/15"
+                    className="absolute bottom-12 right-0 grid w-40 grid-cols-2 gap-1 rounded-[12px] bg-sumi-950/95 p-1.5 shadow-xl ring-1 ring-washi/15"
                   >
                     {SPEED_PRESETS.map((s) => (
                       <button
@@ -1541,7 +1624,7 @@ function FullscreenBar({
                           setSpeedOpen(false);
                         }}
                         className={cn(
-                          'tabular flex h-9 w-full items-center justify-between rounded-[8px] px-3 font-mono text-[13px]',
+                          'tabular flex h-11 w-full items-center justify-center rounded-[8px] font-mono text-[13px]',
                           s === rate ? 'bg-washi text-sumi-900' : 'text-washi hover:bg-washi/10',
                         )}
                       >
@@ -1555,10 +1638,10 @@ function FullscreenBar({
             <div className="relative">
               <button
                 type="button"
-                aria-label="Repetir la canción entera (mantén pulsado para la pausa)"
+                aria-label={`Repetir la canción entera${gapAll > 0 ? `, pausa de ${gapAll} s` : ''} (mantén pulsado para la pausa)`}
                 aria-pressed={loopAll}
                 {...allPress}
-                className={cn(btn, 'relative', loopAll && 'text-ai-300')}
+                className={cn(gapAll > 0 ? btnBase : btn, gapAll > 0 && badged, loopAll && 'text-ai-300')}
               >
                 <Repeat1 className="size-[18px]" />
                 {gapAll > 0 && <GapBadge seconds={gapAll} />}
@@ -1578,12 +1661,12 @@ function FullscreenBar({
             <div className="relative">
               <button
                 type="button"
-                aria-label="Repetir tramo (mantén pulsado para la pausa)"
+                aria-label={`Repetir tramo${gap > 0 ? `, pausa de ${gap} s` : ''} (mantén pulsado para la pausa)`}
                 aria-pressed={loop.enabled && hasRange(loop)}
                 {...clipPress}
                 className={cn(
-                  btn,
-                  'relative',
+                  gap > 0 ? btnBase : btn,
+                  gap > 0 && badged,
                   !hasRange(loop) && 'opacity-50',
                   loop.enabled && hasRange(loop) && 'text-shu-400',
                 )}
@@ -1624,20 +1707,13 @@ function FullscreenBar({
 
 /** Only the clock reads the playhead, and only once per second. */
 function FsClock() {
-  const second = usePlayer((s) => Math.floor(s.time));
+  const second = useUnlessCovered((s) => Math.floor(s.time));
   const duration = usePlayer((s) => s.duration);
   return (
-    <span className="tabular ml-1 font-mono text-[13px] text-washi">
+    <span className="tabular ml-0.5 whitespace-nowrap font-mono text-[13px] text-washi">
       {formatTime(second)}
-      <span className="text-washi-subtle"> / {formatTime(duration)}</span>
-    </span>
-  );
-}
-
-function GapBadge({ seconds }: { seconds: number }) {
-  return (
-    <span className="tabular pointer-events-none absolute -right-0.5 -top-0.5 rounded-full bg-shu-500 px-1 font-mono text-[9px] font-bold leading-[14px] text-washi">
-      {seconds}s
+      {/* On a narrow upright screen the length gives way to the buttons (it's on the progress line anyway). */}
+      <span className="text-washi-subtle max-[420px]:hidden"> / {formatTime(duration)}</span>
     </span>
   );
 }
@@ -1719,58 +1795,5 @@ function FsNoteBubble({ notes }: { notes: Note[] }) {
         </motion.div>
       )}
     </AnimatePresence>
-  );
-}
-
-/** Roughly how long YouTube keeps its own play/pause on screen after the state changes. */
-const YT_OVERLAY_MS = 5000;
-
-/** True for a few seconds after play/pause flips: while YouTube still shows its own button. */
-function useRecentToggle(playing: boolean): boolean {
-  const [recent, setRecent] = useState(false);
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    setRecent(true);
-    const id = setTimeout(() => setRecent(false), YT_OVERLAY_MS);
-    return () => clearTimeout(id);
-  }, [playing]);
-  return recent;
-}
-
-/**
- * YouTube draws its own (mirrored, plain black) play/pause in the middle of the iframe: always while
- * paused, and for a few seconds after every play or pause. Nothing outside the iframe can switch it off,
- * so with our controls hidden this crest sits exactly on top of it for as long as YouTube shows it, then
- * fades with it. The only thing ever in the middle is ours; a tap on it plays or pauses.
- */
-function YouTubeCover({ hidden, onWake }: { hidden: boolean; onWake: () => void }) {
-  const playing = usePlayer((s) => s.playing);
-  const counting = usePlayer((s) => s.countdownEndsAt != null);
-  const ready = usePlayer((s) => s.ready);
-  const recent = useRecentToggle(playing);
-
-  const shown = hidden && ready && !counting && (!playing || recent);
-  return (
-    <button
-      type="button"
-      aria-label={playing ? 'Pausar' : 'Reproducir'}
-      tabIndex={shown ? 0 : -1}
-      onClick={() => {
-        usePlayer.getState().togglePlay();
-        onWake();
-      }}
-      className={cn(
-        'absolute inset-0 z-30 m-auto size-20 drop-shadow-[0_10px_18px_rgb(0_0_0/0.6)] sm:size-24',
-        // Appears at once (YouTube's button is already there), leaves with a short fade like YouTube's.
-        // Softened so the red doesn't shout and the frame stays visible behind it.
-        shown ? 'opacity-60' : 'pointer-events-none opacity-0 transition-opacity duration-300',
-      )}
-    >
-      <ButtonSkin kind={playing ? 'pause' : 'play'} />
-    </button>
   );
 }

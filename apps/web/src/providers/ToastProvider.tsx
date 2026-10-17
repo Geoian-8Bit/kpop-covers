@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { overlayHost } from '@/components/ui/overlayHost';
 import { jelly } from '@/lib/motion';
 
 type Tone = 'info' | 'success' | 'error';
@@ -25,11 +26,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const nextId = useRef(1);
   /** Hide timers by message: repeating a message restarts its timer instead of stacking a copy. */
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  // Native fullscreen only shows the fullscreen element's subtree: toasts must live inside it.
+  // Native fullscreen only shows the fullscreen element's subtree: toasts must live inside it (the whole page's
+  // fullscreen, Random Play Dance, keeps them in body: see overlayHost). The studio's CSS fullscreen needs nothing:
+  // its layer sits at z-75 and the toasts' z-100 on body is already above it.
   const [host, setHost] = useState<Element>(() => document.body);
 
   useEffect(() => {
-    const onChange = () => setHost(document.fullscreenElement ?? document.body);
+    const onChange = () => setHost(document.fullscreenElement ? overlayHost() : document.body);
     document.addEventListener('fullscreenchange', onChange);
     const pending = timers.current;
     return () => {

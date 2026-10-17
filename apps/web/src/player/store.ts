@@ -55,8 +55,9 @@ interface PlayerState extends PlayerStatus {
   scrubEndedAt: number;
   activeClipId: string | null;
   /**
-   * F1 · What plays a YouTube entry that has its own file: the YouTube player (default) or the file. Uploaded
-   * videos always play their file.
+   * F1 · 12 · What plays a YouTube entry that has its own file: the file when this device can reach it (the studio
+   * decides on opening, see features/studio/stageRules.ts) or the YouTube player. Uploaded videos always play
+   * their file.
    */
   stage: 'youtube' | 'file';
   /** Where to land once the other stage's engine attaches (switching keeps the moment). */
@@ -118,6 +119,13 @@ interface PlayerState extends PlayerStatus {
    */
   followPathId: string | null;
   setFollowPath(id: string | null): void;
+  /**
+   * The studio is covered by the recorder (fixed, opaque) and keeps playing the song under it: whatever only paints
+   * the studio from the clock (time readout, timeline, follow box…) holds still meanwhile and repaints on the way
+   * back. The clock itself keeps running: the recorder reads it.
+   */
+  covered: boolean;
+  setCovered(covered: boolean): void;
 }
 
 const MIRROR_KEY = 'coverscape.mirrored';
@@ -481,6 +489,11 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   followPathId: null,
   setFollowPath(id) {
     if (get().followPathId !== id) set({ followPathId: id });
+  },
+
+  covered: false,
+  setCovered(covered) {
+    if (get().covered !== covered) set({ covered });
   },
 }));
 

@@ -11,6 +11,8 @@ interface ElasticToggleProps {
   showLabel?: boolean;
   icon?: ReactNode;
   className?: string;
+  /** Id of a hint that explains the switch (read after its name). */
+  describedBy?: string;
 }
 
 const TRACK_W = 52;
@@ -19,7 +21,7 @@ const PAD = 4;
 const STRETCH = 9;
 
 /** Switch whose thumb stretches like mochi while pressed and springs over on release. */
-export function ElasticToggle({ checked, onChange, label, showLabel = true, icon, className }: ElasticToggleProps) {
+export function ElasticToggle({ checked, onChange, label, showLabel = true, icon, className, describedBy }: ElasticToggleProps) {
   const travel = TRACK_W - THUMB - PAD * 2;
 
   return (
@@ -28,6 +30,7 @@ export function ElasticToggle({ checked, onChange, label, showLabel = true, icon
       role="switch"
       aria-checked={checked}
       aria-label={showLabel ? undefined : label}
+      aria-describedby={describedBy}
       onClick={() => onChange(!checked)}
       initial={false}
       animate={checked ? 'on' : 'off'}

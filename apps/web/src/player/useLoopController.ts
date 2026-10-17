@@ -1,5 +1,5 @@
-import { shouldWrap } from '@coverscape/shared';
 import { useEffect } from 'react';
+import { msUntilWrap, songWrapPoint, wrapLead, wrapPoint } from './loopRules';
 import { hasRange, usePlayer } from './store';
 
 type PlayerSnapshot = ReturnType<typeof usePlayer.getState>;
@@ -19,6 +19,26 @@ function isBusy(state: PlayerSnapshot, probing: boolean): boolean {
 }
 
 /**
+ * Where the playing song jumps back, if a loop is on: the A–B start or the song's start, and the moment to jump
+ * (8: ahead of the end by the engine's measured seek time, so the new start shows as the old end would have).
+ */
+function loopTarget(state: PlayerSnapshot): { at: number; to: number; gap: number } | null {
+  const { loop, engine } = state;
+  const timing = engine?.loopTiming?.() ?? null;
+  if (loop.enabled && hasRange(loop)) {
+    // No lead with a pause between repetitions (the clip plays to its end, then counts in).
+    const lead = wrapLead(timing, state.rate, loop.end - loop.start, state.gap);
+    return { at: wrapPoint(loop.end, lead), to: loop.start, gap: state.gap };
+  }
+  // Whole-song loop: also keeps YouTube from ever showing its end screen.
+  if (state.loopAll && state.duration > 1) {
+    const lead = wrapLead(timing, state.rate, state.duration, state.gapAll);
+    return { at: songWrapPoint(state.duration, lead, timing ?? { latencyMs: 0, maxLatencyMs: 0, endMargin: 0.3 }), to: 0, gap: state.gapAll };
+  }
+  return null;
+}
+
+/**
  * One rAF loop per studio: pulls the clock from the active engine into the store,
  * wraps A–B loops and resumes after the optional "get back in position" gap.
  * While paused and idle it stops entirely; a store subscription wakes it up again.
@@ -29,6 +49,8 @@ export function useLoopController(): void {
     let busyAt = 0;
     let probes = 0;
     let probed: PlayerSnapshot['engine'] = null;
+    /** A jump due between two frames: fired by a timer instead of up to a frame late. */
+    let wrapTimer: ReturnType<typeof setTimeout> | undefined;
     const probing = (state: PlayerSnapshot) => {
       // A new engine (another video) gets a fresh round of probes.
       if (state.engine !== probed) {
@@ -36,6 +58,20 @@ export function useLoopController(): void {
         probes = 0;
       }
       return probes < DURATION_PROBES;
+    };
+
+    /** Jump back now: never waits for the media's end or for the player to confirm the seek. */
+    const wrap = (state: PlayerSnapshot, to: number, gap: number) => {
+      const { engine } = state;
+      if (!engine) return;
+      // Only the gapless jumps are anticipated, so only they measure the engine's seek time (`loop`).
+      engine.seek(to, gap > 0 ? undefined : { loop: true });
+      if (gap > 0) {
+        engine.pause();
+        usePlayer.setState({ time: to, countdownEndsAt: performance.now() + gap * 1000 });
+      } else {
+        usePlayer.setState({ time: to });
+      }
     };
 
     const step = (state: PlayerSnapshot) => {
@@ -54,29 +90,23 @@ export function useLoopController(): void {
       if (state.scrubbing) return;
 
       const t = engine.getCurrentTime();
-      const { loop } = state;
-
-      if (state.playing && loop.enabled && hasRange(loop) && shouldWrap(t, loop)) {
-        engine.seek(loop.start);
-        if (state.gap > 0) {
-          engine.pause();
-          usePlayer.setState({ time: loop.start, countdownEndsAt: performance.now() + state.gap * 1000 });
-        } else {
-          usePlayer.setState({ time: loop.start });
+      const target = state.playing ? loopTarget(state) : null;
+      if (target && wrapTimer === undefined) {
+        const ms = msUntilWrap(t, target.at, state.rate);
+        if (ms === 0) {
+          wrap(state, target.to, target.gap);
+          return;
         }
-        return;
-      }
-
-      // Whole-song loop: jump back just before the end so YouTube never shows its end screen.
-      if (state.playing && state.loopAll && !(loop.enabled && hasRange(loop)) && state.duration > 1 && t >= state.duration - 0.3) {
-        engine.seek(0);
-        if (state.gapAll > 0) {
-          engine.pause();
-          usePlayer.setState({ time: 0, countdownEndsAt: performance.now() + state.gapAll * 1000 });
-        } else {
-          usePlayer.setState({ time: 0 });
+        if (ms != null) {
+          wrapTimer = setTimeout(() => {
+            wrapTimer = undefined;
+            const now = usePlayer.getState();
+            // Re-checked at fire time: a pause, a seek or another range in between cancels it.
+            const again = now.playing && !now.scrubbing && now.countdownEndsAt == null ? loopTarget(now) : null;
+            const time = now.engine?.getCurrentTime() ?? 0;
+            if (again && time <= again.at + 0.5 && msUntilWrap(time, again.at, now.rate) != null) wrap(now, again.to, again.gap);
+          }, ms);
         }
-        return;
       }
 
       // Right after a scrub, YouTube can still report the pre-seek time for a few frames: ignore big jumps back.
@@ -112,6 +142,7 @@ export function useLoopController(): void {
     return () => {
       unsubscribe();
       cancelAnimationFrame(frame);
+      clearTimeout(wrapTimer);
     };
   }, []);
 }

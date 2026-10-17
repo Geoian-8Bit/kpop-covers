@@ -91,3 +91,21 @@ describe('player store · a stage that mounts again', () => {
     expect(engine.seek).not.toHaveBeenCalled();
   });
 });
+
+describe('player store · covered by the recorder', () => {
+  beforeEach(() => usePlayer.getState().setCovered(false));
+
+  it('only tells the studio when it changes, and keeps the clock running', () => {
+    const seen: boolean[] = [];
+    const off = usePlayer.subscribe((s, prev) => {
+      if (s.covered !== prev.covered) seen.push(s.covered);
+    });
+    usePlayer.getState().setCovered(true);
+    usePlayer.getState().setCovered(true);
+    usePlayer.setState({ time: 12 });
+    usePlayer.getState().setCovered(false);
+    off();
+    expect(seen).toEqual([true, false]);
+    expect(usePlayer.getState().time).toBe(12);
+  });
+});

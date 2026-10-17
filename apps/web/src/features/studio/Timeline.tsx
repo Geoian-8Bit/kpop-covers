@@ -16,6 +16,7 @@ import { CLIP_SWATCH } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, usePlayer } from '@/player/store';
+import { useUnlessCovered } from './studioAsleep';
 
 type DragMode = 'scrub' | 'select' | 'start' | 'end';
 const POINTS = 90;
@@ -160,7 +161,12 @@ export function Timeline({ seed, clips, onClipSelect, notes = NO_NOTES, onNoteOp
       repaint();
     });
     resize.observe(rail);
-    const unsubscribe = usePlayer.subscribe((s) => paint(s.time, s.duration));
+    // Under the recorder (`covered`) nothing is painted; uncovering repaints once.
+    const unsubscribe = usePlayer.subscribe((s, prev) => {
+      if (s.covered) return;
+      if (prev.covered) repaint();
+      else paint(s.time, s.duration);
+    });
     return () => {
       unsubscribe();
       resize.disconnect();
@@ -503,7 +509,8 @@ function NoteDots({
   duration: number;
   onOpen?: (note: Note) => void;
 }) {
-  const passed = usePlayer((s) => {
+  // Holds still under the recorder (`covered`): the dots are hidden there.
+  const passed = useUnlessCovered((s) => {
     let n = 0;
     while (n < notes.length && notes[n]!.at_seconds <= s.time) n++;
     return n;
@@ -573,7 +580,8 @@ export function useNoteAlert(notes: Note[]): Note | null {
       const now = s.time;
       // Only natural forward playback announces a note: not scrubs, and not jumps longer than a
       // throttled frame (a phone saving battery can tick as slowly as ~1 s).
-      if (s.playing && !s.scrubbing && now > last && now - last < 2.5) {
+      // Nor under the recorder (`covered`): nobody sees the studio's bubbles there.
+      if (s.playing && !s.scrubbing && !s.covered && now > last && now - last < 2.5) {
         const hit = notesRef.current.find((n) => n.at_seconds > last && n.at_seconds <= now);
         if (hit) {
           setShown(hit);
@@ -609,7 +617,8 @@ function NoteBubble({ notes, duration }: { notes: Note[]; duration: number }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.2 } }}
           transition={jelly}
-          className="pointer-events-none absolute bottom-[calc(100%+10px)] z-20 w-max max-w-[min(260px,80vw)] -translate-x-1/2 rounded-[10px] bg-washi px-3 py-2 text-[13px] font-medium leading-snug text-sumi-900 shadow-[0_10px_24px_-10px_rgb(0_0_0/0.9)]"
+          // z-10: under the phone's pinned video (z-20), which it would otherwise cover while the page scrolls.
+          className="pointer-events-none absolute bottom-[calc(100%+10px)] z-10 w-max max-w-[min(260px,80vw)] -translate-x-1/2 rounded-[10px] bg-washi px-3 py-2 text-[13px] font-medium leading-snug text-sumi-900 shadow-[0_10px_24px_-10px_rgb(0_0_0/0.9)]"
           style={{ left: `${f * 100}%` }}
         >
           <span className="tabular mr-1.5 font-mono text-[11px] text-shu-500">{formatTime(shown.at_seconds)}</span>

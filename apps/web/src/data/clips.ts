@@ -120,16 +120,20 @@ export function useUpdateClip() {
       const key = clipKeys.forVideo(clip.video_id);
       await queryClient.cancelQueries({ queryKey: key });
       const before = queryClient.getQueryData<Clip[]>(key)?.find((c) => c.id === clip.id);
-      queryClient.setQueryData<Clip[]>(key, (current = []) =>
-        current.map((c) => (c.id === clip.id ? ({ ...c, ...patch } as Clip) : c)),
-      );
+      queryClient.setQueryData<Clip[]>(key, (current = []) => {
+        const next = current.map((c) => (c.id === clip.id ? ({ ...c, ...patch } as Clip) : c));
+        // An edited start moves the clip in the list (and the timeline), which run in song order.
+        return patch.start_seconds === undefined ? next : next.sort((a, b) => a.start_seconds - b.start_seconds);
+      });
       return { before, key };
     },
     onError: (_error, _vars, context) => {
       // Undo only this clip: restoring a whole snapshot would also undo the other taps of the burst.
       const before = context?.before;
       if (context && before) {
-        queryClient.setQueryData<Clip[]>(context.key, (current) => current?.map((c) => (c.id === before.id ? before : c)));
+        queryClient.setQueryData<Clip[]>(context.key, (current) =>
+          current?.map((c) => (c.id === before.id ? before : c)).sort((a, b) => a.start_seconds - b.start_seconds),
+        );
       }
     },
     onSettled: (_data, _error, { clip }) => settleBurst(queryClient, clip),

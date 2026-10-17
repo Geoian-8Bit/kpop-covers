@@ -459,7 +459,7 @@ export const PinnedClips = memo(function PinnedClips({ clips }: { clips: ClipWit
   if (clips.length === 0) {
     return (
       <p className="text-sm leading-relaxed text-washi-muted">
-        Aquí aparecerán los clips fijados y los más recientes. Marca un tramo en el estudio y pulsa{' '}
+        Aquí salen primero los clips fijados en la portada y después los más recientes. Marca un tramo en el estudio y pulsa{' '}
         <span className="font-mono text-washi">S</span>.
       </p>
     );

@@ -1,5 +1,5 @@
 import { formatSpeed, formatTime, SPEED_PRESETS, stepSpeed } from '@coverscape/shared';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import {
   BookmarkPlus,
   FlipHorizontal2,
@@ -15,13 +15,16 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
+import { popoverShift, popoverSide, sheetScreen } from './popoverRules';
+import { useUnlessCovered } from './studioAsleep';
+import { useMenuFocus } from './useMenuFocus';
 
 const GAP_CHOICES = [0, 1, 2, 3, 5, 10] as const;
 
@@ -85,24 +88,106 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, onClose: () => voi
   }, [ref, onClose]);
 }
 
+/**
+ * 7 · The lowest edge of what is pinned over the page above a popover: the top bar and the studio's pinned video
+ * (`data-popover-ceiling`). Nothing inside fullscreen (`data-fs`): there only the screen's edge counts.
+ */
+function popoverCeiling(el: HTMLElement, anchorTop: number): number {
+  if (el.closest('[data-fs]')) return 0;
+  let ceiling = 0;
+  for (const bar of document.querySelectorAll<HTMLElement>('[data-popover-ceiling], header')) {
+    if (bar.contains(el)) continue;
+    const { position } = getComputedStyle(bar);
+    if (position !== 'sticky' && position !== 'fixed') continue;
+    const r = bar.getBoundingClientRect();
+    if (r.height > 0 && r.bottom > 0 && r.bottom <= anchorTop) ceiling = Math.max(ceiling, r.bottom);
+  }
+  return ceiling;
+}
+
+const SHEET_STYLE = {
+  position: 'fixed',
+  left: '12px',
+  // Clear of the phone's quick-menu button (AppShell sets the room it needs).
+  right: 'calc(12px + var(--fab-clearance, 0px))',
+  top: 'auto',
+  bottom: 'max(12px, env(safe-area-inset-bottom))',
+  width: 'auto',
+} as const;
+
+/**
+ * Keeps an anchored popover on screen: after layout (before paint) it measures where the CSS put it, opens it below
+ * its button when the pinned video (or the top bar) would cover it, as a bottom sheet on a phone when it fits on
+ * neither side (7), and slides it sideways with `translate` so it never spills past the viewport's edges (the loop's
+ * pause panel used to lose its left side on phones). Re-measured on resize and rotation.
+ */
+function useStayOnScreen(ref: React.RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      el.style.translate = '';
+      for (const key of ['position', 'left', 'right', 'top', 'bottom', 'width'] as const) el.style[key] = '';
+      const natural = el.getBoundingClientRect();
+      const anchor = (el.offsetParent ?? el.parentElement)?.getBoundingClientRect();
+      const viewport = document.documentElement.clientWidth || window.innerWidth;
+      if (anchor) {
+        const side = popoverSide({
+          top: natural.top,
+          height: natural.height,
+          anchorTop: anchor.top,
+          anchorBottom: anchor.bottom,
+          ceiling: popoverCeiling(el, anchor.top),
+          floor: window.innerHeight,
+          // A phone on its side counts too (844×390): there the menu fits neither above nor below.
+          narrow: sheetScreen({
+            width: viewport,
+            height: window.innerHeight,
+            coarse: window.matchMedia('(pointer: coarse)').matches,
+          }),
+        });
+        if (side === 'sheet') {
+          Object.assign(el.style, SHEET_STYLE);
+          return;
+        }
+        if (side === 'below') {
+          el.style.top = `calc(100% + ${Math.max(0, Math.round(anchor.top - natural.bottom))}px)`;
+          el.style.bottom = 'auto';
+        }
+      }
+      const box = el.getBoundingClientRect();
+      const shift = popoverShift(box.left, box.width, viewport);
+      el.style.translate = shift ? `${shift}px 0` : '';
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [ref]);
+}
+
 function Popover({ children, onClose, className, label }: { children: ReactNode; onClose: () => void; className?: string; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(ref, onClose);
+  useStayOnScreen(ref);
+  // Keyboard: focus into the menu, arrows between its items, back to its button on closing.
+  useMenuFocus(ref, useIsPresent());
   // The phone's back button closes the menu instead of leaving the song.
   useBackToClose(true, onClose);
   return (
-    <motion.div
-      ref={ref}
-      role="menu"
-      aria-label={label}
-      initial={{ opacity: 0, y: 6, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 4, transition: { duration: 0.1 } }}
-      transition={jelly}
-      className={cn('z-40 rounded-[12px] bg-sumi-950/95 p-2 shadow-xl ring-1 ring-washi/15', className)}
-    >
-      {children}
-    </motion.div>
+    // The outer box is placed by the caller's classes and only ever shifted; the inner one animates.
+    <div ref={ref} className={cn('z-40', className)}>
+      <motion.div
+        role="menu"
+        aria-label={label}
+        initial={{ opacity: 0, y: 6, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 4, transition: { duration: 0.1 } }}
+        transition={jelly}
+        className="rounded-[12px] bg-sumi-950/95 p-2 shadow-xl ring-1 ring-washi/15"
+      >
+        {children}
+      </motion.div>
+    </div>
   );
 }
 
@@ -133,7 +218,7 @@ export function GapPicker({
             aria-checked={s === value}
             onClick={() => onChange(s)}
             className={cn(
-              'tabular h-9 rounded-[8px] font-mono text-[13px] transition-colors',
+              'tabular h-11 rounded-[8px] font-mono text-[14px] transition-colors',
               s === value ? 'bg-washi text-sumi-900' : 'text-washi hover:bg-washi/10',
             )}
           >
@@ -146,7 +231,7 @@ export function GapPicker({
         role="menuitemcheckbox"
         aria-checked={countSound}
         onClick={() => usePlayer.getState().toggleCountSound()}
-        className="mt-2 flex h-9 w-full items-center gap-2 rounded-[8px] px-2 text-[13px] text-washi hover:bg-washi/10"
+        className="mt-1 flex h-11 w-full items-center gap-2 rounded-[8px] px-2 text-[13px] text-washi hover:bg-washi/10"
       >
         {countSound ? <Volume2 className="size-4 text-kin-300" /> : <VolumeX className="size-4 text-washi-subtle" />}
         Tic de metrónomo {countSound ? 'activado' : 'silenciado'}
@@ -158,9 +243,12 @@ export function GapPicker({
 const tool =
   'relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3 text-sm font-bold transition-colors disabled:opacity-40';
 const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
-/** Buttons inside the settings tray: borderless, the tray itself is the frame. */
+/**
+ * Buttons inside the settings tray: borderless, the tray itself is the frame. Drawn 38 px tall, touched 44 px: the
+ * ::after reaches 3 px into the tray's padding above and below.
+ */
 const trayBtn =
-  'skin-pill relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors max-sm:px-2.5';
+  "skin-pill relative flex h-[38px] shrink-0 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-[''] max-sm:px-2.5";
 const trayIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
 const trayOn = 'bg-ai-600/50 text-ai-200 shadow-[inset_0_0_0_1px_rgb(124_156_196/0.35)]';
 
@@ -188,11 +276,14 @@ export function PlayerBar({ onSaveClip, onAddNote }: { onSaveClip: () => void; o
         </div>
 
         <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto sm:gap-4">
-          {/* Playback settings live together in one tray instead of loose buttons. */}
+          {/*
+            Playback settings live together in one tray instead of loose buttons. The tray is its own stacking context
+            (kamon skin): while one of its menus is open it rises over the pinned video (z-20), under the top bar (z-40).
+          */}
           <div
             role="group"
             aria-label="Ajustes de reproducción"
-            className="skin-track skin-tray relative flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+            className="skin-track skin-tray relative flex items-center rounded-[12px] border border-line bg-sumi-900/70 p-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)] has-[[role=menu]]:z-30"
           >
             <SpeedButton />
             <TrayDivider />
@@ -239,8 +330,9 @@ function NudgeButton({ delta, disabled, onClick }: { delta: number; disabled: bo
 }
 
 function TimeReadout() {
-  // Tenths are all the readout shows: re-render ~10×/s instead of on every frame.
-  const tenths = usePlayer((s) => Math.floor(s.time * 10));
+  // Tenths are all the readout shows: re-render ~10×/s instead of on every frame. Under the recorder (hidden there)
+  // it doesn't follow the clock at all; it reads it again on the way back.
+  const tenths = useUnlessCovered((s) => Math.floor(s.time * 10));
   return (
     <p role="timer" aria-label="Tiempo" className="tabular ml-3 whitespace-nowrap font-mono text-[17px] font-semibold text-washi">
       {formatTime(tenths / 10, { tenths: true })}
@@ -299,7 +391,7 @@ function SpeedButton() {
                   aria-checked={s === rate}
                   onClick={() => setRate(s)}
                   className={cn(
-                    'tabular h-9 rounded-[8px] font-mono text-[13px] transition-colors',
+                    'tabular h-11 rounded-[8px] font-mono text-[13px] transition-colors',
                     s === rate ? 'bg-washi text-sumi-900' : 'text-washi hover:bg-washi/10',
                   )}
                 >
@@ -308,11 +400,11 @@ function SpeedButton() {
               ))}
             </div>
             <div className="mt-2 flex items-center gap-1 border-t border-washi/10 pt-2">
-              <button type="button" aria-label="Más lento" onClick={() => setRate(stepSpeed(rate, -1))} className="grid size-9 place-items-center rounded-[8px] text-washi hover:bg-washi/10">
+              <button type="button" aria-label="Más lento" onClick={() => setRate(stepSpeed(rate, -1))} className="grid size-11 place-items-center rounded-[8px] text-washi hover:bg-washi/10">
                 <Minus className="size-4" />
               </button>
               <span className="tabular flex-1 text-center font-mono text-sm text-washi">{formatSpeed(rate)}</span>
-              <button type="button" aria-label="Más rápido" onClick={() => setRate(stepSpeed(rate, 1))} className="grid size-9 place-items-center rounded-[8px] text-washi hover:bg-washi/10">
+              <button type="button" aria-label="Más rápido" onClick={() => setRate(stepSpeed(rate, 1))} className="grid size-11 place-items-center rounded-[8px] text-washi hover:bg-washi/10">
                 <Plus className="size-4" />
               </button>
             </div>
@@ -340,13 +432,23 @@ function MirrorButton() {
   );
 }
 
-function GapBadge({ seconds }: { seconds: number }) {
+/**
+ * The pause between repetitions, as a seal beside the icon (never on top of it): 12 px bold washi on
+ * shu-700, the token pair that keeps ≥ 4.5:1. The button's own name already says it for screen readers.
+ */
+export function GapBadge({ seconds }: { seconds: number }) {
   return (
-    <span className="tabular pointer-events-none absolute -right-1.5 -top-1.5 rounded-full bg-shu-500 px-1.5 font-mono text-[10px] font-bold leading-4 text-washi">
+    <span
+      aria-hidden
+      className="tabular pointer-events-none shrink-0 rounded-[5px] bg-shu-700 px-1 font-mono text-[12px] font-bold leading-[18px] text-washi shadow-[inset_0_0_0_1px_rgb(243_236_223/0.25)]"
+    >
       {seconds}s
     </span>
   );
 }
+
+/** «, pausa de 2 s» for a button's accessible name; nothing without a pause. */
+const gapSuffix = (seconds: number) => (seconds > 0 ? `, pausa de ${seconds} s` : '');
 
 /** Repeat the whole song (no clip needed). Hold for the pause between repetitions. */
 function LoopAllButton() {
@@ -362,12 +464,12 @@ function LoopAllButton() {
       <button
         type="button"
         aria-pressed={loopAll}
-        aria-label="Bucle: repetir la canción entera (mantén pulsado para la pausa)"
+        aria-label={`Bucle: repetir la canción entera${gapSuffix(gapAll)} (mantén pulsado para la pausa)`}
         title="Repetir la canción (R) · mantén pulsado para la pausa"
         {...press}
-        className={cn(trayBtn, loopAll ? trayOn : trayIdle)}
+        className={cn(trayBtn, loopAll ? trayOn : trayIdle, gapAll > 0 && 'max-sm:gap-1 max-sm:px-1.5')}
       >
-        <Repeat1 className="size-[18px]" />
+        <Repeat1 className="size-[18px] shrink-0" />
         <span className="max-sm:sr-only">Bucle</span>
         {gapAll > 0 && <GapBadge seconds={gapAll} />}
       </button>
@@ -459,20 +561,22 @@ function RangeBar() {
   return (
     <AnimatePresence initial={false}>
       {shown && (
+        // Clipped only while the height animates: open, the pause panel above «Repetir» must not be cut off (9).
+        // While that panel is open the bar rises over the pinned video, like the tray (7).
         <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          exit={{ opacity: 0, height: 0 }}
+          initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+          animate={{ opacity: 1, height: 'auto', transitionEnd: { overflow: 'visible' } }}
+          exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
           transition={{ duration: 0.2 }}
-          className="overflow-hidden"
+          className="relative has-[[role=menu]]:z-30"
         >
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[12px] border border-shu-500/35 bg-shu-500/[0.07] p-2">
-            <button type="button" disabled={!ready} onClick={() => p.markStart()} title="Mover el inicio aquí (A)" className="flex h-9 items-center gap-2 rounded-[8px] px-2 hover:bg-washi/10">
+            <button type="button" disabled={!ready} onClick={() => p.markStart()} title="Mover el inicio aquí (A)" className="flex h-11 items-center gap-2 rounded-[8px] px-2 hover:bg-washi/10">
               <span className="grid size-6 place-items-center rounded-[4px] bg-shu-500 font-display text-xs font-extrabold text-washi">A</span>
               <span className="tabular font-mono text-sm text-washi">{formatTime(loop.start!, { tenths: true })}</span>
             </button>
             <span className="text-washi-subtle">→</span>
-            <button type="button" disabled={!ready} onClick={() => p.markEnd()} title="Mover el final aquí (B)" className="flex h-9 items-center gap-2 rounded-[8px] px-2 hover:bg-washi/10">
+            <button type="button" disabled={!ready} onClick={() => p.markEnd()} title="Mover el final aquí (B)" className="flex h-11 items-center gap-2 rounded-[8px] px-2 hover:bg-washi/10">
               <span className={cn('grid size-6 place-items-center rounded-[4px] font-display text-xs font-extrabold', range ? 'bg-shu-500 text-washi' : 'border border-washi/30 text-washi-muted')}>B</span>
               <span className="tabular font-mono text-sm text-washi">{range ? formatTime(loop.end!, { tenths: true }) : 'pulsa «Fin del clip»'}</span>
             </button>
@@ -486,10 +590,10 @@ function RangeBar() {
                   <button
                     type="button"
                     aria-pressed={loop.enabled}
-                    aria-label="Repetir el tramo (mantén pulsado para la pausa)"
+                    aria-label={`Repetir el tramo${gapSuffix(gap)} (mantén pulsado para la pausa)`}
                     {...press}
                     className={cn(
-                      'relative flex h-9 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors',
+                      'relative flex h-11 items-center gap-2 rounded-[8px] px-3 text-sm font-bold transition-colors',
                       loop.enabled ? 'bg-shu-500/25 text-shu-400' : 'text-washi-muted hover:bg-washi/10 hover:text-washi',
                     )}
                   >
@@ -510,7 +614,7 @@ function RangeBar() {
                   </AnimatePresence>
                 </div>
               )}
-              <button type="button" aria-label="Quitar tramo" onClick={() => p.clearLoop()} className="grid size-9 place-items-center rounded-[8px] text-washi-muted hover:bg-washi/10 hover:text-washi">
+              <button type="button" aria-label="Quitar tramo" onClick={() => p.clearLoop()} className="grid size-11 place-items-center rounded-[8px] text-washi-muted hover:bg-washi/10 hover:text-washi">
                 <X className="size-4" />
               </button>
             </div>
