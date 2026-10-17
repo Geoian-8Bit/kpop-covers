@@ -54,10 +54,159 @@ export function sanitizeOptions(raw: Partial<RoundOptions> | null | undefined): 
   return {
     count: clampCount(Number(o.count ?? DEFAULT_ROUND_OPTIONS.count)),
     pauseSeconds: clampPause(Number(o.pauseSeconds ?? DEFAULT_ROUND_OPTIONS.pauseSeconds)),
-    countdown: o.countdown ?? DEFAULT_ROUND_OPTIONS.countdown,
-    useClipSettings: o.useClipSettings ?? DEFAULT_ROUND_OPTIONS.useClipSettings,
+    // Only real booleans: a damaged localStorage («"no"») must not count as true.
+    countdown: typeof o.countdown === 'boolean' ? o.countdown : DEFAULT_ROUND_OPTIONS.countdown,
+    useClipSettings:
+      typeof o.useClipSettings === 'boolean' ? o.useClipSettings : DEFAULT_ROUND_OPTIONS.useClipSettings,
     titleMode: o.titleMode === 'after' ? 'after' : 'before',
   };
+}
+
+/** Seconds as said in Spanish: «2», «1,5». */
+function secondsWord(seconds: number): string {
+  return String(seconds).replace('.', ',');
+}
+
+/**
+ * «Más opciones», folded: what is chosen in one line, e.g. «Pausa 2 s · título antes · cuenta atrás · espejo y
+ * velocidad del clip».
+ */
+export function optionsSummary(options: Omit<RoundOptions, 'count'>): string {
+  const pause = clampPause(options.pauseSeconds);
+  return [
+    pause === 0 ? 'Sin pausa' : `Pausa ${secondsWord(pause)} s`,
+    options.titleMode === 'after' ? 'modo adivinar' : 'título antes',
+    options.countdown ? 'cuenta atrás' : 'sin cuenta atrás',
+    options.useClipSettings ? 'espejo y velocidad del clip' : 'velocidad normal',
+  ].join(' · ');
+}
+
+export type SourceKind = 'bag' | 'manual' | 'songs';
+
+/** The last «Nueva ronda» setup on this device: where the clips came from and the options. */
+export interface RoundSetup {
+  kind: SourceKind;
+  bagId: string | null;
+  clipIds: string[];
+  videoIds: string[];
+  options: RoundOptions;
+}
+
+export const DEFAULT_ROUND_SETUP: RoundSetup = {
+  kind: 'bag',
+  bagId: null,
+  clipIds: [],
+  videoIds: [],
+  options: DEFAULT_ROUND_OPTIONS,
+};
+
+const ids = (raw: unknown): string[] =>
+  Array.isArray(raw) ? [...new Set(raw.filter((id): id is string => typeof id === 'string' && id !== ''))] : [];
+
+/** Whatever came from storage → a valid setup (unknown bags or clips are dropped later, against the lists). */
+export function sanitizeSetup(raw: unknown): RoundSetup {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return DEFAULT_ROUND_SETUP;
+  const o = raw as Record<string, unknown>;
+  const kind: SourceKind = o.kind === 'manual' || o.kind === 'songs' ? o.kind : 'bag';
+  return {
+    kind,
+    bagId: typeof o.bagId === 'string' && o.bagId !== '' ? o.bagId : null,
+    clipIds: ids(o.clipIds),
+    videoIds: ids(o.videoIds),
+    options: sanitizeOptions(
+      o.options && typeof o.options === 'object' ? (o.options as Partial<RoundOptions>) : null,
+    ),
+  };
+}
+
+export type RoundKey = 'pause' | 'skip' | 'repeat' | 'exit';
+
+/**
+ * The round's single-key shortcuts. Space on a button reached with the keyboard is that button's own key; on a button
+ * the focus only sits on because it was clicked or tapped («Saltar» with the mouse by the TV), Space still pauses.
+ * A key held down only counts once (its auto-repeat would toggle the pause on and off, or skip clip after clip).
+ * Esc asks to leave, like «Salir» (in full screen the browser keeps Esc for itself).
+ */
+export function roundKeyAction(
+  key: string,
+  focus: { onButton: boolean; byPointer: boolean; repeat?: boolean },
+): RoundKey | null {
+  if (focus.repeat) return null;
+  if (key === ' ') return !focus.onButton || focus.byPointer ? 'pause' : null;
+  if (key === 'ArrowRight') return 'skip';
+  if (key === 'r' || key === 'R') return 'repeat';
+  if (key === 'Escape') return 'exit';
+  return null;
+}
+
+/** The history state `useBackToClose` marks its entries with. */
+export function isLayerEntry(state: unknown): boolean {
+  return state != null && typeof state === 'object' && (state as { backToClose?: unknown }).backToClose != null;
+}
+
+/**
+ * Before a layer pushes its history entry, the one that just closed has to be gone: its `history.back()` is async,
+ * and a push in the meantime lands on top of it and leaves it behind (an extra «Atrás» on the round's URL).
+ * `onLayerEntry`: the current entry is still a layer's. `popped`: a popstate came since the last check.
+ * `ownBackPending`: one of our own `back()` calls is still on its way (`useBackToClose`). An entry left on top is
+ * stale (and stepped back over, a few at most) once a popstate came, or straight away when nothing of ours is in
+ * flight: after a reload with a layer open, its entry stays on top and belongs to nobody. With a `back()` of ours on
+ * the way it waits (the caller gives up waiting after a while and goes ahead, never stepping back blind).
+ */
+export function historySettleStep(
+  onLayerEntry: boolean,
+  popped: boolean,
+  ownBackPending: boolean,
+  backs: number,
+): 'ready' | 'wait' | 'back' {
+  if (!onLayerEntry) return 'ready';
+  if (!popped && ownBackPending) return 'wait';
+  return backs < 3 ? 'back' : 'ready';
+}
+
+/** The state `/rpd` opens the round with, so leaving it steps back to that same entry instead of adding another. */
+export const OPENED_FROM_RPD = { openedFrom: 'rpd' } as const;
+/** The state any other screen of the app (a bag, a track) opens the round with: leaving steps back to it too. */
+export const OPENED_IN_APP = { openedFrom: 'app' } as const;
+
+/**
+ * Leaving the round: back to the entry it was opened from inside the app (`/rpd`, a bag, a track), or (a direct
+ * link) `/rpd` in its place, never a step out of the app. Still on a layer's entry (the history never settled):
+ * `/rpd` in place too, since a step back could land on the round's own entry and change nothing.
+ */
+export function leaveRoundBy(locationState: unknown, onLayerEntry = false): 'back' | 'replace' {
+  if (onLayerEntry || locationState == null || typeof locationState !== 'object') return 'replace';
+  const from = (locationState as { openedFrom?: unknown }).openedFrom;
+  return from === OPENED_FROM_RPD.openedFrom || from === OPENED_IN_APP.openedFrom ? 'back' : 'replace';
+}
+
+/**
+ * Once leaving's navigation has landed (or given up waiting): still on the round's page means the step back fell on
+ * a stale entry with the same URL → put `/rpd` in place; still here even after that → undo «leaving», so «Salir»,
+ * the keys and the «Atrás» guard work again instead of staying dead.
+ */
+export function leaveFallback(how: 'back' | 'replace', stillOnRound: boolean): 'replace' | 'reset' | null {
+  if (!stillOnRound) return null;
+  return how === 'back' ? 'replace' : 'reset';
+}
+
+/** Leaving the round screen asks first only while a clip is on its way or playing. */
+export function exitNeedsConfirm(phase: RoundPhase): boolean {
+  return phase === 'lead' || phase === 'play';
+}
+
+/**
+ * What a screen reader hears when the clip changes (and once more when modo adivinar reveals the title):
+ * «Clip 3 de 8: Título». Empty before the first clip.
+ */
+export function clipAnnouncement(
+  position: { index: number; total: number },
+  title: string | null,
+  hidden: boolean,
+): string {
+  if (position.index < 1 || position.total < 1) return '';
+  const what = hidden ? '¿qué canción es?' : title?.trim() || 'sin título';
+  return `Clip ${position.index} de ${position.total}: ${what}`;
 }
 
 /** A saved track's options, from its row. */

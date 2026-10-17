@@ -35,6 +35,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { newDraft, setRoundDraft } from './roundDraft';
 import { RoundOptionsFields } from './RoundOptionsFields';
 import {
+  OPENED_IN_APP,
   optionsFromTrack,
   positionPatches,
   reorder,
@@ -143,7 +144,7 @@ function TrackEditor({ track }: { track: Track }) {
     setRoundDraft(
       newDraft(list, options, `Pista «${track.name}»${mix ? ' (mezcla nueva)' : ''}`, mix ? null : track.id),
     );
-    navigate('/rpd/jugar');
+    navigate('/rpd/jugar', { state: OPENED_IN_APP }); // «Salir» steps back to this track
   }
 
   function remix() {

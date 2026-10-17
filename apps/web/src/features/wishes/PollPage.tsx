@@ -33,17 +33,16 @@ import { useNow } from './identity';
 import { PollFormDialog, type PollPreset } from './PollFormDialog';
 import {
   ballotOf,
-  closingLabel,
   drawAmongTied,
   isPollClosed,
   msUntilClose,
   needsClosing,
   outcomeOf,
+  pollSummary,
   resultsVisible,
   scoreLabel,
   tally,
   voterCount,
-  VOTE_TYPE_COPY,
   type OptionResult,
 } from './pollRules';
 import { TieDraw } from './TieDraw';
@@ -204,7 +203,7 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-3xl rounded-[10px] sm:rounded-[12px]">
-        <header className="px-4 pb-5 pt-4 sm:px-9 sm:pt-6">
+        <header className="px-4 pb-4 pt-3 sm:px-9 sm:pt-6">
           <div className="flex items-center justify-between gap-2">
             <Link
               to="/deseos?tab=votaciones"
@@ -228,7 +227,7 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
               ]}
             />
           </div>
-          <h1 className="mt-2 font-display text-[26px] font-bold leading-tight sm:text-[32px]">{poll.title}</h1>
+          <h1 className="mt-1 break-words font-display text-[26px] font-bold leading-tight sm:text-[32px]">{poll.title}</h1>
           {parent && (
             <Link
               to={`/deseos/votacion/${parent.id}`}
@@ -238,25 +237,6 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
               Segunda vuelta de «{parent.title}»
             </Link>
           )}
-          <ul className="mt-3 flex flex-wrap gap-1.5 text-[12px]" aria-label="Cómo es esta votación">
-            {[
-              VOTE_TYPE_COPY[poll.vote_type].label,
-              poll.results_live ? 'Resultados en directo' : 'Resultados al cerrar',
-              poll.anonymous ? 'Anónima' : 'Con nombre',
-            ].map((chip) => (
-              <li key={chip} className="rounded-full border border-line px-2.5 py-1 text-washi-muted">
-                {chip}
-              </li>
-            ))}
-            <li
-              className={cn(
-                'rounded-full px-2.5 py-1 font-bold',
-                closed ? 'bg-sumi-700 text-washi-muted' : 'bg-ai-700/70 text-ai-200',
-              )}
-            >
-              {closed && !poll.closed_at ? 'Plazo terminado' : closingLabel(poll, now)}
-            </li>
-          </ul>
         </header>
 
         {!loaded ? (
@@ -316,6 +296,18 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
               </div>
             )}
 
+            {/* ── 37 · How this vote works: secondary, so after the ballot and in one compact line ── */}
+            <p className="px-4 pb-4 text-[13px] leading-relaxed text-washi-subtle sm:px-9">
+              {/* A paragraph can't carry a name: the reader hears this lead-in instead. */}
+              <span className="sr-only">Cómo es esta votación: </span>
+              {pollSummary(poll, now).map((part, i) => (
+                <span key={part} className={cn(i === 0 && !closed && 'font-bold text-ai-200')}>
+                  {i > 0 && <span aria-hidden> · </span>}
+                  {part}
+                </span>
+              ))}
+            </p>
+
             {/* ── Results ── */}
             <section aria-labelledby="results-title" className="sep-t px-4 py-6 sm:px-9">
               <SectionTitle
@@ -347,14 +339,8 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
             </section>
 
             {!closed && (
-              <div className="sep-t flex flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-9">
-                <p className="text-[13px] text-washi-subtle">
-                  {poll.closes_at ? 'Se cierra sola a su hora, o antes a mano.' : 'Se cierra a mano.'}
-                </p>
-                <Button
-                  variant="secondary"
-                  onClick={() => setConfirmClose(true)}
-                >
+              <div className="sep-t flex justify-end px-4 py-4 sm:px-9">
+                <Button variant="secondary" onClick={() => setConfirmClose(true)}>
                   <Lock aria-hidden className="size-4" /> Cerrar votación
                 </Button>
               </div>

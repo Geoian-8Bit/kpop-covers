@@ -3,19 +3,31 @@ import {
   buildRound,
   clampCount,
   clampPause,
+  clipAnnouncement,
   clipEndAt,
   clipsForSource,
+  DEFAULT_ROUND_SETUP,
+  exitNeedsConfirm,
+  historySettleStep,
   IDLE_ROUND,
+  isLayerEntry,
   leadIn,
   leadStatus,
+  leaveFallback,
+  leaveRoundBy,
   liveClipIds,
   nextPlayable,
+  OPENED_FROM_RPD,
+  OPENED_IN_APP,
   optionsFromTrack,
+  optionsSummary,
   positionPatches,
   reorder,
+  roundKeyAction,
   roundLeadStatus,
   roundReducer,
   sanitizeOptions,
+  sanitizeSetup,
   spreadBy,
   titleShown,
   type RoundState,
@@ -57,6 +69,14 @@ describe('options', () => {
       countdown: true,
       useClipSettings: true,
       titleMode: 'before',
+    });
+    // A damaged storage: strings are not booleans (`"no"` would otherwise count as true).
+    const damaged = sanitizeOptions({ countdown: 'no' as never, useClipSettings: 0 as never });
+    expect(damaged.countdown).toBe(true);
+    expect(damaged.useClipSettings).toBe(true);
+    expect(sanitizeOptions({ countdown: false, useClipSettings: false })).toMatchObject({
+      countdown: false,
+      useClipSettings: false,
     });
     expect(
       optionsFromTrack(
@@ -251,5 +271,139 @@ describe('roundReducer', () => {
 
   it('finishes at once', () => {
     expect(run(IDLE_ROUND, { type: 'start', now: 0 }, { type: 'finish' }).phase).toBe('done');
+  });
+});
+
+describe('the new-round page', () => {
+  it('sums up the folded options in one line', () => {
+    expect(
+      optionsSummary({ pauseSeconds: 2, titleMode: 'before', countdown: true, useClipSettings: true }),
+    ).toBe('Pausa 2 s · título antes · cuenta atrás · espejo y velocidad del clip');
+    expect(
+      optionsSummary({ pauseSeconds: 0, titleMode: 'after', countdown: false, useClipSettings: false }),
+    ).toBe('Sin pausa · modo adivinar · sin cuenta atrás · velocidad normal');
+    expect(
+      optionsSummary({ pauseSeconds: 1.5, titleMode: 'before', countdown: true, useClipSettings: true }),
+    ).toMatch(/^Pausa 1,5 s/);
+  });
+
+  it('restores a stored setup, or the defaults from anything broken', () => {
+    for (const raw of [null, undefined, 'x', 3, [], ['bag']]) {
+      expect(sanitizeSetup(raw)).toEqual(DEFAULT_ROUND_SETUP);
+    }
+    expect(
+      sanitizeSetup({
+        kind: 'songs',
+        bagId: '',
+        clipIds: ['a', 'a', 4, ''],
+        videoIds: 'v',
+        options: { count: 12, pauseSeconds: 9, countdown: false },
+      }),
+    ).toEqual({
+      kind: 'songs',
+      bagId: null,
+      clipIds: ['a'],
+      videoIds: [],
+      options: { count: 12, pauseSeconds: 5, countdown: false, useClipSettings: true, titleMode: 'before' },
+    });
+    expect(sanitizeSetup({ kind: 'nope', bagId: 'b1' })).toMatchObject({ kind: 'bag', bagId: 'b1' });
+  });
+});
+
+describe('the round screen', () => {
+  it('asks before leaving only mid-round', () => {
+    expect(exitNeedsConfirm('lead')).toBe(true);
+    expect(exitNeedsConfirm('play')).toBe(true);
+    expect(exitNeedsConfirm('idle')).toBe(false);
+    expect(exitNeedsConfirm('done')).toBe(false);
+  });
+
+  it('keeps Space as the pause unless a button was reached with the keyboard', () => {
+    expect(roundKeyAction(' ', { onButton: false, byPointer: false })).toBe('pause');
+    // Clicked «Saltar» with the mouse, then Space: pause, not another skip.
+    expect(roundKeyAction(' ', { onButton: true, byPointer: true })).toBe('pause');
+    // Tabbed to a button: Space is that button's.
+    expect(roundKeyAction(' ', { onButton: true, byPointer: false })).toBeNull();
+    expect(roundKeyAction('ArrowRight', { onButton: true, byPointer: false })).toBe('skip');
+    expect(roundKeyAction('r', { onButton: false, byPointer: false })).toBe('repeat');
+    expect(roundKeyAction('R', { onButton: false, byPointer: false })).toBe('repeat');
+    expect(roundKeyAction('Enter', { onButton: false, byPointer: false })).toBeNull();
+  });
+
+  it('announces the clip change politely, keeping modo adivinar a secret', () => {
+    expect(clipAnnouncement({ index: 3, total: 8 }, 'Love Dive', false)).toBe('Clip 3 de 8: Love Dive');
+    expect(clipAnnouncement({ index: 3, total: 8 }, 'Love Dive', true)).toBe('Clip 3 de 8: ¿qué canción es?');
+    expect(clipAnnouncement({ index: 1, total: 2 }, '  ', false)).toBe('Clip 1 de 2: sin título');
+    expect(clipAnnouncement({ index: 0, total: 8 }, 'Love Dive', false)).toBe('');
+  });
+});
+
+describe('round keys and history', () => {
+  it('counts a held key once and turns Esc into «Salir»', () => {
+    expect(roundKeyAction(' ', { onButton: false, byPointer: false, repeat: true })).toBeNull();
+    expect(roundKeyAction('ArrowRight', { onButton: false, byPointer: false, repeat: true })).toBeNull();
+    expect(roundKeyAction('r', { onButton: false, byPointer: false, repeat: true })).toBeNull();
+    expect(roundKeyAction(' ', { onButton: false, byPointer: false, repeat: false })).toBe('pause');
+    expect(roundKeyAction('Escape', { onButton: false, byPointer: false })).toBe('exit');
+    expect(roundKeyAction('Escape', { onButton: true, byPointer: false })).toBe('exit');
+    expect(roundKeyAction('Escape', { onButton: false, byPointer: false, repeat: true })).toBeNull();
+  });
+
+  it('knows a layer’s own history entry', () => {
+    expect(isLayerEntry({ usr: null, key: 'k', idx: 3, backToClose: 7 })).toBe(true);
+    expect(isLayerEntry({ usr: null, key: 'k', idx: 3 })).toBe(false);
+    expect(isLayerEntry(null)).toBe(false);
+    expect(isLayerEntry('x')).toBe(false);
+  });
+
+  it('waits for a closing layer’s back() before stepping over stale entries', () => {
+    // On the page's own entry: go ahead, whatever is in flight.
+    expect(historySettleStep(false, false, false, 0)).toBe('ready');
+    expect(historySettleStep(false, false, true, 0)).toBe('ready');
+    expect(historySettleStep(false, true, false, 2)).toBe('ready');
+    // A layer's entry still on top, a back() of ours on the way and no popstate yet: never step back blind.
+    expect(historySettleStep(true, false, true, 0)).toBe('wait');
+    // After a popstate, still on a layer's entry: a stale one, step back over it (a few at most).
+    expect(historySettleStep(true, true, true, 0)).toBe('back');
+    expect(historySettleStep(true, true, false, 0)).toBe('back');
+    expect(historySettleStep(true, true, false, 2)).toBe('back');
+    expect(historySettleStep(true, true, false, 3)).toBe('ready');
+  });
+
+  it('steps over the entry a reload left behind at once, without waiting for a popstate', () => {
+    // Reloaded with the «Atrás» guard on: its entry stays on top, nobody's, and no back() of ours is on the way.
+    expect(historySettleStep(true, false, false, 0)).toBe('back');
+    // That back() is ours now: wait for it to land…
+    expect(historySettleStep(true, false, true, 1)).toBe('wait');
+    // …then on the round's own entry: ready (the guard, the dialog or leaving go ahead with no 400 ms wait).
+    expect(historySettleStep(false, true, false, 1)).toBe('ready');
+    // Never more than a few steps, even if stale entries keep coming.
+    expect(historySettleStep(true, false, false, 3)).toBe('ready');
+  });
+
+  it('leaves to the entry it came from inside the app, or puts /rpd in its place', () => {
+    expect(leaveRoundBy(OPENED_FROM_RPD)).toBe('back');
+    expect(leaveRoundBy({ ...OPENED_FROM_RPD })).toBe('back');
+    // From a bag or a track.
+    expect(leaveRoundBy(OPENED_IN_APP)).toBe('back');
+    expect(leaveRoundBy({ usr: 1, ...OPENED_IN_APP })).toBe('back');
+    // A direct link: never a step out of the app.
+    expect(leaveRoundBy(null)).toBe('replace');
+    expect(leaveRoundBy(undefined)).toBe('replace');
+    expect(leaveRoundBy({ openedFrom: 'bag' })).toBe('replace');
+    expect(leaveRoundBy('rpd')).toBe('replace');
+    // The history never settled (still on a layer's entry): a step back might not even change the page.
+    expect(leaveRoundBy(OPENED_FROM_RPD, true)).toBe('replace');
+    expect(leaveRoundBy(OPENED_IN_APP, false)).toBe('back');
+  });
+
+  it('never leaves «Salir» dead when leaving doesn’t change the page', () => {
+    // Left the round: nothing more to do.
+    expect(leaveFallback('back', false)).toBeNull();
+    expect(leaveFallback('replace', false)).toBeNull();
+    // The step back fell on a stale entry with the round's URL (after a reload): /rpd in place.
+    expect(leaveFallback('back', true)).toBe('replace');
+    // Even that didn't change the page: undo «leaving» so «Salir», the keys and the guard work again.
+    expect(leaveFallback('replace', true)).toBe('reset');
   });
 });

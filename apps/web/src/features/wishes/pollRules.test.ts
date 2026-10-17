@@ -11,6 +11,7 @@ import {
   needsClosing,
   outcomeOf,
   pastVotesOf,
+  pollSummary,
   resultsVisible,
   scoreLabel,
   tally,
@@ -198,5 +199,25 @@ describe('past votes of a wish', () => {
       now,
     );
     expect(result).toEqual([{ pollId: 'p', title: 'Votación p', type: 'single', score: 1 }]);
+  });
+});
+
+describe('the compact summary of a vote (37)', () => {
+  const now = Date.parse('2026-10-18T20:00:00Z');
+  const base = { closed_at: null, closes_at: null, vote_type: 'single' as const, anonymous: true, results_live: false };
+
+  it('lists closing, type, anonymity and when the results show', () => {
+    expect(pollSummary(base, now)).toEqual(['Se cierra a mano', 'Un voto', 'Anónima', 'Resultados al cerrar']);
+    expect(pollSummary({ ...base, vote_type: 'ranking', anonymous: false, results_live: true }, now)).toEqual([
+      'Se cierra a mano',
+      'Ranking',
+      'Con nombre',
+      'Resultados en directo',
+    ]);
+  });
+
+  it('a deadline that passed without the close written yet', () => {
+    expect(pollSummary({ ...base, closes_at: '2026-10-18T19:00:00Z' }, now)[0]).toBe('Plazo terminado');
+    expect(pollSummary({ ...base, closed_at: '2026-10-18T19:00:00Z' }, now)[0]).toBe('Cerrada');
   });
 });

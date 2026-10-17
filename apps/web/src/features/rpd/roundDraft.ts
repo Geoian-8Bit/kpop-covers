@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { DEFAULT_ROUND_OPTIONS, sanitizeOptions, type RoundOptions } from './roundRules';
+import {
+  DEFAULT_ROUND_OPTIONS,
+  DEFAULT_ROUND_SETUP,
+  sanitizeOptions,
+  sanitizeSetup,
+  type RoundOptions,
+  type RoundSetup,
+} from './roundRules';
 
 /**
  * The round on its way to the screen: the clips in order and the options. Not playback state (that is the
@@ -48,6 +55,26 @@ export const useRoundDraft = create<{ draft: RoundDraft | null }>(() => ({ draft
 export function setRoundDraft(draft: RoundDraft | null): void {
   useRoundDraft.setState({ draft });
   write(draft);
+}
+
+// ── The last «Nueva ronda» setup (source and options), remembered on this device across visits ──
+
+const SETUP_KEY = 'oneshoot.rpd.setup.v1';
+
+export function readRoundSetup(): RoundSetup {
+  try {
+    return sanitizeSetup(JSON.parse(localStorage.getItem(SETUP_KEY) ?? 'null'));
+  } catch {
+    return DEFAULT_ROUND_SETUP;
+  }
+}
+
+export function writeRoundSetup(setup: RoundSetup): void {
+  try {
+    localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+  } catch {
+    /* private mode or full: the defaults next time */
+  }
 }
 
 export function newDraft(

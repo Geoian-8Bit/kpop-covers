@@ -1,11 +1,12 @@
 import type { Clip } from '@coverscape/shared';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ArrowLeft, Play, RotateCcw, Save, Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAllClips } from '@/data/bags';
 import { useVideo } from '@/data/videos';
@@ -14,6 +15,7 @@ import type { ClipWithVideo } from '@/lib/backend';
 import { cn } from '@/lib/cn';
 import { tick, unlockAudio } from '@/lib/metronome';
 import { soft } from '@/lib/motion';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { loadYouTubeApi } from '@/lib/youtubeIframe';
 import type { PlayerEngine } from '@/player/engine';
 import { FileStage } from '@/player/FileStage';
@@ -24,10 +26,17 @@ import { RandomPlayScreen, type PlayCard } from './RandomPlayScreen';
 import { RoundControls } from './RoundControls';
 import { setRoundDraft, useRoundDraft, type RoundDraft } from './roundDraft';
 import {
+  clipAnnouncement,
   clipEndAt,
+  exitNeedsConfirm,
   followingPlayable,
   IDLE_ROUND,
+  isLayerEntry,
+  leaveFallback,
+  leaveRoundBy,
   nextPlayable,
+  optionsSummary,
+  roundKeyAction,
   roundLeadStatus,
   roundReducer,
   shuffle,
@@ -39,6 +48,7 @@ import {
 } from './roundRules';
 import { SaveTrackDialog } from './SaveTrackDialog';
 import { releaseClipSources, useClipSource, type ClipSource } from './useClipSource';
+import { useHistorySettled, WAIT_MS } from './useHistorySettled';
 
 interface Entry {
   key: string;
@@ -49,6 +59,8 @@ interface Entry {
 export function RpdPlayPage() {
   const draft = useRoundDraft((s) => s.draft);
   const clips = useAllClips();
+  // Out here, above the runner's `key`: «Volver a mezclar» remounts the runner but stays in full screen.
+  const fullscreen = useFullscreen();
 
   if (!draft || draft.clipIds.length === 0) {
     return (
@@ -61,7 +73,7 @@ export function RpdPlayPage() {
             <Link
               to="/rpd"
               onClick={guardNav}
-              className="mt-6 inline-flex h-11 items-center rounded-[10px] bg-washi px-5 font-bold text-sumi-900"
+              className="mt-6 inline-flex h-12 items-center rounded-[10px] bg-washi px-5 font-bold text-sumi-900"
             >
               Ir a Random Play Dance
             </Link>
@@ -88,7 +100,14 @@ export function RpdPlayPage() {
       </Shell>
     );
   }
-  return <RoundRunner key={`${draft.mix ?? 0}:${draft.clipIds.join(',')}`} draft={draft} all={clips.data} />;
+  return (
+    <RoundRunner
+      key={`${draft.mix ?? 0}:${draft.clipIds.join(',')}`}
+      draft={draft}
+      all={clips.data}
+      fullscreen={fullscreen}
+    />
+  );
 }
 
 /**
@@ -124,12 +143,16 @@ function Shell({ children }: { children: React.ReactNode }) {
       role="dialog"
       aria-modal="true"
       aria-label="Random Play Dance"
-      className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950"
+      className={ROOT}
     >
       {children}
     </div>
   );
 }
+
+/** The round's own layer: the app's seigaiha ground (not a black box), clear of the notch and the home bar. */
+const ROOT =
+  'seigaiha fixed inset-0 z-[45] overflow-y-auto pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(12px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(8px,env(safe-area-inset-top))]';
 
 function toCard(entry: Entry): PlayCard | null {
   const clip = entry.clip;
@@ -143,23 +166,57 @@ function toCard(entry: Entry): PlayCard | null {
   };
 }
 
-function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
+/**
+ * The whole page goes full screen, not the round's layer: dialogs («¿Salir de la ronda?», «Guardar como pista») and
+ * the toasts are mounted in `body`, and only what is inside the full-screen element gets painted. The round is
+ * already `fixed inset-0` over the app, so it still fills the screen. Leaving the round's page leaves full screen too
+ * (a new mix of the same round doesn't: the hook lives in the page, not in the runner it remounts).
+ */
+type Fullscreen = { on: boolean; toggle: () => void } | null;
+
+function useFullscreen(): Fullscreen {
   const [on, setOn] = useState(false);
+  const ours = useRef(false);
   useEffect(() => {
-    const sync = () => setOn(document.fullscreenElement === ref.current);
+    const sync = () => {
+      const now = document.fullscreenElement != null;
+      if (!now) ours.current = false;
+      setOn(now);
+    };
+    sync();
     document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, [ref]);
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      if (ours.current && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    };
+  }, []);
   const toggle = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-    else void ref.current?.requestFullscreen?.().catch(() => undefined);
-  }, [ref]);
+    else {
+      const request = document.documentElement.requestFullscreen?.();
+      if (request) {
+        ours.current = true;
+        void request.catch(() => {
+          ours.current = false;
+        });
+      }
+    }
+  }, []);
   const supported = typeof document !== 'undefined' && Boolean(document.documentElement.requestFullscreen);
   return supported ? { on, toggle } : null;
 }
 
-function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }) {
+function RoundRunner({
+  draft,
+  all,
+  fullscreen,
+}: {
+  draft: RoundDraft;
+  all: ClipWithVideo[];
+  fullscreen: Fullscreen;
+}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const options = draft.options;
   const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
   const entries = useMemo<Entry[]>(
@@ -174,9 +231,9 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
     IDLE_ROUND,
   );
   const [saving, setSaving] = useState(false);
+  const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   useInertOutside(rootRef);
-  const fullscreen = useFullscreen(rootRef);
 
   useLoopController();
   const prefMirror = useRef(true);
@@ -316,8 +373,16 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   }, [problem, paused, state.phase, state.index]);
 
   // ── Controls ──
+  // «Empezar» and «Otra vez» leave with their overlay: the focus goes on to «Pausa» instead of falling to `body`.
+  const focusPause = useRef(false);
+  useEffect(() => {
+    if (state.phase !== 'lead' || !focusPause.current) return;
+    focusPause.current = false;
+    rootRef.current?.querySelector<HTMLElement>('[data-round-pause]')?.focus({ preventScroll: true });
+  }, [state.phase]);
   const start = useCallback(() => {
     unlockAudio();
+    focusPause.current = true;
     dispatch({ type: 'start', now: performance.now() });
   }, []);
   const togglePause = useCallback(() => {
@@ -354,27 +419,144 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
         return; // a new list remounts the runner
       }
       unlockAudio();
+      focusPause.current = true;
       dispatch({ type: 'start', now: performance.now() });
     },
     [draft, byId],
   );
 
+  // Leaving: once the history is quiet (a dialog that just closed has dropped its entry), step back to the entry
+  // the round was opened from (`/rpd`, a bag, a track), or put `/rpd` in the round's place. Never a new entry on top: «Atrás» from
+  // `/rpd` then doesn't come back to a dead round.
+  const [leaving, setLeaving] = useState(false);
+  const leaveReady = useHistorySettled(leaving);
+  const openedFrom = useRef(location.state);
+  const left = useRef(false);
+  // The safety net of a leave on its way (listener and timer), dropped when the page unmounts.
+  const leaveWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => leaveWatch.current?.(), []);
+  useEffect(() => {
+    if (!leaveReady || left.current) return;
+    left.current = true;
+    const roundPath = window.location.pathname;
+    let how = leaveRoundBy(openedFrom.current, isLayerEntry(window.history.state));
+    let timer = 0;
+    const stop = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('popstate', check);
+      leaveWatch.current = null;
+    };
+    // Still on the round once the navigation has landed (a step back onto a stale entry with the same URL):
+    // `/rpd` in place; still here after that, «leaving» is undone so «Salir» isn't left dead.
+    function check() {
+      stop();
+      const next = leaveFallback(how, window.location.pathname === roundPath);
+      if (next === 'replace') go('replace');
+      else if (next === 'reset') {
+        left.current = false;
+        setLeaving(false);
+      }
+    }
+    function go(by: 'back' | 'replace') {
+      how = by;
+      leaveWatch.current = stop;
+      if (by === 'back') {
+        window.addEventListener('popstate', check);
+        timer = window.setTimeout(check, WAIT_MS * 2);
+        navigate(-1);
+      } else {
+        timer = window.setTimeout(check, WAIT_MS);
+        navigate('/rpd', { replace: true });
+      }
+    }
+    go(how);
+  }, [leaveReady, navigate]);
+  const leave = useCallback(() => {
+    usePlayer.getState().pause();
+    setLeaving(true);
+  }, []);
+
+  // «Salir» mid-round asks first (the round pauses meanwhile; «Seguir en la ronda» resumes it if it was running).
+  const [confirmExit, setConfirmExit] = useState(false);
+  const pausedForExit = useRef(false);
+  const exit = useCallback(() => {
+    // A second tap (or Esc, then a tap) before the dialog is up: already asked, and the pause it made stays known.
+    if (leaving || confirmExit) return;
+    if (!exitNeedsConfirm(state.phase)) {
+      leave();
+      return;
+    }
+    pausedForExit.current = state.pausedAt == null;
+    if (pausedForExit.current) togglePause();
+    setConfirmExit(true);
+  }, [leaving, confirmExit, state.phase, state.pausedAt, togglePause, leave]);
+  const stayInRound = useCallback(() => {
+    setConfirmExit(false);
+    if (pausedForExit.current) {
+      pausedForExit.current = false;
+      togglePause();
+    }
+  }, [togglePause]);
+  // The phone's «Atrás» (or the swipe back) mid-round asks the same question instead of leaving at once. Off while
+  // another layer is open: that layer's own entry takes the back press (and closing it puts this one back).
+  // Each entry is pushed only once the previous layer's own entry is gone (see `useHistorySettled`): pushed in the
+  // same moment as that layer's `back()`, it would leave a stale entry with the round's URL behind.
+  const guardWanted = exitNeedsConfirm(state.phase) && !confirmExit && !saving && !leaving;
+  const guardReady = useHistorySettled(guardWanted);
+  useBackToClose(guardWanted && guardReady, exit);
+  const confirmReady = useHistorySettled(confirmExit);
+  const saveReady = useHistorySettled(saving);
+
   // Keyboard, for a laptop by the TV: space pauses, → skips, R repeats.
+  // The button the focus sits on only because it was clicked or tapped: Space on it still pauses (not «Saltar» again).
+  // A native listener on the round's own node: taps inside the dialogs (portals) don't count.
+  const pointerButton = useRef<Element | null>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const onPointer = (e: PointerEvent) => {
+      pointerButton.current = (e.target as Element | null)?.closest('button') ?? null;
+    };
+    root.addEventListener('pointerdown', onPointer, true);
+    return () => root.removeEventListener('pointerdown', onPointer, true);
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      // Moving with the keyboard: from here on the focus is the keyboard's.
+      if (e.key === 'Tab') pointerButton.current = null;
       // Single keys only: Ctrl+R reloads, Alt+→ goes forward… those belong to the browser.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (saving || target?.closest('input, textarea, select, [role="dialog"]')) return;
-      if (e.key === ' ' && !target?.closest('button')) {
+      if (saving || confirmExit || leaving || target?.closest('input, textarea, select')) return;
+      // Inside another layer (a dialog over the round) the keys are that layer's; the round itself is a dialog too,
+      // and a control of its own (after a tap on Pausa, say) must not switch the shortcuts off.
+      const layer = target?.closest('[role="dialog"]');
+      if (layer && layer !== rootRef.current) return;
+      const button = target?.closest('button') ?? null;
+      const action = roundKeyAction(e.key, {
+        onButton: button != null,
+        byPointer: button != null && button === pointerButton.current,
+        repeat: e.repeat,
+      });
+      // A held Space still mustn't scroll the round or press the focused button again.
+      if (e.repeat && e.key === ' ') e.preventDefault();
+      if (action === 'pause') {
         e.preventDefault();
+        // Off the clicked button, so its own Space (on keyup) doesn't fire it as well.
+        if (button) rootRef.current?.focus({ preventScroll: true });
         togglePause();
-      } else if (e.key === 'ArrowRight') skip();
-      else if (e.key === 'r' || e.key === 'R') repeat();
+      } else if (action === 'skip') skip();
+      else if (action === 'repeat') repeat();
+      // Mid-round it pauses and asks, like «Salir»; on «¿Preparados?» and «Ronda terminada» it does nothing
+      // (an Esc by mistake doesn't throw the round away). In full screen the browser keeps Esc to leave full screen.
+      else if (action === 'exit' && exitNeedsConfirm(state.phase) && !document.fullscreenElement) {
+        e.preventDefault();
+        exit();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePause, skip, repeat, saving]);
+  }, [togglePause, skip, repeat, exit, state.phase, saving, confirmExit, leaving]);
 
   // ── What the screen shows ──
   const total = available.filter(Boolean).length;
@@ -399,6 +581,19 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   const mirrored = usePlayer((s) => s.mirrored);
   const waiting = lead?.phase === 'go' && !stageReady && !problem;
   const unavailable = entries.length - total;
+  const overlay = state.phase === 'idle' || state.phase === 'done';
+  const shownCard = current ? toCard(current) : (upcoming[0] ?? null);
+  // Modo adivinar: once revealed, the title stays for the rest of this clip (a pause no longer hides it again).
+  const [revealedFor, setRevealedFor] = useState<string | null>(null);
+  if (titleVisible && state.phase === 'play' && revealedFor !== leadKey) setRevealedFor(leadKey);
+  const shownTitleVisible =
+    state.phase === 'idle'
+      ? options.titleMode === 'before'
+      : titleVisible || (state.phase === 'play' && revealedFor === leadKey);
+  const announcement =
+    state.phase === 'lead' || state.phase === 'play'
+      ? clipAnnouncement(position, shownCard?.title ?? null, !shownTitleVisible)
+      : '';
 
   return (
     <div
@@ -406,134 +601,154 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
       role="dialog"
       aria-modal="true"
       aria-label="Random Play Dance"
-      className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950"
+      tabIndex={-1}
+      className={cn(ROOT, 'outline-none')}
     >
-      {/* As wide as the height allows: 280px ≈ what surrounds the 16:9 picture (top bar, the kamishibai frame and
-          plank, «Siguiente», the controls, even wrapped). */}
-      <div className="mx-auto flex min-h-full w-full max-w-[min(1500px,max(560px,calc((100dvh-280px)*16/9)))] min-w-0 flex-col px-3 pb-4 pt-2 sm:px-5 sm:pt-3 [@media(max-aspect-ratio:4/3)]:max-w-[1500px]">
-        <div className="mb-2 flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="h-11 px-2.5" onClick={() => navigate('/rpd')}>
+      <h1 className="sr-only">Random Play Dance</h1>
+      {/* Outside the inert part: a region that only enters the tree as the first clip is announced is often missed. */}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+      {/* Behind «¿Preparados?» and «Ronda terminada» the screen is inert: Tab and readers stay on the card. */}
+      <div inert={overlay} className="mx-auto flex min-h-full w-full max-w-[1800px] min-w-0 flex-col justify-center">
+        <RandomPlayScreen
+          top={
+            <div className="flex min-w-0 items-center gap-2">
+              <Button variant="ghost" size="sm" className="-ml-1 h-11 shrink-0 px-2.5 text-[14px]" onClick={exit}>
+                <ArrowLeft aria-hidden className="size-4.5" /> Salir
+              </Button>
+              <p className="min-w-0 flex-1 truncate text-[13px] text-washi-muted xl:text-base">
+                {draft.from || 'Ronda'}
+                {unavailable > 0 && ` · ${unavailable} no disponible${unavailable === 1 ? '' : 's'} (se saltan)`}
+              </p>
+            </div>
+          }
+          stage={
+            <RoundStage
+              source={source}
+              stageKey={stageKey}
+              mirrored={mirrored}
+              onToggle={togglePause}
+              playing={state.phase === 'play' && !paused}
+            />
+          }
+          current={shownCard}
+          upcoming={state.phase === 'idle' ? upcoming.slice(1) : upcoming}
+          position={position}
+          lead={state.phase === 'lead' ? lead : null}
+          waiting={waiting}
+          titleVisible={shownTitleVisible}
+          nextVisible={options.titleMode === 'before'}
+          paused={paused}
+          notice={problem}
+          controls={
+            <RoundControls
+              paused={paused}
+              onTogglePause={togglePause}
+              onRepeat={repeat}
+              onSkip={skip}
+              onFinish={finish}
+              onSave={draft.trackId ? null : () => setSaving(true)}
+              disabled={state.phase !== 'lead' && state.phase !== 'play'}
+              fullscreen={fullscreen}
+            />
+          }
+        />
+      </div>
+
+      <AnimatePresence>
+        {overlay && (
+          <motion.div
+            key={state.phase}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.15 } }}
+            className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-sumi-900/75 p-4 backdrop-blur-[3px]"
+          >
+            <motion.div
+              initial={reduce ? false : { y: 16, scale: 0.97 }}
+              animate={{ y: 0, scale: 1 }}
+              transition={soft}
+              className="paper-raised w-full max-w-md rounded-[16px] p-6 text-center sm:p-8"
+            >
+              {state.phase === 'idle' ? (
+                <>
+                  <Seal glyph="舞" size={52} stamp className="mx-auto" />
+                  <h2 className="mt-3 font-display text-[28px] font-bold leading-tight">¿Preparados?</h2>
+                  <p className="mt-2 text-[15px] text-washi-muted">
+                    {total} clip{total === 1 ? '' : 's'} · {optionsSummary(options)}
+                  </p>
+                  {total === 0 ? (
+                    <p className="mt-4 text-sm text-enji-300">Ninguno de estos clips está disponible.</p>
+                  ) : (
+                    <Button size="lg" className="mt-5 w-full" onClick={start} autoFocus data-autofocus>
+                      <Play aria-hidden className="size-5" /> Empezar
+                    </Button>
+                  )}
+                  <Button variant="ghost" className="mt-2 w-full" onClick={leave}>
+                    Salir
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Seal glyph="終" size={52} stamp className="mx-auto" />
+                  <h2 className="mt-3 font-display text-[28px] font-bold leading-tight">Ronda terminada</h2>
+                  <p className="mt-2 text-[15px] text-washi-muted">
+                    {state.played} de {total} clip{total === 1 ? '' : 's'} bailados.
+                  </p>
+                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                    <Button autoFocus onClick={() => restart(false)}>
+                      <RotateCcw aria-hidden className="size-4.5" /> Otra vez
+                    </Button>
+                    <Button variant="secondary" onClick={() => restart(true)}>
+                      <Shuffle aria-hidden className="size-4.5" /> Volver a mezclar
+                    </Button>
+                    {!draft.trackId && (
+                      <Button variant="secondary" className="sm:col-span-2" onClick={() => setSaving(true)}>
+                        <Save aria-hidden className="size-4.5" /> Guardar como pista
+                      </Button>
+                    )}
+                    <Button variant="ghost" className="sm:col-span-2" onClick={leave}>
+                      Salir
+                    </Button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Dialog
+        open={confirmExit && confirmReady}
+        onClose={stayInRound}
+        title="¿Salir de la ronda?"
+        description="La ronda se para aquí. Puedes volver a empezarla desde Random Play Dance."
+        size="sm"
+        hideClose
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={stayInRound}>
+            Seguir en la ronda
+          </Button>
+          <Button
+            onClick={() => {
+              pausedForExit.current = false;
+              setConfirmExit(false);
+              // After the dialog's own entry is gone: «Atrás» later doesn't land on a dead confirmation.
+              leave();
+            }}
+          >
             <ArrowLeft aria-hidden className="size-4.5" /> Salir
           </Button>
-          <p className="min-w-0 flex-1 truncate text-[13px] text-washi-subtle">
-            {draft.from || 'Ronda'}
-            {unavailable > 0 && ` · ${unavailable} no disponible${unavailable === 1 ? '' : 's'} (se saltan)`}
-          </p>
-          {!draft.trackId && (
-            <Button variant="ghost" size="sm" className="h-11 px-2.5" onClick={() => setSaving(true)}>
-              <Save aria-hidden className="size-4" /> Guardar como pista
-            </Button>
-          )}
         </div>
-
-        <h1 className="sr-only">Random Play Dance</h1>
-        <div className="relative min-h-0 flex-1">
-          <RandomPlayScreen
-            stage={
-              <RoundStage
-                source={source}
-                stageKey={stageKey}
-                mirrored={mirrored}
-                onToggle={togglePause}
-                playing={state.phase === 'play' && !paused}
-              />
-            }
-            current={current ? toCard(current) : (upcoming[0] ?? null)}
-            upcoming={state.phase === 'idle' ? upcoming.slice(1) : upcoming}
-            position={position}
-            lead={state.phase === 'lead' ? lead : null}
-            waiting={waiting}
-            titleVisible={state.phase === 'idle' ? options.titleMode === 'before' : titleVisible}
-            nextVisible={options.titleMode === 'before'}
-            paused={paused}
-            notice={problem}
-            controls={
-              <RoundControls
-                paused={paused}
-                onTogglePause={togglePause}
-                onRepeat={repeat}
-                onSkip={skip}
-                onFinish={finish}
-                disabled={state.phase !== 'lead' && state.phase !== 'play'}
-                fullscreen={fullscreen}
-              />
-            }
-          />
-          <AnimatePresence>
-            {(state.phase === 'idle' || state.phase === 'done') && (
-              <motion.div
-                key={state.phase}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                className="absolute inset-0 z-40 grid place-items-center rounded-[12px] bg-sumi-950/90 p-4 backdrop-blur-[2px]"
-              >
-                <motion.div
-                  initial={{ y: 16, scale: 0.97 }}
-                  animate={{ y: 0, scale: 1 }}
-                  transition={soft}
-                  className="paper-raised w-full max-w-md rounded-[16px] p-6 text-center sm:p-8"
-                >
-                  {state.phase === 'idle' ? (
-                    <>
-                      <Seal glyph="舞" size={56} stamp className="mx-auto" />
-                      <h2 className="mt-4 font-display text-[26px] font-bold leading-tight">¿Preparados?</h2>
-                      <p className="mt-2 text-[15px] text-washi-muted">
-                        {total} clip{total === 1 ? '' : 's'} · pausa de {options.pauseSeconds} s
-                        {options.countdown ? ' · cuenta atrás' : ''}
-                        {options.titleMode === 'after' ? ' · modo adivinar' : ''}
-                      </p>
-                      {total === 0 ? (
-                        <p className="mt-4 text-sm text-enji-300">Ninguno de estos clips está disponible.</p>
-                      ) : (
-                        <Button size="lg" className="mt-6 w-full" onClick={start} autoFocus data-autofocus>
-                          <Play aria-hidden className="size-5" /> Empezar
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <Seal glyph="終" size={56} stamp className="mx-auto" />
-                      <h2 className="mt-4 font-display text-[26px] font-bold leading-tight">
-                        Ronda terminada
-                      </h2>
-                      <p className="mt-2 text-[15px] text-washi-muted">
-                        {state.played} de {total} clip{total === 1 ? '' : 's'} bailados.
-                      </p>
-                      <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                        <Button onClick={() => restart(false)}>
-                          <RotateCcw aria-hidden className="size-4.5" /> Otra vez
-                        </Button>
-                        <Button variant="secondary" onClick={() => restart(true)}>
-                          <Shuffle aria-hidden className="size-4.5" /> Volver a mezclar
-                        </Button>
-                        {!draft.trackId && (
-                          <Button
-                            variant="secondary"
-                            className="sm:col-span-2"
-                            onClick={() => setSaving(true)}
-                          >
-                            <Save aria-hidden className="size-4.5" /> Guardar como pista
-                          </Button>
-                        )}
-                        <Button variant="ghost" className="sm:col-span-2" onClick={() => navigate('/rpd')}>
-                          Salir
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+      </Dialog>
 
       {/* Preload: the next clip's own file buffers while this one plays (YouTube loads during the pause). */}
       <Preloader source={nextSource} current={source} />
 
       <SaveTrackDialog
-        open={saving}
+        open={saving && saveReady}
         onClose={() => setSaving(false)}
         clipIds={draft.clipIds}
         options={roundOptions(options, draft.clipIds.length)}

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { checkWishLink, interestByWish, liveWishes, membersLabel, parseMembersCount, sortByInterest } from './wishRules';
+import {
+  checkWishLink,
+  interestByWish,
+  liveWishes,
+  membersLabel,
+  parseMembersCount,
+  selectionHint,
+  SONG_BADGE,
+  songStatus,
+  sortByInterest,
+} from './wishRules';
 
 describe('checkWishLink', () => {
   const list = [{ youtube_id: 'dQw4w9WgXcQ' }];
@@ -73,5 +83,30 @@ describe('optional fields', () => {
     expect(membersLabel(1)).toBe('1 miembro');
     expect(membersLabel(9)).toBe('9 miembros');
     expect(membersLabel(null)).toBeNull();
+  });
+});
+
+describe('a song picked in the YouTube search (35)', () => {
+  const live = [{ youtube_id: 'dQw4w9WgXcQ' }];
+
+  it('says whether it is new, already proposed or already in the library', () => {
+    expect(songStatus('WPdWvnAAurg', live, ['gdZLi9oWNZg'])).toBe('new');
+    expect(songStatus('dQw4w9WgXcQ', live, [])).toBe('duplicate');
+    expect(songStatus('gdZLi9oWNZg', live, [null, 'gdZLi9oWNZg'])).toBe('in-library');
+    // Proposed and in the library: the list is what the person can act on (apuntarse).
+    expect(songStatus('dQw4w9WgXcQ', live, ['dQw4w9WgXcQ'])).toBe('duplicate');
+  });
+
+  it('labels the results that would be refused', () => {
+    expect(SONG_BADGE.duplicate).toBe('Ya propuesta');
+    expect(SONG_BADGE['in-library']).toBe('Ya en la biblioteca');
+  });
+});
+
+describe('«Elegir para votar» (37)', () => {
+  it('asks for two candidates', () => {
+    expect(selectionHint(0)).toBe('Marca dos o más canciones');
+    expect(selectionHint(1)).toBe('1 elegida · falta otra');
+    expect(selectionHint(3)).toBe('3 elegidas');
   });
 });
