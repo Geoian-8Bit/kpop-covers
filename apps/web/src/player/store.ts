@@ -189,6 +189,8 @@ function flushScrub() {
  * puts it right if the media didn't follow, e.g. a blocked autoplay.
  */
 let playCheck: ReturnType<typeof setTimeout> | undefined;
+/** A clip tapped while no engine is attached (switching stage, retrying, the file still loading) plays once one is. */
+let playOnAttach = false;
 function verifyPlaying() {
   clearTimeout(playCheck);
   playCheck = setTimeout(() => {
@@ -224,6 +226,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   setStage(stage) {
     if (get().stage === stage) return;
+    playOnAttach = false;
     get().engine?.pause();
     // The moment carries over: the new engine lands there when it attaches (same timeline, see withOffset).
     set({ stage, pendingSeek: get().time, playing: false, buffering: false, countdownEndsAt: null });
@@ -241,16 +244,23 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     const wanted = get().voiceMode;
     const voiceApplied = wanted === 'original' || (engine.setVoiceMode?.(wanted) ?? false);
     if (!voiceApplied) set({ voiceMode: 'original' });
-    const { pendingSeek } = get();
-    if (pendingSeek != null) engine.seek(pendingSeek);
+    // A stage that mounts again (retry, a file uploaded, a new offset) lands where the timeline already is,
+    // not at 0 under a playhead and an A–B that say otherwise.
+    const { pendingSeek, time } = get();
+    const at = pendingSeek ?? (time > 0 ? time : null);
+    if (at != null) engine.seek(at);
     set({
       engine,
       ready: true,
       error: null,
       duration: engine.getDuration() || get().duration,
       pendingSeek: null,
-      ...(pendingSeek != null ? { time: pendingSeek } : {}),
+      ...(at != null ? { time: at } : {}),
     });
+    if (playOnAttach) {
+      playOnAttach = false;
+      get().play();
+    }
   },
 
   detach(engine) {
@@ -258,6 +268,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   reset() {
+    playOnAttach = false;
     clearTimeout(playCheck);
     clearTimeout(scrubTimer);
     scrubTimer = undefined;
@@ -298,6 +309,7 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   pause() {
     const { engine, playing, buffering, countdownEndsAt } = get();
+    playOnAttach = false;
     // Already paused: notify nobody (a subscriber that stops on "not playing" would re-enter forever).
     if (playing || buffering || countdownEndsAt != null) set({ countdownEndsAt: null, playing: false, buffering: false });
     engine?.pause();
@@ -319,7 +331,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     const target = clampTime(seconds, duration);
     scrubPending = null; // an explicit seek wins over a throttled drag position still in flight
     engine?.seek(target);
-    set({ time: target });
+    // Without an engine the moment waits for the next one (it also beats an older pendingSeek from setStage).
+    set(engine ? { time: target } : { time: target, pendingSeek: target });
   },
 
   scrubTo(seconds) {
@@ -435,7 +448,9 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       followPathId: clip.follow_path_id ?? null,
     });
     get().seek(range.start);
-    if (autoplay) get().play();
+    if (!autoplay) playOnAttach = false;
+    else if (get().engine) get().play();
+    else playOnAttach = true;
     return true;
   },
 

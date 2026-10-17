@@ -200,8 +200,15 @@ function BagView({ bag }: { bag: BagWithCount }) {
 
   function playRound() {
     if (!last) return;
-    const clipIds = last.items.map((i) => i?.clip_id).filter((id): id is string => Boolean(id));
-    if (!clipIds.length) return;
+    // What came out, as it was then; else as the bag's list has it now (it may have loaded after the draw).
+    const now = new Map(all.map((i) => [i.id, i]));
+    const clipIds = last.draws
+      .map((d, k) => last.items[k]?.clip_id ?? (d.item_id ? now.get(d.item_id)?.clip_id : null))
+      .filter((id): id is string => Boolean(id));
+    if (!clipIds.length) {
+      toast('No se pudo preparar la ronda', 'info');
+      return;
+    }
     setRoundDraft(newDraft(clipIds, {}, `Bolsa «${bag.name}»`));
     navigate('/rpd/jugar');
   }

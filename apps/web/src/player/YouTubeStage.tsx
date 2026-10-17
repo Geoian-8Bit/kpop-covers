@@ -78,6 +78,8 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
               sync({ duration: event.target.getDuration() });
             },
             onStateChange: (event) => {
+              // A late event from the previous song must not write into the next one's state.
+              if (disposed) return;
               const state = event.data;
               const duration = event.target.getDuration();
               if (state === YTState.BUFFERING) {
@@ -103,11 +105,15 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
                 } else sync({ playing: false, buffering: false });
               }
             },
-            onError: (event) => sync({ error: describeYouTubeError(event.data) }),
+            onError: (event) => {
+              if (!disposed) sync({ error: describeYouTubeError(event.data) });
+            },
           },
         });
       })
-      .catch((error: Error) => sync({ error: error.message }));
+      .catch((error: Error) => {
+        if (!disposed) sync({ error: error.message });
+      });
 
     return () => {
       disposed = true;

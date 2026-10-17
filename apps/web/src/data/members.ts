@@ -65,6 +65,8 @@ export function useDeleteMember() {
       if (useIdentity.getState().memberId === member.id) useIdentity.getState().choose(null);
       // People bags, «Me apunto» and vote counts stop counting them.
       invalidateAfterArchive(queryClient);
+      // Takes, notes and reactions point at members: fetched again so none goes on showing them as before.
+      for (const queryKey of [['takes'], ['notes'], ['take-reactions']]) void queryClient.invalidateQueries({ queryKey });
     },
   });
 }

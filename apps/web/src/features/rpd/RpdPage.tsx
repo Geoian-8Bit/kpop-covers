@@ -323,6 +323,12 @@ function TrackList() {
         queryFn: () => bagsBackend.listTrackItems(track.id),
       });
       const clipIds = items.map((i) => i.clip_id);
+      // The list's count may be behind (someone emptied it meanwhile): no empty round.
+      if (!clipIds.length) {
+        toast('Esta pista ya no tiene clips.', 'info');
+        void queryClient.invalidateQueries({ queryKey: trackKeys.all });
+        return;
+      }
       setRoundDraft(
         newDraft(clipIds, optionsFromTrack(track, clipIds.length), `Pista «${track.name}»`, track.id),
       );

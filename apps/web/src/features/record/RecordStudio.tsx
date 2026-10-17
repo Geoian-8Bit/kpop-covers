@@ -124,8 +124,9 @@ function readTimer(): TimerSeconds {
   }
 }
 
+type WakeLockSentinelLike = { release: () => Promise<void>; released?: boolean };
 type WakeLockNavigator = Navigator & {
-  wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> };
+  wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
 };
 
 const HEX = '24,2 43,13 43,35 24,46 5,35 5,13';
@@ -251,7 +252,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const countFrom = useRef<'idle' | 'paused'>('idle');
   const spanRef = useRef<Span | null>(null);
   const takeUrl = useRef<string | null>(null);
-  const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
+  const wakeLock = useRef<WakeLockSentinelLike | null>(null);
   const restore = useRef<{ loopEnabled: boolean; loopAll: boolean } | null>(null);
   const sharing = useRef(false);
   /**
@@ -349,11 +350,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       return;
     }
     state.pending = true;
+    // Still the take this lock was asked for: a cancel or a pause while it was pending leaves `orientation`
+    // as it was (nothing was locked yet), so the phase says whether the take is still on.
+    const wanted = () => orientation.current === state && ['arming', 'recording'].includes(phaseRef.current);
     state.ready = o.lock(o.type).then(
       () => {
         state.pending = false;
-        // Cancelled or closed meanwhile: give the rotation back at once.
-        if (orientation.current !== state) {
+        // Cancelled, paused or closed meanwhile: give the rotation back at once.
+        if (!wanted()) {
           try {
             screen.orientation?.unlock?.();
           } catch {
@@ -366,7 +370,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       () => {
         state.pending = false;
         // Prepare the canvas now (it starts drawing) so the take can roll through it.
-        if (orientation.current === state) setTakeKind('canvas');
+        if (wanted()) setTakeKind('canvas');
       },
     );
   }
@@ -444,18 +448,34 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       });
     });
 
-    void (navigator as WakeLockNavigator).wakeLock
-      ?.request('screen')
-      .then((lock) => {
-        if (id === session.current) wakeLock.current = lock;
-        else void lock.release().catch(() => undefined);
-      })
-      .catch(() => undefined);
+    // Asked again whenever the page comes back: the browser drops the lock while hidden, and a dancer far from
+    // the phone would otherwise see the screen sleep (and the take pause) mid-take.
+    let asking = false;
+    const keepAwake = () => {
+      const lock = wakeLock.current;
+      if (asking || document.visibilityState !== 'visible' || (lock && !lock.released)) return;
+      const nav = navigator as WakeLockNavigator;
+      if (!nav.wakeLock) return;
+      asking = true;
+      void nav.wakeLock
+        .request('screen')
+        .then((next) => {
+          if (id === session.current) wakeLock.current = next;
+          else void next.release().catch(() => undefined);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          asking = false;
+        });
+    };
+    keepAwake();
+    document.addEventListener('visibilitychange', keepAwake);
 
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     return () => {
       session.current++;
+      document.removeEventListener('visibilitychange', keepAwake);
       document.body.style.overflow = overflow;
       clearTimers();
       disarmClap();
