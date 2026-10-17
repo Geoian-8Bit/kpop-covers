@@ -38,7 +38,7 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 15 | Seguir a un bailarín · velocidad | El análisis es demasiado lento (en el ordenador, unos 3 min para llegar al 50 % de una canción de 2:38). Tiene que ser lo más rápido posible | Alta | Pendiente |
 | 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente: al laboratorio de diseño (punto 17) |
 | 17 | Laboratorio de diseño | Volver a poner un laboratorio de diseño en Ajustes para elegir probando: las propuestas de la ola de voz y música (punto 16) y los 4 prototipos del menú de abajo a la derecha (punto 1). Cuando el responsable elija, se quita lo descartado | Alta | Pendiente |
-| 18 | Voz y música · separar de verdad | «Sin voz» y «Voz» no funcionan con su archivo: la app avisa de que la pista suena en mono y no se puede separar. Separar la voz con IA para que funcione con cualquier archivo | Alta | Pendiente (el responsable elige vía) |
+| 18 | Voz y música · separar de verdad | «Sin voz» y «Voz» no funcionan con su archivo: la app avisa de que la pista suena en mono y no se puede separar. Separar la voz con IA para que funcione con cualquier archivo | Alta | Pendiente · decidido: vía A (IA en la app) |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -273,7 +273,9 @@ pistas mono o casi mono no hay nada que restar. `features/voice/voiceRules.ts` (
 ≥ 0,97 en la mayoría de los fragmentos) lo detecta y la app lo dice. Los audios de dance practice y los MP4 de webs
 conversoras suelen ser casi mono, así que la función casi nunca sirve en la práctica.
 
-**Vías** (el responsable elige):
+**Decisión del responsable (17-10): vía A.** La B (separar fuera con UVR5 y adjuntar) queda descartada: es demasiado trabajo para él; quiere algo rápido y fácil, sin pasos a mano. Que el flujo sea un solo botón («Separar voz y música») con progreso y tiempo restante, y que avise si el dispositivo no puede (sin WebGPU) para hacerlo desde el ordenador.
+
+**Vías** (estudiadas):
 - **A · La app separa con IA una vez y comparte el resultado (recomendada).** En un dispositivo potente (el ordenador),
   un modelo de separación (Demucs o MDX en ONNX, con WebGPU) saca dos pistas de audio de la canción: instrumental y voz.
   Tarda unos minutos y se hace una sola vez por canción. Se suben a la nube como audio comprimido (3–6 MB cada una, muy
