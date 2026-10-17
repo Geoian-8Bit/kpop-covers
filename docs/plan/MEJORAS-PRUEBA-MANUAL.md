@@ -39,6 +39,15 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 16 | Voz y música · «La ola partida» | Gusta el concepto de olas, pero ahora se ven dos líneas planas (roja y azul) que no parecen olas: visualmente está mal. Rediseñar la ola (propuestas abajo) o, si no convence, volver a uno de los diseños de antes | Media | Pendiente: al laboratorio de diseño (punto 17) |
 | 17 | Laboratorio de diseño | Volver a poner un laboratorio de diseño en Ajustes para elegir probando: las propuestas de la ola de voz y música (punto 16) y los 4 prototipos del menú de abajo a la derecha (punto 1). Cuando el responsable elija, se quita lo descartado | Alta | Pendiente |
 | 18 | Voz y música · separar de verdad | «Sin voz» y «Voz» no funcionan con su archivo: la app avisa de que la pista suena en mono y no se puede separar. Separar la voz con IA para que funcione con cualquier archivo | Alta | Pendiente · decidido: vía A (IA en la app) |
+| 19 | Grabador · rendimiento | **Crítico.** Grabando a 1080p 60 (también en «Alta» y «Máxima») la imagen de la cámara va con muchísimo retraso y tirones; la música suena bien, pero así no se puede grabar. Todo el grabador tiene que ir fluido | Crítica | Pendiente |
+| 20 | Grabador · descartar | Al descartar una toma, quedarse en la cámara lista para grabar otra, no volver a la pantalla anterior | Alta | Pendiente |
+| 21 | Aplauso · sensibilidad | Con «Baja», en una habitación tranquila, se disparó dos veces solo al mover la silla. Bajar todas las sensibilidades y pasar a cuatro: Baja, Media, Alta (más baja que la Alta de ahora) y Muy alta (la Alta de ahora). Que rechace mejor golpes que no son palmadas | Alta | Pendiente |
+| 22 | Grabador · «Inicio / 0:26» | No se entiende qué hace ese botón (desde dónde empieza la canción al grabar). Explicarlo mejor, y al mantenerlo pulsado mostrar los clips de la canción para empezar en uno | Media | Pendiente |
+| 23 | Grabador · lentes | «Lente 1/2» no se entiende: la 2 tiene un zoom de base que no gusta y solo una de ellas tiene flash. Explicarlo o cambiarlo por algo claro (ver detalle) | Alta | Pendiente |
+| 24 | Grabador · color de la luz | En «Imagen», la barra de luz sí se nota, pero «Color de la luz» (Cálida, Fluorescente…) no cambia nada visible | Media | Pendiente |
+| 25 | Grabador · cámara al abrir | Quitar la opción «Visor / Cámara al abrir»: siempre la última usada | Baja | Pendiente |
+| 26 | Grabador · chip de calidad | Al tocar el chip de arriba a la derecha («1080p · 60 · Máxima») que abra directamente esa opción, no el abanico entero | Media | Pendiente |
+| 27 | Grabador · Abanico | Juntar «Calidad» y «Tamaño» en una sola opción, y meter «Imagen» (luz, color y enfoque) dentro del abanico | Media | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -293,3 +302,44 @@ de YouTube en silencio). El espacio de todo el grupo es 1 GiB: avisar del tamañ
 
 **Mientras tanto (consejo para el responsable, ya dado):** descargar en 720p en la web conversora o pasar el MP4 por
 HandBrake (gratuito) con «Fast 1080p30» o «Fast 720p30» para dejarlo por debajo de 50 MB.
+
+### 19 a 27 · Grabador (bloque 3, prueba del 17-10 en el móvil)
+
+El repaso, las tomas, compartir y las notas sobre la toma **no se han podido probar**: grabar va tan lento que no hay
+tomas buenas. Se probarán cuando esté el punto 19.
+
+**19 · Rendimiento (lo primero).** A 1080p 60 la vista previa va con mucho retraso y tirones mientras la canción suena
+bien. Medir en un móvil real (o con una traza en Chrome remoto) dónde se va el tiempo: si la toma va «por lienzo» (en el
+navegador sin instalar, o con zoom digital) el dibujo en el canvas a 60 fps puede ser el cuello de botella; también la
+interfaz encima del visor (repintados por fotograma, filtros, desenfoques), el reloj del grabador y el audio. Objetivos:
+vista previa sin retraso perceptible a 1080p 60 en un Samsung de gama media, sin fotogramas perdidos en la toma
+(`presentedFrames` en el panel «i»), y si el móvil no da para 60 fps, bajar solo a 30 avisando. Preguntar al responsable
+si lo probó con la app instalada o en el navegador.
+
+**20 · Descartar.** Tras «Descartar» (y su confirmación), volver al visor listo para la siguiente toma.
+
+**21 · Aplauso.** `features/record/clap/clapListener.ts` y `packages/shared/src/clap.ts` (umbrales por sensibilidad,
+filtro de paso alto, ataque). Nuevos niveles: Baja, Media, Alta y Muy alta (la Alta de ahora), con todos los umbrales
+más exigentes que hoy; rechazar golpes graves o sordos (silla, pasos, mesa) mirando más el timbre de una palmada
+(agudo y seco). Por defecto, Media. Probar con ruidos de habitación.
+
+**22 · «Inicio / 0:26».** Es el punto desde el que empieza la canción al grabar: «Inicio», el momento actual («0:26»)
+o el tramo A–B (`RecordStudio.tsx` ~1586). Ponerle un texto claro («Empieza en: Inicio») y, al mantener pulsado, una
+lista con Inicio, el momento actual y los clips de la canción.
+
+**23 · Lentes.** «Lente 1/2» recorre las cámaras traseras físicas que da el navegador (`view.lenses`). Lo más probable
+en su Samsung: la 1 es el gran angular y la 2 la principal (por eso se ve con «zoom» respecto a la 1, y el flash solo
+va con la principal). Hacerlo como la cámara del móvil: botones de zoom 0,5× / 1× / 3× que cambian de lente por
+debajo, con la principal (1×) por defecto, en vez de «Lente N». Si no se puede saber qué es cada una, nombrarlas
+(«Gran angular», «Principal», «Tele») por su campo de visión. Explicar que el flash solo existe en una.
+
+**24 · Color de la luz.** Los ajustes «Cálida / Fluorescente / Día / Nublado» piden una temperatura de color
+(`camera.ts`, `colorTemperature`), pero en su móvil no cambia nada. Comprobar con `getSettings()` si se aplica (quizá
+hace falta `whiteBalanceMode: "manual"` antes); si el móvil lo ignora, ocultar la opción en ese móvil.
+
+**25 · Cámara al abrir.** Quitar el ajuste: abrir siempre con la última cámara usada (la primera vez, la trasera).
+
+**26 · Chip de calidad.** Tocar el chip de arriba abre solo el ajuste de calidad (y tamaño, punto 27), no el abanico.
+
+**27 · Abanico.** Una sola varilla «Calidad» que reúna calidad, tamaño y fotogramas, y una varilla «Imagen» con luz,
+color y enfoque (hoy es un botón aparte en la columna derecha).
