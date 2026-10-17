@@ -7,27 +7,39 @@ import {
   countdown,
   countdownDetail,
   countdownHeadline,
+  countdownStage,
   defaultEventStart,
   fromLocalInput,
+  ignitesFirstLantern,
   isChorusName,
   litLanterns,
+  LONG_COUNTDOWN_MOMENT,
+  LONG_COUNTDOWN_VARIANTS,
+  longVariantOf,
+  MOON_MIN_ILLUMINATION,
+  moonLitPath,
+  moonPhase,
   nearestEvent,
+  pageFace,
+  sandRun,
   splitEvents,
+  tornPages,
   toLocalInput,
   uniqueName,
 } from './eventRules';
+import { countdownMoment } from '@/features/lab/moments/countdown';
 
 /** Local wall time on this machine's zone (the tests below pin the zone where it matters). */
 const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi);
 const iso = (date: Date) => date.toISOString();
 
-const originalTz = process.env.TZ;
+// Deleting TZ does not bring the machine's zone back in Node on Windows: restore it by name.
+const originalTz = process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 function inZone(tz: string) {
   process.env.TZ = tz;
 }
 afterEach(() => {
-  if (originalTz === undefined) delete process.env.TZ;
-  else process.env.TZ = originalTz;
+  process.env.TZ = originalTz;
 });
 
 describe('countdown', () => {
@@ -111,6 +123,116 @@ describe('the lanterns (chōchin)', () => {
     const over = countdown(start, at(2026, 12, 14, 21));
     expect(countdownHeadline(over)).toBe('Ya pasó');
     expect(litLanterns(over)).toBe(0);
+  });
+});
+
+describe('the long countdown and the switch to the lanterns', () => {
+  const start = at(2026, 12, 12, 21);
+
+  it('long design from seven days up; Chōchin from six days, when the first lantern is lit', () => {
+    expect(countdownStage(countdown(start, at(2026, 11, 12, 12)))).toBe('long');
+    const seven = countdown(start, at(2026, 12, 5, 23, 59));
+    expect(seven).toMatchObject({ kind: 'days', days: 7 });
+    expect(countdownStage(seven)).toBe('long');
+    const six = countdown(start, at(2026, 12, 6, 0, 0));
+    expect(countdownStage(six)).toBe('lanterns');
+    expect(litLanterns(six)).toBe(1);
+    for (const now of [at(2026, 12, 11, 22), at(2026, 12, 12, 10), at(2026, 12, 13, 10), at(2026, 12, 20)]) {
+      expect(countdownStage(countdown(start, now))).toBe('lanterns');
+    }
+  });
+
+  it('the first lantern lights up when crossing into the last week, or when first shown that day', () => {
+    const six = countdown(start, at(2026, 12, 6, 9));
+    expect(ignitesFirstLantern(six, 'long')).toBe(true);
+    expect(ignitesFirstLantern(six, null)).toBe(true);
+    expect(ignitesFirstLantern(six, 'lanterns')).toBe(false);
+    const five = countdown(start, at(2026, 12, 7, 9));
+    expect(ignitesFirstLantern(five, null)).toBe(false);
+    expect(ignitesFirstLantern(five, 'long')).toBe(true); // the lab's slider can jump several days
+    expect(ignitesFirstLantern(countdown(start, at(2026, 12, 1)), 'long')).toBe(false);
+  });
+
+  it('the switch follows the phone’s calendar across a DST change and time zones', () => {
+    inZone('Europe/Madrid'); // clocks go back on 25 October 2026
+    const event = new Date(2026, 9, 31, 20); // Saturday 31 October, 20:00
+    const before = new Date(2026, 9, 24, 23, 59);
+    const after = new Date(2026, 9, 25, 0, 1);
+    expect(countdownStage(countdown(event, before))).toBe('long'); // 7 days
+    expect(countdownStage(countdown(event, after))).toBe('lanterns'); // 6 days
+    expect(litLanterns(countdown(event, after))).toBe(1);
+    // The same instants seen from Tokyo: the start is 1 November at 04:00 there, still 7 days away.
+    const startIso = event.toISOString();
+    const nowIso = after.toISOString();
+    inZone('Asia/Tokyo');
+    expect(countdown(startIso, new Date(nowIso))).toMatchObject({ kind: 'days', days: 7 });
+    expect(countdownStage(countdown(startIso, new Date(nowIso)))).toBe('long');
+  });
+
+  it('koyomi: big number and unit on the page', () => {
+    expect(pageFace(countdown(start, at(2026, 12, 1, 12)))).toEqual({ big: '11', unit: 'días' });
+    expect(pageFace(countdown(start, at(2026, 12, 11, 12)))).toEqual({ big: '1', unit: 'día' });
+    expect(pageFace(countdown(start, at(2026, 12, 11, 22)))).toEqual({ big: '23', unit: 'horas' });
+    expect(pageFace(countdown(at(2026, 12, 13, 0, 10), at(2026, 12, 12, 23, 40)))).toMatchObject({ big: '30', unit: 'min' });
+    expect(pageFace(countdown(start, at(2026, 12, 12, 10)))).toMatchObject({ big: '今日', unit: 'Hoy' });
+    expect(pageFace(countdown(start, at(2026, 12, 13, 10)))).toMatchObject({ big: '祭', unit: 'Ayer' });
+    expect(pageFace(countdown(start, at(2026, 12, 14, 21)))).toMatchObject({ big: '終', unit: 'Pasó' });
+  });
+
+  it('koyomi: one torn page per day since the event was created, newest first, at most four', () => {
+    const now = at(2026, 12, 1, 12); // 11 days left
+    const c = countdown(start, now);
+    expect(tornPages(c, iso(at(2026, 12, 1, 8)), now)).toEqual([]);
+    expect(tornPages(c, iso(at(2026, 11, 29, 23)), now)).toEqual([12, 13]);
+    expect(tornPages(c, iso(at(2026, 10, 1)), now)).toEqual([12, 13, 14, 15]);
+    expect(tornPages(c, 'not a date', now)).toEqual([]);
+    expect(tornPages(countdown(start, at(2026, 12, 12, 10)), iso(at(2026, 10, 1)), at(2026, 12, 12, 10))).toEqual([]);
+  });
+
+  it('sunadokei: the sand runs from the creation to the start', () => {
+    const created = iso(at(2026, 12, 2, 21));
+    expect(sandRun(iso(start), created, at(2026, 12, 2, 21))).toBe(0);
+    expect(sandRun(iso(start), created, at(2026, 12, 7, 21))).toBeCloseTo(0.5, 2);
+    expect(sandRun(iso(start), created, at(2026, 12, 20))).toBe(1);
+    expect(sandRun(iso(start), iso(at(2027, 1, 1)), at(2026, 12, 1))).toBe(0); // created «after» the start
+    expect(sandRun('nope', created, at(2026, 12, 7))).toBe(0);
+  });
+
+  it('tsuki: a thin crescent five weeks before or more (never dark), full a week before', () => {
+    expect(moonPhase(60)).toEqual({ illumination: MOON_MIN_ILLUMINATION, index: 0 });
+    expect(moonPhase(35)).toEqual({ illumination: MOON_MIN_ILLUMINATION, index: 0 });
+    expect(MOON_MIN_ILLUMINATION).toBeGreaterThan(0);
+    expect(moonPhase(21).illumination).toBeCloseTo(0.55, 5);
+    expect(moonPhase(21).index).toBe(3);
+    expect(moonPhase(7)).toEqual({ illumination: 1, index: 6 });
+    expect(moonPhase(3).illumination).toBe(1);
+    let last = -1;
+    for (let d = 40; d >= 7; d--) {
+      const { illumination, index } = moonPhase(d);
+      expect(illumination).toBeGreaterThanOrEqual(last);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThan(7);
+      last = illumination;
+    }
+  });
+
+  it('the lab’s choice maps to a long design; anything unknown is Koyomi', () => {
+    expect(longVariantOf('tsuki')).toBe('tsuki');
+    expect(longVariantOf('sunadokei')).toBe('sunadokei');
+    expect(longVariantOf('')).toBe('koyomi');
+    expect(longVariantOf('chochin')).toBe('koyomi');
+    expect(countdownMoment.id).toBe(LONG_COUNTDOWN_MOMENT);
+    expect(countdownMoment.variants.map((v) => v.id)).toEqual([...LONG_COUNTDOWN_VARIANTS]);
+    expect(LONG_COUNTDOWN_VARIANTS).toContain(countdownMoment.defaultVariant);
+  });
+
+  it('tsuki: the lit part of the moon', () => {
+    expect(moonLitPath(10, 10, 8, 0)).toBe('');
+    // Crescent: the terminator bulges right (sweep 0); gibbous: left (sweep 1); full: a whole circle.
+    expect(moonLitPath(10, 10, 8, 0.25)).toBe('M10 2 A8 8 0 0 1 10 18 A4 8 0 0 0 10 2 Z');
+    expect(moonLitPath(10, 10, 8, 0.5)).toBe('M10 2 A8 8 0 0 1 10 18 A0 8 0 0 1 10 2 Z');
+    expect(moonLitPath(10, 10, 8, 1)).toBe('M10 2 A8 8 0 0 1 10 18 A8 8 0 0 1 10 2 Z');
+    expect(moonLitPath(10, 10, 8, 2)).toBe(moonLitPath(10, 10, 8, 1));
   });
 });
 

@@ -11,6 +11,8 @@ import { useNow } from './useNow';
 /**
  * F16 · On the home page: the countdown to the nearest event still to come. Several events → the nearest; a
  * day after it started it stops showing on its own (nothing is deleted). Nothing at all without events.
+ * The countdown's drawing (long design or Chōchin, point 39) always takes the same 280×66 band, so the banner's
+ * height does not depend on the design chosen in the lab nor on the switch to the last week.
  */
 export function NextEventBanner() {
   // P8 · The events kept from the last visit show from the first paint (refreshed behind), so the banner is
@@ -36,6 +38,7 @@ export function NextEventBanner() {
         <EventCountdown
           name={event.name}
           startsAt={event.starts_at}
+          createdAt={event.created_at}
           place={event.place}
           now={now}
           compact
