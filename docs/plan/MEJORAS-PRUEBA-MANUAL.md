@@ -32,6 +32,8 @@ Estados: **Pendiente** · **En curso** · **Hecho** (commit) · **Descartado** (
 | 9 | Estudio · pausa del bucle | En vista normal, al mantener pulsado «Bucle», el panel «Pausa entre vueltas de la canción» se sale de la pantalla en el móvil (en la captura se corta el lado izquierdo del texto). Y el numerito rojo del botón (los segundos de pausa) casi no se lee | Alta | Pendiente |
 | 10 | Estudio · guardar clip | El diálogo «Guardar clip» (nombre, etiquetas rápidas, color, fijar) ocupa demasiado y está todo suelto, sin estructura. Hacerlo más compacto y ordenado | Media | Pendiente |
 | 11 | Estudio · «Fijar en acceso rápido» | No se entiende para qué sirve el interruptor. Explicarlo en la propia interfaz (texto o etiqueta más clara) | Media | Pendiente |
+| 12 | Estudio · archivo vinculado | Si la canción tiene archivo, se usa el archivo por defecto (no YouTube), en todos los móviles que lo tengan. El selector «YouTube | Archivo» sale de la zona de arriba (quita espacio a lo importante) y pasa abajo o a otro sitio discreto | Alta | Pendiente |
+| 13 | Archivo vinculado · nube | Un archivo vinculado desde el ordenador no llegó a la nube: en el móvil sale «está en otro dispositivo». Todos tienen que poder usarlo | Alta | Pendiente |
 
 ### 1 · Menú de acciones rápidas abajo a la derecha (móvil)
 
@@ -161,3 +163,24 @@ vista. Que quepa en la mitad de la pantalla de un móvil.
 portada» con una línea de ayuda debajo).
 
 **Falta por probar del bloque 2:** voz y música (necesita el archivo vinculado) y seguir a un bailarín (bloque 4).
+
+### 12 y 13 · Archivo vinculado (bloque 2, 17-10)
+
+**12 · El archivo manda.** Hoy, aunque haya archivo, la canción abre con YouTube; la elección se recuerda por canción
+y por móvil (`lib/stagePref.ts`, `readStage`, por defecto `youtube`; `StudioPage.tsx` ~146). Cambiarlo a: si hay archivo
+accesible en este dispositivo (en la nube o guardado aquí), se usa el archivo; YouTube solo si no hay archivo o si la
+persona lo elige. El selector «YouTube | Archivo» sale de encima del vídeo: moverlo abajo (con los ajustes del vídeo
+o en un menú de la canción), que no quite sitio al vídeo ni a los controles.
+
+**13 · Por qué no se subió.** El archivo de «ARrC · Boom Boom Bass» pesa 55,8 MB (`videos.file_size` = 58 477 041,
+`storage_path` vacío, 0 objetos en el bucket). El límite por archivo del bucket es 50 MB (plan gratuito de Supabase),
+así que la app lo dejó solo en el ordenador donde se vinculó, como está diseñado (F1: «más grande queda solo en ese
+móvil»). Además, todo el grupo comparte 1 GiB entre vídeos y tomas.
+
+**Propuesta.** Cuando el archivo pase de 50 MB, hacer en el propio dispositivo una copia para la nube que quepa: volver
+a codificarla a 1080p o 720p con menos bitrate hasta quedar por debajo de 50 MB (ya existe algo parecido para
+compartir tomas a 720p ≤ 50 MB, `shareTake`), con barra de progreso y la opción de cancelar; el dispositivo que la
+subió conserva el original. La sincronía (desfase) se mantiene porque es el mismo vídeo. Avisar si el espacio del
+grupo (1 GiB) no da.
+**Otra vía, solo si el responsable lo decide:** pasar a un plan de pago de Supabase, que permite archivos más grandes
+y más espacio. Es un cambio de cuenta y de coste; no tocar ajustes del proyecto sin su permiso.
