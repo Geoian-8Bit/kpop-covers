@@ -10,7 +10,6 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useAllClips } from '@/data/bags';
 import { useVideo } from '@/data/videos';
 import { clipTone } from '@/features/bags/tones';
-import { useDesignVariant } from '@/features/lab/designLab';
 import type { ClipWithVideo } from '@/lib/backend';
 import { cn } from '@/lib/cn';
 import { tick, unlockAudio } from '@/lib/metronome';
@@ -161,7 +160,6 @@ function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
 
 function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }) {
   const navigate = useNavigate();
-  const variant = useDesignVariant('random-play');
   const options = draft.options;
   const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
   const entries = useMemo<Entry[]>(
@@ -410,7 +408,9 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
       aria-label="Random Play Dance"
       className="fixed inset-0 z-[45] overflow-y-auto bg-sumi-950"
     >
-      <div className="mx-auto flex min-h-full w-full max-w-[min(1500px,max(560px,calc((100dvh-460px)*16/9)))] min-w-0 flex-col px-3 pb-4 pt-2 sm:px-5 sm:pt-3 [@media(max-aspect-ratio:4/3)]:max-w-[1500px]">
+      {/* As wide as the height allows: 280px ≈ what surrounds the 16:9 picture (top bar, the kamishibai frame and
+          plank, «Siguiente», the controls, even wrapped). */}
+      <div className="mx-auto flex min-h-full w-full max-w-[min(1500px,max(560px,calc((100dvh-280px)*16/9)))] min-w-0 flex-col px-3 pb-4 pt-2 sm:px-5 sm:pt-3 [@media(max-aspect-ratio:4/3)]:max-w-[1500px]">
         <div className="mb-2 flex items-center gap-2">
           <Button variant="ghost" size="sm" className="h-11 px-2.5" onClick={() => navigate('/rpd')}>
             <ArrowLeft aria-hidden className="size-4.5" /> Salir
@@ -429,7 +429,6 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
         <h1 className="sr-only">Random Play Dance</h1>
         <div className="relative min-h-0 flex-1">
           <RandomPlayScreen
-            variant={variant}
             stage={
               <RoundStage
                 source={source}

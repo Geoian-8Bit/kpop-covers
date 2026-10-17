@@ -1,7 +1,7 @@
 import { QUALITY_LABEL, resolutionClass, type ResolutionChoice } from '@coverscape/shared';
 import { useRecordSettings, type RecordSettings } from '../settings';
 
-/** Props shared by the three variants of the recorder's settings panel (A1). */
+/** Props of the recorder's settings panel (A1). */
 export interface RecorderSettingsProps {
   open: boolean;
   onClose: () => void;
@@ -40,8 +40,6 @@ export interface ChoiceOption {
 interface FieldBase {
   key: FieldKey;
   label: string;
-  /** Kanji for the row's seal (decorative, aria-hidden). */
-  glyph: string;
   /** One short line on what the current value does. */
   help: string;
   /** Why an option is off, or a caveat for this phone. */
@@ -148,7 +146,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'quality',
       label: 'Calidad',
-      glyph: '質',
       help: QUALITY_HELP[s.quality],
       display: QUALITY_LABEL[s.quality],
       value: s.quality,
@@ -159,7 +156,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'resolution',
       label: 'Resolución',
-      glyph: '寸',
       help:
         s.resolution === 'auto'
           ? `Sigue a la calidad elegida.${someHidden ? ' Solo salen las que da esta cámara.' : ''}`
@@ -180,7 +176,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'fps',
       label: 'Fotogramas',
-      glyph: '齣',
       help: '60 deja los giros nítidos; 30 pesa y calienta menos.',
       note: no60
         ? `Esta cámara llega a ${Math.round(maxFps ?? 30)} fps: 60 no está disponible.`
@@ -199,7 +194,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'codec',
       label: 'Formato',
-      glyph: '式',
       help:
         s.codec === 'auto'
           ? 'HEVC si el móvil puede (la mitad de tamaño); si no, H.264 High.'
@@ -216,7 +210,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'mode',
       label: 'Imagen',
-      glyph: '画',
       help:
         s.mode === 'auto'
           ? 'Graba la imagen de la cámara tal cual cuando se puede.'
@@ -233,7 +226,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'startCamera',
       label: 'Cámara al abrir',
-      glyph: '眼',
       help: CAMERA_HELP[s.startCamera],
       display: CAMERA_LABEL[s.startCamera],
       value: s.startCamera,
@@ -244,7 +236,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'sound',
       label: 'Sonido',
-      glyph: '音',
       help:
         soundNow === 'song'
           ? 'El audio original del archivo, limpio, sin ruido de la sala.'
@@ -262,7 +253,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'micChannels',
       label: 'Micrófono',
-      glyph: '声',
       help:
         (s.micChannels === 'stereo'
           ? 'Estéreo si el móvil tiene dos micros: suena más amplio.'
@@ -280,7 +270,6 @@ export function useSettingsFields({
       kind: 'choice',
       key: 'clapSensitivity',
       label: 'Aplauso',
-      glyph: '拍',
       help: `Sensibilidad para empezar con un doble aplauso. ${CLAP_HELP[s.clapSensitivity]}`,
       display: CLAP_LABEL[s.clapSensitivity],
       value: s.clapSensitivity,
@@ -295,7 +284,6 @@ export function useSettingsFields({
       kind: 'switch',
       key: 'grid',
       label: 'Rejilla',
-      glyph: '格',
       help: 'Líneas de tercios para encuadrar.',
       display: s.grid ? 'Sí' : 'No',
       value: s.grid,
@@ -305,7 +293,6 @@ export function useSettingsFields({
       kind: 'switch',
       key: 'level',
       label: 'Nivel',
-      glyph: '水',
       help: 'Una línea que se pone dorada con el móvil recto.',
       display: s.level ? 'Sí' : 'No',
       value: s.level,
@@ -315,7 +302,6 @@ export function useSettingsFields({
       kind: 'switch',
       key: 'info',
       label: 'Información técnica',
-      glyph: '報',
       help: 'Muestra el botón «i» con los datos de la cámara.',
       display: s.info ? 'Sí' : 'No',
       value: s.info,

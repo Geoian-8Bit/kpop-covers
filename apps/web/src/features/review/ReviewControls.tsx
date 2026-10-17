@@ -382,7 +382,6 @@ function Range({
 
 export interface ReviewSettingsProps {
   mode: CompareMode;
-  variant: string;
   prefs: ViewPrefs;
   onPrefs: (patch: Partial<ViewPrefs>) => void;
   onResetFit: () => void;
@@ -404,7 +403,6 @@ const STATUS_TEXT = { idle: '', saving: 'Guardando…', saved: 'Guardado en la t
 
 export function ReviewSettings({
   mode,
-  variant,
   prefs,
   onPrefs,
   onResetFit,
@@ -444,27 +442,15 @@ export function ReviewSettings({
             <Button variant="secondary" className="min-h-11" onClick={() => onPrefs({ order: prefs.order === 'original-first' ? 'take-first' : 'original-first' })}>
               <ArrowLeftRight className="size-4" /> Cambiar el orden
             </Button>
-            {variant === 'cortina' ? (
-              <Range
-                label="Cortina"
-                value={prefs.wipe}
-                min={0.04}
-                max={0.96}
-                step={0.01}
-                onChange={(wipe) => onPrefs({ wipe })}
-                valueText={`${Math.round(prefs.wipe * 100)} %`}
-              />
-            ) : (
-              <Range
-                label="Reparto"
-                value={prefs.split}
-                min={SPLIT_MIN}
-                max={SPLIT_MAX}
-                step={0.01}
-                onChange={(split) => onPrefs({ split })}
-                valueText={`${Math.round(prefs.split * 100)} / ${Math.round((1 - prefs.split) * 100)}`}
-              />
-            )}
+            <Range
+              label="Reparto"
+              value={prefs.split}
+              min={SPLIT_MIN}
+              max={SPLIT_MAX}
+              step={0.01}
+              onChange={(split) => onPrefs({ split })}
+              valueText={`${Math.round(prefs.split * 100)} / ${Math.round((1 - prefs.split) * 100)}`}
+            />
           </>
         ) : (
           <>

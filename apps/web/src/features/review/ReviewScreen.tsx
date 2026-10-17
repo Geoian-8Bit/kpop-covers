@@ -21,7 +21,6 @@ import { Spinner } from '@/components/ui/Spinner';
 import { askWho, currentMemberId, useMe, useMembers } from '@/data/members';
 import { useCreateNote, useDeleteNote, useNotes, useUpdateNote } from '@/data/notes';
 import { useUpdateTakeReview, type TakeItem, type TakeReviewPatch } from '@/data/takes';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { useFileSource } from '@/features/studio/fileSource';
 import { SaveClipDialog, type ClipDraft } from '@/features/studio/SaveClipDialog';
 import { takeDateLabel } from '@/features/takes/takeRules';
@@ -142,7 +141,6 @@ export function ReviewScreen({
   clips: Clip[];
   onClose: () => void;
 }) {
-  const variant = useDesignVariant('review-compare');
   const toast = useToast();
   const members = useMembers();
   const me = useMe();
@@ -512,7 +510,6 @@ export function ReviewScreen({
 
   const settingsProps = {
     mode,
-    variant,
     prefs,
     onPrefs: setPrefs,
     onResetFit: () => onFit(NO_FIT, true),
@@ -573,7 +570,6 @@ export function ReviewScreen({
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             <ReviewCompareStage
-              variant={variant}
               mode={mode}
               prefs={prefs}
               onPrefs={setPrefs}

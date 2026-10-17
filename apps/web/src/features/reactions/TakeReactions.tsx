@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { askWho, currentMemberId, memberKeys, useMe, useMembers } from '@/data/members';
 import { PENDING_PREFIX, reactionError, reactionKeys, useTakeReactions, useToggleReaction } from '@/data/reactions';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { useToast } from '@/providers/ToastProvider';
 import { ReactionBar } from './ReactionBar';
 import { groupReactions, toggleReaction } from './reactionRules';
@@ -19,7 +18,6 @@ export function TakeReactions({ take }: { take: { id: string; video_id: string }
   const toggle = useToggleReaction();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const variant = useDesignVariant('reactions');
 
   const groups = useMemo(() => groupReactions(reactions.data ?? [], take.id, me?.id ?? null), [reactions.data, take.id, me?.id]);
   const byId = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m])), [members.data]);
@@ -45,5 +43,5 @@ export function TakeReactions({ take }: { take: { id: string; video_id: string }
 
   if (reactions.isPending) return <div aria-hidden className="skeleton mt-1.5 h-11 rounded-[8px]" />;
   if (reactions.isError && !reactions.data) return null;
-  return <ReactionBar variant={variant} groups={groups} onToggle={onToggle} memberOf={memberOf} />;
+  return <ReactionBar groups={groups} onToggle={onToggle} memberOf={memberOf} />;
 }

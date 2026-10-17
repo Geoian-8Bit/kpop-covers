@@ -11,8 +11,6 @@ import {
   fromLocalInput,
   isChorusName,
   litLanterns,
-  pageFace,
-  sandRun,
   nearestEvent,
   splitEvents,
   toLocalInput,
@@ -81,18 +79,9 @@ describe('countdown', () => {
   });
 });
 
-describe('what the designs show', () => {
+describe('the lanterns (chōchin)', () => {
   const start = at(2026, 12, 12, 20);
-  it('koyomi: days, hours, 今日, Ayer and Pasó', () => {
-    expect(pageFace(countdown(start, at(2026, 12, 1, 12)))).toEqual({ big: '11', unit: 'días' });
-    expect(pageFace(countdown(start, at(2026, 12, 11, 22)))).toEqual({ big: '22', unit: 'horas' });
-    expect(pageFace(countdown(at(2026, 12, 13, 0, 10), at(2026, 12, 12, 23, 40)))).toMatchObject({ big: '30', unit: 'min' });
-    expect(pageFace(countdown(start, at(2026, 12, 12, 10)))).toMatchObject({ big: '今日', unit: 'Hoy' });
-    expect(pageFace(countdown(start, at(2026, 12, 13, 10)))).toMatchObject({ big: '祭', unit: 'Ayer' });
-    expect(pageFace(countdown(start, at(2026, 12, 14, 21)))).toMatchObject({ big: '終', unit: 'Pasó' });
-  });
-
-  it('chōchin: one lantern per day of the last week, all on the day and the day after, none when over', () => {
+  it('one lantern per day of the last week, all on the day and the day after, none when over', () => {
     expect(litLanterns(countdown(start, at(2026, 11, 20)))).toBe(0);
     expect(litLanterns(countdown(start, at(2026, 12, 9, 12)))).toBe(4);
     expect(litLanterns(countdown(start, at(2026, 12, 11, 22)))).toBe(6);
@@ -101,11 +90,27 @@ describe('what the designs show', () => {
     expect(litLanterns(countdown(start, at(2026, 12, 14, 21)))).toBe(0);
   });
 
-  it('sunadokei: the sand runs from creation to start', () => {
-    const created = iso(at(2026, 12, 2, 20));
-    expect(sandRun(iso(start), created, at(2026, 12, 2, 20))).toBe(0);
-    expect(sandRun(iso(start), created, at(2026, 12, 7, 20))).toBeCloseTo(0.5, 2);
-    expect(sandRun(iso(start), created, at(2026, 12, 20))).toBe(1);
+  it('more than a week away: all dark, and the words still say how many days', () => {
+    const c = countdown(start, at(2026, 11, 30, 9));
+    expect(litLanterns(c)).toBe(0);
+    expect(countdownHeadline(c)).toBe('Faltan 12 días');
+    const week = countdown(start, at(2026, 12, 5, 12));
+    expect(litLanterns(week)).toBe(0);
+    expect(countdownHeadline(week)).toBe('Faltan 7 días');
+    expect(litLanterns(countdown(start, at(2026, 12, 6, 12)))).toBe(1);
+  });
+
+  it('started less than 3 h ago: still «Hoy», all lit; yesterday: «Ayer», all lit; over: «Ya pasó», all dark', () => {
+    const live = countdown(start, at(2026, 12, 12, 22));
+    expect(live).toMatchObject({ kind: 'today', started: true });
+    expect(litLanterns(live)).toBe(7);
+    expect(countdownDetail(live)).toBe('Ya ha empezado');
+    const yesterday = countdown(start, at(2026, 12, 13, 10));
+    expect(countdownHeadline(yesterday)).toBe('Ayer');
+    expect(litLanterns(yesterday)).toBe(7);
+    const over = countdown(start, at(2026, 12, 14, 21));
+    expect(countdownHeadline(over)).toBe('Ya pasó');
+    expect(litLanterns(over)).toBe(0);
   });
 });
 

@@ -17,12 +17,6 @@ export function clampSplit(value: number): number {
   return Math.round(clamp(value, SPLIT_MIN, SPLIT_MAX) * 1000) / 1000;
 }
 
-/** «Cortina» sweeps the whole frame, a little short of each edge so the curtain can always be grabbed. */
-export function clampWipe(value: number): number {
-  if (!Number.isFinite(value)) return 0.5;
-  return Math.round(clamp(value, 0.04, 0.96) * 1000) / 1000;
-}
-
 /** Common speed of the review (applied to the take; the original follows in proportion). */
 export const REVIEW_RATE_MIN = 0.5;
 export const REVIEW_RATE_MAX = 1.25;
@@ -40,8 +34,6 @@ export interface ViewPrefs {
   order: 'original-first' | 'take-first';
   /** Share of the first panel (30–70 %). */
   split: number;
-  /** «Cortina»: where the curtain stands (0–1 of the width). */
-  wipe: number;
   /** «Superpuesto»: opacity of the one on top (0–1). */
   opacity: number;
   onTop: 'original' | 'take';
@@ -50,7 +42,6 @@ export const DEFAULT_PREFS: ViewPrefs = {
   mode: 'stacked',
   order: 'original-first',
   split: 0.5,
-  wipe: 0.5,
   opacity: 0.5,
   onTop: 'original',
 };
@@ -70,7 +61,6 @@ export function parseViewPrefs(raw: string | null): ViewPrefs {
     mode: value.mode === 'overlay' ? 'overlay' : 'stacked',
     order: value.order === 'take-first' ? 'take-first' : 'original-first',
     split: clampSplit(num(value.split) ?? DEFAULT_PREFS.split),
-    wipe: clampWipe(num(value.wipe) ?? DEFAULT_PREFS.wipe),
     opacity: opacity == null ? DEFAULT_PREFS.opacity : Math.round(clamp(opacity, 0, 1) * 100) / 100,
     onTop: value.onTop === 'take' ? 'take' : 'original',
   };

@@ -22,7 +22,6 @@ import {
   wishError,
 } from '@/data/wishes';
 import { BagIcon } from '@/features/bags/BagIcon';
-import { useDesignVariant } from '@/features/lab/designLab';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped, jelly, soft } from '@/lib/motion';
@@ -589,9 +588,8 @@ function TieBlock({
   );
 }
 
-/** The winner: the reveal (lab design), «Añadir a la biblioteca» and the bag «Próxima coreo». */
+/** The winner: the reveal («Hanabi»), «Añadir a la biblioteca» and the bag «Próxima coreo». */
 function WinnerBlock({ poll, wish, result }: { poll: Poll; wish: Wish; result: OptionResult | undefined }) {
-  const variant = useDesignVariant('vote-reveal');
   const { activeCrew } = useCrew();
   const addToLibrary = useAddWishToLibrary(activeCrew?.id);
   const toBag = useAddToNextCoreo();
@@ -603,7 +601,6 @@ function WinnerBlock({ poll, wish, result }: { poll: Poll; wish: Wish; result: O
     <div>
       <VoteReveal
         key={replay}
-        variant={variant}
         winner={{
           title: wish.title,
           artist: wish.artist,

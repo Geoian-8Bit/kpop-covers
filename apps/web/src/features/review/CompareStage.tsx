@@ -5,13 +5,12 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { cn } from '@/lib/cn';
-import { jelly, snappy, soft } from '@/lib/motion';
+import { jelly, snappy } from '@/lib/motion';
 import { useMediaBox, ZoomLayer } from '@/player/ZoomLayer';
 import {
   gestureZoom,
@@ -27,7 +26,6 @@ import {
 } from '@/player/zoom';
 import {
   clampSplit,
-  clampWipe,
   gestureFit,
   keyFit,
   wheelFit,
@@ -40,22 +38,15 @@ import {
 import { capturePointer } from './pointer';
 
 /**
- * F5 · How the take and the original share the screen, in three designs (Laboratorio de diseño):
- *  - biombo   (recommended): two panels hinged like a byōbu folding screen; in «Superpuesto» the original sits in
- *             a lacquered screen frame you move and scale with two fingers.
- *  - cortina  a noren curtain: in «Apilado» both fill the frame and the curtain sweeps between them; in
- *             «Superpuesto» the original drops in like cloth.
- *  - linterna the original as a glowing ink silhouette (high-contrast filter + screen blend) over the take, to see
- *             the outline of the body; in «Apilado», paper-lantern panels.
+ * F5 · How the take and the original share the screen, «Biombo»: in «Apilado» two panels hinged like a byōbu
+ * folding screen; in «Superpuesto» the original sits in a lacquered screen frame you move and scale with two
+ * fingers.
  *
- * The two media nodes never move in the React tree (only their boxes change), so switching mode or design never
- * reloads a video or the YouTube player.
+ * The two media nodes never move in the React tree (only their boxes change), so switching mode never reloads a
+ * video or the YouTube player.
  */
 
-export type CompareVariant = 'biombo' | 'cortina' | 'linterna';
-
 interface CompareStageProps {
-  variant: CompareVariant;
   mode: CompareMode;
   prefs: ViewPrefs;
   onPrefs: (patch: Partial<ViewPrefs>) => void;
@@ -129,7 +120,6 @@ function stackedRects(size: Size, split: number): [Rect, Rect] {
 }
 
 export function CompareStage({
-  variant,
   mode,
   prefs,
   onPrefs,
@@ -153,29 +143,22 @@ export function CompareStage({
 }: CompareStageProps) {
   const [frameRef, size] = useSize<HTMLDivElement>();
   const overlay = mode === 'overlay';
-  const wipe = !overlay && variant === 'cortina';
   const row = size.width >= size.height;
   const full: Rect = { left: 0, top: 0, width: size.width, height: size.height };
   const [firstRect, secondRect] = stackedRects(size, prefs.split);
   const originalFirst = prefs.order === 'original-first';
-  const originalRect = overlay || wipe ? full : originalFirst ? firstRect : secondRect;
-  const takeRect = overlay || wipe ? full : originalFirst ? secondRect : firstRect;
+  const originalRect = overlay ? full : originalFirst ? firstRect : secondRect;
+  const takeRect = overlay ? full : originalFirst ? secondRect : firstRect;
   const originalOnTop = !overlay || prefs.onTop === 'original';
-  const lantern = overlay && variant === 'linterna';
 
   // ── F9 · What each zoom needs: its box and its video's own size. ──
   const takeBox = useMediaBox<HTMLDivElement>();
   const originalBox = useMediaBox<HTMLDivElement>();
   const [zoomLive, setZoomLive] = useState(false);
-  const wipeAt = clampWipe(prefs.wipe);
 
   /** Which one a point of the frame (px from its top-left) is on, for a gesture that starts there. */
   const targetAt = (p: Pt): Target => {
     if (overlay) return overlayGesture === 'zoom' ? 'both' : 'fit';
-    if (wipe) {
-      const onOriginalSide = originalFirst ? p.x < wipeAt * size.width : p.x > wipeAt * size.width;
-      return onOriginalSide ? 'original' : 'take';
-    }
     const r = originalRect;
     return p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top && p.y <= r.top + r.height
       ? 'original'
@@ -390,12 +373,6 @@ export function CompareStage({
     : 'none';
   const originalOpacity = overlay && originalOnTop ? prefs.opacity : 1;
   const takeOpacity = overlay && !originalOnTop ? prefs.opacity : 1;
-  // «Cortina»: the original shows on its side of the curtain.
-  const originalClip = wipe
-    ? originalFirst
-      ? `inset(0 ${(1 - wipeAt) * 100}% 0 0)`
-      : `inset(0 0 0 ${wipeAt * 100}%)`
-    : 'inset(0 0 0 0)';
 
   return (
     <div
@@ -429,26 +406,23 @@ export function CompareStage({
             <motion.div
               ref={originalBox.ref}
               {...panelKeys('original', labels.original)}
-              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && !wipe && panelFrame(variant))}
+              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && PANEL_FRAME)}
               initial={false}
-              animate={{ ...originalRect, opacity: originalOpacity, clipPath: originalClip }}
+              animate={{ ...originalRect, opacity: originalOpacity }}
               transition={snappy}
-              style={{
-                zIndex: originalOnTop ? 2 : 1,
-                mixBlendMode: lantern && originalOnTop ? 'screen' : 'normal',
-              }}
+              // Clipped to its box, so the panel's outer shadow stays hidden as it always has.
+              style={{ zIndex: originalOnTop ? 2 : 1, clipPath: 'inset(0 0 0 0)' }}
             >
               <div
                 className="absolute inset-0"
                 style={{ transform: fitTransform, transformOrigin: '50% 50%' }}
               >
-                <div className={cn('absolute inset-0', lantern && 'isolate')}>
+                <div className="absolute inset-0">
                   <motion.div
                     className="absolute inset-0"
                     initial={false}
                     animate={{ scaleX: mirrorOriginal ? -1 : 1 }}
                     transition={jelly}
-                    style={lantern ? LANTERN_FILTER : undefined}
                   >
                     <ZoomLayer
                       zoom={!overlay && canZoomOriginal ? zoomOriginal : NO_ZOOM}
@@ -459,29 +433,22 @@ export function CompareStage({
                       {original}
                     </ZoomLayer>
                   </motion.div>
-                  {lantern && (
-                    <div
-                      aria-hidden
-                      className="pointer-events-none absolute inset-0 bg-shu-400 mix-blend-multiply"
-                    />
-                  )}
-                  {overlay && <OverlayDress variant={variant} />}
+                  {overlay && <OverlayDress />}
                 </div>
               </div>
-              {!overlay && !wipe && (
-                <PanelLabel variant={variant}>
+              {!overlay && (
+                <PanelLabel>
                   {labels.original}
                   {canZoomOriginal && isZoomed(zoomOriginal) ? ` · ${zoomLabel(zoomOriginal)}` : ''}
                 </PanelLabel>
               )}
-              {!overlay && variant === 'linterna' && <LanternRibs />}
             </motion.div>
 
             {/* The take */}
             <motion.div
               ref={takeBox.ref}
               {...panelKeys('take', labels.take)}
-              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && !wipe && panelFrame(variant))}
+              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && PANEL_FRAME)}
               initial={false}
               animate={{ ...takeRect, opacity: takeOpacity }}
               transition={snappy}
@@ -503,32 +470,21 @@ export function CompareStage({
                   {takeExtra}
                 </ZoomLayer>
               </motion.div>
-              {!overlay && !wipe && (
-                <PanelLabel variant={variant}>
+              {!overlay && (
+                <PanelLabel>
                   {labels.take}
                   {isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}
                 </PanelLabel>
               )}
-              {!overlay && variant === 'linterna' && <LanternRibs />}
             </motion.div>
           </ZoomLayer>
 
-          {!overlay && !wipe && (
+          {!overlay && (
             <Hinge
-              variant={variant}
               row={row}
               split={prefs.split}
               size={size}
               onChange={(split) => onPrefs({ split: clampSplit(split) })}
-            />
-          )}
-          {wipe && (
-            <Curtain
-              at={wipeAt}
-              size={size}
-              onChange={(value) => onPrefs({ wipe: clampWipe(value) })}
-              leftLabel={originalFirst ? labels.original : labels.take}
-              rightLabel={originalFirst ? labels.take : labels.original}
             />
           )}
           {overlay && (
@@ -567,90 +523,38 @@ export function CompareStage({
   );
 }
 
-const LANTERN_FILTER: CSSProperties = { filter: 'grayscale(1) contrast(2.6) brightness(1.05) invert(1)' };
+/** Lacquered screen panel: gold hairline inside a sumi border. */
+const PANEL_FRAME =
+  'rounded-[3px] shadow-[inset_0_0_0_1px_var(--color-kin-400),inset_0_0_0_4px_var(--color-sumi-900),0_10px_24px_-14px_var(--color-sumi-950)]';
 
-function panelFrame(variant: CompareVariant): string {
-  if (variant === 'biombo') {
-    // Lacquered screen panel: gold hairline inside a sumi border.
-    return 'rounded-[3px] shadow-[inset_0_0_0_1px_var(--color-kin-400),inset_0_0_0_4px_var(--color-sumi-900),0_10px_24px_-14px_var(--color-sumi-950)]';
-  }
-  if (variant === 'linterna') return 'rounded-[18px] shadow-[0_0_28px_-6px_var(--color-shu-500)]';
-  return 'rounded-[6px]';
-}
-
-function PanelLabel({ variant, children }: { variant: CompareVariant; children: ReactNode }) {
+function PanelLabel({ children }: { children: ReactNode }) {
   return (
-    <span
-      className={cn(
-        'pointer-events-none absolute left-2 top-2 z-[3] rounded-[6px] px-2 py-1 text-[11px] font-bold tracking-[0.04em]',
-        variant === 'biombo'
-          ? 'bg-sumi-950/80 text-kin-300'
-          : variant === 'linterna'
-            ? 'bg-shu-500/85 text-washi'
-            : 'bg-ai-700/85 text-washi',
-      )}
-    >
+    <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[6px] bg-sumi-950/80 px-2 py-1 text-[11px] font-bold tracking-[0.04em] text-kin-300">
       {children}
     </span>
   );
 }
 
-/** Paper-lantern ribs over a «linterna» panel. */
-function LanternRibs() {
+/** What dresses the original over the take: a screen frame. */
+function OverlayDress() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 z-[2] rounded-[18px] bg-[repeating-linear-gradient(180deg,transparent_0_22px,color-mix(in_srgb,var(--color-kin-300)_14%,transparent)_22px_23px)] shadow-[inset_0_10px_0_-4px_var(--color-sumi-950),inset_0_-10px_0_-4px_var(--color-sumi-950)]"
-    />
+      className="pointer-events-none absolute inset-0 rounded-[2px] shadow-[inset_0_0_0_2px_var(--color-kin-400)]"
+    >
+      <span className="absolute inset-y-0 left-1/3 w-px bg-kin-400/35" />
+      <span className="absolute inset-y-0 left-2/3 w-px bg-kin-400/35" />
+    </div>
   );
-}
-
-/** What dresses the original over the take: a screen frame, a cloth hem, or nothing (the lantern glows). */
-function OverlayDress({ variant }: { variant: CompareVariant }) {
-  if (variant === 'biombo') {
-    return (
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-[2px] shadow-[inset_0_0_0_2px_var(--color-kin-400)]"
-      >
-        <span className="absolute inset-y-0 left-1/3 w-px bg-kin-400/35" />
-        <span className="absolute inset-y-0 left-2/3 w-px bg-kin-400/35" />
-      </div>
-    );
-  }
-  if (variant === 'cortina') {
-    return (
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        {/* Woven threads of the cloth. */}
-        <div className="absolute inset-0 bg-[repeating-linear-gradient(90deg,color-mix(in_srgb,var(--color-washi)_7%,transparent)_0_1px,transparent_1px_5px),repeating-linear-gradient(0deg,color-mix(in_srgb,var(--color-washi)_5%,transparent)_0_1px,transparent_1px_6px)]" />
-        {/* The cloth drops in when the original goes over the take: a hem, and a wash that lifts. */}
-        <motion.div
-          className="absolute inset-x-0 top-0 h-3 origin-top bg-ai-700 shadow-[0_2px_0_var(--color-kin-400)]"
-          initial={{ scaleY: 0 }}
-          animate={{ scaleY: 1 }}
-          transition={soft}
-        />
-        <motion.div
-          className="absolute inset-0 origin-top bg-ai-700/40"
-          initial={{ scaleY: 1 }}
-          animate={{ scaleY: 0 }}
-          transition={soft}
-        />
-      </div>
-    );
-  }
-  return null;
 }
 
 /** «Apilado»: the joint between the panels; drag it (or use the arrows) to share the space 30–70 %. */
 function Hinge({
-  variant,
   row,
   split,
   size,
   onChange,
 }: {
-  variant: CompareVariant;
   row: boolean;
   split: number;
   size: Size;
@@ -703,13 +607,12 @@ function Hinge({
         className={cn(
           'flex items-center justify-around rounded-[2px]',
           row ? 'h-full w-[6px] flex-col py-[18%]' : 'h-[6px] w-full flex-row px-[18%]',
-          variant === 'linterna' ? 'bg-kiji-700' : 'bg-sumi-800 shadow-[0_0_0_1px_var(--color-kin-400)]',
+          'bg-sumi-800 shadow-[0_0_0_1px_var(--color-kin-400)]',
         )}
       >
-        {variant === 'biombo' &&
-          [0, 1, 2].map((i) => (
-            <span key={i} className={cn('rounded-[1px] bg-kin-400', row ? 'h-4 w-[10px]' : 'h-[10px] w-4')} />
-          ))}
+        {[0, 1, 2].map((i) => (
+          <span key={i} className={cn('rounded-[1px] bg-kin-400', row ? 'h-4 w-[10px]' : 'h-[10px] w-4')} />
+        ))}
       </span>
       <motion.span
         aria-hidden
@@ -720,75 +623,5 @@ function Hinge({
         {Math.round(split * 100)}
       </motion.span>
     </div>
-  );
-}
-
-/** «Cortina»: a noren curtain that sweeps the frame: one side the original, the other the take. */
-function Curtain({
-  at,
-  size,
-  onChange,
-  leftLabel,
-  rightLabel,
-}: {
-  at: number;
-  size: Size;
-  onChange: (value: number) => void;
-  leftLabel: string;
-  rightLabel: string;
-}) {
-  const drag = useRef(false);
-  const x = at * size.width;
-  return (
-    <>
-      <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[6px] bg-ai-700/85 px-2 py-1 text-[11px] font-bold text-washi">
-        {leftLabel}
-      </span>
-      <span className="pointer-events-none absolute right-2 top-2 z-[3] rounded-[6px] bg-ai-700/85 px-2 py-1 text-[11px] font-bold text-washi">
-        {rightLabel}
-      </span>
-      <motion.div
-        role="slider"
-        tabIndex={0}
-        aria-label="Cortina entre el original y la toma"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(at * 100)}
-        aria-valuetext={`${Math.round(at * 100)} %`}
-        className="absolute top-0 z-[4] flex h-full w-11 -translate-x-1/2 cursor-ew-resize justify-center"
-        style={{ left: x }}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          capturePointer(e);
-          drag.current = true;
-        }}
-        onPointerMove={(e) => {
-          if (!drag.current) return;
-          e.stopPropagation();
-          const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
-          onChange((e.clientX - rect.left) / rect.width);
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-          drag.current = false;
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-          e.preventDefault();
-          e.stopPropagation();
-          onChange(at + (e.key === 'ArrowRight' ? 0.04 : -0.04));
-        }}
-      >
-        {/* The noren: an indigo strip with its slit and a little sway. */}
-        <span
-          aria-hidden
-          className="relative flex h-full w-4 flex-col items-center bg-ai-700 shadow-[0_0_0_1px_var(--color-ai-500),6px_0_14px_-6px_var(--color-sumi-950)]"
-        >
-          <span className="h-3 w-full bg-kin-400/80" />
-          <span className="mt-3 font-display text-[11px] font-bold text-washi">比</span>
-          <span className="mb-[30%] mt-auto h-1/3 w-px bg-sumi-950/70" />
-        </span>
-      </motion.div>
-    </>
   );
 }

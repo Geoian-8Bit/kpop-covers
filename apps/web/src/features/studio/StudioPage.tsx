@@ -68,7 +68,6 @@ import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
 import { useFileSource } from './fileSource';
 import { releaseTakeUrl } from '@/data/takes';
-import { useDesignVariant } from '@/features/lab/designLab';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
 import { Segmented } from '@/components/ui/Segmented';
@@ -459,7 +458,6 @@ export function StudioPage() {
 function VoiceRow() {
   const mode = usePlayer((s) => s.voiceMode);
   const available = usePlayer((s) => Boolean(s.engine?.setVoiceMode));
-  const variant = useDesignVariant('voice-split');
   const [monoLike, setMonoLike] = useState(false);
   // While a split is on, ask the graph now and then whether the song is mono (then «sin voz» can't work).
   useEffect(() => {
@@ -478,7 +476,6 @@ function VoiceRow() {
         onChange={(m) => usePlayer.getState().setVoiceMode(m)}
         available={available}
         monoLike={monoLike}
-        variant={variant}
         compact
       />
     </div>
