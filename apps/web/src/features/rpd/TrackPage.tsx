@@ -1,13 +1,14 @@
 import type { Track } from '@coverscape/shared';
 import { formatTime } from '@coverscape/shared';
 import { AnimatePresence, motion, Reorder, useDragControls } from 'motion/react';
-import { ArrowDown, ArrowLeft, ArrowUp, GripVertical, Play, Plus, Shuffle, Trash2, X } from 'lucide-react';
+import { ArrowLeft, GripVertical, Play, Plus, Shuffle, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
+import { LiveMessage, MoveArrows } from '@/components/ui/MoveArrows';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
@@ -29,6 +30,7 @@ import { countLabel } from '@/features/bags/drawRules';
 import { ClipPickList, toggleIn } from '@/features/bags/Pickers';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
+import { useAnnouncer } from '@/lib/reorderA11y';
 import { useToast } from '@/providers/ToastProvider';
 import { newDraft, setRoundDraft } from './roundDraft';
 import { RoundOptionsFields } from './RoundOptionsFields';
@@ -83,6 +85,7 @@ function TrackEditor({ track }: { track: Track }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [order, setOrder] = useState<TrackItemView[]>([]);
+  const [announcement, announce] = useAnnouncer();
   const dragging = useRef(false);
   const [mix, setMix] = useState<TrackItemView[] | null>(null);
   const [savingNew, setSavingNew] = useState(false);
@@ -283,6 +286,7 @@ function TrackEditor({ track }: { track: Track }) {
                     commit(order);
                   }}
                   onMove={move}
+                  announce={announce}
                   onRemove={() =>
                     removeItem.mutate(item, { onError: (err) => toast(bagError(err), 'error') })
                   }
@@ -290,6 +294,7 @@ function TrackEditor({ track }: { track: Track }) {
               ))}
             </Reorder.Group>
           )}
+          <LiveMessage message={announcement} />
           {order.length > 1 && !mix && (
             <p className="mt-2 text-[12px] text-washi-subtle">
               Arrastra por el asa o usa las flechas para cambiar el orden.
@@ -397,6 +402,7 @@ function TrackRow({
   onDragStart,
   onDragEnd,
   onMove,
+  announce,
   onRemove,
 }: {
   item: TrackItemView;
@@ -405,6 +411,7 @@ function TrackRow({
   onDragStart: () => void;
   onDragEnd: () => void;
   onMove: (from: number, to: number) => void;
+  announce: (message: string) => void;
   onRemove: () => void;
 }) {
   const controls = useDragControls();
@@ -421,9 +428,9 @@ function TrackRow({
       className="relative flex items-center gap-2 rounded-[12px] bg-sumi-850 px-1.5 py-1.5 sm:gap-3"
       as="li"
     >
-      <button
-        type="button"
-        aria-label={`Arrastrar ${label}`}
+      {/* Pointer only: the keyboard (and screen readers) use ↑ ↓, so the handle is not a tab stop. */}
+      <span
+        aria-hidden
         onPointerDown={(e) => {
           e.preventDefault();
           controls.start(e);
@@ -431,27 +438,10 @@ function TrackRow({
         className="grid h-11 w-8 shrink-0 cursor-grab touch-none place-items-center rounded-[8px] text-washi-subtle hover:bg-washi/[0.06] hover:text-washi active:cursor-grabbing"
       >
         <GripVertical className="size-4.5" />
-      </button>
+      </span>
       <ItemBody item={item} index={index} />
       <div className="flex shrink-0 items-center">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Subir ${label}`}
-          disabled={index === 0}
-          onClick={() => onMove(index, index - 1)}
-        >
-          <ArrowUp className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={`Bajar ${label}`}
-          disabled={index === count - 1}
-          onClick={() => onMove(index, index + 1)}
-        >
-          <ArrowDown className="size-4" />
-        </Button>
+        <MoveArrows index={index} total={count} name={label} onMove={(delta) => onMove(index, index + delta)} announce={announce} />
         <motion.button
           type="button"
           aria-label={`Quitar ${label} de la pista`}

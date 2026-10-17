@@ -11,6 +11,7 @@ import {
   useState,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { Link, NavLink, Outlet, useLocation, useOutletContext } from 'react-router';
 import { CLIP_SWATCH, useQuickClips } from '@/data/clips';
@@ -89,6 +90,58 @@ function Routed({ context, children }: { context: ShellContext; children?: React
   );
 }
 
+/** Focus for a heading or <main> moved to by script: focusable without entering the Tab order, and no ring. */
+function focusLandmark(el: HTMLElement, scroll = false) {
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+  el.setAttribute('data-route-focus', '');
+  el.focus({ preventScroll: !scroll });
+}
+
+/**
+ * After a route change (not the first load, not a change of the query alone such as ?clip=) focus moves to the new
+ * page's h1 — or to <main> if none shows up — so a screen reader starts reading the new page and Tab goes on from
+ * there. Lazy pages render their heading late: it waits for it, unless the person has moved focus meanwhile.
+ */
+function useRouteFocus(mainRef: RefObject<HTMLElement | null>) {
+  const { pathname } = useLocation();
+  const previous = useRef(pathname);
+  useEffect(() => {
+    if (previous.current === pathname) return;
+    previous.current = pathname;
+    const main = mainRef.current;
+    if (!main) return;
+    const from = document.activeElement;
+    let done = false;
+    /** Focus went somewhere else on its own (an autofocused button, a field the person tapped): leave it there. */
+    const movedOn = () => {
+      const active = document.activeElement;
+      return active != null && active !== document.body && active !== from && active.isConnected;
+    };
+    const land = () => {
+      if (done) return true;
+      if (movedOn()) return (done = true);
+      const heading = main.querySelector<HTMLElement>('h1');
+      if (!heading) return false;
+      focusLandmark(heading);
+      return (done = true);
+    };
+    if (land()) return;
+    const observer = new MutationObserver(() => {
+      if (land()) observer.disconnect();
+    });
+    observer.observe(main, { childList: true, subtree: true });
+    const timeout = setTimeout(() => {
+      observer.disconnect();
+      if (!done && !movedOn()) focusLandmark(main);
+      done = true;
+    }, 2500);
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeout);
+    };
+  }, [pathname, mainRef]);
+}
+
 /**
  * App frame: a lacquer side rail (brand, primary action, navigation, pinned clips, account) on desktop,
  * a compact top bar on phones, and the routed page beside it.
@@ -105,13 +158,26 @@ export function AppShell() {
   const context = useMemo<ShellContext>(() => ({ openAddVideo }), [openAddVideo]);
 
   useEffect(() => prefetchAddVideoWhenIdle(), []);
+  const mainRef = useRef<HTMLElement>(null);
+  useRouteFocus(mainRef);
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[264px_minmax(0,1fr)]">
+      {/* First stop for the keyboard: past the rail and the top bar, straight to the page. */}
+      <a
+        href="#contenido"
+        onClick={(event) => {
+          event.preventDefault();
+          if (mainRef.current) focusLandmark(mainRef.current, true);
+        }}
+        className="sr-only rounded-[10px] bg-washi px-4 py-2.5 text-sm font-bold text-sumi-900 shadow-[0_10px_20px_-10px_rgb(0_0_0/0.9)] focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60]"
+      >
+        Saltar al contenido
+      </a>
       <SideRail onAdd={openAddVideo} />
       <div className="min-w-0">
         <MobileBar onAdd={openAddVideo} />
-        <main>
+        <main id="contenido" ref={mainRef} tabIndex={-1} data-route-focus>
           <Routed context={context}>
             {/* Portalled, so it can sit inside the boundary: a chunk that fails to load can't blank the app. */}
             {addLoaded && (
@@ -138,7 +204,7 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
 
   return (
     <aside className="sticky top-0 z-30 hidden h-dvh flex-col border-r border-line-strong bg-sumi-950/95 shadow-[4px_0_0_-3px_rgb(228_200_143/0.16),16px_0_32px_-16px_rgb(0_0_0/0.8)] lg:flex">
-      <Link to="/" aria-label="Biblioteca" onClick={guardNav} className="mx-3 mt-5 rounded-[10px] px-3 py-1">
+      <Link to="/" aria-label="One Shoot · Biblioteca" onClick={guardNav} className="mx-3 mt-5 rounded-[10px] px-3 py-1">
         <Logo />
       </Link>
 
@@ -277,22 +343,28 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const name = profile?.display_name ?? user?.email ?? 'Tú';
 
   useEffect(() => {
     if (!menuOpen) return;
+    // Opening moves focus to the first entry, so arrows and Tab start inside the menu.
+    const frame = requestAnimationFrame(() =>
+      menuRef.current?.querySelector<HTMLElement>('[role="menu"] [role="menuitem"]')?.focus(),
+    );
     const close = (event: PointerEvent | KeyboardEvent) => {
-      if (
-        event instanceof KeyboardEvent
-          ? event.key === 'Escape'
-          : !menuRef.current?.contains(event.target as Node)
-      ) {
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== 'Escape') return;
+        setMenuOpen(false);
+        triggerRef.current?.focus(); // back where the menu was opened from
+      } else if (!menuRef.current?.contains(event.target as Node)) {
         setMenuOpen(false);
       }
     };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', close);
     return () => {
+      cancelAnimationFrame(frame);
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', close);
     };
@@ -301,7 +373,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
   return (
     <header className="sticky top-0 z-40 border-b border-line-strong bg-sumi-950/95 shadow-[0_4px_0_-3px_rgb(228_200_143/0.16),0_12px_24px_-12px_rgb(0_0_0/0.7)] lg:hidden">
       <div className="flex h-16 items-center justify-between gap-3 px-4">
-        <Link to="/" aria-label="Biblioteca" onClick={guardNav} className="rounded-[10px]">
+        <Link to="/" aria-label="One Shoot · Biblioteca" onClick={guardNav} className="rounded-[10px]">
           <Logo />
         </Link>
         <div className="flex items-center gap-2">
@@ -319,8 +391,10 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
           </motion.button>
           <div ref={menuRef} className="relative">
             <motion.button
+              ref={triggerRef}
               type="button"
-              aria-label={user ? 'Cuenta' : 'Más opciones'}
+              // It holds the main navigation on phones, not only the account.
+              aria-label="Menú"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((v) => !v)}
@@ -338,6 +412,16 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
               {menuOpen && (
                 <motion.div
                   role="menu"
+                  aria-label="Menú"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                    event.preventDefault();
+                    const items = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'),
+                    );
+                    const at = items.indexOf(document.activeElement as HTMLElement);
+                    items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+                  }}
                   initial={{ opacity: 0, scale: 0.9, y: -6 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.96, y: -4, transition: { duration: 0.12 } }}
@@ -380,7 +464,7 @@ function MobileBar({ onAdd }: { onAdd: () => void }) {
                   ))}
                   <div className="my-1 h-px bg-line" />
                   <InstallAppButton compact className="mb-1" />
-                  <WhoButton onPick={() => setMenuOpen(false)} />
+                  <WhoButton inMenu onPick={() => setMenuOpen(false)} />
                   <Link
                     role="menuitem"
                     to="/ajustes"

@@ -91,7 +91,7 @@ export function ActionMenu({ label, actions, className }: { label: string; actio
                 }}
                 className={cn(
                   'flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-sm font-medium transition-colors hover:bg-washi/[0.06] focus-visible:bg-washi/[0.06] disabled:opacity-40',
-                  action.tone === 'danger' ? 'text-shu-400' : 'text-washi-muted hover:text-washi',
+                  action.tone === 'danger' ? 'text-shu-300' : 'text-washi-muted hover:text-washi',
                 )}
               >
                 {action.icon}

@@ -29,8 +29,13 @@
   --color-enji-600: #92283a;
   --color-enji-700: #6e1d2b;
 
+  /* shu-300: vermilion text on lacquer panels (≥ 4.5:1 on paper-raised, hover included).
+     shu-600 / shu-700: fills under washi text (hover / rest, ≥ 4.5:1; checked in a11yTokens.test.ts). */
+  --color-shu-300: #f4a28d;
   --color-shu-400: #e2674d;
   --color-shu-500: #d0452d;
+  --color-shu-600: #b53a25;
+  --color-shu-700: #a8341f;
 
   --color-kin-200: #f0dfb8;
   --color-kin-300: #e4c88f;
@@ -295,6 +300,11 @@
     border-radius: 6px;
   }
 
+  /* After a route change focus lands on the page heading (or <main>) for screen readers: it is not a control, no ring. */
+  [data-route-focus]:focus {
+    outline: none;
+  }
+
   ::placeholder {
     color: var(--color-washi-subtle);
     opacity: 1;
@@ -384,6 +394,33 @@
 }
 [data-skin='kamon'] .skin-track {
   border-color: transparent;
+}
+/* Focus inside the crest: the clip-path cuts any outline drawn outside the shape, so the focused crest repaints
+   its own rim as a ring — kin-300 at the edge (≈10:1 on the sumi ground) and an ink hairline inside it, which
+   still reads on the light washi buttons. */
+[data-skin='kamon'] .skin-btn:focus-visible {
+  outline: none;
+  background: var(--color-kin-300);
+}
+[data-skin='kamon'] .skin-btn:focus-visible::before {
+  inset: 3px;
+  background: var(--color-sumi-950);
+  opacity: 1;
+}
+[data-skin='kamon'] .skin-btn:focus-visible::after {
+  inset: 5px;
+}
+/* Small crest buttons and the options inside a crest track: the ring is drawn inside them, where nothing clips it. */
+[data-skin='kamon'] .skin-pill:focus-visible,
+[data-skin='kamon'] .skin-track :focus-visible {
+  outline-offset: -3px;
+}
+[data-skin='kamon'] .skin-pill:focus-visible {
+  background-color: color-mix(in srgb, var(--color-kin-300) 16%, transparent);
+}
+/* The chosen option sits on the washi tab: a gold ring would vanish on it, an ink one doesn't. */
+[data-skin='kamon'] .skin-track [aria-checked='true']:focus-visible {
+  outline-color: var(--color-sumi-900);
 }
 /* The controls tray holds the speed and pause menus: clipping the tray itself would cut them off, so its
    crest shape is painted on a backdrop layer instead and the menus can open above it. */

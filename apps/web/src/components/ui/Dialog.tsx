@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { soft } from '@/lib/motion';
 import { Button } from './Button';
+import { initialFocusIndex } from './dialogFocus';
 
 interface DialogProps {
   open: boolean;
@@ -60,8 +61,11 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
         return;
       }
       const nodes = focusables();
-      // nodes[0] is the close button; prefer the first real field/control after it.
-      (preferred ?? nodes[1] ?? nodes[0] ?? panel)?.focus();
+      // Never the corner X, never a destructive action: confirmations put «Cancelar» first, forms their field.
+      const at = initialFocusIndex(
+        nodes.map((node) => ({ autofocus: node.hasAttribute('data-autofocus'), close: node.hasAttribute('data-dialog-close') })),
+      );
+      (preferred ?? nodes[at] ?? panel)?.focus();
     });
 
     const onKey = (event: KeyboardEvent) => {
@@ -137,7 +141,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
                 </h2>
                 <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-washi/25 to-washi/5" />
                 {!hideClose && (
-                  <Button variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2 shrink-0">
+                  <Button data-dialog-close variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2 shrink-0">
                     <X className="size-5" />
                   </Button>
                 )}

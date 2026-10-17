@@ -118,7 +118,11 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
         .sort((a, b) => a.created_at.localeCompare(b.created_at)),
     [options.data, poll.id],
   );
-  const pollVotes = useMemo(() => (votes.data ?? []).filter((v) => v.poll_id === poll.id), [votes.data, poll.id]);
+  // Like close_poll on the server: the ballot of someone removed from the group no longer counts.
+  const pollVotes = useMemo(() => {
+    const live = members.data ? new Set(members.data.map((m) => m.id)) : null;
+    return (votes.data ?? []).filter((v) => v.poll_id === poll.id && (!live || live.has(v.member_id)));
+  }, [votes.data, poll.id, members.data]);
   const wishById = useMemo(() => new Map((wishes.data ?? []).map((w) => [w.id, w])), [wishes.data]);
   // A candidate whose song was deleted from the list no longer counts (the server skips it too): not offered, not counted.
   const liveOptions = useMemo(() => pollOptions.filter((o) => wishById.has(o.wish_id)), [pollOptions, wishById]);

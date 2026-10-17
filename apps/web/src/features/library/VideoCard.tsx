@@ -1,14 +1,18 @@
-import { formatDuration, hasLinkedFile } from '@coverscape/shared';
+import { formatDuration, hasLinkedFile, withYouTubeThumbQuality } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { Film, HardDrive, Layers, Play, Youtube } from 'lucide-react';
 import { memo } from 'react';
 import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
-import type { VideoWithClipCount } from '@/data/videos';
+import { useQueryClient } from '@tanstack/react-query';
+import { prefetchClips } from '@/data/clips';
+import { prefetchNotes } from '@/data/notes';
+import { prefetchVideo, type VideoWithClipCount } from '@/data/videos';
 import { AddToBagButton } from '@/features/bags/AddToBagButton';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
+import { loadStudioPage } from '@/lib/prefetch';
 
 /** Cards cascade in, but only the first 8 wait: the rest of a long library appears with the 8th. */
 const cardIn = fadeUpCapped(0.04, 8);
@@ -34,6 +38,14 @@ export const VideoCard = memo(function VideoCard({
   className,
 }: VideoCardProps) {
   const clipCount = video.clips[0]?.count ?? 0;
+  const queryClient = useQueryClient();
+  // P3 · About to open: warm the studio chunk and this video's row, clips and notes (cached ones aren't refetched).
+  const warm = () => {
+    void loadStudioPage().catch(() => undefined);
+    prefetchVideo(queryClient, video.id);
+    prefetchClips(queryClient, video.id);
+    prefetchNotes(queryClient, video.id);
+  };
 
   return (
     <motion.article
@@ -47,6 +59,10 @@ export const VideoCard = memo(function VideoCard({
       <Link
         to={`/v/${video.id}`}
         onClick={guardNav}
+        // A mouse warms on hover; a finger only on the press itself (a scroll sweeping over cards warms none).
+        onPointerEnter={(e) => e.pointerType === 'mouse' && warm()}
+        onPointerDown={(e) => e.pointerType !== 'mouse' && warm()}
+        onFocus={warm}
         className={cn(
           '-m-2 flex h-full rounded-[14px] p-2 transition-[background-color,scale] duration-200 hover:bg-washi/[0.04] active:scale-[0.98] active:bg-washi/[0.06]',
           // Phones: compact rows (thumb + caption) for everything but the featured video.
@@ -57,7 +73,9 @@ export const VideoCard = memo(function VideoCard({
         <div className={cn('relative aspect-video overflow-hidden rounded-[10px] bg-sumi-950 shadow-[0_0_0_1px_rgb(243_236_223/0.14),0_0_0_4px_var(--color-sumi-850),0_0_0_5px_var(--color-rule),0_14px_28px_-16px_rgb(0_0_0/0.9)]', !featured && 'w-36 shrink-0 sm:w-auto')}>
           {video.thumbnail_url ? (
             <motion.img
-              src={video.thumbnail_url}
+              // P11 · Small cards (a 144 px row on phones, a quarter column on desktop) take YouTube's 320 px
+              // thumbnail; the featured one keeps the large one.
+              src={featured ? video.thumbnail_url : withYouTubeThumbQuality(video.thumbnail_url, 'mqdefault')}
               alt=""
               // The featured thumbnail is the library's LCP image: fetch it first; the rest wait for the viewport.
               loading={featured ? 'eager' : 'lazy'}

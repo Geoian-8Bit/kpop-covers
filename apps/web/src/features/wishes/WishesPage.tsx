@@ -520,7 +520,7 @@ function WishCard({
             </motion.span>
             Me apunto
             <span className={cn('tabular rounded-full px-1.5 text-[12px]', mine ? 'bg-sumi-900/15' : 'bg-washi/10')}>
-              {interested.length}
+              {members.data ? shown.length : interested.length}
             </span>
           </motion.button>
           {shown.length > 0 && (

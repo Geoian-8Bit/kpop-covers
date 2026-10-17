@@ -2,6 +2,7 @@ import type { Member, MemberColor } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { backend } from '@/lib/backend';
+import { invalidateAfterArchive } from './afterArchive';
 
 /**
  * F2 · Quién es quién. The group's member list lives in the database (shared); who *this* device is lives in
@@ -62,6 +63,8 @@ export function useDeleteMember() {
     onSuccess: (member) => {
       queryClient.setQueryData<Member[]>(memberKeys.all, (current = []) => current.filter((m) => m.id !== member.id));
       if (useIdentity.getState().memberId === member.id) useIdentity.getState().choose(null);
+      // People bags, «Me apunto» and vote counts stop counting them.
+      invalidateAfterArchive(queryClient);
     },
   });
 }

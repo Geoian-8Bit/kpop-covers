@@ -63,6 +63,23 @@ export function zoomLabel(zoom: Zoom): string {
   return `${Math.round(clampZoom(zoom).scale * 100)} %`;
 }
 
+/**
+ * P12 · What the zoom controls show, as plain values a store selector can compare: following a dancer moves the
+ * zoom every frame, but the controls only repaint when the label or a limit actually changes.
+ */
+export interface ZoomControlsView {
+  zoomed: boolean;
+  label: string;
+  atMax: boolean;
+}
+export function zoomControlsView(zoom: Zoom): ZoomControlsView {
+  return { zoomed: isZoomed(zoom), label: zoomLabel(zoom), atMax: zoom.scale >= ZOOM_MAX };
+}
+/** The badge over the video: its label while zoomed, null otherwise. */
+export function zoomBadgeLabel(zoom: Zoom): string | null {
+  return isZoomed(zoom) ? zoomLabel(zoom) : null;
+}
+
 // ───────────── Picture ↔ box ─────────────
 
 /** Where the picture sits inside its box with `object-fit: contain` (the whole box when its size is unknown). */

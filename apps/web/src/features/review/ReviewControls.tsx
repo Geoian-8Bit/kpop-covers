@@ -14,7 +14,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { ElasticToggle } from '@/components/ui/ElasticToggle';
@@ -51,11 +51,47 @@ export function ReviewTimeline({
   openNoteId: string | null;
   onNote: (note: Note) => void;
 }) {
-  const time = useReview((s) => s.time);
   const duration = useReview((s) => s.duration);
   const loop = useReview((s) => s.loop);
   const trackRef = useRef<HTMLDivElement>(null);
+  const fillRef = useRef<HTMLDivElement>(null);
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  const clockRef = useRef<HTMLSpanElement>(null);
   const f = (t: number) => (duration > 0 ? Math.min(1, Math.max(0, t / duration)) : 0);
+
+  // P1 · Fill, thumb, clock and aria follow the take's clock through the DOM (like the studio's FsProgress), so
+  // playback never re-renders the timeline: the fill moves every frame, the label each tenth, aria each second.
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    let lastTime = Number.NaN;
+    let lastDuration = Number.NaN;
+    let lastTenth = Number.NaN;
+    let lastSecond = Number.NaN;
+    const paint = (time: number, total: number) => {
+      if (time === lastTime && total === lastDuration) return;
+      const totalChanged = total !== lastDuration;
+      lastTime = time;
+      lastDuration = total;
+      const pct = `${(total > 0 ? Math.min(1, Math.max(0, time / total)) : 0) * 100}%`;
+      fillRef.current?.style.setProperty('width', pct);
+      thumbRef.current?.style.setProperty('left', pct);
+      const tenth = Math.floor(time * 10);
+      if (tenth !== lastTenth && clockRef.current) {
+        lastTenth = tenth;
+        clockRef.current.textContent = formatTime(time, { tenths: true });
+      }
+      const second = Math.floor(time);
+      if (second !== lastSecond || totalChanged) {
+        lastSecond = second;
+        track.setAttribute('aria-valuenow', String(second));
+        track.setAttribute('aria-valuetext', `${formatTime(second)} de ${formatTime(total)}`);
+      }
+    };
+    const { time, duration: total } = useReview.getState();
+    paint(time, total);
+    return useReview.subscribe((s) => paint(s.time, s.duration));
+  }, []);
 
   const at = (clientX: number) => {
     const rect = trackRef.current!.getBoundingClientRect();
@@ -101,8 +137,6 @@ export function ReviewTimeline({
         aria-label="Tiempo de la toma"
         aria-valuemin={0}
         aria-valuemax={Math.round(duration * 10) / 10}
-        aria-valuenow={Math.round(time * 10) / 10}
-        aria-valuetext={`${formatTime(time)} de ${formatTime(duration)}`}
         className="relative h-9 cursor-pointer touch-none"
         onPointerDown={(e) => {
           if (duration <= 0) return;
@@ -136,18 +170,18 @@ export function ReviewTimeline({
               style={{ left: `${f(loop.start) * 100}%`, width: `${(f(loop.end) - f(loop.start)) * 100}%` }}
             />
           )}
-          <div className="absolute inset-y-0 left-0 rounded-full bg-washi/35" style={{ width: `${f(time) * 100}%` }} />
+          <div ref={fillRef} className="absolute inset-y-0 left-0 rounded-full bg-washi/35" />
         </div>
         {loop.start != null && <Seal at={f(loop.start)} label="A" />}
         {loop.end != null && <Seal at={f(loop.end)} label="B" />}
         <span
+          ref={thumbRef}
           aria-hidden
           className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-washi shadow-[0_0_0_3px_var(--color-sumi-950)]"
-          style={{ left: `${f(time) * 100}%` }}
         />
       </div>
       <div className="tabular flex justify-between px-0.5 font-mono text-[11px] text-washi-muted">
-        <span>{formatTime(time, { tenths: true })}</span>
+        <span ref={clockRef} />
         <span>{formatTime(duration)}</span>
       </div>
     </div>

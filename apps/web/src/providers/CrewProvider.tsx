@@ -1,8 +1,11 @@
 import type { Crew, Profile } from '@coverscape/shared';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { backend } from '@/lib/backend';
+import { backend, IS_DEMO } from '@/lib/backend';
+import { crewSnapshot, parseCrew, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { useAuth } from './AuthProvider';
+
+const GROUP_SNAPSHOT = IS_DEMO ? 'group.demo' : 'group';
 
 /**
  * The app has a single shared group and no login: everyone reads and writes inside it
@@ -22,10 +25,18 @@ const GroupContext = createContext<GroupContextValue | null>(null);
 export function CrewProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
+  // P2 · A repeat visit paints the shell at once from the group kept on this device (no Splash), and still asks the
+  // server right away: the kept copy counts as already stale (updated at 0), a fresh answer never goes stale.
   const groupQuery = useQuery({
     queryKey: ['group'],
-    staleTime: Infinity,
-    queryFn: (): Promise<Crew> => backend.joinGroup(),
+    staleTime: (query) => (query.state.dataUpdatedAt === 0 ? 0 : Infinity),
+    initialData: () => readSnapshot(GROUP_SNAPSHOT, parseCrew),
+    initialDataUpdatedAt: 0,
+    queryFn: async (): Promise<Crew> => {
+      const crew = await backend.joinGroup();
+      writeSnapshot(GROUP_SNAPSHOT, crewSnapshot(crew));
+      return crew;
+    },
   });
 
   const profileQuery = useQuery({
@@ -40,7 +51,8 @@ export function CrewProvider({ children }: { children: ReactNode }) {
       activeCrew: groupQuery.data ?? null,
       profile: profileQuery.data ?? null,
       loading: groupQuery.isPending,
-      error: groupQuery.isError,
+      // With the kept group on screen, a failed refresh isn't a dead end: the app goes on with it.
+      error: groupQuery.isError && !groupQuery.data,
       retry: () => void refetch(),
     }),
     [groupQuery.data, groupQuery.isPending, groupQuery.isError, profileQuery.data, user, refetch],

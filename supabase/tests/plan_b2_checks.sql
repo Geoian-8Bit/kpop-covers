@@ -267,5 +267,32 @@ begin
   raise notice 'PASS deleting a poll or an interest archives it';
 end $$;
 
+-- close_poll counts like the app: rankings renumbered over live candidates; removed members do not count.
+insert into public.members (id, name) values ('0f0f0f0f-0000-4000-8000-0000000000b3', 'Prueba Iris');
+insert into public.wishes (id, youtube_id, title) values ('0f0f0f0f-0000-4000-8000-000000000081', 'zzWishXXX81', 'X'), ('0f0f0f0f-0000-4000-8000-000000000082', 'zzWishAAA82', 'A'), ('0f0f0f0f-0000-4000-8000-000000000083', 'zzWishBBB83', 'B');
+insert into public.polls (id, title, vote_type) values ('0f0f0f0f-0000-4000-8000-000000000080', 'Puestos vivos', 'ranking'), ('0f0f0f0f-0000-4000-8000-000000000090', 'Sin la que se fue', 'single');
+insert into public.poll_options (id, poll_id, wish_id) values ('0f0f0f0f-0000-4000-8000-000000000084', '0f0f0f0f-0000-4000-8000-000000000080', '0f0f0f0f-0000-4000-8000-000000000081'), ('0f0f0f0f-0000-4000-8000-000000000085', '0f0f0f0f-0000-4000-8000-000000000080', '0f0f0f0f-0000-4000-8000-000000000082'), ('0f0f0f0f-0000-4000-8000-000000000086', '0f0f0f0f-0000-4000-8000-000000000080', '0f0f0f0f-0000-4000-8000-000000000083'), ('0f0f0f0f-0000-4000-8000-000000000091', '0f0f0f0f-0000-4000-8000-000000000090', '0f0f0f0f-0000-4000-8000-000000000082'), ('0f0f0f0f-0000-4000-8000-000000000092', '0f0f0f0f-0000-4000-8000-000000000090', '0f0f0f0f-0000-4000-8000-000000000083');
+-- Ranking: Gala ranks X, A; Hana ranks B. Single: Gala votes A; Hana and Iris vote B.
+select public.cast_vote('0f0f0f0f-0000-4000-8000-000000000080', '0f0f0f0f-0000-4000-8000-0000000000b1', array['0f0f0f0f-0000-4000-8000-000000000084', '0f0f0f0f-0000-4000-8000-000000000085']::uuid[]);
+select public.cast_vote('0f0f0f0f-0000-4000-8000-000000000080', '0f0f0f0f-0000-4000-8000-0000000000b2', array['0f0f0f0f-0000-4000-8000-000000000086']::uuid[]);
+select public.cast_vote('0f0f0f0f-0000-4000-8000-000000000090', '0f0f0f0f-0000-4000-8000-0000000000b1', array['0f0f0f0f-0000-4000-8000-000000000091']::uuid[]);
+select public.cast_vote('0f0f0f0f-0000-4000-8000-000000000090', '0f0f0f0f-0000-4000-8000-0000000000b2', array['0f0f0f0f-0000-4000-8000-000000000092']::uuid[]);
+select public.cast_vote('0f0f0f0f-0000-4000-8000-000000000090', '0f0f0f0f-0000-4000-8000-0000000000b3', array['0f0f0f0f-0000-4000-8000-000000000092']::uuid[]);
+-- X is archived (A becomes Gala's 1st: 2 points, like B for Hana) and Iris leaves the group (1 – 1).
+-- Archived as admin: this script runs as one statement and the client may archive only 3 rows per statement.
+reset role;
+update public.wishes set archived_at = now() where id = '0f0f0f0f-0000-4000-8000-000000000081';
+update public.members set archived_at = now() where id = '0f0f0f0f-0000-4000-8000-0000000000b3';
+set local role anon;
+do $$
+declare r json;
+begin
+  r := public.close_poll('0f0f0f0f-0000-4000-8000-000000000080');
+  if r->>'status' <> 'tie' then raise exception 'FAIL a ranking kept the place of an archived candidate: %', r; end if;
+  r := public.close_poll('0f0f0f0f-0000-4000-8000-000000000090');
+  if r->>'status' <> 'tie' then raise exception 'FAIL the vote of someone removed from the group still counted: %', r; end if;
+  raise notice 'PASS close_poll renumbers rankings over live candidates and ignores removed members';
+end $$;
+
 reset role;
 rollback;

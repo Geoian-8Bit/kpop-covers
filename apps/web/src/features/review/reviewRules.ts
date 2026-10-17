@@ -308,6 +308,18 @@ export function isValidSketch(value: unknown): value is string {
   return typeof value === 'string' && value.length <= SKETCH_MAX_CHARS && SKETCH_PATTERN.test(value);
 }
 
+/** How close (s) the take must stand to a note's moment for its drawing to show. */
+export const SKETCH_MOMENT = 0.2;
+/**
+ * Whether the take stands at the note's moment (its drawing is a still of it). A boolean, so the screen subscribes
+ * to this instead of the 60 Hz clock and only repaints when it flips.
+ */
+export function atNoteMoment(time: number, takeSeconds: number | string | null | undefined): boolean {
+  if (takeSeconds == null) return false;
+  const at = Number(takeSeconds);
+  return Number.isFinite(at) && Math.abs(time - at) < SKETCH_MOMENT;
+}
+
 /** Draws the sketch at `width` px and encodes it (canvas.toDataURL); null if it can't. */
 export type SketchEncoder = (type: 'image/webp' | 'image/jpeg', quality: number, width: number) => string | null;
 

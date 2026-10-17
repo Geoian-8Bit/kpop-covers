@@ -1,19 +1,22 @@
 # One Shoot · Progreso de la implementación
 
 > **Avisos / bloqueos:** ninguno. F18 no está definida en el plan de ideas (ver PREGUNTAS en ESTADO-IMPLEMENTACION.md).
+> La revisión global no encontró ningún hallazgo de nota 6 o más en base de datos.
 
 - **Rama:** `feat/plan-completo`
 - **Commit de partida:** `6b9e4d3a7115682201f5ae0330e382d0dfa782ef` (main, 2026-10-16 16:05)
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
-## Ahora (2026-10-16 ~19:20)
+## Ahora (2026-10-17, tras el despliegue de las 00:01)
 
-- **Fase 2 de ideas (F3 + F4 + F17) CERRADA y DESPLEGADA**: main `1cc0a11`, migración `takes` aplicada con copia
-  previa, 13 PASS en producción (revertidos).
-- Fase 3 empezada SIN commit: migración `20261016020000_review_and_take_notes.sql` (ajuste fino y encaje en
-  `takes`; notas sobre la toma), `plan_fase3_checks.sql` (50 PASS locales en total), tipos y demo actualizados.
-  Siguiente: pantalla de repaso F5 (apilado / superpuesto, 3 variantes de laboratorio) y notas F6.
+- **Fase final desplegada** (F8, F9, F10, F11, F12, F15, F16 y la revisión de F10): main `db091db`, 17-10 00:01.
+  Migraciones 040000 a 080000 aplicadas con copia previa; verificación en producción hecha y revertida.
+- **Revisión global en curso.** Tres informes en `revisiones/`: base de datos y seguridad, accesibilidad y
+  rendimiento. Los hallazgos de base de datos ya están en ESTADO (apartado 5).
+- **Migración escrita, pendiente de aplicar:** `20261017010000_close_poll_live_rank` (ranking de `close_poll` y votos
+  de miembros archivados). Sin aplicar en producción.
+- **Cambios sin commit** de los arreglos de la revisión global en `apps/web` y `supabase/`.
 - Regla del usuario: cada despliegue = versión funcional de todo lo implementado.
 - Regla del usuario: **todas las pruebas en silencio** (también producción): el demo está silenciado con
   `apps/web/src/lib/devSilence.ts`; en producción, página en blanco y navegar con un script que silencia todo.
@@ -25,6 +28,11 @@
   F2 miembros y «¿Quién eres?». 3 rondas de revisión; ronda 3 sin hallazgos ≥6.
 - Ideas fase 2: F3 tomas guardadas (OPFS + fila), pestaña «Tomas», compartir 720p; F4 mejor toma; F17 voz y música
   (mid/side, 3 variantes). 2 rondas de revisión; ronda 2 sin hallazgos ≥6.
+- Fase 3 y bolsas (desplegadas 21:58): F5 repaso (apilado y superpuesto), F6 notas sobre la toma, F7 aplauso,
+  F13 bolsas, F14 Random Play Dance. Una ronda de revisión por feature; correcciones en `cfc6296` y `7bd80cd`/`f666c1b`.
+- Fase final (desplegada 17-10 00:01): F8 clips en tomas, F9 zoom, F10 seguir a un bailarín y prueba de postura,
+  F11 votaciones, F12 lista de deseos, F15 reacciones, F16 cuenta atrás. Una ronda de revisión por feature (B2 y B3
+  en informes separados); correcciones en `675a775` y `85d6bf6`. Lo que queda, en ESTADO apartado 5.
 
 ## Desplegado
 
@@ -35,6 +43,7 @@
 | 2026-10-16 19:14 | Ideas fase 2: F3 + F4 + F17 | `1cc0a11` | https://kpop-covers-1i1owoysn-geoian-s-projects.vercel.app (`dpl_4uG9sufPgtrPpJVnUAQ6vXDeTuss`) | 010000 (takes) |
 | 2026-10-16 21:49 | **Arreglo urgente**: abrir un clip colgaba el estudio | `0a005cc` | https://kpop-covers-9xqdd74qd-geoian-s-projects.vercel.app (`dpl_Cwp2GZC2hzfztUY91Lfs2k9TiJxr`) | ninguna |
 | 2026-10-16 21:58 | Fase 3 (F5, F6) + F7 + B1 (F13, F14) | `dfcb9e3` | https://kpop-covers-6lpf2hi7o-geoian-s-projects.vercel.app (`dpl_VYFfFjLRDHJyKtEvvmM4CNJW9yz3`) | 020000, 030000, 035000 |
+| 2026-10-17 00:01 | **Fase final**: F8, F9, F10, F11, F12, F15, F16 (revisión ronda 1 incluida) | `db091db` | https://kpop-covers-5j6ac0lnw-geoian-s-projects.vercel.app (id de despliegue no anotado) | 040000, 050000, 060000, 070000, 080000 |
 
 Fase 1: por error se lanzó `vercel --prod` dos veces seguidas desde el mismo commit (dos despliegues idénticos,
 el segundo es el activo). Comprobado en un contexto limpio: Ajustes muestra «Miembros del grupo» (0), el estudio
@@ -51,11 +60,19 @@ solo esa corrección (2 líneas) y se comprobó que el clip se aplica sin errore
 falla, la pestaña Tomas responde. Las comprobaciones de BD pasaron en producción (5 de fase 3 y 10 de B1, todo
 revertido; después 0 bolsas, 0 sorteos, 0 pistas).
 
+**Fase final (00:01):** las migraciones 040000 a 070000 se aplicaron a las 23:50 con copia previa, y la 080000 a las
+00:00. Verificación en producción, todo revertido: F11/F12 13 PASS, F15/F16 5 PASS, F10 6 PASS, archivado 13 PASS.
+Después, los datos no cambian: 3 vídeos, 3 clips, 2 notas, 0 en las tablas nuevas, 0 archivos.
+
 ## Siguiente
 
-1. Fase 3 (F5 repaso con variantes, F6), fase 4 (F7 palmada con variantes, F8, F9), fase 5 (F10).
-3. Grupo B1 (F13, F14), B2 (F11, F12), B3 (F16, F15), cada uno con variantes del laboratorio.
-4. IA (postura), revisión global, documentos finales.
+1. **Cerrar la revisión global.** Aplicar `20261017010000_close_poll_live_rank` (copia previa, `pnpm db:test`,
+   comprobación en producción revertida, advisors y tipos). Después, convertir en pendientes los hallazgos de
+   accesibilidad y de rendimiento que sigan abiertos (ver ESTADO apartado 8).
+2. **Pasada de rendimiento** (los hallazgos P1 a P15 de `revisiones/global-rendimiento.md`; P1, el repaso que se
+   repinta 60 veces por segundo, es el de mayor nota).
+3. **Verificación completa en producción.** Crear datos «PRUEBA …», probar cada fase en el móvil y archivar los
+   datos de prueba al acabar. Los pasos de cada fase están en ESTADO apartado 2.
 
 ## Notas para retomar
 
@@ -69,8 +86,9 @@ revertido; después 0 bolsas, 0 sorteos, 0 pistas).
   convertidas para devolver el registro de PASS en un error final (así nada se guarda), advisors, tipos.
 - Despliegue: worktree limpio de main en `C:\Users\iangi\oneshoot-check` (con `.vercel` de la raíz):
   `git merge --no-ff feat/plan-completo`, typecheck/test/build, push, `vercel --prod --yes` UNA vez.
-- Supabase tras fase 2: 11 migraciones; 1 grupo, 3 vídeos (1 archivado por el usuario a las 18:29), 3 clips,
-  2 notas, 0 miembros, 0 tomas, 0 archivos; buckets `videos` y `takes`.
+- Supabase tras la fase final: 19 migraciones en el repositorio (de `000000` a `080000`), más
+  `20261017010000_close_poll_live_rank` escrita y sin aplicar. Datos tras la verificación: 3 vídeos, 3 clips,
+  2 notas, 0 en las tablas nuevas, 0 archivos; buckets `videos` y `takes`.
 
 ## Registro
 
@@ -90,3 +108,22 @@ revertido; después 0 bolsas, 0 sorteos, 0 pistas).
 | 2026-10-16 ~18:50 | Fase 2: revisión ronda 1 (BD, cliente, voz), correcciones, commit 683e39c; ronda 2 y 3822163. |
 | 2026-10-16 19:09 | Copia de producción; migración `takes` aplicada y verificada. |
 | 2026-10-16 19:14 | Fase 2 de ideas desplegada (main 1cc0a11). |
+| 2026-10-16 21:12 | Fase 3 y bolsas: F5, F6, F7, F13, F14 (cfc6296). Revisión ronda 1 de F5, F6 y F7 incluida. |
+| 2026-10-16 21:26 | Revisión ronda 1 de base de datos de bolsas (7bd80cd). Historial solo lo escribe el sorteo. |
+| 2026-10-16 21:38 | Demo local sin sonido (7ef71f6). |
+| 2026-10-16 21:48 | Revisión ronda 1 de interfaz de Random Play Dance (f666c1b). |
+| 2026-10-16 21:48 | Arreglo del bucle del grabador (dd0e607; en main como 0a005cc). |
+| 2026-10-16 21:49 | Arreglo urgente desplegado (main 0a005cc, React #185 en la página del clip). |
+| 2026-10-16 21:56 | Merge en main de la fase 3 (dfcb9e3). |
+| 2026-10-16 21:58 | Fase 3 + F7 + B1 desplegada (main dfcb9e3). |
+| 2026-10-16 21:59 | Demo: el envoltorio de silencio captura el listo de YouTube (998131b). |
+| 2026-10-16 22:00 | Plan actualizado: fase 3 y bolsas desplegadas (be70973). |
+| 2026-10-16 23:07 | Fase final: F8–F16 (675a775): clips en tomas, zoom, seguir a un bailarín y prueba de postura, votaciones, lista de deseos, eventos y reacciones. Revisión ronda 1 de los seis. |
+| 2026-10-16 23:46 | Copia de seguridad de producción en `~/one-shoot-backups/20261016-2346-final/`. |
+| 2026-10-16 23:50 | Migraciones 040000, 050000, 060000 y 070000 aplicadas y verificadas (todo revertido). |
+| 2026-10-16 23:57 | Revisión ronda 1 de F10 y de F11, y arreglo de `close_poll` con cero votos (85d6bf6). |
+| 2026-10-17 00:00 | Migración 080000 (`close_poll_zero_votes`) aplicada; idempotente. |
+| 2026-10-17 00:01 | Fase final desplegada (main db091db): https://kpop-covers-5j6ac0lnw-geoian-s-projects.vercel.app |
+| 2026-10-17 00:12 | Revisión global: informe de accesibilidad (`global-accesibilidad.md`). |
+| 2026-10-17 00:13 | Revisión global: informes de base de datos y seguridad (`global-bd-seguridad.md`) y de rendimiento (`global-rendimiento.md`). |
+| 2026-10-17 | Migración `20261017010000_close_poll_live_rank` escrita; pendiente de aplicar. |

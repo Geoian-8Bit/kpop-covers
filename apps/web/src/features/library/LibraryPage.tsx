@@ -29,12 +29,22 @@ const NO_CLIPS: ClipWithVideo[] = [];
 export function LibraryPage() {
   const { activeCrew } = useCrew();
   const { openAddVideo } = useShell();
-  const videos = useVideos(activeCrew?.id);
-  const quick = useQuickClips(activeCrew?.id);
+  // P2 · A repeat visit paints the lists kept from the last one while the fresh ones load.
+  const videos = useVideos(activeCrew?.id, { snapshot: true });
+  const quick = useQuickClips(activeCrew?.id, { snapshot: true });
   const deleteVideo = useDeleteVideo();
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<VideoWithClipCount | null>(null);
   const closeDelete = useCallback(() => setPendingDelete(null), []);
+  // A card from the kept list (P2) is only shown: deleting waits for the fresh list.
+  const showingSnapshot = videos.isPlaceholderData;
+  const askDelete = useCallback(
+    (video: VideoWithClipCount) => {
+      if (showingSnapshot) toast('Un momento: la biblioteca se está actualizando.', 'info');
+      else setPendingDelete(video);
+    },
+    [showingSnapshot, toast],
+  );
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
 
@@ -146,7 +156,7 @@ export function LibraryPage() {
                   <VideoCard
                     key={video.id}
                     video={video}
-                    onDelete={setPendingDelete}
+                    onDelete={askDelete}
                     featured={index === 0 && !deferredQuery}
                     index={index}
                     className={index === 0 && !deferredQuery ? 'sm:col-span-2 xl:row-span-2' : undefined}

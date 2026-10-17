@@ -266,10 +266,12 @@ export function useAddWishToLibrary(crewId: string | undefined) {
   return useMutation({
     mutationFn: async (wish: Pick<Wish, 'id' | 'title' | 'artist' | 'youtube_id'>) => {
       if (!crewId) throw new Error('no group');
-      // The library as the app already has it (or fetched once): a song already there is linked, not copied.
-      const list = await queryClient.ensureQueryData({
+      // The library as it is now (another phone may have added or removed the song): a song already there is
+      // linked, not copied.
+      const list = await queryClient.fetchQuery({
         queryKey: videoKeys.list(crewId),
         queryFn: () => backend.listVideos(crewId),
+        staleTime: 0,
       });
       const existing = list.find((v) => v.youtube_id === wish.youtube_id);
       const videoId =

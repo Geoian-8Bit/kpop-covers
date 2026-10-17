@@ -1,6 +1,8 @@
 import type { Clip, ClipColor, TablesUpdate } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { backend, type ClipWithVideo } from '@/lib/backend';
+import { parseQuickClips, readSnapshot, writeSnapshot } from '@/lib/snapshot';
+import { invalidateAfterArchive, invalidateClipPickers } from './afterArchive';
 import { videoKeys, type VideoWithClipCount } from './videos';
 
 export type { ClipVideo, ClipWithVideo } from '@/lib/backend';
@@ -23,20 +25,36 @@ export const CLIP_SWATCH: Record<ClipColor, { dot: string; soft: string; label: 
   teal: { dot: 'bg-rokusho', soft: 'bg-rokusho/20', label: 'Rokushō · verdín' },
 };
 
+const clipsQuery = (videoId: string | undefined) => ({
+  queryKey: clipKeys.forVideo(videoId),
+  queryFn: () => backend.listClips(videoId!),
+});
+
 export function useClips(videoId: string | undefined) {
-  return useQuery({
-    queryKey: clipKeys.forVideo(videoId),
-    enabled: Boolean(videoId),
-    queryFn: () => backend.listClips(videoId!),
-  });
+  return useQuery({ ...clipsQuery(videoId), enabled: Boolean(videoId) });
 }
 
-/** Pinned clips first, then most recent – the library's "quick access" row. */
-export function useQuickClips(crewId: string | undefined) {
+/** P3 · Warm a video's clips before the studio opens (no request when they're cached and fresh). */
+export function prefetchClips(queryClient: QueryClient, videoId: string): void {
+  void queryClient.prefetchQuery(clipsQuery(videoId));
+}
+
+const quickSnapshot = (crewId: string) => `quick-clips.${crewId}`;
+
+/**
+ * Pinned clips first, then most recent – the library's "quick access" row.
+ * `snapshot`: P2 · while the first request runs, show the row kept from the last visit (`isPlaceholderData`).
+ */
+export function useQuickClips(crewId: string | undefined, { snapshot = false }: { snapshot?: boolean } = {}) {
   return useQuery({
     queryKey: clipKeys.quick(crewId),
     enabled: Boolean(crewId),
-    queryFn: (): Promise<ClipWithVideo[]> => backend.listQuickClips(crewId!),
+    placeholderData: snapshot && crewId ? () => readSnapshot(quickSnapshot(crewId), (v) => parseQuickClips(v, crewId)) : undefined,
+    queryFn: async (): Promise<ClipWithVideo[]> => {
+      const list = await backend.listQuickClips(crewId!);
+      writeSnapshot(quickSnapshot(crewId!), list);
+      return list;
+    },
   });
 }
 
@@ -66,6 +84,8 @@ export function useCreateClip() {
       );
       // Not awaited: the dialog closes as soon as the clip is saved, the quick row refreshes behind it.
       void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
+      // Random Play Dance and the bag pickers offer it right away.
+      invalidateClipPickers(queryClient);
     },
   });
 }
@@ -83,9 +103,11 @@ function settleBurst(queryClient: QueryClient, clip: Pick<Clip, 'video_id' | 'cr
   if (queryClient.isMutating({ mutationKey: CLIP_WRITE }) > 1) return;
   void queryClient.invalidateQueries({ queryKey: clipKeys.forVideo(clip.video_id) });
   void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
+  invalidateClipPickers(queryClient);
   if (burstDeleted) {
     burstDeleted = false;
     void queryClient.invalidateQueries({ queryKey: videoKeys.list(clip.crew_id) });
+    invalidateAfterArchive(queryClient);
   }
 }
 
