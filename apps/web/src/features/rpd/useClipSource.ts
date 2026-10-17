@@ -37,12 +37,13 @@ function cacheKey(video: Playable): string {
   ].join('|');
 }
 
-async function resolveSource(video: Playable): Promise<ClipSource> {
+/** `lasting`: false when the file was wanted but couldn't be reached this time (a signed URL that failed…). */
+async function resolveSource(video: Playable): Promise<{ source: ClipSource; lasting: boolean }> {
   const fallback: ClipSource = video.youtube_id
     ? { status: 'youtube', youtubeId: video.youtube_id }
     : { status: 'missing' };
   const wantsFile = video.source === 'upload' || hasLinkedFile(video);
-  if (!wantsFile) return fallback;
+  if (!wantsFile) return { source: fallback, lasting: true };
   const offset = video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0;
   try {
     const blob = await loadLocalVideo(video.id);
@@ -54,23 +55,27 @@ async function resolveSource(video: Playable): Promise<ClipSource> {
     if (blob && !stale) {
       const url = URL.createObjectURL(blob);
       objectUrls.add(url);
-      return { status: 'file', url, offset };
+      return { source: { status: 'file', url, offset }, lasting: true };
     }
-    if (video.storage_path) {
-      const url = await signedVideoUrl(video.storage_path);
-      if (url) return { status: 'file', url, offset };
-    }
+    if (!video.storage_path) return { source: fallback, lasting: true };
+    const url = await signedVideoUrl(video.storage_path);
+    if (url) return { source: { status: 'file', url, offset }, lasting: true };
   } catch {
     /* fall back below */
   }
-  return fallback;
+  return { source: fallback, lasting: false };
 }
 
 export function clipSourceFor(video: Playable): Promise<ClipSource> {
   const key = cacheKey(video);
   let pending = cache.get(key);
   if (!pending) {
-    pending = resolveSource(video);
+    const attempt: Promise<ClipSource> = resolveSource(video).then(({ source, lasting }) => {
+      // A failure that may pass is not kept: the next clip of this song (or «Otra vez») asks again.
+      if (!lasting && cache.get(key) === attempt) cache.delete(key);
+      return source;
+    });
+    pending = attempt;
     cache.set(key, pending);
   }
   return pending;

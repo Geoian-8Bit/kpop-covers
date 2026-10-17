@@ -342,6 +342,19 @@ export function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onCl
         <div className="grid place-items-center py-6">
           <Spinner className="size-6 text-washi-muted" />
         </div>
+      ) : members.isError && !members.data ? (
+        // Without the list, «Soy yo» would add someone who may already be in it: retry first.
+        <div role="alert" className="rounded-[10px] border border-enji-400/50 p-4 text-[14px] text-washi-muted">
+          No se pudo cargar la lista.{' '}
+          <button
+            type="button"
+            className="font-bold text-kin-300 disabled:opacity-60"
+            disabled={members.isFetching}
+            onClick={() => void members.refetch()}
+          >
+            Reintentar
+          </button>
+        </div>
       ) : (
         <div className="space-y-4">
           {!!members.data?.length && (

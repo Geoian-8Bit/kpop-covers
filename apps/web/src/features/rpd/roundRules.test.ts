@@ -8,6 +8,7 @@ import {
   IDLE_ROUND,
   leadIn,
   leadStatus,
+  liveClipIds,
   nextPlayable,
   optionsFromTrack,
   positionPatches,
@@ -155,6 +156,13 @@ describe('skipping unavailable clips', () => {
     expect(nextPlayable(available, 2)).toBe(4);
     expect(nextPlayable(available, 5)).toBe(-1);
     expect(nextPlayable([false, false], 0)).toBe(-1);
+  });
+
+  it('saves a track only with the clips that still exist, in order', () => {
+    expect(liveClipIds(['a', 'x', 'b', 'a', 'y'], ['a', 'b'])).toEqual({ kept: ['a', 'b', 'a'], dropped: 2 });
+    expect(liveClipIds(['a', 'b'], new Set(['a', 'b']))).toEqual({ kept: ['a', 'b'], dropped: 0 });
+    expect(liveClipIds(['x'], [])).toEqual({ kept: [], dropped: 1 });
+    expect(liveClipIds([], ['a'])).toEqual({ kept: [], dropped: 0 });
   });
 });
 

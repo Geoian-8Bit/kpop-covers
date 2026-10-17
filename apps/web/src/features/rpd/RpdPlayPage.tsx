@@ -217,10 +217,14 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   const [readyKey, setReadyKey] = useState<string | null>(null);
   const staleEngine = useRef<PlayerEngine | null>(null);
   useLayoutEffect(() => {
-    // Another song: forget the old engine (and its length) before the new one attaches.
-    staleEngine.current = usePlayer.getState().engine;
+    // Another song: forget the old engine (and its length) before the new one attaches. The old media's error
+    // goes too, even when it never got an engine (a file that failed to load, YouTube not answering): left behind,
+    // it would skip every clip after it.
+    const player = usePlayer.getState();
+    staleEngine.current = player.engine;
     setReadyKey(null);
-    if (staleEngine.current) usePlayer.getState().reset();
+    if (staleEngine.current) player.reset();
+    else if (player.error) player.sync({ error: null });
   }, [stageKey]);
   useEffect(() => {
     if (stageKey && engine && engine !== staleEngine.current) setReadyKey(stageKey);
@@ -240,7 +244,10 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
   // ── Put the clip on (paused, at its start) as soon as its media is ready ──
   const leadKey = `${state.index}:${state.leadStart}`;
   const applied = useRef<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Tied to its clip: the next clip (even of the same song, when its own notice is set in the same commit) never
+  // inherits it, and nothing has to clear it on the way.
+  const [notice, setNotice] = useState<{ index: number; text: string } | null>(null);
+  const noticeText = notice?.index === state.index ? notice.text : null;
   useEffect(() => {
     if (state.phase !== 'lead' || !clip || !stageReady || applied.current === leadKey) return;
     const player = usePlayer.getState();
@@ -250,20 +257,22 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
     const ok = player.applyClip(settings, { autoplay: false });
     applied.current = leadKey;
     if (!ok) {
-      setNotice('Este clip queda fuera de su vídeo: se salta');
+      setNotice({ index: state.index, text: 'Este clip queda fuera de su vídeo: se salta' });
       return;
     }
+    setNotice(null);
     // The round moves on at the clip's end: no A–B loop wrapping back.
     if (usePlayer.getState().loop.enabled) usePlayer.getState().toggleLoop();
-  }, [state.phase, clip, stageReady, leadKey, options.useClipSettings]);
+  }, [state.phase, state.index, clip, stageReady, leadKey, options.useClipSettings]);
 
-  // ── Go: lead-in over and clip ready ──
+  // ── Go: lead-in over and clip ready (and not paused: a pause while «Cargando el clip…» holds it) ──
   const goPending = lead?.phase === 'go';
+  const paused = state.pausedAt != null;
   useEffect(() => {
-    if (!goPending || applied.current !== leadKey || notice || !stageReady) return;
+    if (!goPending || paused || applied.current !== leadKey || noticeText || !stageReady) return;
     dispatch({ type: 'go' });
     usePlayer.getState().play();
-  }, [goPending, leadKey, notice, stageReady]);
+  }, [goPending, paused, leadKey, noticeText, stageReady]);
 
   // Count-in ticks, when the studio's count sound is on.
   const count = lead?.phase === 'countdown' ? lead.count : null;
@@ -286,28 +295,29 @@ function RoundRunner({ draft, all }: { draft: RoundDraft; all: ClipWithVideo[] }
 
   // ── Problems: a song that can't play, or a clip outside its video → skip it ──
   const playerError = usePlayer((s) => s.error);
+  // A failed background refetch keeps the song it already had (isError with data): that one still plays.
   const missing =
-    clip != null && (source.status === 'missing' || video.isError || (video.isFetched && video.data == null));
+    clip != null &&
+    (source.status === 'missing' || (video.isError && !video.data) || (video.isFetched && video.data == null));
   const problem =
-    notice ??
+    noticeText ??
     (missing
       ? 'Este vídeo no se puede reproducir aquí: se salta'
       : playerError && state.phase !== 'idle' && state.phase !== 'done'
         ? 'No se pudo reproducir: se salta'
         : null);
+  // The skip waits while the round is paused, and gets its full time again on resuming.
   useEffect(() => {
-    if (!problem || state.phase === 'idle' || state.phase === 'done') return;
+    if (!problem || paused || state.phase === 'idle' || state.phase === 'done') return;
     const id = window.setTimeout(() => {
       setNotice(null);
       usePlayer.getState().pause();
       dispatch({ type: 'advance', now: performance.now() });
     }, 2200);
     return () => window.clearTimeout(id);
-  }, [problem, state.phase, state.index]);
-  useEffect(() => setNotice(null), [state.index]);
+  }, [problem, paused, state.phase, state.index]);
 
   // ── Controls ──
-  const paused = state.pausedAt != null;
   const start = useCallback(() => {
     unlockAudio();
     dispatch({ type: 'start', now: performance.now() });

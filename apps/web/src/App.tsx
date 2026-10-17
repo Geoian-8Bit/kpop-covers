@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AppShell } from '@/components/AppShell';
 import { Backdrop } from '@/components/Backdrop';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
 import { LibraryPage } from '@/features/library/LibraryPage';
@@ -49,6 +50,15 @@ function Splash() {
       </motion.div>
     </div>
   );
+}
+
+/**
+ * Catches what the shell's own boundary can't: the shell itself (rail, mobile bar, RequireCrew) and routes
+ * outside it (/privacidad). Cleared on navigation like the inner one.
+ */
+function RootErrorBoundary({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>;
 }
 
 /** «<página> · One Shoot» on every route (focus and the skip link live in AppShell). */
@@ -108,58 +118,60 @@ export function App() {
               <CrewProvider>
                 <BrowserRouter>
                   <DocumentTitle />
-                  <Routes>
-                    {/* Open access: no login screen, everyone lands in the shared library. */}
-                    <Route
-                      element={
-                        <RequireCrew>
-                          <AppShell />
-                        </RequireCrew>
-                      }
-                    >
-                      <Route index element={<LibraryPage />} />
+                  <RootErrorBoundary>
+                    <Routes>
+                      {/* Open access: no login screen, everyone lands in the shared library. */}
                       <Route
-                        path="/v/:videoId"
+                        element={
+                          <RequireCrew>
+                            <AppShell />
+                          </RequireCrew>
+                        }
+                      >
+                        <Route index element={<LibraryPage />} />
+                        <Route
+                          path="/v/:videoId"
+                          element={
+                            <Suspense fallback={<Splash />}>
+                              <StudioPage />
+                            </Suspense>
+                          }
+                        />
+                        <Route
+                          path="/ajustes"
+                          element={
+                            <Suspense fallback={<Splash />}>
+                              <SettingsPage />
+                            </Suspense>
+                          }
+                        />
+                        {(
+                          [
+                            ['/bolsas', <BagsPage key="bags" />],
+                            ['/bolsas/:bagId', <BagPage key="bag" />],
+                            ['/rpd', <RpdPage key="rpd" />],
+                            ['/rpd/pista/:trackId', <TrackPage key="track" />],
+                            ['/rpd/jugar', <RpdPlayPage key="play" />],
+                            ['/deseos', <WishesPage key="wishes" />],
+                            ['/deseos/votacion/:pollId', <PollPage key="poll" />],
+                            ['/eventos', <EventsPage key="events" />],
+                            ['/eventos/:eventId', <EventPage key="event" />],
+                          ] as const
+                        ).map(([path, page]) => (
+                          <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />
+                        ))}
+                      </Route>
+                      <Route
+                        path="/privacidad"
                         element={
                           <Suspense fallback={<Splash />}>
-                            <StudioPage />
+                            <PrivacyPage />
                           </Suspense>
                         }
                       />
-                      <Route
-                        path="/ajustes"
-                        element={
-                          <Suspense fallback={<Splash />}>
-                            <SettingsPage />
-                          </Suspense>
-                        }
-                      />
-                      {(
-                        [
-                          ['/bolsas', <BagsPage key="bags" />],
-                          ['/bolsas/:bagId', <BagPage key="bag" />],
-                          ['/rpd', <RpdPage key="rpd" />],
-                          ['/rpd/pista/:trackId', <TrackPage key="track" />],
-                          ['/rpd/jugar', <RpdPlayPage key="play" />],
-                          ['/deseos', <WishesPage key="wishes" />],
-                          ['/deseos/votacion/:pollId', <PollPage key="poll" />],
-                          ['/eventos', <EventsPage key="events" />],
-                          ['/eventos/:eventId', <EventPage key="event" />],
-                        ] as const
-                      ).map(([path, page]) => (
-                        <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />
-                      ))}
-                    </Route>
-                    <Route
-                      path="/privacidad"
-                      element={
-                        <Suspense fallback={<Splash />}>
-                          <PrivacyPage />
-                        </Suspense>
-                      }
-                    />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </RootErrorBoundary>
                 </BrowserRouter>
               </CrewProvider>
             </AuthProvider>

@@ -106,6 +106,9 @@ export function StudioPage() {
   const [sideTab, setSideTab] = useState<'clips' | 'takes'>('clips');
   /** F5 · The take open in «Repaso» (its URL is released when the review closes). */
   const [playingTake, setPlayingTake] = useState<{ take: TakeItem; url: string } | null>(null);
+  // The review's object URL goes when the review does, also when the page itself goes with it open.
+  const playingUrl = playingTake?.url;
+  useEffect(() => () => releaseTakeUrl(playingUrl), [playingUrl]);
   const me = useMe();
   // F6: a take's notes show on the song only for their recipient (or when they're for the whole group).
   const songNoteList = useMemo(() => songNotes(notes.data ?? NO_NOTES, me?.id ?? null), [notes.data, me?.id]);

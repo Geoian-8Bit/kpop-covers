@@ -382,16 +382,17 @@ function SyncStep({
     el.playbackRate = rate;
     el.currentTime = Math.max(0, fileTime(from, offset));
     setTesting(true);
-    // Give YouTube a moment to land on the seek, then start both.
-    setTimeout(() => {
+    // Give YouTube a moment to land on the seek, then start both. One timer at a time, so closing the panel
+    // within that moment cancels the start too.
+    stopTimer.current = setTimeout(() => {
       usePlayer.getState().play();
       void el.play().catch(() => undefined);
+      stopTimer.current = setTimeout(() => {
+        usePlayer.getState().pause();
+        el.pause();
+        setTesting(false);
+      }, 6000);
     }, 400);
-    stopTimer.current = setTimeout(() => {
-      usePlayer.getState().pause();
-      el.pause();
-      setTesting(false);
-    }, 6400);
   }
 
   const ready = ytMark != null && fileMark != null;

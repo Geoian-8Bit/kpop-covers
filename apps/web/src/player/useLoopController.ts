@@ -96,7 +96,9 @@ export function useLoopController(): void {
       const state = usePlayer.getState();
       const now = performance.now();
       if (isBusy(state, probing(state))) busyAt = now;
-      if (state.engine && now - busyAt < IDLE_TAIL_MS) frame = requestAnimationFrame(tick);
+      // step() writes to the store, and the subscription below may already have asked for the next frame:
+      // a second request would add one more tick per frame, every frame, while the video plays.
+      if (!frame && state.engine && now - busyAt < IDLE_TAIL_MS) frame = requestAnimationFrame(tick);
     };
 
     const wake = (state: PlayerSnapshot) => {

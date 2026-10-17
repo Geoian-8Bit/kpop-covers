@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { isChunkLoadError, reloadForFreshChunks } from './ErrorBoundaryRecovery';
 import { Button } from './ui/Button';
 
 interface ErrorBoundaryProps {
@@ -9,6 +10,7 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   failed: boolean;
+  error?: unknown;
 }
 
 /**
@@ -18,8 +20,8 @@ interface ErrorBoundaryState {
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   override state: ErrorBoundaryState = { failed: false };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+    return { failed: true, error };
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo) {
@@ -27,7 +29,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidUpdate(prev: ErrorBoundaryProps) {
-    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, error: undefined });
   }
 
   override render() {
@@ -39,7 +41,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <p className="mt-2 text-washi-muted">
             No pudimos mostrar esta pantalla. Puede que haya una versión nueva o que se cortara la conexión.
           </p>
-          <Button className="mt-6" onClick={() => window.location.reload()}>
+          <Button
+            className="mt-6"
+            // A missing chunk means a new deploy: take the waiting version if there is one (a plain reload
+            // would come back to the same old one).
+            onClick={() => (isChunkLoadError(this.state.error) ? reloadForFreshChunks() : window.location.reload())}
+          >
             Recargar
           </Button>
         </div>

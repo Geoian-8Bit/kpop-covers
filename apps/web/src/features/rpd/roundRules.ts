@@ -166,6 +166,19 @@ export function positionPatches(
   return items.flatMap((item, index) => (item.position === index ? [] : [{ id: item.id, position: index }]));
 }
 
+/**
+ * Before saving a track: only the clips that still exist, in order (the database refuses an archived one and the
+ * whole track with it), and how many were left out.
+ */
+export function liveClipIds(
+  ids: readonly string[],
+  live: Iterable<string>,
+): { kept: string[]; dropped: number } {
+  const known = new Set(live);
+  const kept = ids.filter((id) => known.has(id));
+  return { kept, dropped: ids.length - kept.length };
+}
+
 /** First playable index at or after `from` (archived clips are «no disponible» and skipped); -1 when none. */
 export function nextPlayable(available: readonly boolean[], from: number): number {
   for (let i = Math.max(0, from); i < available.length; i++) if (available[i]) return i;
