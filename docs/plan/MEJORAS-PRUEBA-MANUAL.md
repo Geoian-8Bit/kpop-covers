@@ -115,6 +115,7 @@ Lo que el responsable ya probó y le parece bien, para no tocarlo sin motivo.
 | Zona | Comentario |
 | --- | --- |
 | Bloque 1 · Miembros y biblioteca (17-10) | Correcto: miembros y «¿Quién eres?», añadir vídeo (buscador, enlace, aviso de duplicado), portada, acceso rápido y borrar con confirmación |
+| Bloque 2 · Estudio (17-10) | Correcto lo no apuntado como mejora: reproductor, velocidad, espejo, clips (crear, fijar, bolsa, borrar), notas, archivo vinculado (sincronía, cambio YouTube/Archivo sin saltos), zoom a mano y «Guardar zoom con el clip». Seguir a un bailarín: el responsable lo volverá a probar cuando estén los puntos 14 y 15. Voz y música: ver puntos 16–18 |
 
 ### 3 a 11 · Estudio (bloque 2 de la prueba manual, 17-10)
 
