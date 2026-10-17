@@ -8,7 +8,10 @@ export function LogoMark({ size = 34, className }: { size?: number; className?: 
 export function Logo({ className, compact = false }: { className?: string; compact?: boolean }) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <LogoMark />
+      {/* Decorative: the link's name is «One Shoot …» and the seal's kanji is not part of it (WCAG 2.5.3). */}
+      <span aria-hidden className="contents">
+        <LogoMark />
+      </span>
       {!compact && <span className="font-display text-[21px] font-bold tracking-[-0.01em] text-washi">One Shoot</span>}
     </span>
   );

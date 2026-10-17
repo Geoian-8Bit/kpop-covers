@@ -72,7 +72,6 @@ export const VideoCard = memo(function VideoCard({
           // Phones: compact rows (thumb + caption) for everything but the featured video.
           featured ? 'flex-col' : 'flex-row items-center gap-3 sm:flex-col sm:items-stretch sm:gap-0',
         )}
-        aria-label={`Abrir ${video.title}`}
       >
         <div className={cn('relative aspect-video overflow-hidden rounded-[10px] bg-sumi-950 shadow-[0_0_0_1px_rgb(243_236_223/0.14),0_0_0_4px_var(--color-sumi-850),0_0_0_5px_var(--color-rule),0_14px_28px_-16px_rgb(0_0_0/0.9)]', !featured && 'w-36 shrink-0 sm:w-auto')}>
           {video.thumbnail_url ? (
