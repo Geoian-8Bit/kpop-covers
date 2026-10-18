@@ -32,7 +32,8 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, useReview } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { CompareStage, type ChosenSplit } from './CompareStage';
-import { NotePill, PlayCrest, ReviewSettings, ReviewTimeline, ReviewTransport, SettingsButton, SoundPill } from './ReviewControls';
+import { useTapAnyFinger } from './tapAnyFinger';
+import { PlayCrest, QuickStrip, ReviewSettings, ReviewTimeline, ReviewTransport, SettingsButton, SoundPill } from './ReviewControls';
 import { OriginalFile, OriginalYouTube, TakeVideo, useReviewClock } from './ReviewMedia';
 import {
   aspectOf,
@@ -50,6 +51,7 @@ import {
   takeLength,
   takeNotes,
   takeTiming,
+  overlayStartOpacity,
   type CompareMode,
   type Fit,
   type ViewPrefs,
@@ -66,11 +68,14 @@ const PREFS_KEY = 'oneshoot.review.v1';
 export const OVERLAY_NEEDS_FILE = 'Necesita el archivo del vídeo: vincúlalo en el estudio.';
 
 function readPrefs(): ViewPrefs {
+  let prefs: ViewPrefs;
   try {
-    return parseViewPrefs(localStorage.getItem(PREFS_KEY));
+    prefs = parseViewPrefs(localStorage.getItem(PREFS_KEY));
   } catch {
-    return parseViewPrefs(null);
+    prefs = parseViewPrefs(null);
   }
+  // Opening straight in «Superpuesto»: never with the one on top hiding the other.
+  return prefs.mode === 'overlay' ? { ...prefs, opacity: overlayStartOpacity(prefs.opacity) } : prefs;
 }
 
 function writePrefs(prefs: ViewPrefs) {
@@ -295,7 +300,7 @@ export function ReviewScreen({
   // ── F9 · Zoom: the take always (a file of this phone or the cloud); the original only as a file. ──
   const canZoomOriginal = source === 'file';
   /** «Superpuesto»: the fingers fit the original over the take, or zoom both. */
-  const [overlayGesture, setOverlayGesture] = useState<'fit' | 'zoom'>('fit');
+  const [overlayGesture, setOverlayGesture] = useState<'fit' | 'zoom'>('zoom');
   const zoomHintAt = useRef(0);
   const onZoomUnavailable = useCallback(() => {
     const now = performance.now();
@@ -424,6 +429,8 @@ export function ReviewScreen({
   }
 
   const close = useCallback(() => onClose(), [onClose]);
+  // The X answers to any finger (a thumb may rest on the video while the phone is on its side).
+  const closeTap = useTapAnyFinger(close);
   // «Atrás» closes only what is on top (each layer has its own entry): the settings, an open note, then the review.
   useBackToClose(true, close, composer != null || savingClip);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
@@ -604,11 +611,6 @@ export function ReviewScreen({
     canZoomOriginal,
     onSaveRange: openSaveRange,
     compact: low,
-    onNote: newNote,
-    onLoopMissing: loopMissing,
-    canOverlay,
-    onMode: (m: CompareMode) => setPrefs({ mode: m }),
-    onOverlayRefused: overlayRefused,
   } as const;
 
   // Where the settings and an open note go, never over YouTube. On a wide screen the settings sit beside the stage.
@@ -655,10 +657,34 @@ export function ReviewScreen({
     </AnimatePresence>
   );
 
+  /** Separate / overlaid; overlaid never starts hiding the take (or barely showing the original). */
+  const setMode = (m: CompareMode) =>
+    setPrefs(m === 'overlay' ? { mode: m, opacity: overlayStartOpacity(prefs.opacity) } : { mode: m });
+  const quickProps = {
+    mode,
+    canOverlay,
+    hasOriginal,
+    opacity: prefs.opacity,
+    onTop: prefs.onTop,
+    onMode: setMode,
+    onOpacity: (opacity: number) => setPrefs({ opacity }),
+    onNote: newNote,
+    onLoopMissing: loopMissing,
+  } as const;
+  // A phone on its side: the quick strip stands by the take's side of the stage (never by YouTube), out of the way
+  // while the panel over the take is open.
+  const strip =
+    low && !coverOpen ? (
+      <div className={cn('flex shrink-0 flex-col justify-center py-1.5', takeAtEnd ? 'pl-1.5' : 'pr-1.5')}>
+        <QuickStrip orientation="column" {...quickProps} />
+      </div>
+    ) : null;
+
   const stage = (
     <div
       className={cn(
-        'seigaiha relative min-h-0 flex-1',
+        // Isolated: whatever the stage draws stays under the controls.
+        'seigaiha relative isolate flex min-h-0 flex-1',
         low
           ? 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]'
           : tightPortrait
@@ -666,7 +692,8 @@ export function ReviewScreen({
             : 'p-2 pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))] sm:p-3',
       )}
     >
-      <div className="relative size-full">
+      {!takeAtEnd && strip}
+      <div className="relative min-w-0 flex-1">
         <ReviewCompareStage
           mode={mode}
           prefs={prefs}
@@ -709,6 +736,7 @@ export function ReviewScreen({
           )}
         </div>
       </div>
+      {takeAtEnd && strip}
       {coverOpen && (
         // A phone on its side: settings and the open note in a panel over the take's side (never over YouTube).
         <motion.div
@@ -742,11 +770,11 @@ export function ReviewScreen({
   const bar = (
     <footer
       className={cn(
-        'sep-t box-content flex h-14 shrink-0 items-center gap-1 bg-sumi-900 pb-[env(safe-area-inset-bottom)] pl-[max(6px,env(safe-area-inset-left))]',
+        'sep-t relative z-20 box-content flex h-14 shrink-0 items-center gap-1 bg-sumi-900 pb-[env(safe-area-inset-bottom)] pl-[max(6px,env(safe-area-inset-left))]',
         'pr-[max(6px,env(safe-area-inset-right))]',
       )}
     >
-      <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" onClick={close}>
+      <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" {...closeTap}>
         <X className="size-6" />
       </Button>
       <PlayCrest size="sm" />
@@ -781,7 +809,7 @@ export function ReviewScreen({
         </h2>
       ) : (
         <header className="sep-b flex shrink-0 items-center gap-2 bg-sumi-900 pb-1.5 pl-[max(8px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(6px,env(safe-area-inset-top))]">
-          <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" onClick={close}>
+          <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" {...closeTap}>
             <X className="size-6" />
           </Button>
           <div className="min-w-0 flex-1">
@@ -798,7 +826,7 @@ export function ReviewScreen({
               layoutId={`review-mode-${take.id}`}
               size="sm"
               value={mode}
-              onChange={(m) => setPrefs({ mode: m })}
+              onChange={setMode}
               onDisabled={overlayRefused}
               options={[
                 { value: 'stacked', label: 'Separados' },
@@ -835,16 +863,18 @@ export function ReviewScreen({
               {bar}
             </>
           ) : (
-            <footer className="paper relative z-10 shrink-0 rounded-t-[20px] border-x-0 border-b-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 before:hidden sm:px-5">
+            <footer className="paper relative z-20 shrink-0 rounded-t-[20px] border-x-0 border-b-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 before:hidden sm:px-5">
               <div className="mx-auto max-w-2xl">
                 <ReviewTimeline
                   notes={notes}
                   openNoteId={openNoteId}
                   onNote={showNote}
+                  // Portrait: the quick ones share the clock's row (no row of their own: the stage keeps its height).
+                  showTotal={false}
                   actions={
                     <>
                       <SoundPill hasOriginal={hasOriginal} />
-                      <NotePill onNote={newNote} />
+                      <QuickStrip orientation="row" bare {...quickProps} withLoop={false} withMode={false} />
                     </>
                   }
                 />

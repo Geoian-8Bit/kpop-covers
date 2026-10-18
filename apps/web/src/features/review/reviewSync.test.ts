@@ -15,6 +15,10 @@ import {
   takeSongZero,
   YOUTUBE_ASPECT,
   YOUTUBE_MIN_BOX,
+  nextQuickOpacity,
+  nextQuickRate,
+  overlayStartOpacity,
+  stageGesture,
   bottomSheetHeight,
   coverPanelWidth,
   TAKE_MIN_HEIGHT,
@@ -296,5 +300,38 @@ describe('two panels (51)', () => {
   it('an empty frame falls back to halves', () => {
     expect(bestLayout({ width: 0, height: 0 }, 1, 1)).toEqual({ direction: 'row', split: 0.5 });
     expect(bestLayout({ width: 0, height: 10 }, 1, 1)).toEqual({ direction: 'column', split: 0.5 });
+  });
+});
+
+describe('quick controls and the stage gestures', () => {
+  it('the speed button goes 1× → 0,75× → 0,5× → 1×, and back to 1× from any other', () => {
+    expect(nextQuickRate(1)).toBe(0.75);
+    expect(nextQuickRate(0.75)).toBe(0.5);
+    expect(nextQuickRate(0.5)).toBe(1);
+    expect(nextQuickRate(1.25)).toBe(1);
+  });
+
+  it('the see-through button goes 50 → 75 → 25 → 50 %', () => {
+    expect(nextQuickOpacity(0.5)).toBe(0.75);
+    expect(nextQuickOpacity(0.75)).toBe(0.25);
+    expect(nextQuickOpacity(0.25)).toBe(0.5);
+    expect(nextQuickOpacity(0.9)).toBe(0.5);
+  });
+
+  it('«Superpuesto» never starts hiding the take', () => {
+    expect(overlayStartOpacity(1)).toBe(0.5);
+    expect(overlayStartOpacity(0.1)).toBe(0.5);
+    expect(overlayStartOpacity(0.6)).toBe(0.6);
+    expect(overlayStartOpacity(0.85)).toBe(0.85); // a choice above 80 % is kept
+  });
+
+  it('a resting finger never takes the stage; the original moves only while «Encajar» is on', () => {
+    const base = { overlay: true, fitting: false, fingers: 1, zoomed: false, zoomable: true };
+    expect(stageGesture(base)).toBe('none');
+    expect(stageGesture({ ...base, fitting: true })).toBe('fit');
+    expect(stageGesture({ ...base, fingers: 2 })).toBe('zoom');
+    expect(stageGesture({ ...base, zoomed: true })).toBe('zoom');
+    expect(stageGesture({ ...base, overlay: false, fitting: true })).toBe('none');
+    expect(stageGesture({ ...base, zoomable: false, fingers: 2 })).toBe('none');
   });
 });

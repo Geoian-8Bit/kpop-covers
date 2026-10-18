@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { Move, ZoomIn } from 'lucide-react';
+import { Move } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -29,6 +29,7 @@ import {
   bestLayout,
   gestureFit,
   splitBounds,
+  stageGesture,
   YOUTUBE_MIN_BOX,
   keyFit,
   wheelFit,
@@ -41,6 +42,7 @@ import {
   type ViewPrefs,
 } from './reviewRules';
 import { capturePointer } from './pointer';
+import { useTapAnyFinger } from './tapAnyFinger';
 
 /**
  * F5 · 51 · How the take and the original share the screen, «Biombo»: in «Separados» two lacquered panels joined by
@@ -169,7 +171,7 @@ export function CompareStage({
   canZoomOriginal = false,
   onZoom,
   onZoomUnavailable,
-  overlayGesture = 'fit',
+  overlayGesture = 'zoom',
   onOverlayGesture,
 }: CompareStageProps) {
   const reduce = useReducedMotion();
@@ -212,7 +214,8 @@ export function CompareStage({
 
   /** Which one a point of the frame (px from its top-left) is on, for a gesture that starts there. */
   const targetAt = (p: Pt): Target => {
-    if (overlay) return overlayGesture === 'zoom' ? 'both' : 'fit';
+    // «Superpuesto»: the original moves only while «Encajar» is on; otherwise fingers zoom both.
+    if (overlay) return overlayGesture === 'fit' ? 'fit' : 'both';
     const r = originalRect;
     return p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top && p.y <= r.top + r.height ? 'original' : 'take';
   };
@@ -236,7 +239,13 @@ export function CompareStage({
   // «Separados» they zoom the one under the fingers. A tap plays; a double tap on a zoomed one shows it whole. ──
   /** Pointers in px from the frame's top-left. */
   const pointers = useRef(new Map<number, Pt>());
-  const gesture = useRef<{ fit: Fit; zoom: Zoom; from: Pt[]; moved: boolean; at: number; target: Target } | null>(null);
+  /**
+   * The gesture under way. `travelled`: a finger went past the threshold (then lifting is never a tap, whatever the
+   * gesture); `moved`: something really moved (fit or zoom) and the fingers are captured.
+   */
+  const gesture = useRef<{ fit: Fit; zoom: Zoom; from: Pt[]; moved: boolean; travelled: boolean; at: number; target: Target } | null>(null);
+  /** Where and when each finger went down: a second finger that only taps plays or pauses. */
+  const downs = useRef(new Map<number, { x: number; y: number; at: number }>());
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(tapTimer.current), []);
@@ -260,6 +269,7 @@ export function CompareStage({
       zoom: zt?.zoom ?? NO_ZOOM,
       from,
       moved: gesture.current?.moved ?? false,
+      travelled: gesture.current?.travelled ?? false,
       at: gesture.current?.at ?? performance.now(),
       target,
     };
@@ -267,8 +277,10 @@ export function CompareStage({
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    capturePointer(e);
-    pointers.current.set(e.pointerId, local(e));
+    // No capture yet: a tap or a resting finger takes nothing; the pointer is captured once a gesture really starts.
+    const p = local(e);
+    pointers.current.set(e.pointerId, p);
+    downs.current.set(e.pointerId, { ...p, at: performance.now() });
     if (pointers.current.size === 1) gesture.current = null;
     restart();
   }
@@ -278,37 +290,58 @@ export function CompareStage({
     const to = [...pointers.current.values()].slice(0, 2);
     const g = gesture.current;
     if (to.length !== g.from.length) return;
-    const travel = Math.hypot(to[0]!.x - g.from[0]!.x, to[0]!.y - g.from[0]!.y);
-    if (!g.moved && travel < 6 && to.length === 1) return;
+    if (!g.travelled) {
+      // Past the threshold only when a finger really slid (6 px) or two fingers really spread or pinched (8 px): a
+      // resting thumb's tremor and another finger's tap never zoom.
+      const slid = to.some((pt, i) => Math.hypot(pt.x - g.from[i]!.x, pt.y - g.from[i]!.y) >= 6);
+      const spread = to.length === 2 && Math.abs(Math.hypot(to[0]!.x - to[1]!.x, to[0]!.y - to[1]!.y) - Math.hypot(g.from[0]!.x - g.from[1]!.x, g.from[0]!.y - g.from[1]!.y)) >= 8;
+      if (!slid && !spread) return;
+      g.travelled = true;
+    }
+    const zt = zoomTarget(g.target);
+    const kind = stageGesture({
+      overlay,
+      fitting: g.target === 'fit',
+      fingers: to.length,
+      zoomed: isZoomed(g.zoom),
+      zoomable: zt != null,
+    });
+    if (kind === 'none') {
+      // A finger on a whole picture (a thumb holding the phone): nothing moves, nothing is taken.
+      if (!zt && to.length === 2 && g.target !== 'fit') onZoomUnavailable?.();
+      return;
+    }
+    if (!g.moved) for (const id of pointers.current.keys()) capturePointer({ currentTarget: e.currentTarget, pointerId: id });
     g.moved = true;
-    if (g.target === 'fit') {
+    if (kind === 'fit') {
       onFitRef.current(gestureFit(g.fit, g.from.map(centred), to.map(centred), size), false);
       return;
     }
-    const zt = zoomTarget(g.target);
-    if (!zt) {
-      if (to.length === 2) onZoomUnavailable?.();
-      return;
-    }
-    // One finger on a whole picture: nothing to move.
-    if (to.length === 1 && !isZoomed(g.zoom)) return;
+    if (!zt) return;
     setZoomLive(true);
     onZoom?.(zt.which, gestureZoom(g.zoom, g.from.map(zt.at), to.map(zt.at), zt.box, zt.media, zt.mirrored));
   }
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
     if (!pointers.current.has(e.pointerId)) return;
     const point = pointers.current.get(e.pointerId)!;
+    const down = downs.current.get(e.pointerId);
     pointers.current.delete(e.pointerId);
+    downs.current.delete(e.pointerId);
     const g = gesture.current;
+    const quick = (at: number) => performance.now() - at < 450;
     if (pointers.current.size > 0) {
-      restart(); // one finger lifted: carry on with the other from here
+      // A second finger that only tapped (a thumb rests on the screen): play or pause, inside this touch.
+      const still = down != null && Math.hypot(point.x - down.x, point.y - down.y) < 6;
+      if (e.type !== 'pointercancel' && g && !g.moved && still && quick(down.at)) onTap?.();
+      restart(); // carry on with the other finger from here
+      if (gesture.current) gesture.current.travelled = true; // the resting one lifting later is no tap
       return;
     }
     gesture.current = null;
     setZoomLive(false);
     if (!g) return;
-    // A cancelled pointer (the system took it) is never a tap.
-    if (e.type !== 'pointercancel' && !g.moved && performance.now() - g.at < 450) tap(g.target, point);
+    // A cancelled pointer (the system took it) or a slide is never a tap.
+    if (e.type !== 'pointercancel' && !g.travelled && quick(g.at)) tap(g.target, point);
     else if (g.target === 'fit' && g.moved) onFitRef.current(fitRef.current, true);
   }
 
@@ -399,7 +432,7 @@ export function CompareStage({
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (!overlay) return;
-    if (overlayGesture === 'zoom') {
+    if (overlayGesture !== 'fit') {
       const zt = zoomTarget('both');
       const next = zt ? keyZoom(zt.zoom, e.key, zt.box, zt.media, zt.mirrored) : null;
       if (!next || !zt) return;
@@ -419,21 +452,31 @@ export function CompareStage({
   const originalOpacity = overlay && originalOnTop ? prefs.opacity : 1;
   const takeOpacity = overlay && !originalOnTop ? prefs.opacity : 1;
   const flip = reduce ? { duration: 0 } : jelly;
+  const fitTap = useTapAnyFinger(() => onOverlayGesture?.(overlayGesture === 'fit' ? 'zoom' : 'fit'));
 
   return (
     <div
       ref={frameRef}
-      className={cn('relative size-full touch-none select-none', className)}
+      // Clipped and isolated: nothing on the stage (a zoomed or moved picture) can ever spread over the controls.
+      className={cn('relative isolate size-full touch-none select-none overflow-hidden', className)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={(e) => {
+        // A finger that slid off before any gesture began (not captured): forget it, it was never a gesture.
+        if (gesture.current?.moved || !pointers.current.has(e.pointerId)) return;
+        pointers.current.delete(e.pointerId);
+        downs.current.delete(e.pointerId);
+        if (pointers.current.size === 0) gesture.current = null;
+        else restart();
+      }}
       onKeyDown={onKeyDown}
       tabIndex={overlay ? 0 : -1}
       role={overlay ? 'group' : undefined}
       aria-label={
         overlay
-          ? overlayGesture === 'zoom'
+          ? overlayGesture !== 'fit'
             ? 'Zoom sobre los dos: pellizca o usa la rueda para ampliar, arrastra para mover, doble toque para verlos enteros; con el teclado, flechas, + o − y 0'
             : 'Encaje del original: arrastra para moverlo, pellizca o usa la rueda para escalarlo; con el teclado, flechas y + o −'
           : undefined
@@ -508,31 +551,39 @@ export function CompareStage({
           )}
           {overlay && (
             <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[8px] bg-sumi-950/80 px-2 py-1 text-[12px] font-medium text-washi-muted">
-              {originalOnTop ? 'Original encima' : 'Toma encima'} · {Math.round(fit.scale * 100)} %
+              {originalOnTop ? 'Original encima' : 'Toma encima'} · se ve al {Math.round(prefs.opacity * 100)} %
+              {fit.scale !== 1 ? ` · tamaño ${Math.round(fit.scale * 100)} %` : ''}
               {isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}
             </span>
           )}
           {overlay && onOverlayGesture && (
             <motion.button
               type="button"
-              aria-pressed={overlayGesture === 'zoom'}
+              aria-pressed={overlayGesture === 'fit'}
               aria-label={
-                overlayGesture === 'zoom'
-                  ? 'Los gestos amplían los dos. Pulsa para que encajen el original'
-                  : 'Los gestos encajan el original. Pulsa para que amplíen los dos'
+                overlayGesture === 'fit'
+                  ? 'Encajando el original: arrastra para moverlo y pellizca para escalarlo. Pulsa para terminar'
+                  : 'Encajar el original sobre la toma'
               }
-              onPointerDown={(e) => e.stopPropagation()}
-              onPointerUp={(e) => e.stopPropagation()}
-              onClick={() => onOverlayGesture(overlayGesture === 'zoom' ? 'fit' : 'zoom')}
+              title={overlayGesture === 'fit' ? 'Terminar de encajar' : 'Encajar el original'}
+              {...fitTap}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                fitTap.onPointerDown(e);
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                fitTap.onPointerUp(e);
+              }}
               whileTap={reduce ? undefined : { scale: 0.9 }}
               transition={jelly}
               className={cn(
                 'absolute right-2 top-2 z-[5] flex min-h-11 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-bold',
-                overlayGesture === 'zoom' ? 'bg-washi text-sumi-900' : 'bg-sumi-950/85 text-washi',
+                overlayGesture === 'fit' ? 'bg-washi text-sumi-900' : 'bg-sumi-950/85 text-washi',
               )}
             >
-              {overlayGesture === 'zoom' ? <ZoomIn className="size-4" /> : <Move className="size-4" />}
-              {overlayGesture === 'zoom' ? 'Ampliar' : 'Encajar'}
+              <Move className="size-4" />
+              {overlayGesture === 'fit' ? 'Listo' : 'Encajar'}
             </motion.button>
           )}
         </>

@@ -22,6 +22,41 @@ export function clampSplit(value: number): number {
 export const REVIEW_RATE_MIN = 0.5;
 export const REVIEW_RATE_MAX = 1.25;
 export const REVIEW_RATES = [0.5, 0.75, 1, 1.25] as const;
+
+// ───────────── Quick controls (one tap, while dancing) ─────────────
+
+/** The speed button goes round these (1× → 0,75× → 0,5× → 1×). */
+export const QUICK_RATES = [1, 0.75, 0.5] as const;
+/** The next speed of the quick button: the next one down the list, or back to 1× from anything else. */
+export function nextQuickRate(rate: number): number {
+  const i = QUICK_RATES.findIndex((r) => Math.abs(r - rate) < 0.001);
+  return i < 0 ? 1 : QUICK_RATES[(i + 1) % QUICK_RATES.length]!;
+}
+
+/** «Superpuesto»: how much of the original shows (its opacity), round these with one tap. */
+export const QUICK_OPACITIES = [0.5, 0.75, 0.25] as const;
+export function nextQuickOpacity(opacity: number): number {
+  const i = QUICK_OPACITIES.findIndex((o) => Math.abs(o - opacity) < 0.01);
+  return i < 0 ? 0.5 : QUICK_OPACITIES[(i + 1) % QUICK_OPACITIES.length]!;
+}
+
+/** Entering «Superpuesto» with an original that would hide the take (or barely show): start at half. */
+export function overlayStartOpacity(opacity: number): number {
+  return opacity >= 0.99 || opacity < 0.15 ? 0.5 : opacity;
+}
+
+/**
+ * What fingers on the stage do. A finger on a whole picture never moves anything (a thumb resting on the screen
+ * while the phone is held on its side must not take the stage); in «Superpuesto» the original moves and scales
+ * only while «Encajar» is on; two fingers zoom what can be zoomed.
+ */
+export type StageGesture = 'fit' | 'zoom' | 'none';
+export function stageGesture(o: { overlay: boolean; fitting: boolean; fingers: number; zoomed: boolean; zoomable: boolean }): StageGesture {
+  if (o.overlay && o.fitting) return 'fit';
+  if (!o.zoomable) return 'none';
+  if (o.fingers >= 2) return 'zoom';
+  return o.zoomed ? 'zoom' : 'none';
+}
 export function clampReviewRate(value: number): number {
   if (!Number.isFinite(value)) return 1;
   return Math.round(clamp(value, REVIEW_RATE_MIN, REVIEW_RATE_MAX) * 100) / 100;
