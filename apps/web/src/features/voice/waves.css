@@ -22,30 +22,12 @@
   animation-direction: reverse;
 }
 
-/* A slow rise and fall in place (the great wave, the mini waves' boats of foam). */
-@keyframes voice-bob {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(0, var(--voice-bob, -2px), 0);
-  }
-}
-
-.voice-bob {
-  animation: voice-bob var(--voice-bob-s, 3.4s) ease-in-out infinite;
-  animation-play-state: paused;
-}
-
-[data-voice-playing] .voice-drift,
-[data-voice-playing] .voice-bob {
+[data-voice-playing] .voice-drift {
   animation-play-state: running;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .voice-drift,
-  .voice-bob {
+  .voice-drift {
     animation: none;
     will-change: auto;
   }

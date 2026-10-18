@@ -10,25 +10,10 @@ import {
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
 import { stepMode, VOICE_MODES, type VoiceMode } from './voiceRules';
-import type { VoiceEnvelope } from './waveRules';
 import './waves.css';
 
-/** Where the song is, read outside React (the playhead paints itself; nothing re-renders per frame). */
-export interface PlaybackClock {
-  read(): { time: number; duration: number };
-  /** Calls `listener` whenever the time may have changed; returns the unsubscribe. */
-  subscribe(listener: () => void): () => void;
-}
-
-/** The song's envelope for «Olas del audio real»: being read, ready, or not available (then a sample shape). */
-export type EnvelopeState =
-  | { status: 'loading' }
-  | { status: 'ready'; envelope: VoiceEnvelope }
-  | { status: 'failed' }
-  | { status: 'none' };
-
-/** Props every variant of the control receives (see `VoiceSplitControl`). */
-export interface VoiceVariantProps {
+/** Props of the drawn control (`VoiceOnda`, see `VoiceSplitControl`). */
+export interface VoiceWaveProps {
   mode: VoiceMode;
   onChange: (mode: VoiceMode) => void;
   available: boolean;
@@ -38,10 +23,6 @@ export interface VoiceVariantProps {
   noteId?: string;
   /** The song is playing: the waves drift (never with «reducir movimiento»). */
   playing?: boolean;
-  /** Playhead source for the variants that show one (the studio's player; the demo simulates it). */
-  clock?: PlaybackClock;
-  /** «Olas del audio real»: the envelope to draw. Left out, the variant reads the studio's file itself. */
-  envelope?: EnvelopeState;
 }
 
 export const GROUP_LABEL = 'Voz y música';
@@ -49,17 +30,10 @@ export const GROUP_LABEL = 'Voz y música';
 /** Copy per mode. `seal`: the kanji stamped on it (全 all · 楽 music · 声 voice). */
 export const MODE_COPY: Record<VoiceMode, { label: string; hint: string; seal: string }> = {
   original: { label: 'Todo', hint: 'La canción tal cual', seal: '全' },
-  // Neutral: true both with the approximate split (centre lowered) and with the AI tracks (see `modeHint`).
+  // Neutral: true both with the approximate split (centre lowered) and with the AI tracks.
   'sin-voz': { label: 'Sin voz', hint: 'La música sin la voz', seal: '楽' },
   voz: { label: 'Voz', hint: 'Sube el centro: la voz y poco más', seal: '声' },
 };
-
-/** A mode's hint, saying so when the video has voice and music separated with AI. */
-export function modeHint(mode: VoiceMode, separated = false): string {
-  if (separated && mode === 'sin-voz') return 'Música sin voz (separada con IA)';
-  if (separated && mode === 'voz') return 'Solo la voz (separada con IA)';
-  return MODE_COPY[mode].hint;
-}
 
 export const UNAVAILABLE_COPY = 'Solo con el archivo del vídeo (YouTube no deja tocar su sonido)';
 export const MONO_COPY =
@@ -98,8 +72,8 @@ export function useModeRadios(mode: VoiceMode, onChange: (mode: VoiceMode) => vo
 }
 
 /**
- * The spring for a variant's movement, or a quick fade when the user asks for less motion (variants then animate
- * only opacity and keep transforms at rest).
+ * The spring for the control's movement, or a quick fade when the user asks for less motion (it then animates
+ * only opacity and keeps transforms at rest).
  */
 export function useVoiceMotion(spring: Transition): { reduce: boolean; transition: Transition } {
   const reduce = useReducedMotion() ?? false;
@@ -112,13 +86,11 @@ export function VoiceNote({
   available,
   monoLike,
   mode,
-  tone = 'ink',
 }: {
   id: string;
   available: boolean;
   monoLike?: boolean;
   mode: VoiceMode;
-  tone?: 'ink' | 'paper';
 }) {
   const text = !available ? UNAVAILABLE_COPY : monoLike ? MONO_COPY : null;
   const strong = available && monoLike && mode === 'sin-voz';
@@ -134,7 +106,7 @@ export function VoiceNote({
             transition={soft}
             className={cn(
               'mt-2 flex items-start gap-2 text-[13px] leading-snug',
-              tone === 'paper' ? 'text-sumi-800' : strong ? 'text-kin-300' : 'text-washi-muted',
+              strong ? 'text-kin-300' : 'text-washi-muted',
             )}
           >
             <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -146,7 +118,7 @@ export function VoiceNote({
   );
 }
 
-/** Attributes for a variant's root: the drift runs only while the song plays and the control can act on it. */
+/** Attributes for the wave's box: the drift runs only while the song plays and the control can act on it. */
 export function driftAttrs(on: boolean): { 'data-voice-playing'?: '' } {
   return on ? { 'data-voice-playing': '' } : {};
 }
@@ -198,21 +170,16 @@ const SEAL_FILL: Record<VoiceMode, string> = {
 };
 
 /**
- * The three choices as seals (全 todo · 楽 sin voz · 声 voz) under a variant's picture: a lacquer tab springs to
- * the chosen one and its seal is inked. Shared by the wave variants (A–D).
+ * The three choices as seals (全 todo · 楽 sin voz · 声 voz) under the wave: a lacquer tab springs to the chosen
+ * one and its seal is inked.
  */
 export function ModeSeals({
   mode,
   onChange,
   available,
   compact,
-  separated,
   className,
-}: Pick<VoiceVariantProps, 'mode' | 'onChange' | 'available' | 'compact'> & {
-  /** The video has AI-separated tracks: the hints say so. */
-  separated?: boolean;
-  className?: string;
-}) {
+}: Pick<VoiceWaveProps, 'mode' | 'onChange' | 'available' | 'compact'> & { className?: string }) {
   const uid = useId();
   const radio = useModeRadios(mode, onChange, !available);
   const { reduce, transition: tab } = useVoiceMotion(jelly);
@@ -258,7 +225,7 @@ export function ModeSeals({
             <span className="min-w-0 text-center">
               <span className="block truncate text-[14px] font-bold leading-tight">{copy.label}</span>
               {!compact && (
-                <span className="block text-[11px] leading-tight text-washi-subtle">{modeHint(option, separated)}</span>
+                <span className="block text-[11px] leading-tight text-washi-subtle">{copy.hint}</span>
               )}
             </span>
           </motion.button>

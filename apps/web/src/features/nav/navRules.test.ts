@@ -8,8 +8,9 @@ import {
   dialRotationFor,
   dialStepPlaces,
   handLayout,
-  ORIGAMI_HEADER,
-  origamiLayout,
+  KAKEJIKU_ROD,
+  KAKEJIKU_ROLLER,
+  kakejikuLayout,
   pointerAngle,
   polar,
   quickNavHidden,
@@ -137,20 +138,37 @@ describe('handLayout', () => {
   });
 });
 
-describe('origamiLayout', () => {
-  it('keeps two tall columns in portrait, also zoomed', () => {
-    expect(origamiLayout(6, 772, 76)).toMatchObject({ cols: 2, faceH: 84 });
-    expect(origamiLayout(6, 578, 76)).toMatchObject({ cols: 2, faceH: 84 });
+describe('kakejikuLayout', () => {
+  const frame = KAKEJIKU_ROD + KAKEJIKU_ROLLER;
+
+  it('keeps roomy 52 px lines in portrait, on the phone and in the lab stage', () => {
+    // 390×844 (button top 772, 76 px top bar) and the lab stage (520 high, 12 px clear).
+    for (const [buttonTop, top] of [
+      [772, 76],
+      [448, 12],
+    ] as const) {
+      const layout = kakejikuLayout(6, buttonTop, top);
+      expect(layout).toMatchObject({ rowH: 52, scrolls: false });
+      expect(layout.viewH).toBe(layout.paperH);
+      expect(layout.viewH + frame).toBeLessThanOrEqual(buttonTop - 12 - top);
+    }
   });
 
-  it('switches to 3 × 2 short faces when the height is short, and still fits', () => {
-    // 844×390, the same zoomed to 130 % (650×300) and 150 % (562×260), and the lab stage in landscape (294 high).
-    for (const buttonTop of [318, 228, 188, 222]) {
-      const layout = origamiLayout(6, buttonTop, 76);
-      expect(layout).toMatchObject({ cols: 3, faceH: 64 });
-      const height = ORIGAMI_HEADER + 2 * (layout.faceH + 1);
-      expect(height).toBeLessThanOrEqual(layout.maxHeight);
-      expect(layout.maxHeight).toBeLessThanOrEqual(buttonTop - 12 - 8);
+  it('tightens to 44 px lines before it ever scrolls', () => {
+    const layout = kakejikuLayout(6, 430, 76);
+    expect(layout).toMatchObject({ rowH: 44, scrolls: false });
+    expect(layout.viewH + frame).toBeLessThanOrEqual(430 - 12 - 76);
+  });
+
+  it('scrolls its paper when even 44 px lines do not fit, and never goes off screen', () => {
+    // 844×390, the same zoomed to 130 % (650×300), 150 % (562×260), ~180 % and 200 %, and the lab stage in landscape
+    // (294 high).
+    for (const buttonTop of [318, 228, 188, 160, 123, 222]) {
+      const layout = kakejikuLayout(6, buttonTop, 76);
+      expect(layout).toMatchObject({ rowH: 44, scrolls: true });
+      expect(layout.viewH).toBeLessThan(layout.paperH);
+      expect(layout.viewH).toBeGreaterThanOrEqual(layout.rowH);
+      expect(layout.viewH + frame).toBeLessThanOrEqual(buttonTop - 12 - 8);
     }
   });
 });

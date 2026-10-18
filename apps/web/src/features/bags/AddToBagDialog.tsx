@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/Spinner';
@@ -40,6 +41,7 @@ export function AddToBagDialog({
   );
   const add = useAddBagItem();
   const toast = useToast();
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [busyBag, setBusyBag] = useState<string | null>(null);
   const ref = 'videoId' in target ? target.videoId : 'wishId' in target ? target.wishId : target.clipId;
@@ -183,7 +185,12 @@ export function AddToBagDialog({
                   </Button>
                   <Link
                     to="/bolsas"
-                    onClick={onClose}
+                    onClick={(e) => {
+                      // From the dialog: the bags page takes the dialog's history entry instead of a new one.
+                      e.preventDefault();
+                      onClose();
+                      navigateFromLayer(navigate, '/bolsas');
+                    }}
                     className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-kin-300 hover:underline"
                   >
                     Ver bolsas

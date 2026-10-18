@@ -147,21 +147,11 @@ export function eventDateLabel(startsAt: string, withYear = false): string {
 export const LANTERN_DAYS = 7;
 
 /**
- * Which design the countdown wears: `long` (Koyomi, Sunadokei or Tsuki, chosen in the lab) while seven or more
+ * Which design the countdown wears: `long` (Tsuki, the moon filling up) while seven or more
  * calendar days are left, then `lanterns` (Chōchin) from six days before, when the first lantern lights up. Calendar
  * days on this phone, so a DST change or the time zone never moves the switch to another day.
  */
 export type CountdownStage = 'long' | 'lanterns';
-
-/** Design lab moment (F16 · point 39) that picks the long design; the variants are the ids below. */
-export const LONG_COUNTDOWN_MOMENT = 'countdown-long';
-export const LONG_COUNTDOWN_VARIANTS = ['koyomi', 'sunadokei', 'tsuki'] as const;
-export type LongCountdownVariant = (typeof LONG_COUNTDOWN_VARIANTS)[number];
-
-/** Whatever the lab says (or an unknown id) → one of the long designs; Koyomi when unsure. */
-export function longVariantOf(id: string): LongCountdownVariant {
-  return (LONG_COUNTDOWN_VARIANTS as readonly string[]).includes(id) ? (id as LongCountdownVariant) : 'koyomi';
-}
 
 export function countdownStage(c: Countdown): CountdownStage {
   return c.kind === 'days' && c.days >= LANTERN_DAYS ? 'long' : 'lanterns';
@@ -175,45 +165,6 @@ export function ignitesFirstLantern(c: Countdown, previous: CountdownStage | nul
   if (countdownStage(c) !== 'lanterns') return false;
   if (previous === 'long') return true;
   return previous === null && c.kind === 'days' && c.days === LANTERN_DAYS - 1;
-}
-
-// ───────────── Koyomi (tear-off calendar) ─────────────
-
-/** Koyomi: the calendar page, a big number and a small unit (今日 on the day, 祭 yesterday, 終 when over). */
-export function pageFace(c: Countdown): { big: string; unit: string; kanji?: boolean } {
-  switch (c.kind) {
-    case 'days':
-      return { big: String(c.days), unit: c.days === 1 ? 'día' : 'días' };
-    case 'hours':
-      return c.hours > 0 ? { big: String(c.hours), unit: c.hours === 1 ? 'hora' : 'horas' } : { big: String(c.minutes), unit: 'min' };
-    case 'today':
-      return { big: '今日', unit: 'Hoy', kanji: true };
-    case 'recent':
-      return { big: '祭', unit: 'Ayer', kanji: true };
-    case 'past':
-      return { big: '終', unit: 'Pasó', kanji: true };
-  }
-}
-
-/**
- * Koyomi: the pages already torn off and lying beside the pad, newest first (`days + 1`, `days + 2`…): one per
- * calendar day since the event was created, at most `max`. None outside the long countdown.
- */
-export function tornPages(c: Countdown, createdAt: string, now: Date, max = 4): number[] {
-  if (c.kind !== 'days') return [];
-  const created = new Date(createdAt);
-  const since = Number.isNaN(created.getTime()) ? 0 : Math.max(0, calendarDaysBetween(created, now));
-  return Array.from({ length: Math.min(max, since) }, (_, i) => c.days + 1 + i);
-}
-
-// ───────────── Sunadokei (hourglass) ─────────────
-
-/** Sunadokei: how much sand has run, from the event's creation (0) to its start (1). */
-export function sandRun(startsAt: string, createdAt: string, now: Date): number {
-  const start = Date.parse(startsAt);
-  const created = Math.min(Date.parse(createdAt), start - MINUTE);
-  if (Number.isNaN(start) || Number.isNaN(created)) return 0;
-  return Math.max(0, Math.min(1, (now.getTime() - created) / (start - created)));
 }
 
 // ───────────── Tsuki (moon phases) ─────────────

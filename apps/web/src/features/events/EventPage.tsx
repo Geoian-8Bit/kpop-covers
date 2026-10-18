@@ -153,7 +153,6 @@ function EventDetail({ event }: { event: CrewEvent }) {
             <EventCountdown
               name={shown ? 'Cuenta atrás' : 'Ya no sale en la portada'}
               startsAt={event.starts_at}
-              createdAt={event.created_at}
               place={event.place}
               now={now}
             />

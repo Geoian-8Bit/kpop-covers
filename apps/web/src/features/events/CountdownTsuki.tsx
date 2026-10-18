@@ -3,7 +3,7 @@ import { jelly } from '@/lib/motion';
 import { BAND, instant, type LongProps } from './countdownBand';
 import { MOON_COUNT, moonLitPath, moonPhase } from './eventRules';
 
-// F16 · Tsuki, the moon filling up (a long countdown design; its own chunk, loaded when chosen).
+// F16 · Tsuki, the moon filling up: the countdown while the event is a week away or more (chosen in point 40).
 
 const STARS = [
   [8, 9],

@@ -120,29 +120,47 @@ export function handLayout(n: number, w: number, buttonTop: number): HandLayout 
   return { cardW, cardH, cards };
 }
 
-// ───────────── Origami: a folded sheet that opens above the button ─────────────
+// ───────────── Kakejiku: a hanging scroll that unrolls upwards from the button ─────────────
 
-export interface OrigamiLayout {
-  cols: number;
-  /** Height of each face, px. */
-  faceH: number;
-  /** Cap on the panel's height (it scrolls past it): never above the stage, whatever the zoom. */
-  maxHeight: number;
+/** Top rod (hassō) of the scroll, px. It travels up while the scroll unrolls. */
+export const KAKEJIKU_ROD = 14;
+/** Bottom roller (jiku) with its knobs, px. It stays just above the button. */
+export const KAKEJIKU_ROLLER = 18;
+/** Brocade strip (ichimonji) above and below the writing, px. */
+export const KAKEJIKU_BAND = 10;
+/** Space before «¿Quién eres?», the last line, px. */
+export const KAKEJIKU_GAP = 6;
+/** Rows of the writing: roomy when they fit, never under the 44 px touch target. */
+export const KAKEJIKU_ROWS = [52, 44] as const;
+
+export interface KakejikuLayout {
+  /** Height of each line (one destination), px. */
+  rowH: number;
+  /** Height of the whole paper (bands, lines and the gap), px. */
+  paperH: number;
+  /** Height of the paper shown: `paperH`, or less when it has to scroll. */
+  viewH: number;
+  scrolls: boolean;
 }
 
-/** Header strip of the sheet («Secciones · 折»), px. */
-export const ORIGAMI_HEADER = 30;
-
 /**
- * Two columns of tall faces when they fit between `top` (kept clear above) and the button (`buttonTop`, 12 px gap).
- * When they don't (landscape, or the page zoomed by large system text), three columns of short faces, allowed up to
- * 8 px from the top; and the panel scrolls rather than going off screen if even that is too tall.
+ * The paper between the rod and the roller, above the button (`buttonTop`, 12 px gap), keeping `top` px clear above.
+ * Tall lines when they fit, then 44 px lines; when even those don't (landscape, a page zoomed by large system text)
+ * the scroll may reach 8 px from the top and its paper scrolls rather than going off screen.
  */
-export function origamiLayout(n: number, buttonTop: number, top: number): OrigamiLayout {
-  const bottom = buttonTop - 12;
-  const tall = ORIGAMI_HEADER + Math.ceil(n / 2) * 85;
-  if (tall <= bottom - top) return { cols: 2, faceH: 84, maxHeight: bottom - top };
-  return { cols: 3, faceH: 64, maxHeight: Math.max(120, bottom - 8) };
+export function kakejikuLayout(n: number, buttonTop: number, top: number): KakejikuLayout {
+  const frame = KAKEJIKU_ROD + KAKEJIKU_ROLLER;
+  const paper = (rowH: number) => 2 * KAKEJIKU_BAND + n * rowH + KAKEJIKU_GAP;
+  const room = buttonTop - 12 - top - frame;
+  for (const rowH of KAKEJIKU_ROWS) {
+    const paperH = paper(rowH);
+    if (paperH <= room) return { rowH, paperH, viewH: paperH, scrolls: false };
+  }
+  const rowH = KAKEJIKU_ROWS[KAKEJIKU_ROWS.length - 1];
+  const paperH = paper(rowH);
+  // Never past 8 px from the top, rod and cord included, however zoomed: at worst one line shows and it scrolls.
+  const viewH = Math.min(paperH, Math.max(rowH, buttonTop - 12 - 8 - frame));
+  return { rowH, paperH, viewH, scrolls: viewH < paperH };
 }
 
 // ───────────── Rueda de kamon: a dial turned with the thumb ─────────────

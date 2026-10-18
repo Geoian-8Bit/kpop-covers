@@ -74,6 +74,23 @@ describe('parseChoices', () => {
   });
 });
 
+describe('moments already decided (point 40)', () => {
+  it('ignores what a device stored for moments that left the lab, and keeps the rest', () => {
+    const stored = JSON.stringify({
+      'countdown-long': 'koyomi',
+      'voice-split': 'hokusai',
+      'bags-list': 'omikuji',
+      'bag-icon': 'kinchaku',
+      nav: 'kamon',
+    });
+    expect(parseChoices(stored, MOMENT_IDS)).toEqual({ nav: 'kamon' });
+    for (const gone of ['countdown-long', 'voice-split', 'bags-list', 'bag-icon']) {
+      expect(MOMENT_IDS.some((m) => m.id === gone)).toBe(false);
+      expect(resolveVariant(parseChoices(stored, MOMENT_IDS), MOMENT_IDS, gone)).toBeUndefined();
+    }
+  });
+});
+
 describe('resolveVariant', () => {
   it('uses the saved choice', () => {
     expect(resolveVariant({ nav: 'kamon' }, moments, 'nav')).toBe('kamon');
@@ -159,6 +176,8 @@ describe('MOMENTS registry', () => {
   it('has the four quick-menu prototypes, applied live', () => {
     const nav = MOMENTS.find((m) => m.id === 'nav');
     expect(nav?.appliesLive).toBe(true);
-    expect(nav?.variants.map((v) => v.id)).toEqual(['sensu', 'hanafuda', 'kamon', 'origami']);
+    expect(nav?.variants.map((v) => v.id)).toEqual(['sensu', 'hanafuda', 'kamon', 'kakejiku']);
+    // «Origami» was dropped in round 2: a device that had it saved falls back to the default.
+    expect(resolveVariant(parseChoices('{"nav":"origami"}', MOMENT_IDS), MOMENT_IDS, 'nav')).toBe('sensu');
   });
 });

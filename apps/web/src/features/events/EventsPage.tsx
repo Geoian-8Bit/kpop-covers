@@ -7,6 +7,7 @@ import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useEvents, type EventWithCount } from '@/data/events';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped } from '@/lib/motion';
 import { EventFormDialog } from './EventFormDialog';
@@ -94,7 +95,7 @@ export function EventsPage() {
           </>
         )}
       </div>
-      <EventFormDialog open={creating} onClose={() => setCreating(false)} onCreated={(e) => navigate(`/eventos/${e.id}`)} />
+      <EventFormDialog open={creating} onClose={() => setCreating(false)} onCreated={(e) => navigateFromLayer(navigate, `/eventos/${e.id}`)} />
     </Page>
   );
 }
