@@ -1,7 +1,7 @@
 /**
  * Heavy work running on this device right now — the AI voice separation ('voice') and the copy for the group's
- * cloud ('copy') — so that other heavy work waits for it instead of running at the same time (the follow analysis,
- * F10 · 15; the separation and the copy wait for each other), the recorder doesn't learn a lighter mode from a load
+ * cloud ('copy') — so that other heavy work waits for it instead of running at the same time (the separation and the
+ * copy wait for each other), the recorder doesn't learn a lighter mode from a load
  * that isn't its own (P19), and an update doesn't reload the app halfway through. Tiny on purpose (it is in the
  * app's entry): whoever runs the heavy work marks it with `beginHeavyWork` (and releases it when done, however it
  * ends); whoever would compete reads it.

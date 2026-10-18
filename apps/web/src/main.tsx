@@ -16,6 +16,7 @@ import { reloadNeedsConfirm } from './features/nav/version/versionRules';
 import { reloadBusy } from './lib/heavyWork';
 import { unlockAudio } from './lib/metronome';
 import { keepViewportFitted } from './lib/viewport';
+import { forgetRetiredData } from './lib/retiredData';
 import './index.css';
 
 // PWA ('prompt' mode): a new deploy installs in the background and waits. It is applied (fresh service worker
@@ -82,6 +83,22 @@ window.addEventListener('vite:preloadError', () => {
 for (const type of ['pointerdown', 'keydown'] as const) {
   window.addEventListener(type, unlockAudio, { once: true, passive: true });
 }
+
+// 45 · What «Seguir a un bailarín» and the pose test left on this device (models, results): gone, once idle.
+window.addEventListener(
+  'load',
+  () =>
+    setTimeout(() => {
+      let storage: Storage | null = null;
+      try {
+        storage = window.localStorage;
+      } catch {
+        /* blocked */
+      }
+      void forgetRetiredData({ caches: 'caches' in window ? window.caches : null, storage });
+    }, 4000),
+  { once: true },
+);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

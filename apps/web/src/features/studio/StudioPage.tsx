@@ -66,6 +66,7 @@ import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
+import { refitViewport } from '@/lib/viewport';
 import { friendlyError } from '@/lib/supabase';
 import { FileStage } from '@/player/FileStage';
 import { hasRange, usePlayer } from '@/player/store';
@@ -75,9 +76,6 @@ import { useMediaBox } from '@/player/ZoomLayer';
 import { gestureZoom, isDoubleTap, isZoomed, keyZoom, NO_ZOOM, wheelZoom, type Pt, type Zoom } from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
 import { FsPanArrows, PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
-import { FollowRow, useFollowedPath } from '@/features/follow/FollowRow';
-import { FollowStageLayer } from '@/features/follow/FollowStageLayer';
-import { useFollowUi } from '@/features/follow/followUi';
 import { ClipList } from './ClipList';
 import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { SaveClipDialog } from './SaveClipDialog';
@@ -87,6 +85,8 @@ import { cloudLimitBytes } from '@/lib/backend';
 import { useFileSource } from './fileSource';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
+import { FsVoiceButton } from './FsVoiceButton';
+import { useVoiceSplit } from './useVoiceSplit';
 import { hasSeparableFile } from '@/features/voice/voiceRules';
 import { useStageStems } from '@/data/stems';
 import { Segmented } from '@/components/ui/Segmented';
@@ -125,8 +125,6 @@ function optionalPart<P extends object>(load: () => Promise<ComponentType<P>>) {
     ),
   );
 }
-/** «Seguir a un bailarín» in fullscreen's top bar: loads when fullscreen first opens. */
-const FollowFsButton = optionalPart(() => import('@/features/follow/FollowFsMenu').then((m) => m.FollowFsButton));
 /** 18 · «Separar voz y música»: loads only for a song with a file of its own. */
 const SeparateVoiceButton = optionalPart(() =>
   import('@/features/voice/SeparateVoiceButton').then((m) => m.SeparateVoiceButton),
@@ -199,7 +197,6 @@ export function StudioPage() {
   const duration = usePlayer((s) => s.duration);
   // F9 · No zoom subscription here: every gesture would repaint the whole page (the dialog reads it itself).
   const stage = usePlayer((s) => s.stage);
-  const followed = useFollowedPath(videoId); // F10 · «Guardar clip siguiendo a X»
 
   useLoopController();
 
@@ -470,8 +467,8 @@ export function StudioPage() {
             {hasLinkedFile(current) && <SourceRow video={current} copyLabel={copyLabel} />}
             {/* 13 · Only on this device: send a lighter copy to the group (shows only when there's something to say). */}
             <CloudCopyStatus video={current} variant="studio" announce={!linking} />
+            {/* 44 · On a phone only the save/clear line of a clip's zoom shows; zooming itself is the fingers' (ZoomControls). */}
             <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
-            <FollowRow video={current} onLink={() => setLinking(true)} />
             <VoiceRow video={current} />
             </Dormant>
           </div>
@@ -526,7 +523,6 @@ export function StudioPage() {
         video={current}
         clipCount={clips.data?.length ?? 0}
         zoomFrom={zoomAvailability(current, stage, ready).can ? 'player' : null}
-        follow={followed}
       />
       <NoteDialog target={noteTarget} onClose={() => setNoteTarget(null)} video={current} />
       {recording && (
@@ -582,24 +578,14 @@ export function StudioPage() {
  * música» (AI, once per song) or a line saying the separated tracks are in use.
  */
 function VoiceRow({ video }: { video: Video }) {
-  const mode = usePlayer((s) => s.voiceMode);
-  const available = usePlayer((s) => Boolean(s.engine?.setVoiceMode));
-  const [monoLike, setMonoLike] = useState(false);
-  // While a split is on, ask the graph now and then whether the song is mono (then «sin voz» can't work).
-  useEffect(() => {
-    if (!available || mode === 'original') return;
-    const id = setInterval(() => {
-      const info = usePlayer.getState().engine?.voiceInfo?.();
-      if (info?.settled) setMonoLike(info.monoLike);
-    }, 600);
-    return () => clearInterval(id);
-  }, [available, mode]);
+  // 46 · The same state as fullscreen's «Voz y música» (the player's store).
+  const { mode, available, monoLike, setMode } = useVoiceSplit();
   return (
     <div className="sep-t px-4 py-3 sm:px-5">
       <p className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">Voz y música</p>
       <VoiceSplitControl
         mode={mode}
-        onChange={(m) => usePlayer.getState().setVoiceMode(m)}
+        onChange={setMode}
         available={available}
         monoLike={monoLike}
         compact
@@ -1017,7 +1003,6 @@ function MediaStage({
         />
         {/* 4 · Over the video only what is needed, and only briefly: the zoom amount fades out after a moment. */}
         <ZoomBadge visible={canZoom} className={fullscreen ? 'left-4 top-[max(16px,env(safe-area-inset-top))]' : 'bottom-3 left-3'} />
-        <FollowStageLayer video={video} box={box} media={media} canZoom={canZoom} fullscreen={fullscreen} />
 
         <div
           className={cn(
@@ -1202,8 +1187,28 @@ function useFullscreen() {
     return () => {
       document.body.style.overflow = overflow;
       document.removeEventListener('keydown', onKey);
+      // 47 · The browser announces no fullscreen exit here: the page under the layer may have been laid out for the
+      // other orientation (the phone turned meanwhile), so it is fitted back to the screen and centred.
+      refitViewport();
     };
   }, [mode]);
+  // The CSS fullscreen (iPhone) is a layer: «Atrás» (or the edge swipe) leaves it, not the song — like Escape.
+  const leaveCss = useCallback(() => setMode('none'), []);
+  useBackToClose(mode === 'css', leaveCss);
+
+  // Leaving the song while in the native fullscreen: out of it, and the rotation always handed back (by the time this
+  // runs the browser may already have dropped the removed stage from fullscreen, and `onChange` is gone).
+  useEffect(
+    () => () => {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        /* not locked / not supported */
+      }
+    },
+    [],
+  );
 
   return { stageRef, fullscreen: mode !== 'none', toggleFullscreen };
 }
@@ -1217,14 +1222,11 @@ function useFullscreen() {
 function FsChromeLayer({ stageRef, children }: { stageRef: React.RefObject<HTMLDivElement | null>; children: ReactNode }) {
   const shown = useFsChrome((s) => s.shown || s.menu);
   const scrubbing = usePlayer((s) => s.scrubbing);
-  // 14 · While a dancer is being chosen on the video, the controls step aside (the pointer stays).
-  const picking = useFollowUi((s) => s.picking != null);
-  const awake = shown || scrubbing;
-  const visible = awake && !picking;
+  const visible = shown || scrubbing;
   useLayoutEffect(() => {
     // The pointer hides with the controls (desktop): an attribute, not a re-render of the stage.
-    stageRef.current?.toggleAttribute('data-idle', !awake);
-  }, [awake, stageRef]);
+    stageRef.current?.toggleAttribute('data-idle', !visible);
+  }, [visible, stageRef]);
   useEffect(() => {
     const el = stageRef.current;
     return () => el?.removeAttribute('data-idle');
@@ -1347,10 +1349,8 @@ function FsTopBar({ video }: { video: Video }) {
           <Youtube className="size-3.5" /> YouTube
         </a>
       )}
-      {/* 14 · Follow a dancer without leaving fullscreen: one button, a compact panel under the bar. */}
-      <Suspense fallback={<span aria-hidden className="-my-1.5 size-11 shrink-0" />}>
-        <FollowFsButton video={video} />
-      </Suspense>
+      {/* 46 · «Todo / Sin voz / Voz» without leaving fullscreen (only where the split works): a compact panel. */}
+      <FsVoiceButton />
     </div>
   );
 }

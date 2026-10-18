@@ -58,17 +58,6 @@ export const REACTION_EMOJIS = ['🔥', '👏', '💯', '😂'] as const;
 export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 export type TakeReaction = Omit<Tables<'take_reactions'>, 'emoji'> & { emoji: ReactionEmoji };
 
-/**
- * F10 · Where one dancer is in a video over time, shared by the group. `keyframes`: [seconds, x, y, w, h] with the
- * box as fractions of the picture (0…1), sorted by time; «auto» was computed on a device, «manual» placed by hand.
- */
-export type FollowSource = 'auto' | 'manual';
-export type FollowKeyframe = [t: number, x: number, y: number, w: number, h: number];
-export type FollowPath = Omit<Tables<'follow_paths'>, 'source' | 'keyframes'> & {
-  source: FollowSource;
-  keyframes: FollowKeyframe[];
-};
-
 export function isReactionEmoji(value: string): value is ReactionEmoji {
   return (REACTION_EMOJIS as readonly string[]).includes(value);
 }
