@@ -58,8 +58,30 @@ interface ElementGraph {
   ctx: AudioContext;
   split: VoiceSplit;
   tap: MediaStream;
+  /** 43 · Delays only the recorded copy (split → delay → tap); the speakers get the sound undelayed. */
+  recordDelay: DelayNode;
 }
 const elementGraphs = new WeakMap<HTMLMediaElement, ElementGraph>();
+/** 43 · The graph whose recordable stream a track belongs to. */
+const graphOfTrack = new WeakMap<MediaStreamTrack, ElementGraph>();
+/** 43 · The longest recording delay the graph's line holds (seconds). */
+const MAX_RECORD_DELAY_S = 0.65;
+
+/**
+ * 43 · A take's song track that comes from an element's Web Audio graph (iPhone, or «Voz» / «Sin voz»): its context
+ * (to read the speaker's latency and watch interruptions) and the delay of the recorded copy, set in that same
+ * context (no second context in between). Null for any other track.
+ */
+export function recordingTap(track: MediaStreamTrack): { ctx: AudioContext; setDelay(seconds: number): void } | null {
+  const graph = graphOfTrack.get(track);
+  if (!graph) return null;
+  return {
+    ctx: graph.ctx,
+    setDelay(seconds) {
+      graph.recordDelay.delayTime.value = Math.max(0, Math.min(MAX_RECORD_DELAY_S, seconds));
+    },
+  };
+}
 /** The track handed out last, reused while live: each camera switch asks again and must not pile up captures. */
 const audioTracks = new WeakMap<HTMLMediaElement, MediaStreamTrack>();
 
@@ -71,11 +93,15 @@ function graphFor(el: HTMLMediaElement): ElementGraph | null {
     const source = ctx.createMediaElementSource(el);
     const split = createVoiceSplit(ctx, source);
     const out = ctx.createMediaStreamDestination();
+    const recordDelay = ctx.createDelay(MAX_RECORD_DELAY_S);
+    recordDelay.delayTime.value = 0;
     split.output.connect(ctx.destination);
-    split.output.connect(out);
+    split.output.connect(recordDelay);
+    recordDelay.connect(out);
     void ctx.resume();
-    const graph = { ctx, split, tap: out.stream };
+    const graph = { ctx, split, tap: out.stream, recordDelay };
     elementGraphs.set(el, graph);
+    for (const t of out.stream.getAudioTracks()) graphOfTrack.set(t, graph);
     return graph;
   } catch {
     return null;

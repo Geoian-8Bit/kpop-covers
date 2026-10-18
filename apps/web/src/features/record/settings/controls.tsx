@@ -1,3 +1,4 @@
+import { Minus, Plus } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
   useEffect,
@@ -6,11 +7,12 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
-import type { ChoiceField, Field, SwitchField } from './model';
+import type { ChoiceField, Field, StepperField, SwitchField } from './model';
 
 /**
  * Building blocks of the settings panel: a radio group with a springing tab, a mochi switch, a field block
@@ -186,6 +188,56 @@ function SwitchRow({ field, className }: { field: SwitchField; className?: strin
   );
 }
 
+// ───────────────────────── Stepper ─────────────────────────
+
+/**
+ * 43 · − value + (the sync fine adjustment): two 44 px buttons around the value, which is said aloud as it changes.
+ * Arrow keys on either button move it too; Home puts it back to 0.
+ */
+function Stepper({ field, labelledBy, describedBy }: { field: StepperField; labelledBy: string; describedBy?: string }) {
+  const atMin = field.value <= field.min;
+  const atMax = field.value >= field.max;
+  const by = (delta: number) => field.set(Math.max(field.min, Math.min(field.max, field.value + delta)));
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') by(field.step);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') by(-field.step);
+    else if (e.key === 'Home') field.set(0);
+    else return;
+    e.preventDefault();
+  };
+  const button = (delta: number, off: boolean, label: string, icon: ReactNode) => (
+    <motion.button
+      type="button"
+      aria-label={label}
+      aria-disabled={off || undefined}
+      onClick={() => !off && by(delta)}
+      onKeyDown={onKeyDown}
+      whileTap={off ? undefined : { scale: 0.9 }}
+      transition={jelly}
+      className={cn(
+        'grid min-h-11 min-w-11 place-items-center rounded-[9px] transition-colors duration-200',
+        off ? 'cursor-not-allowed text-washi-subtle/55' : 'text-washi hover:bg-washi/10',
+      )}
+    >
+      {icon}
+    </motion.button>
+  );
+  return (
+    <div
+      role="group"
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      className="well skin-track flex items-center gap-1 rounded-[12px] p-1"
+    >
+      {button(-field.step, atMin, field.decreaseLabel, <Minus aria-hidden className="size-5" />)}
+      <output aria-live="polite" className="tabular min-w-0 flex-1 text-center text-[15px] font-bold text-washi">
+        {field.valueText}
+      </output>
+      {button(field.step, atMax, field.increaseLabel, <Plus aria-hidden className="size-5" />)}
+    </div>
+  );
+}
+
 // ───────────────────────── Field block ─────────────────────────
 
 /** Small hanko seal with the setting's kanji (decorative). */
@@ -209,6 +261,7 @@ export function FieldBlock({ field, className }: { field: Field; className?: str
   const labelId = useId();
   const helpId = useId();
   const noteId = useId();
+  const controlRef = useRef<HTMLDivElement>(null);
   if (field.kind === 'switch') return <SwitchRow field={field} className={className} />;
   return (
     <div className={className}>
@@ -237,7 +290,15 @@ export function FieldBlock({ field, className }: { field: Field; className?: str
                 {' '}
                 <button
                   type="button"
-                  onClick={field.noteAction.run}
+                  onClick={() => {
+                    field.noteAction?.run();
+                    // The note (and this button) may go away with it: the focus stays on the field's control.
+                    requestAnimationFrame(() =>
+                      controlRef.current
+                        ?.querySelector<HTMLElement>('[role="radio"][tabindex="0"], button:not([aria-disabled])')
+                        ?.focus({ preventScroll: true }),
+                    );
+                  }}
                   className="-my-3 inline-flex min-h-11 items-center font-bold text-washi underline underline-offset-2"
                 >
                   {field.noteAction.label}
@@ -247,12 +308,16 @@ export function FieldBlock({ field, className }: { field: Field; className?: str
           </span>
         </p>
       )}
-      <div className="mt-auto pt-2">
-        <Choice
-          field={field}
-          labelledBy={labelId}
-          describedBy={field.note ? `${helpId} ${noteId}` : helpId}
-        />
+      <div ref={controlRef} className="mt-auto pt-2">
+        {field.kind === 'stepper' ? (
+          <Stepper field={field} labelledBy={labelId} describedBy={field.note ? `${helpId} ${noteId}` : helpId} />
+        ) : (
+          <Choice
+            field={field}
+            labelledBy={labelId}
+            describedBy={field.note ? `${helpId} ${noteId}` : helpId}
+          />
+        )}
       </div>
     </div>
   );

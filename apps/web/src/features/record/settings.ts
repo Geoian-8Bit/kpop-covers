@@ -1,5 +1,4 @@
 import {
-  CLAP_SCALE,
   CLAP_SENSITIVITIES,
   migrateClapSensitivity,
   type ClapSensitivity,
@@ -9,6 +8,7 @@ import {
 } from '@coverscape/shared';
 import { create } from 'zustand';
 import type { Facing } from './camera';
+import { MAX_TRIM_MS, TRIM_STEP_MS } from './syncRules';
 
 /**
  * The recorder's settings (A1), remembered on each phone. Not player state: they only shape how the camera is
@@ -33,6 +33,8 @@ export interface RecordSettings {
   mode: 'auto' | 'canvas';
   /** F7: how loud the double clap that starts a take must be (low for rooms with echo or noise). */
   clapSensitivity: ClapSensitivity;
+  /** 43 · Fine adjustment of the sound against the picture, per phone (ms, ±150 in steps of 10; + = sound later). */
+  syncTrimMs: number;
 }
 
 export const DEFAULT_RECORD_SETTINGS: RecordSettings = {
@@ -48,7 +50,11 @@ export const DEFAULT_RECORD_SETTINGS: RecordSettings = {
   info: false,
   mode: 'auto',
   clapSensitivity: 'medium',
+  syncTrimMs: 0,
 };
+
+/** 43 · Every value the fine adjustment can take. */
+const TRIM_VALUES = Array.from({ length: (2 * MAX_TRIM_MS) / TRIM_STEP_MS + 1 }, (_, i) => -MAX_TRIM_MS + i * TRIM_STEP_MS);
 
 const KEY = 'oneshoot.record.v1';
 
@@ -65,6 +71,7 @@ const ALLOWED: { [K in keyof RecordSettings]: readonly RecordSettings[K][] } = {
   info: [true, false],
   mode: ['auto', 'canvas'],
   clapSensitivity: CLAP_SENSITIVITIES,
+  syncTrimMs: TRIM_VALUES,
 };
 
 /** Keeps only known values: an old or hand-edited entry falls back to the default, key by key. */
@@ -80,9 +87,9 @@ export function sanitizeSettings(raw: unknown): RecordSettings {
   const old = (raw as Record<string, unknown>).startCamera;
   if (old === 'back') out.lastFacing = 'environment';
   else if (old === 'front') out.lastFacing = 'user';
-  // P21 · The clap sensitivity went from 3 levels to 4: an entry saved without `clapScale` is on the old scale.
+  // P42 · The clap sensitivity is back on its three F7 levels: «Muy alta» (P21's fourth level) becomes «Alta».
   const r = raw as Record<string, unknown>;
-  out.clapSensitivity = migrateClapSensitivity(r.clapSensitivity, r.clapScale) ?? DEFAULT_RECORD_SETTINGS.clapSensitivity;
+  out.clapSensitivity = migrateClapSensitivity(r.clapSensitivity) ?? DEFAULT_RECORD_SETTINGS.clapSensitivity;
   return out;
 }
 
@@ -105,7 +112,7 @@ export const useRecordSettings = create<SettingsStore>()((set, get) => ({
     set(patch);
     const { set: _omit, ...current } = get();
     try {
-      localStorage.setItem(KEY, JSON.stringify({ ...current, clapScale: CLAP_SCALE }));
+      localStorage.setItem(KEY, JSON.stringify(current));
     } catch {
       /* remembered for this visit only */
     }

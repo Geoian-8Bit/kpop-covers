@@ -40,7 +40,7 @@ const GROUPS: Group[] = [
   { id: 'quality', title: 'Calidad', glyph: '質', keys: ['quality', 'resolution', 'fps'] },
   { id: 'image', title: 'Imagen', glyph: '光', keys: [] },
   { id: 'format', title: 'Formato', glyph: '式', keys: ['codec', 'mode'] },
-  { id: 'sound', title: 'Sonido', glyph: '音', keys: ['sound', 'micChannels', 'clapSensitivity'] },
+  { id: 'sound', title: 'Sonido', glyph: '音', keys: ['sound', 'syncTrim', 'micChannels', 'clapSensitivity'] },
   { id: 'view', title: 'Visor', glyph: '眼', keys: ['grid', 'level', 'info'] },
 ];
 
@@ -56,7 +56,7 @@ function groupValue(id: GroupId, f: Fields, image: string): string {
     case 'format':
       return `${f.codec.value === 'h264' ? 'H.264' : 'Auto'}${f.mode.value === 'canvas' ? ' · lienzo' : ''}`;
     case 'sound':
-      return f.sound.value === 'song' ? 'Canción' : 'Micrófono';
+      return `${f.sound.value === 'song' ? 'Canción' : 'Micrófono'}${f.syncTrim.value !== 0 ? ` · ${f.syncTrim.display}` : ''}`;
     case 'view': {
       const on = [f.grid, f.level, f.info].filter((x) => x.value).map((x) => (x.key === 'info' ? 'Info' : x.label));
       return on.length ? on.join(' · ') : 'Sin guías';

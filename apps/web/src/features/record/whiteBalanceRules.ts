@@ -1,12 +1,25 @@
 /**
- * C4 / P24 · «Color de la luz»: how a white-balance preset reaches the camera, as pure steps a test can drive with a
- * simulated track.
+ * C4 / P24 / P48 · «Color de la luz»: how a white-balance preset reaches the camera, as pure steps a test can drive
+ * with a simulated track.
  *
- * Some phones (a Samsung on Chrome, seen in the 17-10 test) did nothing when the mode and the temperature came in
- * one request, and showed the previous choice's tone on the *next* request. So a preset goes in steps: first the
- * manual mode, then the temperature (inside the camera's range, on its step), then the same again to settle it;
- * and `getSettings()` must show it took. «Auto» goes back to `continuous`, without a temperature. Requests are
- * serialised and only the latest one runs: tapping fast never leaves the camera on an older choice.
+ * What `colorTemperature` means: the temperature of the light the camera should *correct* (the scene's light), not
+ * the tone wanted. Asking for a low value (2850 K, a bulb) tells the camera the light is orange, so it adds blue: on a
+ * daylight scene the picture turns blue. A high value (7000 K, shade) adds orange. P48: «Cálida» asked 3000 K and
+ * turned the picture blue; the presets now go by the tone the dancer sees (`WB_PRESETS`).
+ *
+ * Chrome on Android has no free temperature: it picks the camera's nearest preset (incandescent 2850, warm
+ * fluorescent 2950, fluorescent 4250, daylight 5000, cloudy 6000, shade 7000…) and reports *that* value. P48: a
+ * 4000 K ask landed on fluorescent (a magenta, «lila», tint), reported 4250 and was taken for «not applied» (the old
+ * check wanted ±50 K): the option hid although the camera had changed. Now the presets sit on the values those
+ * presets have (no fluorescent one), and a camera that reports a manual balance has taken it, whatever its number.
+ *
+ * Chrome also keeps the last temperature for as long as the camera is open: asking `continuous` again may still
+ * leave the preset on. «Auto» is therefore checked like a preset; when the camera still shows a manual balance it is
+ * `ignored` (the app then reopens the camera, the only sure way back, or says so mid-take).
+ *
+ * A request goes twice (some phones showed each change one request late, others dropped a temperature that came with
+ * the mode) and `getSettings()` is read until it shows it or `WB_SETTLE_MS` passes. Requests are serialised and
+ * only the latest one runs: tapping fast never leaves the camera on an older choice.
  */
 
 export interface KelvinRange {
@@ -20,6 +33,50 @@ export interface WhiteBalanceCaps {
   modes: readonly string[];
   /** `colorTemperature` range, when it has one. */
   range: KelvinRange | null;
+}
+
+export interface WhiteBalancePreset {
+  /** Chip label, by the tone the picture takes. */
+  label: string;
+  /** The light the camera corrects for (Kelvin); null = automatic. */
+  kelvin: number | null;
+}
+
+/**
+ * From the coolest picture to the warmest, each on one of Chrome's camera presets (so the camera lands where asked):
+ * incandescent (the picture turns blue: right for orange bulbs), daylight, cloudy, shade. No fluorescent preset:
+ * it tints the picture magenta.
+ */
+export const WB_PRESETS: readonly WhiteBalancePreset[] = [
+  { label: 'Auto', kelvin: null },
+  { label: 'Fría', kelvin: 2850 },
+  { label: 'Día', kelvin: 5000 },
+  { label: 'Cálida', kelvin: 6000 },
+  { label: 'Muy cálida', kelvin: 7000 },
+];
+
+/**
+ * The presets worth a chip on this camera: once fitted to its range, two that land on the same temperature would
+ * do the same (a camera without «shade» makes «Muy cálida» another «Cálida»): only one of them is shown, the one
+ * whose own temperature is nearest to where they land, so its name still fits (on a 5000–6000 K camera «Fría» lands
+ * on 5000 and doesn't cool anything: «Día» stays). Equally near: the first one.
+ */
+export function visiblePresets(range: KelvinRange | null): WhiteBalancePreset[] {
+  if (!range) return [...WB_PRESETS];
+  const best = new Map<number, WhiteBalancePreset>();
+  for (const p of WB_PRESETS) {
+    if (p.kelvin == null) continue;
+    const k = pickTemperature(p.kelvin, range);
+    const kept = best.get(k);
+    if (!kept || Math.abs(p.kelvin - k) < Math.abs(kept.kelvin! - k)) best.set(k, p);
+  }
+  const shown = new Set(best.values());
+  return WB_PRESETS.filter((p) => p.kelvin == null || shown.has(p));
+}
+
+/** The chip a stored value belongs to (an unknown value reads as its Kelvin). */
+export function presetLabel(kelvin: number | null): string {
+  return WB_PRESETS.find((p) => p.kelvin === kelvin)?.label ?? `${kelvin} K`;
 }
 
 export function canSetTemperature(caps: WhiteBalanceCaps): boolean {
@@ -42,10 +99,13 @@ export function pickTemperature(kelvin: number, range: KelvinRange): number {
   return k;
 }
 
+/** A camera that reports only a number is near enough within this (its nearest preset may be ~500 K off). */
+export const WB_NEAR_K = 750;
+
 export interface WhiteBalancePlan {
   /** Each one goes in its own `applyConstraints({ advanced: [step] })`, in order. */
   steps: Record<string, string | number>[];
-  /** What `getSettings()` must show afterwards. */
+  /** What `getSettings()` should show afterwards. */
   expect: { mode: 'manual' | 'continuous'; kelvin: number | null; tolerance: number };
 }
 
@@ -60,17 +120,28 @@ export function whiteBalancePlan(kelvin: number | null, caps: WhiteBalanceCaps):
   const k = pickTemperature(kelvin, caps.range);
   const set = { whiteBalanceMode: 'manual', colorTemperature: k };
   return {
-    steps: [{ whiteBalanceMode: 'manual' }, set, set],
-    expect: { mode: 'manual', kelvin: k, tolerance: Math.max(caps.range.step ?? 0, 50) },
+    steps: [set, set],
+    expect: { mode: 'manual', kelvin: k, tolerance: Math.max(caps.range.step ?? 0, WB_NEAR_K) },
   };
 }
 
-/** Did the camera take it? «Auto» is trusted when the camera doesn't report its mode at all. */
-export function whiteBalanceTook(settings: Record<string, unknown>, expect: WhiteBalancePlan['expect']): boolean {
+type WbSettings = Record<string, unknown>;
+
+/**
+ * Does the camera show it? A preset: a manual balance (whatever number the camera chose), or — when the mode isn't
+ * reported — a temperature near the one asked or moved from where it was. «Auto»: `continuous`, or no mode reported.
+ * A camera that reports nothing at all can't be checked: taken as applied (it is never hidden for that).
+ */
+export function whiteBalanceTook(settings: WbSettings, expect: WhiteBalancePlan['expect'], before: WbSettings = {}): boolean {
   const mode = settings.whiteBalanceMode;
   if (expect.kelvin == null) return mode === undefined || mode === 'continuous';
+  if (mode === 'continuous') return false;
+  if (mode !== undefined) return true;
   const k = settings.colorTemperature;
-  return mode === 'manual' && typeof k === 'number' && Math.abs(k - expect.kelvin) <= expect.tolerance;
+  if (typeof k !== 'number') return true;
+  if (Math.abs(k - expect.kelvin) <= expect.tolerance) return true;
+  const was = before.colorTemperature;
+  return typeof was === 'number' && Math.abs(k - was) > Math.max(1, expect.tolerance / 10);
 }
 
 /** The part of a MediaStreamTrack this needs (a test passes a simulated one). */
@@ -81,15 +152,15 @@ export interface WhiteBalanceTrack {
 }
 
 /**
- * `applied`: getSettings shows it. `ignored`: accepted but not reflected (this phone doesn't really do it).
- * `refused`: the browser rejected a step. `unsupported`: the camera doesn't list it. `ended`: no live track.
- * `superseded`: a newer request came in, this one stopped.
+ * `applied`: getSettings shows it (or can't tell). `ignored`: accepted but not shown — for a preset, the camera
+ * stayed on automatic; for «Auto», it still shows a manual balance. `refused`: the browser rejected a step.
+ * `unsupported`: the camera doesn't list it. `ended`: no live track. `superseded`: a newer request came in.
  */
 export type WhiteBalanceOutcome = 'applied' | 'ignored' | 'refused' | 'unsupported' | 'ended' | 'superseded';
 
-/** Pause after each step, and between reads of the result (ms). */
+/** Pause after each step and between reads of the result (ms), and how long a camera gets to show it. */
 export const WB_STEP_WAIT = 150;
-export const WB_CHECKS = 3;
+export const WB_SETTLE_MS = 1200;
 
 export async function runWhiteBalance(
   track: WhiteBalanceTrack,
@@ -100,6 +171,8 @@ export async function runWhiteBalance(
   const plan = whiteBalancePlan(kelvin, caps);
   if (!plan) return 'unsupported';
   const stale = opts.isStale ?? (() => false);
+  const read = () => (track.getSettings() ?? {}) as WbSettings;
+  const before = read();
   for (const step of plan.steps) {
     if (stale()) return 'superseded';
     if (track.readyState !== 'live') return 'ended';
@@ -110,13 +183,50 @@ export async function runWhiteBalance(
     }
     await opts.wait(WB_STEP_WAIT);
   }
-  // Some cameras report the new value a moment later.
-  for (let i = 0; i < WB_CHECKS; i++) {
+  // The track answers before the camera does: read until it shows, for a while.
+  for (let waited = 0; ; waited += WB_STEP_WAIT) {
     if (stale()) return 'superseded';
-    if (whiteBalanceTook(track.getSettings() as Record<string, unknown>, plan.expect)) return 'applied';
-    if (i < WB_CHECKS - 1) await opts.wait(WB_STEP_WAIT);
+    if (track.readyState !== 'live') return 'ended';
+    if (whiteBalanceTook(read(), plan.expect, before)) return 'applied';
+    if (waited >= WB_SETTLE_MS) return 'ignored';
+    await opts.wait(WB_STEP_WAIT);
   }
-  return 'ignored';
+}
+
+/**
+ * What the recorder is told about a request. `applied`: it shows. `auto`: the preset didn't take and the camera is
+ * on automatic. `stuck`: automatic was asked (or put back after a failed preset) and the camera still shows a manual
+ * balance: only reopening the camera brings automatic back. `superseded`: a newer request took over.
+ */
+export type WhiteBalanceResult = 'applied' | 'auto' | 'stuck' | 'superseded';
+
+/**
+ * The whole request: the preset or «Auto», and after a preset that didn't take, automatic again (checked, so a
+ * camera that keeps the preset says `stuck` instead of leaving a tint behind while the panel says «Auto»).
+ */
+export async function requestWhiteBalance(
+  track: WhiteBalanceTrack,
+  kelvin: number | null,
+  caps: WhiteBalanceCaps,
+  opts: { wait: (ms: number) => Promise<void>; isStale?: () => boolean; onPresetOutcome?: (o: WhiteBalanceOutcome) => void },
+): Promise<WhiteBalanceResult> {
+  const showsAuto = () =>
+    whiteBalanceTook((track.getSettings() ?? {}) as WbSettings, { mode: 'continuous', kelvin: null, tolerance: 0 });
+  const outcome = await runWhiteBalance(track, kelvin, caps, opts);
+  if (outcome === 'superseded') return 'superseded';
+  if (kelvin != null) opts.onPresetOutcome?.(outcome);
+  if (outcome === 'applied') return 'applied';
+  if (outcome === 'ended') return 'auto'; // a new camera opens on automatic
+  if (kelvin == null) {
+    if (outcome === 'ignored') return 'stuck';
+    return showsAuto() ? 'applied' : 'stuck';
+  }
+  if (outcome === 'unsupported') return 'auto';
+  const back = await runWhiteBalance(track, null, caps, opts);
+  if (back === 'superseded') return 'superseded';
+  if (back === 'ignored') return 'stuck';
+  if (back === 'refused' || back === 'unsupported') return showsAuto() ? 'auto' : 'stuck';
+  return 'auto';
 }
 
 /**

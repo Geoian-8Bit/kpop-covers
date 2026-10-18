@@ -9,9 +9,10 @@ import {
   subscribeWhiteBalance,
   whiteBalanceHiddenNow,
   whiteBalanceVersion,
-  WHITE_BALANCE,
   type TrackInfo,
 } from './camera';
+import { formatExposure } from './quickExposureRules';
+import { visiblePresets } from './whiteBalanceRules';
 
 export interface ImageState {
   /** Exposure compensation (C3), 0 = as the camera meters. */
@@ -95,8 +96,7 @@ export function ImageControls({
               Luz
             </label>
             <span className="tabular font-mono text-[13px] font-bold">
-              {state.exposure > 0 ? '+' : ''}
-              {String(Math.round(state.exposure * 10) / 10).replace('.', ',')}
+              {formatExposure(state.exposure)}
             </span>
           </div>
           <input
@@ -129,7 +129,7 @@ export function ImageControls({
         <div className="mt-3">
           <p className="text-[13px] font-bold text-washi-muted">Color de la luz</p>
           <div role="radiogroup" aria-label="Balance de blancos" className="mt-1.5 flex flex-wrap gap-1.5">
-            {WHITE_BALANCE.map((wb) => {
+            {visiblePresets(info.colorTemperature).map((wb) => {
               const active = state.kelvin === wb.kelvin;
               return (
                 <motion.button
@@ -150,6 +150,9 @@ export function ImageControls({
               );
             })}
           </div>
+          <p className="mt-1.5 text-[12px] leading-snug text-washi-subtle">
+            Si la sala sale naranja, prueba «Fría»; si sale azulada, «Cálida».
+          </p>
         </div>
       )}
 

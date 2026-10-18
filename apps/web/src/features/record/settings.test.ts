@@ -24,4 +24,13 @@ describe('recorder settings', () => {
     expect(s.grid).toBe(true);
     expect('nonsense' in s).toBe(false);
   });
+
+  it('43 · keeps the sync fine adjustment only on its ±150 ms steps of 10', () => {
+    expect(sanitizeSettings(null).syncTrimMs).toBe(0);
+    expect(sanitizeSettings({ syncTrimMs: -40 }).syncTrimMs).toBe(-40);
+    expect(sanitizeSettings({ syncTrimMs: 150 }).syncTrimMs).toBe(150);
+    expect(sanitizeSettings({ syncTrimMs: 160 }).syncTrimMs).toBe(0);
+    expect(sanitizeSettings({ syncTrimMs: 15 }).syncTrimMs).toBe(0);
+    expect(sanitizeSettings({ syncTrimMs: '30' }).syncTrimMs).toBe(0);
+  });
 });
