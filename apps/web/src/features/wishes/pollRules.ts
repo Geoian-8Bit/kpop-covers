@@ -3,6 +3,12 @@ import type { Poll, PollOption, PollVote, VoteType } from '@coverscape/shared';
 /**
  * F11 · pure rules of a vote (no React, no storage — `pollRules.test.ts`): counting per type, ties, the end by
  * time, what a ballot may hold (the same rules as `cast_vote()` in the database) and the tie draw.
+ *
+ * 52 · New votes are always «results live, named votes, closed by hand» (`insertPoll` writes those values). Older
+ * rows may still carry a closing time (the database still closes them then, so the rules below keep honouring it)
+ * or `anonymous` (their ballots were cast as anonymous: the names stay hidden, as a safety net). `results_live =
+ * false` is no longer honoured: when the rule changed (18-10) production had no open vote with hidden results nor
+ * any anonymous one, so no promise made to a voter is broken.
  */
 
 export const VOTE_TYPE_COPY: Record<VoteType, { label: string; how: string; unit: [string, string] }> = {
@@ -26,11 +32,6 @@ export function isPollClosed(poll: PollTiming, now: number = Date.now()): boolea
 /** Its time has passed but nobody has written the close yet: whoever opens it does (with the winner). */
 export function needsClosing(poll: PollTiming, now: number = Date.now()): boolean {
   return poll.closed_at == null && poll.closes_at != null && Date.parse(poll.closes_at) <= now;
-}
-
-/** Results are shown live, or only once it closes. */
-export function resultsVisible(poll: PollTiming & Pick<Poll, 'results_live'>, now: number = Date.now()): boolean {
-  return poll.results_live || isPollClosed(poll, now);
 }
 
 /** Milliseconds until it closes by time (null: closed by hand only, or already closed). */
@@ -183,10 +184,10 @@ export function pastVotesOf(
   return out.sort((a, b) => b.at.localeCompare(a.at)).map(({ at: _at, ...rest }) => rest);
 }
 
-/** «Cierra el domingo a las 22:00» / «Cierra en 5 min» / «Cierre a mano». */
+/** «Abierta» (closed by hand) / «Cerrada» / an older vote's time: «Cierra el domingo a las 22:00», «Cierra en 5 min». */
 export function closingLabel(poll: PollTiming, now: number = Date.now()): string {
   if (poll.closed_at) return 'Cerrada';
-  if (!poll.closes_at) return 'Se cierra a mano';
+  if (!poll.closes_at) return 'Abierta';
   const at = Date.parse(poll.closes_at);
   if (at <= now) return 'Ha terminado el plazo';
   const mins = Math.round((at - now) / 60_000);
@@ -199,19 +200,31 @@ export function closingLabel(poll: PollTiming, now: number = Date.now()): string
   return `Cierra el ${day} a las ${time}`;
 }
 
+/** Whether the names next to each result are shown: always, except an older vote whose ballots were anonymous. */
+export function showsVoterNames(poll: Pick<Poll, 'anonymous'>): boolean {
+  return !poll.anonymous;
+}
+
 /**
- * 37 · The compact summary under the ballot (secondary to voting): closing, type, named or anonymous, when the
- * results show. E.g. «Cierra hoy a las 22:00 · Un voto · Anónima · Resultados al cerrar».
+ * 37 · The compact summary under the ballot (secondary to voting): the type, plus what only older votes have —
+ * a closing time, or anonymous ballots. E.g. «Un voto», «Cierra hoy a las 22:00 · Ranking · Votos anónimos».
+ * A closed vote starts with «Cerrada».
  */
 export function pollSummary(
-  poll: PollTiming & Pick<Poll, 'vote_type' | 'anonymous' | 'results_live'>,
+  poll: PollTiming & Pick<Poll, 'vote_type' | 'anonymous'>,
   now: number = Date.now(),
 ): string[] {
-  const closing = poll.closed_at == null && isPollClosed(poll, now) ? 'Plazo terminado' : closingLabel(poll, now);
+  const closed = isPollClosed(poll, now);
+  const closing = closed
+    ? poll.closed_at == null
+      ? 'Plazo terminado'
+      : 'Cerrada'
+    : poll.closes_at
+      ? closingLabel(poll, now)
+      : null;
   return [
-    closing,
+    ...(closing ? [closing] : []),
     VOTE_TYPE_COPY[poll.vote_type].label,
-    poll.anonymous ? 'Anónima' : 'Con nombre',
-    poll.results_live ? 'Resultados en directo' : 'Resultados al cerrar',
+    ...(showsVoterNames(poll) ? [] : ['Votos anónimos']),
   ];
 }

@@ -1,6 +1,6 @@
-import type { Clip } from '@coverscape/shared';
+import { youTubeWatchUrl, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ArrowLeft, Play, RotateCcw, Save, Shuffle } from 'lucide-react';
+import { ArrowLeft, Play, RotateCcw, Save, Shuffle, Youtube } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { guardNav } from '@/components/AppShell';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/cn';
 import { tick, unlockAudio } from '@/lib/metronome';
 import { soft } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
+import { refitViewport } from '@/lib/viewport';
 import { loadYouTubeApi } from '@/lib/youtubeIframe';
 import type { PlayerEngine } from '@/player/engine';
 import { FileStage } from '@/player/FileStage';
@@ -46,6 +47,8 @@ import {
   type RoundOptions,
   type RoundState,
 } from './roundRules';
+import { barLayout, escapeInFullscreen, fullscreenStep, stageTap, type FullscreenMode } from './fullscreenRules';
+import { roundChrome, useLandscape, useRoundChromeDriver } from './roundChrome';
 import { SaveTrackDialog } from './SaveTrackDialog';
 import { releaseClipSources, useClipSource, type ClipSource } from './useClipSource';
 import { useHistorySettled, WAIT_MS } from './useHistorySettled';
@@ -151,8 +154,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 /** The round's own layer: the app's seigaiha ground (not a black box), clear of the notch and the home bar. */
-const ROOT =
-  'seigaiha fixed inset-0 z-[45] overflow-y-auto pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(12px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(8px,env(safe-area-inset-top))]';
+const LAYER =
+  'fixed inset-0 z-[45] pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(12px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(8px,env(safe-area-inset-top))]';
+const ROOT = `${LAYER} seigaiha overflow-y-auto`;
+/**
+ * 54 · Full screen: black like the studio's, nothing scrolls, clear of the notch. Sideways the picture takes the
+ * whole height (the bar on the bottom edge keeps its own home-bar inset).
+ */
+const FS_ROOT = `${LAYER} overflow-hidden bg-black landscape:py-0`;
 
 function toCard(entry: Entry): PlayCard | null {
   const clip = entry.clip;
@@ -171,39 +180,83 @@ function toCard(entry: Entry): PlayCard | null {
  * the toasts are mounted in `body`, and only what is inside the full-screen element gets painted. The round is
  * already `fixed inset-0` over the app, so it still fills the screen. Leaving the round's page leaves full screen too
  * (a new mix of the same round doesn't: the hook lives in the page, not in the runner it remounts).
+ * 54 · Like the studio, where the browser can't (iPhone Safari) the same «video only» layout goes on without it.
+ * The browser's full screen turns the phone sideways (it is watched that way, as the studio's), and hands the
+ * rotation back on leaving; leaving either kind re-fits the page under it (47, lib/viewport.ts).
  */
-type Fullscreen = { on: boolean; toggle: () => void } | null;
+type Fullscreen = { on: boolean; mode: FullscreenMode; toggle: () => void };
 
 function useFullscreen(): Fullscreen {
-  const [on, setOn] = useState(false);
+  const [mode, setMode] = useState<FullscreenMode>('none');
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const ours = useRef(false);
   useEffect(() => {
     const sync = () => {
       const now = document.fullscreenElement != null;
-      if (!now) ours.current = false;
-      setOn(now);
+      if (!now) {
+        if (ours.current) {
+          unlockOrientation();
+          refitViewport();
+        }
+        ours.current = false;
+      }
+      setMode((m) => (now ? 'native' : m === 'native' ? 'none' : m));
     };
     sync();
     document.addEventListener('fullscreenchange', sync);
     return () => {
       document.removeEventListener('fullscreenchange', sync);
       if (ours.current && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      if (ours.current) unlockOrientation();
+      // Leaving the round in either kind of full screen: the page under it was laid out for that screen.
+      if (ours.current || modeRef.current === 'css') refitViewport();
     };
   }, []);
+  // The CSS stand-in closes without the browser announcing anything: re-fit by hand, as the studio does.
+  const prevMode = useRef(mode);
+  useEffect(() => {
+    if (prevMode.current === 'css' && mode === 'none') refitViewport();
+    prevMode.current = mode;
+  }, [mode]);
   const toggle = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    const native = typeof document.documentElement.requestFullscreen === 'function' && document.fullscreenEnabled;
+    const step = fullscreenStep(document.fullscreenElement ? 'native' : modeRef.current, native);
+    if (step === 'exit-native') void document.exitFullscreen().catch(() => undefined);
+    else if (step === 'leave-css') setMode('none');
+    else if (step === 'enter-css') setMode('css');
     else {
-      const request = document.documentElement.requestFullscreen?.();
-      if (request) {
-        ours.current = true;
-        void request.catch(() => {
+      ours.current = true;
+      document.documentElement
+        .requestFullscreen({ navigationUI: 'hide' })
+        .then(lockLandscape)
+        .catch(() => {
+          // Refused (not from a tap, or blocked): the CSS layout still gives the video the screen.
           ours.current = false;
+          setMode('css');
         });
-      }
     }
   }, []);
-  const supported = typeof document !== 'undefined' && Boolean(document.documentElement.requestFullscreen);
-  return supported ? { on, toggle } : null;
+  return useMemo(() => ({ on: mode !== 'none', mode, toggle }), [mode, toggle]);
+}
+
+/** Sideways while in the browser's full screen (Android); where it can't be locked, nothing happens. */
+function lockLandscape() {
+  try {
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+    void orientation.lock?.('landscape').catch(() => undefined);
+  } catch {
+    /* not supported */
+  }
+}
+
+/** Hand the rotation back, or the phone can stay stuck sideways after full screen. */
+function unlockOrientation() {
+  try {
+    screen.orientation?.unlock?.();
+  } catch {
+    /* not locked / not supported */
+  }
 }
 
 function RoundRunner({
@@ -234,6 +287,21 @@ function RoundRunner({
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   useInertOutside(rootRef);
+  // 54 · Full screen sideways: the studio's bar on the bottom edge, hiding by itself while the clip plays.
+  const landscape = useLandscape();
+  const layout = barLayout(fullscreen.on, landscape);
+  useRoundChromeDriver(layout === 'overlay');
+  // Entering or leaving full screen swaps the bar, and so does turning the phone inside it (the turn after the
+  // landscape lock comes later): the focus goes back to the full-screen button, not to `body`.
+  const fsKey = `${fullscreen.mode}:${layout}`;
+  const lastFsKey = useRef(fsKey);
+  useLayoutEffect(() => {
+    if (lastFsKey.current === fsKey) return;
+    lastFsKey.current = fsKey;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== rootRef.current) return;
+    rootRef.current?.querySelector<HTMLElement>('[data-fs-toggle]')?.focus({ preventScroll: true });
+  }, [fsKey]);
 
   useLoopController();
   const prefMirror = useRef(true);
@@ -547,16 +615,26 @@ function RoundRunner({
         togglePause();
       } else if (action === 'skip') skip();
       else if (action === 'repeat') repeat();
+      // In full screen, Esc only leaves full screen (the browser's own keeps Esc; the CSS one is left by hand).
+      else if (action === 'exit' && escapeInFullscreen(fullscreen.mode) === 'leave-css') {
+        e.preventDefault();
+        fullscreen.toggle();
+      }
       // Mid-round it pauses and asks, like «Salir»; on «¿Preparados?» and «Ronda terminada» it does nothing
-      // (an Esc by mistake doesn't throw the round away). In full screen the browser keeps Esc to leave full screen.
-      else if (action === 'exit' && exitNeedsConfirm(state.phase) && !document.fullscreenElement) {
+      // (an Esc by mistake doesn't throw the round away).
+      else if (
+        action === 'exit' &&
+        exitNeedsConfirm(state.phase) &&
+        fullscreen.mode === 'none' &&
+        !document.fullscreenElement
+      ) {
         e.preventDefault();
         exit();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [togglePause, skip, repeat, exit, state.phase, saving, confirmExit, leaving]);
+  }, [togglePause, skip, repeat, exit, state.phase, saving, confirmExit, leaving, fullscreen]);
 
   // ── What the screen shows ──
   const total = available.filter(Boolean).length;
@@ -590,6 +668,24 @@ function RoundRunner({
     state.phase === 'idle'
       ? options.titleMode === 'before'
       : titleVisible || (state.phase === 'play' && revealedFor === leadKey);
+  /** A tap on the picture: pause or resume; full screen sideways, show or hide the bar (as the studio). */
+  const onStageTap = () => {
+    const tap = stageTap(layout, roundChrome.isShown());
+    if (tap === 'show-bar') roundChrome.wake();
+    else if (tap === 'hide-bar') roundChrome.hide();
+    else togglePause();
+  };
+  /**
+   * Full screen sideways, a tap on the black bands beside the picture (or on the card) shows or hides the bar too.
+   * Not on a control, not inside a dialog over the round (portals bubble here in React), not on the overlays.
+   */
+  const onBackdropTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (layout !== 'overlay' || overlay) return;
+    const target = e.target as Element;
+    if (!rootRef.current?.contains(target)) return;
+    if (target.closest('button, a, input, [data-round-bar], [role="dialog"]:not([data-round-root])')) return;
+    onStageTap();
+  };
   const announcement =
     state.phase === 'lead' || state.phase === 'play'
       ? clipAnnouncement(position, shownCard?.title ?? null, !shownTitleVisible)
@@ -602,7 +698,10 @@ function RoundRunner({
       aria-modal="true"
       aria-label="Random Play Dance"
       tabIndex={-1}
-      className={cn(ROOT, 'outline-none')}
+      data-round-root
+      onClick={onBackdropTap}
+      // 54 · Full screen: only the picture and the round's bar, on black.
+      className={cn(fullscreen.on ? FS_ROOT : ROOT, 'outline-none')}
     >
       <h1 className="sr-only">Random Play Dance</h1>
       {/* Outside the inert part: a region that only enters the tree as the first clip is announced is often missed. */}
@@ -610,8 +709,16 @@ function RoundRunner({
         {announcement}
       </p>
       {/* Behind «¿Preparados?» and «Ronda terminada» the screen is inert: Tab and readers stay on the card. */}
-      <div inert={overlay} className="mx-auto flex min-h-full w-full max-w-[1800px] min-w-0 flex-col justify-center">
+      <div
+        inert={overlay}
+        className={cn(
+          'mx-auto flex w-full min-w-0 flex-col justify-center',
+          fullscreen.on ? 'h-full' : 'min-h-full max-w-[1800px]',
+        )}
+      >
         <RandomPlayScreen
+          fullscreen={fullscreen.on}
+          credit={source.status === 'youtube' ? <YouTubeCredit youtubeId={source.youtubeId} /> : null}
           top={
             <div className="flex min-w-0 items-center gap-2">
               <Button variant="ghost" size="sm" className="-ml-1 h-11 shrink-0 px-2.5 text-[14px]" onClick={exit}>
@@ -628,8 +735,9 @@ function RoundRunner({
               source={source}
               stageKey={stageKey}
               mirrored={mirrored}
-              onToggle={togglePause}
+              onToggle={onStageTap}
               playing={state.phase === 'play' && !paused}
+              tapShowsBar={layout === 'overlay'}
             />
           }
           current={shownCard}
@@ -651,6 +759,7 @@ function RoundRunner({
               onSave={draft.trackId ? null : () => setSaving(true)}
               disabled={state.phase !== 'lead' && state.phase !== 'play'}
               fullscreen={fullscreen}
+              compact={fullscreen.on}
             />
           }
         />
@@ -775,12 +884,15 @@ function RoundStage({
   mirrored,
   onToggle,
   playing,
+  tapShowsBar,
 }: {
   source: ClipSource;
   stageKey: string | null;
   mirrored: boolean;
   onToggle: () => void;
   playing: boolean;
+  /** 54 · Sideways full screen: a tap on the picture shows or hides the bar (the bar has «Pausa»). */
+  tapShowsBar?: boolean;
 }) {
   return (
     <>
@@ -803,10 +915,30 @@ function RoundStage({
       )}
       <button
         type="button"
-        aria-label={playing ? 'Pausar' : 'Seguir'}
+        aria-label={tapShowsBar ? 'Mostrar u ocultar los controles' : playing ? 'Pausar' : 'Seguir'}
         onClick={onToggle}
         className={cn('absolute inset-0 z-10 cursor-pointer')}
       />
     </>
+  );
+}
+
+/**
+ * The source credit for a YouTube video (the API's policies, as in the studio): opens the original at the current
+ * second. Outside the picture, in the round's own bar.
+ */
+function YouTubeCredit({ youtubeId }: { youtubeId: string }) {
+  return (
+    <a
+      href={youTubeWatchUrl(youtubeId)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => {
+        e.currentTarget.href = youTubeWatchUrl(youtubeId, usePlayer.getState().time);
+      }}
+      className="relative inline-flex shrink-0 items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[12px] font-medium text-washi-muted transition-colors before:absolute before:-inset-x-1 before:-inset-y-2.5 before:content-[''] hover:text-washi"
+    >
+      <Youtube aria-hidden className="size-3.5" /> Ver en YouTube
+    </a>
   );
 }

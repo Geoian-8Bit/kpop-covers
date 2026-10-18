@@ -16,7 +16,6 @@ import { demoCloudBytes, demoCloudUrl, saveDemoCloudFile } from './localVideos';
 import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from '@coverscape/shared';
 import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coverscape/shared';
-import type { FollowKeyframe, FollowPath, FollowSource } from '@coverscape/shared';
 import type { Tables } from '@coverscape/shared';
 import { drawOrder } from '@/features/bags/drawRules';
 import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
@@ -1465,10 +1464,11 @@ export type WishPatch = Partial<
 >;
 export type NewWish = Pick<Wish, 'youtube_id' | 'title'> &
   Partial<Pick<Wish, 'artist' | 'thumbnail_url' | 'members_count' | 'difficulty' | 'comment' | 'proposed_by_member_id'>>;
-/** Granted columns of a poll. Closing = closed_at (once); the winner only at that moment, and only an option. */
-export type PollPatch = Partial<
-  Pick<Poll, 'title' | 'results_live' | 'anonymous' | 'closes_at' | 'closed_at' | 'winner_wish_id'>
->;
+/**
+ * What the app changes on a poll: the title, and closing = closed_at (once); the winner only at that moment, and
+ * only an option. 52 · results_live / anonymous / closes_at are no longer edited (older rows keep theirs).
+ */
+export type PollPatch = Partial<Pick<Poll, 'title' | 'closed_at' | 'winner_wish_id'>>;
 export type CloseResolve = 'auto' | 'pick' | 'none';
 export interface CloseResult {
   status: 'closed' | 'tie';
@@ -1476,7 +1476,12 @@ export interface CloseResult {
   /** The leaders (wish ids) when it is a tie. */
   tied: string[];
 }
-export type NewPoll = Pick<Poll, 'title' | 'vote_type' | 'results_live' | 'anonymous' | 'closes_at'> & {
+/** 52 · Every new vote: results live, named votes, closed by hand (the column defaults, written explicitly). */
+export const NEW_POLL_RULES = { results_live: true, anonymous: false, closes_at: null } as const satisfies Pick<
+  Poll,
+  'results_live' | 'anonymous' | 'closes_at'
+>;
+export type NewPoll = Pick<Poll, 'title' | 'vote_type'> & {
   created_by_member_id: string | null;
   parent_poll_id: string | null;
 };
@@ -1587,7 +1592,7 @@ const supabaseWishes: WishesBackend = {
   async insertPoll(row, wishIds) {
     const { data, error } = await supabase
       .from('polls')
-      .insert({ ...row, title: row.title.trim() })
+      .insert({ ...row, ...NEW_POLL_RULES, title: row.title.trim() })
       .select()
       .single();
     if (error) throw error;
@@ -1809,9 +1814,7 @@ const demoWishes: WishesBackend = {
         crew_id: db.crews[0]!.id,
         title,
         vote_type: row.vote_type,
-        results_live: row.results_live,
-        anonymous: row.anonymous,
-        closes_at: row.closes_at,
+        ...NEW_POLL_RULES,
         closed_at: null,
         winner_wish_id: null,
         parent_poll_id: row.parent_poll_id && db.polls?.some((p) => p.id === row.parent_poll_id) ? row.parent_poll_id : null,
@@ -2217,141 +2220,6 @@ const demoEvents: EventsBackend = {
 };
 
 export const eventsBackend: EventsBackend = IS_DEMO ? demoEvents : supabaseEvents;
-
-// ───────────────────────────── F10 · follow a dancer ─────────────────────────────
-
-/** A new «recorrido»: the group shares it (crew_id comes from the video, in the database). */
-export type NewFollowPath = {
-  video_id: string;
-  label: string;
-  member_id: string | null;
-  source: FollowSource;
-  model: string | null;
-  keyframes: FollowKeyframe[];
-};
-/** The granted columns: label, member_id, keyframes, model, source. */
-export type FollowPathPatch = Partial<Pick<NewFollowPath, 'label' | 'member_id' | 'keyframes' | 'model' | 'source'>>;
-
-/**
- * F10 · Where one dancer is over time, computed once on a device (or placed by hand) and shared: everyone else
- * uses it without recomputing. Only text travels (the keyframes); the video is never sent anywhere.
- */
-export interface FollowBackend {
-  listFollowPaths(videoId: string): Promise<FollowPath[]>;
-  insertFollowPath(row: NewFollowPath): Promise<FollowPath>;
-  updateFollowPath(id: string, patch: FollowPathPatch): Promise<FollowPath>;
-  deleteFollowPath(id: string): Promise<void>;
-}
-
-const FOLLOW_COLUMNS = 'id, crew_id, video_id, label, member_id, source, model, keyframes, created_at, updated_at, archived_at';
-
-const supabaseFollow: FollowBackend = {
-  async listFollowPaths(videoId) {
-    const { data, error } = await supabase
-      .from('follow_paths')
-      .select(FOLLOW_COLUMNS)
-      .eq('video_id', videoId)
-      .order('created_at');
-    if (error) throw error;
-    return data as unknown as FollowPath[];
-  },
-  async insertFollowPath(row) {
-    const { data, error } = await supabase
-      .from('follow_paths')
-      .insert({ ...row, label: row.label.trim() })
-      .select(FOLLOW_COLUMNS)
-      .single();
-    if (error) throw error;
-    return data as unknown as FollowPath;
-  },
-  async updateFollowPath(id, patch) {
-    const clean = patch.label != null ? { ...patch, label: patch.label.trim() } : patch;
-    const { data, error } = await supabase.from('follow_paths').update(clean).eq('id', id).select(FOLLOW_COLUMNS).single();
-    if (error) throw error;
-    return data as unknown as FollowPath;
-  },
-  async deleteFollowPath(id) {
-    const { error } = await supabase.from('follow_paths').delete().eq('id', id);
-    if (error) throw error;
-  },
-};
-
-// Demo twin: the same rules as the database (label 1–40, source auto|manual, model ≤ 60, keyframes an array under
-// 600 KB, the member must be a live member or becomes null, 500 paths per group, deleting archives).
-
-type FollowDemoDb = DemoDb & { follow_paths?: FollowPath[] };
-
-function checkFollowRow(row: FollowPathPatch) {
-  if (row.label != null && (row.label.trim().length < 1 || row.label.trim().length > 40)) {
-    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_label_check"', '23514');
-  }
-  if (row.source != null && row.source !== 'auto' && row.source !== 'manual') {
-    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_source_check"', '23514');
-  }
-  if (row.model != null && row.model.length > 60) {
-    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_model_check"', '23514');
-  }
-  if (row.keyframes !== undefined && (!Array.isArray(row.keyframes) || JSON.stringify(row.keyframes).length > 600_000)) {
-    throw demoError('new row for relation "follow_paths" violates check constraint "follow_paths_keyframes_shape"', '23514');
-  }
-}
-
-const demoFollow: FollowBackend = {
-  listFollowPaths: (videoId) =>
-    query((raw) => {
-      const db = raw as FollowDemoDb;
-      if (!db.videos.some((v) => v.id === videoId)) return [];
-      return (db.follow_paths ?? [])
-        .filter((p) => p.video_id === videoId && isLive(p))
-        .sort((a, b) => a.created_at.localeCompare(b.created_at));
-    }),
-  insertFollowPath: async (row) =>
-    mutate((raw) => {
-      const db = raw as FollowDemoDb;
-      checkFollowRow(row);
-      const video = db.videos.find((v) => v.id === row.video_id);
-      if (!video) throw demoError(`video ${row.video_id} not found`);
-      const paths = (db.follow_paths ??= []);
-      if (paths.filter(isLive).length >= 500) throw demoError('row_cap');
-      const path: FollowPath = {
-        id: crypto.randomUUID(),
-        crew_id: video.crew_id,
-        video_id: video.id,
-        label: row.label.trim(),
-        member_id: row.member_id && (db.members ?? []).some((m) => m.id === row.member_id && m.archived_at == null) ? row.member_id : null,
-        source: row.source,
-        model: row.model,
-        keyframes: row.keyframes,
-        created_at: now(),
-        updated_at: now(),
-        archived_at: null,
-      };
-      paths.push(path);
-      return path;
-    }),
-  updateFollowPath: async (id, patch) =>
-    mutate((raw) => {
-      const db = raw as FollowDemoDb;
-      const path = db.follow_paths?.find((p) => p.id === id && isLive(p));
-      if (!path) throw demoError('PGRST116 0 rows');
-      checkFollowRow(patch);
-      Object.assign(path, patch, patch.label != null ? { label: patch.label.trim() } : {}, { updated_at: now() });
-      if (patch.member_id !== undefined && path.member_id && !(db.members ?? []).some((m) => m.id === path.member_id && m.archived_at == null)) {
-        path.member_id = null;
-      }
-      return path;
-    }),
-  deleteFollowPath: async (id) =>
-    mutate((raw) => {
-      const db = raw as FollowDemoDb;
-      const path = db.follow_paths?.find((p) => p.id === id && isLive(p));
-      if (!path) return;
-      // Archived, like the database: a clip that followed it keeps the id and simply opens without following.
-      path.archived_at = now();
-    }),
-};
-
-export const followBackend: FollowBackend = IS_DEMO ? demoFollow : supabaseFollow;
 
 // ───────────────────────────── 18 · voice and music, separated with AI ─────────────────────────────
 
