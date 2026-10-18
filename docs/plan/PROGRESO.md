@@ -8,6 +8,17 @@
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
+## Ronda 2 de la prueba manual (2026-10-18)
+
+Lista: puntos 40–54 al final de [MEJORAS-PRUEBA-MANUAL.md](MEJORAS-PRUEBA-MANUAL.md). El responsable añadió durante la
+ronda que la pantalla completa se usa con el móvil en horizontal.
+
+| Hora | Qué |
+| --- | --- |
+| 10:20 | 5bf8675: puntos 40–54 anotados. 7 subagentes por zonas: diseños elegidos y voz, menú, estudio y seguir, grabador (aplauso, luz), sincronía, tomas y repaso, votaciones y RPD. |
+| 11:00–14:00 | Revisiones con nota: 2 rondas por bloque; tomas y repaso, 4 rondas y una de cierre de «Atrás». Informes `revisiones/ronda2-*.md`. Todo lo ≥6 corregido. Pruebas en el demo en silencio a 390×844 y 844×390 (grabar con cámara falsa, tomas, repaso a la par, RPD, Atrás). |
+| 14:10 | Commits: 01d7f4e (diseños y menú), 4a50952 (voz), 5ba045c (estudio, sin seguir), e646aef (grabador y sincronía), 0f92ab9 (tomas, repaso y Atrás), 7936132 (RPD y votaciones). typecheck 0, 873 tests, 129 PASS en BD, build. Sin migraciones. |
+
 ## Ronda de mejoras de la prueba manual (desde 2026-10-17 14:00)
 
 Lista de trabajo: [MEJORAS-PRUEBA-MANUAL.md](MEJORAS-PRUEBA-MANUAL.md) (39 puntos). Decisiones del responsable al

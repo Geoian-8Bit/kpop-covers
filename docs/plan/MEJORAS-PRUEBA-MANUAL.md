@@ -1,4 +1,4 @@
-# One Shoot · Mejoras de la prueba manual
+| **Hecho** (7936132) || **Hecho** (7936132) || **Hecho** (7936132) || **Hecho** (0f92ab9) || **Hecho** (0f92ab9) || **Hecho** (e646aef) || **Hecho** (e646aef) || **Hecho** (5ba045c) || **Hecho** (4a50952 y 5ba045c) || **Hecho** (5ba045c) || **Hecho** (5ba045c) || **Hecho** (e646aef) || **Hecho** (e646aef) || **Hecho** (01d7f4e) || **Hecho** (01d7f4e) |# One Shoot · Mejoras de la prueba manual
 
 Notas del responsable del producto mientras prueba la app a mano en producción (https://kpop-covers.vercel.app),
 sobre todo en el móvil. Cada punto es un cambio pedido para que lo haga otro agente.
