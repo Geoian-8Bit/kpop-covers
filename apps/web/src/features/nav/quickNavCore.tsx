@@ -3,7 +3,6 @@ import { X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -22,16 +21,10 @@ import { MAIN_NAV, WHO_KANJI, WHO_TONE, type NavIcon, type NavTone } from './nav
 import { activeSectionIndex, quickNavLabel, trapFocusIndex } from './navRules';
 
 /**
- * P1 · What the four quick-menu prototypes share: the destinations, opening and closing (Android back, Escape, a tap
- * outside, picking), focus kept inside while open and handed back to the button, and the button itself. Each
- * prototype only draws its panel. `contained` = inside a lab demo stage: positioned in the stage and nothing navigates.
+ * P1 · The quick menu's plumbing: the destinations, opening and closing (Android back, Escape, a tap outside,
+ * picking), focus kept inside while open and handed back to the button, and the button itself. `NavHanafuda` draws
+ * the hand of cards on top.
  */
-
-export interface QuickNavProps {
-  /** Inside a lab demo stage instead of over the whole screen; picking only reports what it would do. */
-  contained?: boolean;
-  onDemoPick?: (message: string) => void;
-}
 
 export interface NavEntry {
   id: string;
@@ -53,7 +46,6 @@ export interface QuickNavApi {
   pick: (entry: NavEntry, delay?: number) => void;
   entries: NavEntry[];
   current: NavEntry | null;
-  contained: boolean;
   reduce: boolean;
   rootRef: RefObject<HTMLDivElement | null>;
   triggerRef: RefObject<HTMLButtonElement | null>;
@@ -71,7 +63,7 @@ function visibleFocusables(root: HTMLElement): HTMLElement[] {
   );
 }
 
-export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): QuickNavApi {
+export function useQuickNav(): QuickNavApi {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -88,10 +80,8 @@ export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): Q
     pickTimer.current = undefined;
     picking.current = false;
   };
-  const demoRef = useRef(onDemoPick);
-  demoRef.current = onDemoPick;
 
-  const activeIndex = contained ? 1 : activeSectionIndex(pathname, MAIN_NAV);
+  const activeIndex = activeSectionIndex(pathname, MAIN_NAV);
   const entries = useMemo<NavEntry[]>(
     () => [
       ...MAIN_NAV.map((s, i) => ({
@@ -139,19 +129,8 @@ export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): Q
       if (picking.current) return;
       if (entry.to == null) {
         close(true);
-        if (contained) demoRef.current?.('Abriría «¿Quién eres?».');
         // After focus is back on the button, so the dialog hands it back there too.
-        else requestAnimationFrame(() => requestAnimationFrame(openWho));
-        return;
-      }
-      if (contained) {
-        picking.current = true;
-        pickTimer.current = window.setTimeout(() => {
-          pickTimer.current = undefined;
-          picking.current = false;
-          demoRef.current?.(`Te llevaría a «${entry.label}».`);
-          close(true);
-        }, delay);
+        requestAnimationFrame(() => requestAnimationFrame(openWho));
         return;
       }
       if (window.location.pathname === entry.to) {
@@ -169,7 +148,7 @@ export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): Q
       if (delay > 0) pickTimer.current = window.setTimeout(go, delay);
       else go();
     },
-    [close, contained, navigate],
+    [close, navigate],
   );
 
   useEffect(() => () => window.clearTimeout(pickTimer.current), []);
@@ -185,7 +164,7 @@ export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): Q
     setOpen(false);
   }, [pathname]);
 
-  // Measure the stage and the button while open (the prototypes lay out around the button's centre).
+  // Measure the stage and the button while open (the cards lay out around the button).
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
@@ -256,18 +235,17 @@ export function useQuickNav({ contained = false, onDemoPick }: QuickNavProps): Q
     pick,
     entries,
     current,
-    contained,
     reduce,
     rootRef,
     triggerRef,
     stage: open ? stage : null,
-    top: contained ? 12 : 76,
+    top: 76,
   };
 }
 
 /**
- * The layer: over the whole screen on phones (hidden on desktop, where the side rail stays), or inside a lab stage.
- * While open it is the dialog (it holds its close button, the trigger).
+ * The layer: over the whole screen on phones (hidden on desktop, where the side rail stays). While open it is the
+ * dialog (it holds its close button, the trigger).
  */
 export function QuickNavRoot({ api, children }: { api: QuickNavApi; children: ReactNode }) {
   return (
@@ -277,9 +255,8 @@ export function QuickNavRoot({ api, children }: { api: QuickNavApi; children: Re
       aria-modal={api.open ? true : undefined}
       aria-label={api.open ? 'Secciones' : undefined}
       className={cn(
-        // Clipped: a fan or a dial reaching past the screen edge must never make the page scroll sideways.
-        'pointer-events-none inset-0 overflow-hidden text-washi',
-        api.contained ? 'absolute z-10' : 'fixed z-[42] lg:hidden',
+        // Clipped: a card reaching past the screen edge must never make the page scroll sideways.
+        'pointer-events-none fixed inset-0 z-[42] overflow-hidden text-washi lg:hidden',
       )}
     >
       {children}
@@ -312,7 +289,7 @@ export const TRIGGER_POSITION =
 
 /**
  * The round 56 px button. Its accessible name says where you are; a small tag says it too for a few seconds after
- * arriving at a section. Open, it turns into the close button. `face` draws the closed look of each prototype.
+ * arriving at a section. Open, it turns into the close button. `face` draws its closed look.
  */
 export function QuickNavTrigger({
   api,
@@ -413,7 +390,7 @@ type EntryLinkProps = Omit<HTMLMotionProps<'a'>, 'href' | 'onClick' | 'ref'> & {
 
 /**
  * One destination: a real link for a section (aria-current on yours), a button for «¿Quién eres?». Picking goes
- * through the shared `pick`, so closing, history and focus behave the same in every prototype.
+ * through the shared `pick`, so closing, history and focus behave the same however it is picked.
  */
 export function EntryLink({ api, entry, delay, onPicked, children, ref, ...rest }: EntryLinkProps) {
   const onClick = (event: MouseEvent<HTMLElement>) => {
@@ -446,11 +423,4 @@ export function EntryIcon({ entry, className }: { entry: NavEntry; className?: s
   const me = useMe();
   if (entry.Icon) return <entry.Icon className={cn('size-[18px] shrink-0', className)} />;
   return <MemberSeal member={me} size="sm" />;
-}
-
-/** Live region of a lab demo: what picking would have done. */
-export function useDemoNote() {
-  const [note, setNote] = useState('');
-  const id = useId();
-  return { note, setNote, id };
 }

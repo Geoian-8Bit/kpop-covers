@@ -6,8 +6,6 @@ export const snappy: Transition = { type: 'spring', stiffness: 420, damping: 34,
 export const jelly: Transition = { type: 'spring', stiffness: 520, damping: 18, mass: 0.9 };
 /** Soft float for large surfaces (dialogs, tiles). */
 export const soft: Transition = { type: 'spring', stiffness: 260, damping: 28, mass: 1 };
-/** `soft` a little less damped (ζ ≈ 0.68): a wide swing (a fan opening) passes its mark by ~5 % and settles once. */
-export const unfold: Transition = { type: 'spring', stiffness: 260, damping: 22, mass: 1 };
 
 export const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 

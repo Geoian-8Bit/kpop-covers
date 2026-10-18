@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
-import { handLayout } from '../navRules';
+import { handLayout } from './navRules';
 import {
   CurrentGlyph,
   EntryIcon,
@@ -13,16 +13,15 @@ import {
   useQuickNav,
   type NavEntry,
   type QuickNavApi,
-  type QuickNavProps,
-} from '../quickNavCore';
+} from './quickNavCore';
 
 /**
- * P1 · Prototype «Hanafuda»: a hand of flower cards fans out of the button. Slide the thumb over them: the card
- * under it rises; let go and it flies to the centre and takes you there. A plain tap works the same. Delete this
- * file if another prototype is chosen.
+ * P1 · The quick menu «Hanafuda» (chosen by the product owner): a hand of flower cards fans out of the button. Slide
+ * the thumb over them: the card under it rises; let go and it flies to the centre and takes you there. A plain tap
+ * works the same.
  */
-export default function NavHanafuda(props: QuickNavProps) {
-  const api = useQuickNav(props);
+export default function NavHanafuda() {
+  const api = useQuickNav();
   return (
     <QuickNavRoot api={api}>
       <QuickNavScrim api={api} />

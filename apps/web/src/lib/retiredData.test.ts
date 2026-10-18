@@ -10,6 +10,15 @@ describe('forgetRetiredData (45)', () => {
     expect(storage.removeItem.mock.calls.map((c) => c[0])).toEqual([...RETIRED_KEYS]);
   });
 
+  it('drops the design lab’s choices and its demos’ cache', async () => {
+    const caches = { delete: vi.fn(async (_name: string) => true) };
+    const storage = { removeItem: vi.fn((_key: string) => undefined) };
+    await forgetRetiredData({ caches, storage });
+    expect(caches.delete).toHaveBeenCalledWith('lab-demos');
+    expect(storage.removeItem).toHaveBeenCalledWith('oneshoot.lab.v1');
+    expect(storage.removeItem).toHaveBeenCalledWith('oneshoot.lab.v2');
+  });
+
   it('never throws: no Cache API, blocked storage, a failing delete', async () => {
     await expect(forgetRetiredData({ caches: null, storage: null })).resolves.toBeUndefined();
     const storage = {

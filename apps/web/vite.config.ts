@@ -133,20 +133,9 @@ export default defineConfig(({ mode, command }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        // P17 · The design lab's demos (every `*Demo.tsx` / `*Demo-*.tsx` file → `*Demo-<hash>.js` chunk) are for
-        // whoever opens the lab: cached when first opened (runtime cache below), not downloaded by every install.
         // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
         // .wasm isn't in globPatterns either. The HTTP cache keeps both (hashed, immutable).
-        // P1 · The quick-menu prototypes on trial other than the default (Sensu): only for whoever picks one in the
-        // lab, cached when first loaded (runtime cache `lab-demos` below). Offline before that, QuickNav falls back to
-        // its plain list of sections. Delete with the losing files.
-        globIgnores: [
-          '**/*Demo-*.js',
-          '**/stemSeparator.worker-*.js',
-          '**/NavHanafuda-*.js',
-          '**/NavKamon-*.js',
-          '**/NavKakejiku-*.js',
-        ],
+        globIgnores: ['**/stemSeparator.worker-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -160,20 +149,6 @@ export default defineConfig(({ mode, command }) => {
               cacheName: 'voice-runtime',
               cacheableResponse: { statuses: [200] },
               expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true },
-            },
-          },
-          {
-            // P17 · Lab demos (hashed names: a cached one never changes). P1 · Also the quick-menu prototypes left
-            // out of the precache: the one picked keeps working offline once it has loaded.
-            urlPattern: ({ url, sameOrigin }) =>
-              sameOrigin &&
-              (/^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname) ||
-                /^\/assets\/Nav(Hanafuda|Kamon|Kakejiku)-[^/]+\.js$/.test(url.pathname)),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'lab-demos',
-              cacheableResponse: { statuses: [200] },
-              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 30, purgeOnQuotaError: true },
             },
           },
           {
