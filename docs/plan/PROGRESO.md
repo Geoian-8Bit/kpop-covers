@@ -20,6 +20,7 @@ ronda que la pantalla completa se usa con el móvil en horizontal.
 | 14:10 | Commits: 01d7f4e (diseños y menú), 4a50952 (voz), 5ba045c (estudio, sin seguir), e646aef (grabador y sincronía), 0f92ab9 (tomas, repaso y Atrás), 7936132 (RPD y votaciones). typecheck 0, 873 tests, 129 PASS en BD, build. Sin migraciones. |
 | 12:31 | Desplegado main bda9852 (versión 149, `dpl_2TSgkRp7tJUewiSFkxsCKhUjDty5`). Verificación en producción en silencio a 390×844 y 844×390: estudio sin «Seguir» ni fila Zoom en táctil, toma «PRUEBA» con cámara falsa (sincronía 151 ms, cero corregido guardado), una sola entrada en Tomas, repaso a la par en horizontal, formulario de votación sin opciones, RPD con cabecera de 43 px y ronda en pantalla completa horizontal con la barra oculta sola. Toma «PRUEBA» borrada desde la app (archivada). |
 | 13:07 | El grupo elige Hanafuda: fb1978d (menú fijo, laboratorio retirado). Desplegado main (versión 151); comprobado en producción. |
+| 14:05 | Punto 55 (48f2926): una capa `skin-tray` sin `relative` tapaba la escena y, en vertical, el pie del repaso; botones que responden con otro dedo apoyado; columna de accesos rápidos en horizontal. Revisión [informe](revisiones/ronda2-repaso-superpuesto-1.md), lo ≥3 corregido. Desplegado main (versión 154); comprobado en producción con una toma «PRUEBA», ya borrada. |
 
 ## Ronda de mejoras de la prueba manual (desde 2026-10-17 14:00)
 
