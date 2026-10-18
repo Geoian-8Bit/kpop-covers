@@ -10,6 +10,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
 import { uploadFailureMessage, useCreateVideo, useVideos } from '@/data/videos';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
 import { probeMediaFile } from '@/lib/localVideos';
 import { jelly, soft } from '@/lib/motion';
@@ -327,7 +328,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                           whileTap={{ scale: 0.97 }}
                           transition={jelly}
                           onClick={() => {
-                            navigate(`/v/${v.id}`, { state: { linkFile: file } });
+                            navigateFromLayer(navigate, `/v/${v.id}`, { state: { linkFile: file } });
                             onClose();
                           }}
                           className="flex min-h-12 w-full items-center gap-3 rounded-[10px] bg-sumi-800 px-3 text-left hover:bg-sumi-700"

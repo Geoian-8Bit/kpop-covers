@@ -1,6 +1,7 @@
 import {
   clamp,
   clampAdjust,
+  formatSpeed,
   formatTime,
   hasLinkedFile,
   MIN_LOOP_LENGTH,
@@ -11,9 +12,9 @@ import {
   type Note,
   type Video,
 } from '@coverscape/shared';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { BookmarkPlus, FileVideo, TriangleAlert, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
@@ -24,16 +25,21 @@ import { useUpdateTakeReview, type TakeItem, type TakeReviewPatch } from '@/data
 import { useFileSource } from '@/features/studio/fileSource';
 import { SaveClipDialog, type ClipDraft } from '@/features/studio/SaveClipDialog';
 import { takeDateLabel } from '@/features/takes/takeRules';
+import { cn } from '@/lib/cn';
 import { soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { hasRange, useReview } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
-import { CompareStage } from './CompareStage';
-import { ReviewSettings, ReviewTimeline, ReviewTransport } from './ReviewControls';
+import { CompareStage, type ChosenSplit } from './CompareStage';
+import { NotePill, PlayCrest, ReviewSettings, ReviewTimeline, ReviewTransport, SettingsButton, SoundPill } from './ReviewControls';
 import { OriginalFile, OriginalYouTube, TakeVideo, useReviewClock } from './ReviewMedia';
 import {
+  aspectOf,
   atNoteMoment,
+  bottomSheetHeight,
+  coverPanelWidth,
+  YOUTUBE_MIN_BOX,
   clipsInTake,
   crossedNote,
   fitOf,
@@ -44,6 +50,7 @@ import {
   takeLength,
   takeNotes,
   takeTiming,
+  type CompareMode,
   type Fit,
   type ViewPrefs,
 } from './reviewRules';
@@ -151,6 +158,7 @@ export function ReviewScreen({
   const titleId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const takeVideo = useRef<HTMLVideoElement | null>(null);
+  // 43 · The row holds where the take's second 0 is in the song (corrected once, when it was saved).
   const timing = useMemo(() => takeTiming(take), [take]);
 
   // ── The original: the file (uploaded or linked, F1) when there is one here or in the cloud; else YouTube. ──
@@ -198,10 +206,31 @@ export function ReviewScreen({
   const adjustSaver = useTakeSaver(take, showSaveError);
   const fitSaver = useTakeSaver(take, showSaveError);
   const [adjust, setAdjust] = useState(timing.adjust);
-  const onAdjust = (value: number) => {
+  const adjustTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The adjustment the original was last put in place for (a let-go reported twice jumps once). */
+  const alignedAdjust = useRef(timing.adjust);
+  const alignFor = (value: number) => {
+    if (value === alignedAdjust.current) return;
+    alignedAdjust.current = value;
+    useReview.getState().alignOriginal();
+  };
+  useEffect(() => () => clearTimeout(adjustTimer.current), []);
+  const onAdjust = (value: number, settled: boolean | 'soon' = true) => {
     const next = clampAdjust(value);
     setAdjust(next);
-    useReview.getState().setTiming({ adjust: next });
+    clearTimeout(adjustTimer.current);
+    if (settled === 'soon') {
+      // ±0,01 taps: one jump of the original once they stop (each would make YouTube load again).
+      useReview.setState({ timing: { ...useReview.getState().timing, adjust: next } });
+      adjustTimer.current = setTimeout(() => alignFor(next), 300);
+      adjustSaver.save({ sync_adjust_seconds: next });
+      return;
+    }
+    // While the slider moves only the timing changes (a jump per step would make YouTube load over and over); the
+    // original is put in place once, when it is let go.
+    const r = useReview.getState();
+    useReview.setState({ timing: { ...r.timing, adjust: next } });
+    if (settled) alignFor(next);
     adjustSaver.save({ sync_adjust_seconds: next });
   };
   const [fit, setFit] = useState<Fit>(() => fitOf(take));
@@ -226,10 +255,34 @@ export function ReviewScreen({
   const [alert, setAlert] = useState<Note | null>(null);
   const [composer, setComposer] = useState<ComposerDraft | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** «Separados»: the share the hinge was dragged to (this visit only); null: the best for these two pictures. */
+  const [split, setSplit] = useState<ChosenSplit | null>(null);
+  /** A slider of the panel over the take is being dragged. */
+  const [sliding, setSliding] = useState(false);
+  // 51 · A phone on its side (the usual way to watch it big) gets the stage at full height and a one-row bar.
+  const low = useMatch(LOW_SCREEN);
+  const wide = useMatch(WIDE_SCREEN);
+  const roomRef = useRef<HTMLDivElement>(null);
+  const room = useSize(roomRef);
+  const insetsRef = useRef<HTMLDivElement>(null);
+  const insets = useInsets(insetsRef, room);
+  const [takeRect, setTakeRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const settingsTitleRef = useRef<HTMLHeadingElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  // Focus goes into the settings when they open and back to their button when they close.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (settingsOpen && !wasOpen.current) settingsTitleRef.current?.focus();
+    else if (!settingsOpen && wasOpen.current) {
+      const active = document.activeElement;
+      if (!active || active === document.body || !rootRef.current?.contains(active)) settingsButtonRef.current?.focus();
+    }
+    wasOpen.current = settingsOpen;
+  }, [settingsOpen]);
   const playing = useReview((s) => s.playing);
   const takeError = useReview((s) => s.takeError);
   const originalError = useReview((s) => s.originalError);
-  const takeReady = useReview((s) => s.takeEngine != null);
+  const reduceMotion = useReducedMotion();
   const duration = useReview((s) => s.duration);
   const mirrorTake = useReview((s) => s.mirrorTake);
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
@@ -371,7 +424,12 @@ export function ReviewScreen({
   }
 
   const close = useCallback(() => onClose(), [onClose]);
+  // «Atrás» closes only what is on top (each layer has its own entry): the settings, an open note, then the review.
   useBackToClose(true, close, composer != null || savingClip);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  useBackToClose(settingsOpen, closeSettings);
+  const closeNote = useCallback(() => setOpenNoteId(null), []);
+  useBackToClose(openNoteId != null, closeNote, composer != null);
 
   // ── Focus, page scroll and keys ──
   useEffect(() => {
@@ -385,6 +443,14 @@ export function ReviewScreen({
     };
   }, []);
 
+  /** Which of the settings and a note opened last (Escape closes it first, as «Atrás» does). */
+  const openedOrder = useRef<('settings' | 'note')[]>([]);
+  useEffect(() => {
+    const order = openedOrder.current.filter((k) => (k === 'settings' ? settingsOpen : openNoteId != null));
+    if (settingsOpen && !order.includes('settings')) order.push('settings');
+    if (openNoteId != null && !order.includes('note')) order.push('note');
+    openedOrder.current = order;
+  }, [settingsOpen, openNoteId]);
   const stateRef = useRef({ composer, openNoteId, settingsOpen });
   stateRef.current = { composer, openNoteId, settingsOpen };
   useEffect(() => {
@@ -404,7 +470,10 @@ export function ReviewScreen({
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (st.openNoteId) setOpenNoteId(null);
+        // Same order as «Atrás»: the last one opened goes first.
+        const top = openedOrder.current.at(-1);
+        if (top === 'settings' && st.settingsOpen) setSettingsOpen(false);
+        else if (st.openNoteId) setOpenNoteId(null);
         else if (st.settingsOpen) setSettingsOpen(false);
         else close();
         return;
@@ -480,7 +549,13 @@ export function ReviewScreen({
     source === 'file' && file.status === 'ready' ? (
       <OriginalFile url={file.url} />
     ) : source === 'youtube' ? (
-      <OriginalYouTube videoId={video.youtube_id!} />
+      <OriginalYouTube
+        videoId={video.youtube_id!}
+        onRateAdjusted={(actual) =>
+          toast(`YouTube no admite esa velocidad en este vídeo: el original va a ${formatSpeed(actual)} y se recoloca de vez en cuando.`, 'info')
+        }
+        onStuck={() => toast('YouTube no ha arrancado: toca ▶ otra vez para seguir.', 'info')}
+      />
     ) : source === 'loading' ? (
       <div className="grid size-full place-items-center">
         <Spinner className="size-7 text-washi-muted" />
@@ -508,21 +583,178 @@ export function ReviewScreen({
       />
     ) : null;
 
+  const hasOriginal = source === 'file' || source === 'youtube';
+  const loopMissing = () => toast('Marca A y B para repetir un tramo', 'info');
+  const overlayRefused = () => toast(`«Superpuesto» no va con YouTube. ${OVERLAY_NEEDS_FILE}`, 'info');
   const settingsProps = {
     mode,
     prefs,
     onPrefs: setPrefs,
+    split: split?.value ?? null,
+    onAutoSplit: () => setSplit(null),
     onResetFit: () => onFit(NO_FIT, true),
     fitStatus: fitSaver.status,
     adjust,
     onAdjust,
     adjustStatus: adjustSaver.status,
-    hasOriginal: source === 'file' || source === 'youtube',
+    hasOriginal,
+    originalIsYouTube: source === 'youtube',
     practisedMirrored: take.mirrored,
     clips: inTake,
     canZoomOriginal,
     onSaveRange: openSaveRange,
+    compact: low,
+    onNote: newNote,
+    onLoopMissing: loopMissing,
+    canOverlay,
+    onMode: (m: CompareMode) => setPrefs({ mode: m }),
+    onOverlayRefused: overlayRefused,
   } as const;
+
+  // Where the settings and an open note go, never over YouTube. On a wide screen the settings sit beside the stage.
+  // On a phone on its side they open as a panel of a comfortable width over the take's side: the take's panel is made
+  // that wide and covered, YouTube keeps its own box (at least its minimum); on a very narrow screen the panel covers
+  // the take whole. In portrait the settings go under the stage, as tall as the pictures allow, with the one-row bar
+  // (▶ and the time) still under them.
+  const youtube = source === 'youtube';
+  const takeAspect = aspectOf(take, 9 / 16);
+  const lowStageWidth = Math.max(0, room.width - insets.left - insets.right);
+  const coverOpen = low && (settingsOpen || openNote != null);
+  const coverWidth = coverOpen ? coverPanelWidth(lowStageWidth, youtube) : 0;
+  const asideShown = wide;
+  const sheetBelow = !wide && !low && settingsOpen;
+  const belowMax = sheetBelow ? bottomSheetHeight(room.height - BAR_H - insets.bottom, youtube) : 0;
+  /** The take's side of a phone on its side (where the panel opens). */
+  const takeAtEnd = prefs.order === 'original-first';
+  // Elsewhere, notes, their pop-ups and errors sit over the take, never over YouTube.
+  const noteArea = youtube && mode === 'stacked' ? takeRect : null;
+  // A narrow phone in portrait (360 px): no side padding, or YouTube would fall under its minimum.
+  const tightPortrait = youtube && !low && !wide && room.width > 0 && room.width - 16 < YOUTUBE_MIN_BOX.width;
+
+  const noteCard = (
+    <AnimatePresence>
+      {openNote && (
+        <TakeNoteCard
+          key={openNote.id}
+          note={openNote}
+          members={members.data ?? []}
+          sketchShown={sketchShown}
+          onToggleSketch={() => setSketchShown((v) => !v)}
+          onClose={() => setOpenNoteId(null)}
+          onEdit={() => editNote(openNote)}
+          onStatus={(status) => updateNote.mutate({ note: openNote, patch: { status } }, { onError: (err) => toast(friendlyError(err), 'error') })}
+          onDelete={() => {
+            setOpenNoteId(null);
+            deleteNote.mutate(openNote, {
+              onSuccess: () => toast('Nota borrada', 'success'),
+              onError: (err) => toast(friendlyError(err), 'error'),
+            });
+          }}
+        />
+      )}
+    </AnimatePresence>
+  );
+
+  const stage = (
+    <div
+      className={cn(
+        'seigaiha relative min-h-0 flex-1',
+        low
+          ? 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]'
+          : tightPortrait
+            ? 'py-2 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]'
+            : 'p-2 pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))] sm:p-3',
+      )}
+    >
+      <div className="relative size-full">
+        <ReviewCompareStage
+          mode={mode}
+          prefs={prefs}
+          split={split}
+          onSplit={setSplit}
+          fit={fit}
+          onFit={onFit}
+          mirrorTake={mirrorTake}
+          mirrorOriginal={mirrorOriginal}
+          take={<TakeVideo url={url} videoRef={takeVideo} onBlocked={() => toast('El móvil no dejó empezar la toma: toca ▶ para reproducirla.', 'info')} />}
+          original={original}
+          originalIsYouTube={youtube}
+          takeAspect={takeAspect}
+          takeExtra={sketch}
+          onTap={() => useReview.getState().togglePlay()}
+          isPlaying={() => useReview.getState().playing}
+          takeRoom={coverOpen && coverWidth > 0 ? coverWidth : undefined}
+          onTakeRect={setTakeRect}
+          canZoomOriginal={canZoomOriginal}
+          onZoom={(which, z) => useReview.getState().setZoom(which, z)}
+          onZoomUnavailable={onZoomUnavailable}
+          overlayGesture={overlayGesture}
+          onOverlayGesture={setOverlayGesture}
+        />
+        <div
+          // Over the panel when it is open: a note arriving or an error must show while adjusting.
+          className={cn('pointer-events-none absolute [&>*]:pointer-events-auto', coverOpen ? 'z-40' : 'z-20')}
+          style={noteArea ? { left: noteArea.left, top: noteArea.top, width: noteArea.width, height: noteArea.height } : { inset: 0 }}
+        >
+          {!coverOpen && noteCard}
+          <AnimatePresence>{alert && !openNote && <NoteAlert key={alert.id} note={alert} onOpen={() => showNote(alert)} />}</AnimatePresence>
+          {(takeError || originalError) && (
+            <p
+              role="alert"
+              className="paper-raised absolute inset-x-2 bottom-2 mx-auto flex max-w-md items-start gap-2 rounded-[12px] p-3 text-[13px] text-washi"
+            >
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-enji-300" />
+              {takeError ?? originalError}
+            </p>
+          )}
+        </div>
+      </div>
+      {coverOpen && (
+        // A phone on its side: settings and the open note in a panel over the take's side (never over YouTube).
+        <motion.div
+          initial={{ opacity: 0, x: reduceMotion ? 0 : takeAtEnd ? 24 : -24 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={reduceMotion ? { duration: 0.15 } : soft}
+          className={cn('absolute inset-y-0 z-30', takeAtEnd ? 'right-[env(safe-area-inset-right)]' : 'left-[env(safe-area-inset-left)]')}
+          style={{ width: coverWidth }}
+        >
+          {settingsOpen && (
+            <section
+              aria-label="Ajustes del repaso"
+              // While a slider is dragged the panel fades, so the take under it shows (only opacity: no layout).
+              className="absolute inset-0 overflow-y-auto overscroll-contain bg-sumi-900 p-3 pt-[max(12px,env(safe-area-inset-top))] transition-opacity duration-150 motion-reduce:transition-none"
+              style={{ opacity: sliding ? 0.25 : 1 }}
+            >
+              <ReviewSettings {...settingsProps} titleRef={settingsTitleRef} onClose={() => setSettingsOpen(false)} onSliding={setSliding} />
+            </section>
+          )}
+          {noteCard}
+        </motion.div>
+      )}
+    </div>
+  );
+
+  const settingsSheet = (
+    <ReviewSettings {...settingsProps} titleRef={settingsTitleRef} onClose={wide ? undefined : () => setSettingsOpen(false)} />
+  );
+
+  /** One row: close, play, time and line, what's heard, settings (a phone on its side, or under the settings). */
+  const bar = (
+    <footer
+      className={cn(
+        'sep-t box-content flex h-14 shrink-0 items-center gap-1 bg-sumi-900 pb-[env(safe-area-inset-bottom)] pl-[max(6px,env(safe-area-inset-left))]',
+        'pr-[max(6px,env(safe-area-inset-right))]',
+      )}
+    >
+      <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" onClick={close}>
+        <X className="size-6" />
+      </Button>
+      <PlayCrest size="sm" />
+      <ReviewTimeline variant="bar" notes={notes} openNoteId={openNoteId} onNote={showNote} />
+      <SoundPill hasOriginal={hasOriginal} />
+      <SettingsButton ref={settingsButtonRef} open={settingsOpen} onClick={() => setSettingsOpen((v) => !v)} />
+    </footer>
+  );
 
   return createPortal(
     <motion.div
@@ -531,139 +763,127 @@ export function ReviewScreen({
       aria-modal="true"
       aria-labelledby={titleId}
       tabIndex={-1}
-      initial={{ opacity: 0, y: 24 }}
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 24 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={soft}
+      transition={reduceMotion ? { duration: 0.15 } : soft}
       className="fixed inset-0 z-[45] flex flex-col bg-sumi-950 text-washi outline-none"
     >
-      <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line-strong bg-sumi-900 px-2 pb-1.5 pt-[max(6px,env(safe-area-inset-top))] sm:px-4">
-        <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" onClick={close}>
-          <X className="size-6" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <h2 id={titleId} className="flex items-center gap-1.5 truncate font-display text-[18px] font-bold leading-tight">
-            Repaso <span aria-hidden className="text-[15px] text-shu-400">比</span>
-          </h2>
-          <p className="truncate text-[12px] text-washi-muted">
-            {memberName} · {takeDateLabel(take.recorded_at)} · {video.title}
-          </p>
-        </div>
-        <Segmented
-          label="Cómo comparar"
-          layoutId={`review-mode-${take.id}`}
-          value={mode}
-          onChange={(m) => setPrefs({ mode: m })}
-          onDisabled={() => toast(`«Superpuesto» no va con YouTube. ${OVERLAY_NEEDS_FILE}`, 'info')}
-          options={[
-            { value: 'stacked', label: 'Apilado' },
-            { value: 'overlay', label: 'Superpuesto', disabled: !canOverlay, ariaLabel: canOverlay ? undefined : `Superpuesto, no disponible: ${OVERLAY_NEEDS_FILE}` },
-          ]}
-        />
-        {source === 'youtube' && (
-          <p className="w-full pl-1 text-[12px] leading-snug text-washi-subtle sm:w-auto sm:pl-0">
-            Superpuesto: {OVERLAY_NEEDS_FILE.charAt(0).toLowerCase() + OVERLAY_NEEDS_FILE.slice(1)}
-          </p>
-        )}
-      </header>
-
-      <div className="flex min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="relative min-h-0 flex-1">
-            <ReviewCompareStage
-              mode={mode}
-              prefs={prefs}
-              onPrefs={setPrefs}
-              fit={fit}
-              onFit={onFit}
-              mirrorTake={mirrorTake}
-              mirrorOriginal={mirrorOriginal}
-              take={<TakeVideo url={url} videoRef={takeVideo} />}
-              original={original}
-              takeExtra={sketch}
-              onTap={() => useReview.getState().togglePlay()}
-              labels={{ take: 'Toma', original: 'Original' }}
-              canZoomOriginal={canZoomOriginal}
-              onZoom={(which, z) => useReview.getState().setZoom(which, z)}
-              onZoomUnavailable={onZoomUnavailable}
-              overlayGesture={overlayGesture}
-              onOverlayGesture={setOverlayGesture}
-            />
-            {!takeReady && !takeError && (
-              <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-                <Spinner className="size-8 text-washi-muted" />
-              </div>
-            )}
-            {(takeError || originalError) && (
-              <p role="alert" className="absolute inset-x-3 bottom-3 z-20 mx-auto flex max-w-md items-start gap-2 rounded-[10px] bg-sumi-900/95 p-3 text-[13px] text-washi">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-enji-300" />
-                {takeError ?? originalError}
-              </p>
-            )}
-            <AnimatePresence>
-              {openNote && (
-                <TakeNoteCard
-                  key={openNote.id}
-                  note={openNote}
-                  members={members.data ?? []}
-                  sketchShown={sketchShown}
-                  onToggleSketch={() => setSketchShown((v) => !v)}
-                  onClose={() => setOpenNoteId(null)}
-                  onEdit={() => editNote(openNote)}
-                  onStatus={(status) =>
-                    updateNote.mutate(
-                      { note: openNote, patch: { status } },
-                      { onError: (err) => toast(friendlyError(err), 'error') },
-                    )
-                  }
-                  onDelete={() => {
-                    setOpenNoteId(null);
-                    deleteNote.mutate(openNote, {
-                      onSuccess: () => toast('Nota borrada', 'success'),
-                      onError: (err) => toast(friendlyError(err), 'error'),
-                    });
-                  }}
-                />
-              )}
-            </AnimatePresence>
-            <AnimatePresence>{alert && !openNote && <NoteAlert key={alert.id} note={alert} onOpen={() => showNote(alert)} />}</AnimatePresence>
-            <AnimatePresence>
-              {settingsOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 24 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 16, transition: { duration: 0.15 } }}
-                  transition={soft}
-                  className="paper-raised absolute inset-x-2 bottom-2 z-30 max-h-[calc(100%-16px)] overflow-y-auto overscroll-contain rounded-[14px] p-4 lg:hidden"
-                >
-                  <ReviewSettings {...settingsProps} onClose={() => setSettingsOpen(false)} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+      {/* Measures the screen's safe areas (the notch, the home bar) for the room rules above. */}
+      <div
+        ref={insetsRef}
+        aria-hidden
+        className="pointer-events-none invisible fixed left-0 top-0 h-0 w-0 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
+      />
+      {low ? (
+        // A phone on its side: no header, the stage takes the whole height; the title stays for screen readers.
+        <h2 id={titleId} className="sr-only">
+          Repaso · {memberName} · {takeDateLabel(take.recorded_at)}
+        </h2>
+      ) : (
+        <header className="sep-b flex shrink-0 items-center gap-2 bg-sumi-900 pb-1.5 pl-[max(8px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(6px,env(safe-area-inset-top))]">
+          <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" onClick={close}>
+            <X className="size-6" />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h2 id={titleId} className="flex items-baseline gap-1.5 truncate font-display text-[19px] font-bold leading-tight">
+              Repaso <span aria-hidden className="text-[14px] text-shu-400">比</span>
+            </h2>
+            <p className="truncate text-[12px] text-washi-muted">
+              {memberName} · {takeDateLabel(take.recorded_at)}
+            </p>
           </div>
-          <footer className="shrink-0 border-t border-line-strong bg-sumi-900 px-3 pb-[max(6px,env(safe-area-inset-bottom))] sm:px-5">
-            <ReviewTimeline notes={notes} openNoteId={openNoteId} onNote={showNote} />
-            {hasRange(loop) && !activeClipId && (
-              // Short landscape phones keep the stage: there the button lives in the review settings.
-              <div className="mx-auto flex max-w-xl items-center justify-between gap-2 [@media(max-height:480px)]:hidden">
-                <span className="tabular truncate font-mono text-[12px] text-washi-muted">
-                  A–B {formatTime(loop.start, { tenths: true })}–{formatTime(loop.end, { tenths: true })}
-                </span>
-                <Button variant="secondary" size="sm" className="min-h-11" onClick={openSaveRange}>
-                  <BookmarkPlus className="size-4" /> Guardar como clip
-                </Button>
-              </div>
-            )}
-            <ReviewTransport
-              onNote={newNote}
-              settingsOpen={settingsOpen}
-              onSettings={() => setSettingsOpen((v) => !v)}
-              onLoopMissing={() => toast('Marca A y B para repetir un tramo', 'info')}
+          {hasOriginal && (
+            <Segmented
+              label="Cómo comparar"
+              layoutId={`review-mode-${take.id}`}
+              size="sm"
+              value={mode}
+              onChange={(m) => setPrefs({ mode: m })}
+              onDisabled={overlayRefused}
+              options={[
+                { value: 'stacked', label: 'Separados' },
+                {
+                  value: 'overlay',
+                  label: 'Superpuesto',
+                  disabled: !canOverlay,
+                  ariaLabel: canOverlay ? undefined : `Superpuesto, no disponible: ${OVERLAY_NEEDS_FILE}`,
+                },
+              ]}
             />
-          </footer>
+          )}
+        </header>
+      )}
+
+      <div ref={roomRef} className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {stage}
+
+          {low ? (
+            bar
+          ) : sheetBelow ? (
+            <>
+              <motion.section
+                aria-label="Ajustes del repaso"
+                initial={{ opacity: 0, y: reduceMotion ? 0 : 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={reduceMotion ? { duration: 0.15 } : soft}
+                className="paper-raised relative z-10 shrink-0 overflow-y-auto overscroll-contain rounded-t-[20px] border-b-0 p-4 pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] before:hidden"
+                style={{ maxHeight: belowMax }}
+              >
+                {settingsSheet}
+              </motion.section>
+              {bar}
+            </>
+          ) : (
+            <footer className="paper relative z-10 shrink-0 rounded-t-[20px] border-x-0 border-b-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 before:hidden sm:px-5">
+              <div className="mx-auto max-w-2xl">
+                <ReviewTimeline
+                  notes={notes}
+                  openNoteId={openNoteId}
+                  onNote={showNote}
+                  actions={
+                    <>
+                      <SoundPill hasOriginal={hasOriginal} />
+                      <NotePill onNote={newNote} />
+                    </>
+                  }
+                />
+                {hasRange(loop) && !activeClipId && (
+                  <div className="flex items-center justify-between gap-2 pb-1">
+                    <span className="tabular truncate font-mono text-[12px] text-washi-muted">
+                      A–B {formatTime(loop.start, { tenths: true })}–{formatTime(loop.end, { tenths: true })}
+                    </span>
+                    <Button variant="secondary" size="sm" className="min-h-11" onClick={openSaveRange}>
+                      <BookmarkPlus className="size-4" /> Guardar como clip
+                    </Button>
+                  </div>
+                )}
+                <ReviewTransport
+                  settingsOpen={settingsOpen}
+                  onSettings={() => setSettingsOpen((v) => !v)}
+                  onLoopMissing={loopMissing}
+                  settingsRef={settingsButtonRef}
+                  hideSettings={wide}
+                />
+              </div>
+            </footer>
+          )}
         </div>
-        <aside aria-label="Ajustes del repaso" className="hidden min-h-0 overflow-y-auto border-l border-line-strong bg-sumi-900 p-4 lg:block">
-          <ReviewSettings {...settingsProps} />
-        </aside>
+        {asideShown && (
+          <motion.aside
+            aria-label="Ajustes del repaso"
+            initial={wide ? false : { opacity: 0, x: reduceMotion ? 0 : 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={reduceMotion ? { duration: 0.15 } : soft}
+            className={cn(
+              'sep-l min-h-0 shrink-0 overflow-y-auto overscroll-contain bg-sumi-900 p-4',
+              'pb-[max(16px,env(safe-area-inset-bottom))] pr-[max(16px,env(safe-area-inset-right))] pt-[max(12px,env(safe-area-inset-top))]',
+              wide && 'w-[360px]',
+            )}
+          >
+            {settingsSheet}
+          </motion.aside>
+        )}
       </div>
 
       <SaveClipDialog
@@ -695,6 +915,54 @@ function ReviewCompareStage(props: Omit<ComponentProps<typeof CompareStage>, 'zo
   const zoomTake = useReview((s) => s.zoomTake);
   const zoomOriginal = useReview((s) => s.zoomOriginal);
   return <CompareStage {...props} zoomTake={zoomTake} zoomOriginal={zoomOriginal} />;
+}
+
+/** Below this height (a phone on its side) the review drops its header and keeps one row of controls. */
+const LOW_SCREEN = '(max-height: 520px)';
+/** A computer or tablet: the settings sit beside the stage. */
+const WIDE_SCREEN = '(min-width: 1024px) and (min-height: 521px)';
+
+/** The one-row bar's height (px, without the safe area). */
+const BAR_H = 56;
+
+function useSize(ref: React.RefObject<HTMLElement | null>): { width: number; height: number } {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () =>
+      setSize((s) => (s.width === el.clientWidth && s.height === el.clientHeight ? s : { width: el.clientWidth, height: el.clientHeight }));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return size;
+}
+
+/** The safe areas (px), read from an element padded by them; read again whenever the room changes (a turn). */
+function useInsets(ref: React.RefObject<HTMLElement | null>, room: { width: number; height: number }) {
+  const [insets, setInsets] = useState({ left: 0, right: 0, bottom: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const next = { left: parseFloat(cs.paddingLeft) || 0, right: parseFloat(cs.paddingRight) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+    setInsets((s) => (s.left === next.left && s.right === next.right && s.bottom === next.bottom ? s : next));
+  }, [ref, room.width, room.height]);
+  return insets;
+}
+
+function useMatch(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = window.matchMedia(query);
+      list.addEventListener('change', onChange);
+      return () => list.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }
 
 function trapFocus(event: KeyboardEvent, root: HTMLElement | null) {

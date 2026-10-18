@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Move, ZoomIn } from 'lucide-react';
 import {
   useEffect,
@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from '@/lib/cn';
-import { jelly, snappy } from '@/lib/motion';
+import { jelly } from '@/lib/motion';
 import { useMediaBox, ZoomLayer } from '@/player/ZoomLayer';
 import {
   gestureZoom,
@@ -25,10 +25,15 @@ import {
   type Zoom,
 } from '@/player/zoom';
 import {
-  clampSplit,
+  aspectOf,
+  bestLayout,
   gestureFit,
+  splitBounds,
+  YOUTUBE_MIN_BOX,
   keyFit,
   wheelFit,
+  YOUTUBE_ASPECT,
+  type Aspect,
   type CompareMode,
   type Fit,
   type Pt,
@@ -38,18 +43,20 @@ import {
 import { capturePointer } from './pointer';
 
 /**
- * F5 · How the take and the original share the screen, «Biombo»: in «Apilado» two panels hinged like a byōbu
- * folding screen; in «Superpuesto» the original sits in a lacquered screen frame you move and scale with two
- * fingers.
+ * F5 · 51 · How the take and the original share the screen, «Biombo»: in «Separados» two lacquered panels joined by
+ * a gold hinge (one above the other or side by side, whichever shows both pictures biggest); in «Superpuesto» the
+ * original sits over the take in a screen frame, see-through, moved and scaled with two fingers (files only).
  *
  * The two media nodes never move in the React tree (only their boxes change), so switching mode never reloads a
- * video or the YouTube player.
+ * video or the YouTube player. Boxes change by style, not by animating their size (no per-frame layout).
  */
 
 interface CompareStageProps {
   mode: CompareMode;
   prefs: ViewPrefs;
-  onPrefs: (patch: Partial<ViewPrefs>) => void;
+  /** Share of the first panel chosen with the hinge (for one way only); null: the best for these two pictures. */
+  split: ChosenSplit | null;
+  onSplit: (split: ChosenSplit) => void;
   fit: Fit;
   /** `settled`: the gesture ended (save it). */
   onFit: (fit: Fit, settled: boolean) => void;
@@ -57,16 +64,25 @@ interface CompareStageProps {
   mirrorOriginal: boolean;
   take: ReactNode;
   original: ReactNode;
+  /** The original is YouTube's player: never covered by a label, never zoomed. */
+  originalIsYouTube: boolean;
+  /** The take's saved size, until its video says its own. */
+  takeAspect: Aspect;
   /** Drawn over the take, inside its mirror (a note's sketch). */
   takeExtra?: ReactNode;
   /** A plain tap on the frame (play / pause). */
   onTap?: () => void;
-  labels?: { take: string; original: string };
-  className?: string;
+  /** Whether the review plays now (a tap that would start it never waits). */
+  isPlaying?: () => boolean;
   /**
-   * F9 · Zoom over each (its picture's own fractions, inside its mirror). «Superpuesto»: the take's zoom takes in
-   * both, following the take's mirror; the original keeps its fit over the take.
+   * Side by side, the take's panel gets at least this many px (the settings float over it on a small phone on its
+   * side: they may cover the take, never YouTube).
    */
+  takeRoom?: number;
+  /** Where the take's panel is (px in the stage), for what must sit over the take and never over YouTube. */
+  onTakeRect?: (rect: { left: number; top: number; width: number; height: number } | null) => void;
+  className?: string;
+  /** F9 · Zoom over each (its picture's own fractions, inside its mirror). «Superpuesto»: the take's zoom takes in both. */
   zoomTake?: Zoom;
   zoomOriginal?: Zoom;
   /** Only a file original can be zoomed: YouTube's player is never altered. */
@@ -79,10 +95,17 @@ interface CompareStageProps {
   onOverlayGesture?: (gesture: 'fit' | 'zoom') => void;
 }
 
+/** A share set with the hinge, for the way the panels went then (turning the phone starts again from the best). */
+export interface ChosenSplit {
+  value: number;
+  direction: 'row' | 'column';
+}
+
 /** What a gesture works on. */
 type Target = 'fit' | 'take' | 'original' | 'both';
 
-const HINGE = 12;
+/** The hinge between the panels (px). */
+const HINGE = 10;
 
 type Rect = { left: number; top: number; width: number; height: number };
 
@@ -92,7 +115,10 @@ function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => setSize({ width: el.clientWidth, height: el.clientHeight });
+    const measure = () =>
+      setSize((current) =>
+        current.width === el.clientWidth && current.height === el.clientHeight ? current : { width: el.clientWidth, height: el.clientHeight },
+      );
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -101,12 +127,10 @@ function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
   return [ref, size];
 }
 
-/** The two boxes of «Apilado»: side by side when the frame is wider than tall, else one above the other. */
-function stackedRects(size: Size, split: number): [Rect, Rect] {
-  const row = size.width >= size.height;
-  const total = row ? size.width : size.height;
-  const first = Math.max(0, total * split - HINGE / 2);
-  const second = Math.max(0, total - first - HINGE);
+function panelRects(size: Size, row: boolean, split: number): [Rect, Rect] {
+  const total = (row ? size.width : size.height) - HINGE;
+  const first = Math.max(0, Math.round(total * split));
+  const second = Math.max(0, total - first);
   if (row) {
     return [
       { left: 0, top: 0, width: first, height: size.height },
@@ -119,19 +143,26 @@ function stackedRects(size: Size, split: number): [Rect, Rect] {
   ];
 }
 
+const rectStyle = (r: Rect) => ({ left: r.left, top: r.top, width: r.width, height: r.height });
+
 export function CompareStage({
   mode,
   prefs,
-  onPrefs,
+  split: chosenSplit,
+  onSplit,
   fit,
   onFit,
   mirrorTake,
   mirrorOriginal,
   take,
   original,
+  originalIsYouTube,
+  takeAspect,
   takeExtra,
   onTap,
-  labels = { take: 'Tu toma', original: 'Original' },
+  isPlaying,
+  takeRoom,
+  onTakeRect,
   className,
   zoomTake = NO_ZOOM,
   zoomOriginal = NO_ZOOM,
@@ -141,28 +172,49 @@ export function CompareStage({
   overlayGesture = 'fit',
   onOverlayGesture,
 }: CompareStageProps) {
+  const reduce = useReducedMotion();
   const [frameRef, size] = useSize<HTMLDivElement>();
   const overlay = mode === 'overlay';
-  const row = size.width >= size.height;
-  const full: Rect = { left: 0, top: 0, width: size.width, height: size.height };
-  const [firstRect, secondRect] = stackedRects(size, prefs.split);
-  const originalFirst = prefs.order === 'original-first';
-  const originalRect = overlay ? full : originalFirst ? firstRect : secondRect;
-  const takeRect = overlay ? full : originalFirst ? secondRect : firstRect;
-  const originalOnTop = !overlay || prefs.onTop === 'original';
 
   // ── F9 · What each zoom needs: its box and its video's own size. ──
   const takeBox = useMediaBox<HTMLDivElement>();
   const originalBox = useMediaBox<HTMLDivElement>();
   const [zoomLive, setZoomLive] = useState(false);
 
+  // ── «Separados»: the way and the share that show both biggest; the hinge overrides the share. ──
+  const originalFirst = prefs.order === 'original-first';
+  const aTake = aspectOf(takeBox.media, takeAspect);
+  const aOriginal = originalIsYouTube ? YOUTUBE_ASPECT : aspectOf(originalBox.media, YOUTUBE_ASPECT);
+  // YouTube's player never under 200×200 (its terms): its panel keeps the room for it, by the layout and the hinge.
+  const youtubeMin = originalIsYouTube ? YOUTUBE_MIN_BOX : null;
+  const mins = (originalFirst ? [youtubeMin, null] : [null, youtubeMin]) as readonly [Size | null, Size | null];
+  const auto = bestLayout(size, originalFirst ? aOriginal : aTake, originalFirst ? aTake : aOriginal, HINGE, mins);
+  const row = auto.direction === 'row';
+  const bounds = splitBounds(size, auto.direction, HINGE, mins);
+  const chosen = chosenSplit?.direction === auto.direction ? chosenSplit.value : null;
+  const total = (row ? size.width : size.height) - HINGE;
+  const forced = takeRoom && row && total > 0 ? (originalFirst ? 1 - takeRoom / total : takeRoom / total) : null;
+  const wanted = forced ?? chosen ?? auto.split;
+  const split = forced == null && chosen == null ? auto.split : Math.min(bounds.max, Math.max(bounds.min, wanted));
+  const full: Rect = { left: 0, top: 0, width: size.width, height: size.height };
+  const [firstRect, secondRect] = panelRects(size, row, split);
+  const originalRect = overlay ? full : originalFirst ? firstRect : secondRect;
+  const takeRect = overlay ? full : originalFirst ? secondRect : firstRect;
+  const onTakeRectRef = useRef(onTakeRect);
+  onTakeRectRef.current = onTakeRect;
+  const rectKey = size.width > 0 ? [takeRect.left, takeRect.top, takeRect.width, takeRect.height].join(',') : '';
+  useEffect(() => {
+    if (!rectKey) return onTakeRectRef.current?.(null);
+    const [left, top, width, height] = rectKey.split(',').map(Number) as [number, number, number, number];
+    onTakeRectRef.current?.({ left, top, width, height });
+  }, [rectKey]);
+  const originalOnTop = !overlay || prefs.onTop === 'original';
+
   /** Which one a point of the frame (px from its top-left) is on, for a gesture that starts there. */
   const targetAt = (p: Pt): Target => {
     if (overlay) return overlayGesture === 'zoom' ? 'both' : 'fit';
     const r = originalRect;
-    return p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top && p.y <= r.top + r.height
-      ? 'original'
-      : 'take';
+    return p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top && p.y <= r.top + r.height ? 'original' : 'take';
   };
   /** The zoom a target works on, its box (px) and how to bring a frame point into it; null: not zoomable. */
   const zoomTarget = (target: Target) => {
@@ -181,17 +233,10 @@ export function CompareStage({
   };
 
   // ── Gestures: in «Superpuesto» drag / two fingers / wheel fit the original over the take (or zoom both); in
-  // «Apilado» they zoom the one under the fingers. A tap plays; a double tap on a zoomed one shows it whole. ──
+  // «Separados» they zoom the one under the fingers. A tap plays; a double tap on a zoomed one shows it whole. ──
   /** Pointers in px from the frame's top-left. */
   const pointers = useRef(new Map<number, Pt>());
-  const gesture = useRef<{
-    fit: Fit;
-    zoom: Zoom;
-    from: Pt[];
-    moved: boolean;
-    at: number;
-    target: Target;
-  } | null>(null);
+  const gesture = useRef<{ fit: Fit; zoom: Zoom; from: Pt[]; moved: boolean; at: number; target: Target } | null>(null);
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(tapTimer.current), []);
@@ -262,11 +307,16 @@ export function CompareStage({
     gesture.current = null;
     setZoomLive(false);
     if (!g) return;
-    if (!g.moved && performance.now() - g.at < 450) tap(g.target, point);
+    // A cancelled pointer (the system took it) is never a tap.
+    if (e.type !== 'pointercancel' && !g.moved && performance.now() - g.at < 450) tap(g.target, point);
     else if (g.target === 'fit' && g.moved) onFitRef.current(fitRef.current, true);
   }
 
-  /** Zoomed in, a single tap waits a moment: a second one shows the whole picture instead of playing. */
+  /**
+   * A tap plays or pauses. Playing always happens inside the tap (a phone only lets the take play with sound so).
+   * Zoomed in, a second quick tap shows the whole picture: so a pause waits a moment (pausing needs no tap), while a
+   * play starts at once and the second tap only resets the zoom.
+   */
   function tap(target: Target, point: Pt) {
     clearTimeout(tapTimer.current);
     const zt = zoomTarget(target);
@@ -282,7 +332,8 @@ export function CompareStage({
       return;
     }
     lastTap.current = now;
-    tapTimer.current = setTimeout(() => onTap?.(), 300);
+    if (!isPlaying?.()) onTap?.();
+    else tapTimer.current = setTimeout(() => onTap?.(), 300);
   }
 
   // The wheel needs a non-passive listener (React's is passive).
@@ -302,10 +353,7 @@ export function CompareStage({
       clearTimeout(settleTimer.current);
       if (target === 'fit') {
         const at = { x: p.x - rect.width / 2, y: p.y - rect.height / 2 };
-        onFitRef.current(
-          wheelFit(fitRef.current, delta, at, { width: rect.width, height: rect.height }),
-          false,
-        );
+        onFitRef.current(wheelFit(fitRef.current, delta, at, { width: rect.width, height: rect.height }), false);
         settleTimer.current = setTimeout(() => onFitRef.current(fitRef.current, true), 250);
         return;
       }
@@ -326,7 +374,7 @@ export function CompareStage({
   }, [frameRef]);
 
   /**
-   * «Apilado»: each zoomable panel takes the keyboard when focused: + zooms in; once zoomed, the arrows move the
+   * «Separados»: each zoomable panel takes the keyboard when focused: + zooms in; once zoomed, the arrows move the
    * view, − zooms out and 0 shows it whole. Other keys (and arrows on a whole picture) go on to the review.
    */
   const panelKeys = (target: 'take' | 'original', label: string) => {
@@ -348,7 +396,6 @@ export function CompareStage({
       },
     };
   };
-  const PANEL_FOCUS = 'outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-kin-300';
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (!overlay) return;
@@ -368,16 +415,15 @@ export function CompareStage({
     onFitRef.current(next, true);
   }
 
-  const fitTransform = overlay
-    ? `translate(${fit.x * size.width}px, ${fit.y * size.height}px) scale(${fit.scale})`
-    : 'none';
+  const fitTransform = overlay ? `translate(${fit.x * size.width}px, ${fit.y * size.height}px) scale(${fit.scale})` : 'none';
   const originalOpacity = overlay && originalOnTop ? prefs.opacity : 1;
   const takeOpacity = overlay && !originalOnTop ? prefs.opacity : 1;
+  const flip = reduce ? { duration: 0 } : jelly;
 
   return (
     <div
       ref={frameRef}
-      className={cn('relative size-full touch-none select-none overflow-hidden bg-sumi-950', className)}
+      className={cn('relative size-full touch-none select-none', className)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -395,102 +441,75 @@ export function CompareStage({
     >
       {size.width > 0 && (
         <>
-          {/* F9 · «Superpuesto» zooms both together, following the take's mirror; «Apilado» zooms each panel. */}
-          <ZoomLayer
-            zoom={overlay ? mirrorZoom(zoomTake, mirrorTake) : NO_ZOOM}
-            box={size}
-            media={takeBox.media}
-            live={zoomLive}
-          >
+          {/* F9 · «Superpuesto» zooms both together, following the take's mirror; «Separados» zooms each panel. */}
+          <ZoomLayer zoom={overlay ? mirrorZoom(zoomTake, mirrorTake) : NO_ZOOM} box={size} media={takeBox.media} live={zoomLive}>
             {/* The original */}
-            <motion.div
+            <div
               ref={originalBox.ref}
-              {...panelKeys('original', labels.original)}
-              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && PANEL_FRAME)}
-              initial={false}
-              animate={{ ...originalRect, opacity: originalOpacity }}
-              transition={snappy}
-              // Clipped to its box, so the panel's outer shadow stays hidden as it always has.
-              style={{ zIndex: originalOnTop ? 2 : 1, clipPath: 'inset(0 0 0 0)' }}
+              {...panelKeys('original', 'Original')}
+              className={cn(
+                'absolute overflow-hidden transition-opacity duration-200 motion-reduce:transition-none',
+                PANEL_FOCUS,
+                overlay ? 'rounded-none' : PANEL,
+              )}
+              style={{ ...rectStyle(originalRect), opacity: originalOpacity, zIndex: originalOnTop ? 2 : 1 }}
             >
-              <div
-                className="absolute inset-0"
-                style={{ transform: fitTransform, transformOrigin: '50% 50%' }}
-              >
-                <div className="absolute inset-0">
-                  <motion.div
-                    className="absolute inset-0"
-                    initial={false}
-                    animate={{ scaleX: mirrorOriginal ? -1 : 1 }}
-                    transition={jelly}
+              <div className="absolute inset-0" style={{ transform: fitTransform, transformOrigin: '50% 50%' }}>
+                <motion.div className="absolute inset-0" initial={false} animate={{ scaleX: mirrorOriginal ? -1 : 1 }} transition={flip}>
+                  <ZoomLayer
+                    zoom={!overlay && canZoomOriginal ? zoomOriginal : NO_ZOOM}
+                    box={originalBox.box}
+                    media={originalBox.media}
+                    live={zoomLive}
                   >
-                    <ZoomLayer
-                      zoom={!overlay && canZoomOriginal ? zoomOriginal : NO_ZOOM}
-                      box={originalBox.box}
-                      media={originalBox.media}
-                      live={zoomLive}
-                    >
-                      {original}
-                    </ZoomLayer>
-                  </motion.div>
-                  {overlay && <OverlayDress />}
-                </div>
+                    {original}
+                  </ZoomLayer>
+                </motion.div>
+                {overlay && <OverlayFrame />}
               </div>
-              {!overlay && (
+              {/* YouTube's player is never covered: its panel has no label (it shows its own name). */}
+              {!overlay && !originalIsYouTube && (
                 <PanelLabel>
-                  {labels.original}
-                  {canZoomOriginal && isZoomed(zoomOriginal) ? ` · ${zoomLabel(zoomOriginal)}` : ''}
+                  Original{canZoomOriginal && isZoomed(zoomOriginal) ? ` · ${zoomLabel(zoomOriginal)}` : ''}
                 </PanelLabel>
               )}
-            </motion.div>
+            </div>
 
             {/* The take */}
-            <motion.div
+            <div
               ref={takeBox.ref}
-              {...panelKeys('take', labels.take)}
-              className={cn('absolute overflow-hidden', PANEL_FOCUS, !overlay && PANEL_FRAME)}
-              initial={false}
-              animate={{ ...takeRect, opacity: takeOpacity }}
-              transition={snappy}
-              style={{ zIndex: originalOnTop ? 1 : 2 }}
+              {...panelKeys('take', 'Toma')}
+              className={cn(
+                'absolute overflow-hidden transition-opacity duration-200 motion-reduce:transition-none',
+                PANEL_FOCUS,
+                overlay ? 'rounded-none' : PANEL,
+              )}
+              style={{ ...rectStyle(takeRect), opacity: takeOpacity, zIndex: originalOnTop ? 1 : 2 }}
             >
-              <motion.div
-                className="absolute inset-0"
-                initial={false}
-                animate={{ scaleX: mirrorTake ? -1 : 1 }}
-                transition={jelly}
-              >
-                <ZoomLayer
-                  zoom={overlay ? NO_ZOOM : zoomTake}
-                  box={takeBox.box}
-                  media={takeBox.media}
-                  live={zoomLive}
-                >
+              <motion.div className="absolute inset-0" initial={false} animate={{ scaleX: mirrorTake ? -1 : 1 }} transition={flip}>
+                <ZoomLayer zoom={overlay ? NO_ZOOM : zoomTake} box={takeBox.box} media={takeBox.media} live={zoomLive}>
                   {take}
                   {takeExtra}
                 </ZoomLayer>
               </motion.div>
-              {!overlay && (
-                <PanelLabel>
-                  {labels.take}
-                  {isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}
-                </PanelLabel>
-              )}
-            </motion.div>
+              {!overlay && <PanelLabel tone="take">Toma{isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}</PanelLabel>}
+            </div>
           </ZoomLayer>
 
           {!overlay && (
             <Hinge
               row={row}
-              split={prefs.split}
-              size={size}
-              onChange={(split) => onPrefs({ split: clampSplit(split) })}
+              at={row ? firstRect.width : firstRect.height}
+              split={split}
+              bounds={bounds}
+              total={(row ? size.width : size.height) - HINGE}
+              onChange={(value) => onSplit({ value: Math.min(bounds.max, Math.max(bounds.min, value)), direction: auto.direction })}
             />
           )}
           {overlay && (
-            <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[6px] bg-sumi-950/75 px-2 py-1 text-[11px] font-medium text-washi-muted">
-              {originalOnTop ? `${labels.original} encima` : `${labels.take} encima`} ·{' '}
-              {Math.round(fit.scale * 100)} %{isZoomed(zoomTake) ? ` · ampliado ${zoomLabel(zoomTake)}` : ''}
+            <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[8px] bg-sumi-950/80 px-2 py-1 text-[12px] font-medium text-washi-muted">
+              {originalOnTop ? 'Original encima' : 'Toma encima'} · {Math.round(fit.scale * 100)} %
+              {isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}
             </span>
           )}
           {overlay && onOverlayGesture && (
@@ -502,15 +521,14 @@ export function CompareStage({
                   ? 'Los gestos amplían los dos. Pulsa para que encajen el original'
                   : 'Los gestos encajan el original. Pulsa para que amplíen los dos'
               }
-              title={overlayGesture === 'zoom' ? 'Gestos: ampliar los dos' : 'Gestos: encajar el original'}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerUp={(e) => e.stopPropagation()}
               onClick={() => onOverlayGesture(overlayGesture === 'zoom' ? 'fit' : 'zoom')}
-              whileTap={{ scale: 0.9 }}
+              whileTap={reduce ? undefined : { scale: 0.9 }}
               transition={jelly}
               className={cn(
-                'absolute right-2 top-2 z-[5] flex min-h-11 items-center gap-1.5 rounded-[10px] px-3 text-[12px] font-bold',
-                overlayGesture === 'zoom' ? 'bg-washi text-sumi-900' : 'bg-sumi-950/80 text-washi',
+                'absolute right-2 top-2 z-[5] flex min-h-11 items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-bold',
+                overlayGesture === 'zoom' ? 'bg-washi text-sumi-900' : 'bg-sumi-950/85 text-washi',
               )}
             >
               {overlayGesture === 'zoom' ? <ZoomIn className="size-4" /> : <Move className="size-4" />}
@@ -523,105 +541,122 @@ export function CompareStage({
   );
 }
 
-/** Lacquered screen panel: gold hairline inside a sumi border. */
-const PANEL_FRAME =
-  'rounded-[3px] shadow-[inset_0_0_0_1px_var(--color-kin-400),inset_0_0_0_4px_var(--color-sumi-900),0_10px_24px_-14px_var(--color-sumi-950)]';
+/** A lacquered panel of the screen: ink inside, a gold hairline at the edge (its border: it never covers the picture). */
+const PANEL = 'rounded-[12px] border border-kin-400/45 bg-sumi-950';
+const PANEL_FOCUS = 'outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-kin-300';
 
-function PanelLabel({ children }: { children: ReactNode }) {
+function PanelLabel({ children, tone }: { children: ReactNode; tone?: 'take' }) {
   return (
-    <span className="pointer-events-none absolute left-2 top-2 z-[3] rounded-[6px] bg-sumi-950/80 px-2 py-1 text-[11px] font-bold tracking-[0.04em] text-kin-300">
+    <span
+      className={cn(
+        'pointer-events-none absolute left-2 top-2 z-[3] rounded-[7px] bg-sumi-950/80 px-2 py-0.5 text-[12px] font-bold',
+        tone === 'take' ? 'text-shu-300' : 'text-kin-300',
+      )}
+    >
       {children}
     </span>
   );
 }
 
-/** What dresses the original over the take: a screen frame. */
-function OverlayDress() {
+/** «Superpuesto»: the original's screen frame — a gold edge and the two folds of a three-leaf byōbu. */
+function OverlayFrame() {
   return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 rounded-[2px] shadow-[inset_0_0_0_2px_var(--color-kin-400)]"
-    >
-      <span className="absolute inset-y-0 left-1/3 w-px bg-kin-400/35" />
-      <span className="absolute inset-y-0 left-2/3 w-px bg-kin-400/35" />
+    <div aria-hidden className="pointer-events-none absolute inset-0 rounded-[4px] shadow-[inset_0_0_0_2px_var(--color-kin-400)]">
+      <span className="absolute inset-y-0 left-1/3 w-px bg-kin-400/30" />
+      <span className="absolute inset-y-0 left-2/3 w-px bg-kin-400/30" />
     </div>
   );
 }
 
-/** «Apilado»: the joint between the panels; drag it (or use the arrows) to share the space 30–70 %. */
+/**
+ * «Separados»: the gold hinge between the panels; drag it (or use the arrows) to share the space, within what keeps
+ * YouTube's player whole. While dragging only the hinge moves (a transform): the panels — and YouTube's iframe — take
+ * their new size once, on release.
+ */
 function Hinge({
   row,
+  at,
   split,
-  size,
+  bounds,
+  total,
   onChange,
 }: {
   row: boolean;
+  /** Where the hinge starts (px from the frame's start). */
+  at: number;
   split: number;
-  size: Size;
+  bounds: { min: number; max: number };
+  total: number;
   onChange: (split: number) => void;
 }) {
-  const total = row ? size.width : size.height;
-  const at = total * split - HINGE / 2;
-  const drag = useRef<{ start: number; split: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ start: number; split: number; next: number } | null>(null);
+  const centre = at + HINGE / 2;
+  const clampTo = (value: number) => Math.min(bounds.max, Math.max(bounds.min, value));
+  const end = (commit: boolean) => {
+    const d = drag.current;
+    drag.current = null;
+    ref.current?.style.removeProperty('transform');
+    if (commit && d && d.next !== d.split) onChange(d.next);
+  };
   return (
     <div
+      ref={ref}
       role="separator"
       tabIndex={0}
       aria-orientation={row ? 'vertical' : 'horizontal'}
       aria-label="Reparto entre el original y la toma"
-      aria-valuemin={30}
-      aria-valuemax={70}
+      aria-valuemin={Math.round(bounds.min * 100)}
+      aria-valuemax={Math.round(bounds.max * 100)}
       aria-valuenow={Math.round(split * 100)}
       onPointerDown={(e) => {
         e.stopPropagation();
         capturePointer(e);
-        drag.current = { start: row ? e.clientX : e.clientY, split };
+        drag.current = { start: row ? e.clientX : e.clientY, split, next: split };
       }}
       onPointerMove={(e) => {
-        if (!drag.current || total <= 0) return;
+        const d = drag.current;
+        if (!d || total <= 0) return;
         e.stopPropagation();
-        onChange(drag.current.split + ((row ? e.clientX : e.clientY) - drag.current.start) / total);
+        d.next = clampTo(d.split + ((row ? e.clientX : e.clientY) - d.start) / total);
+        const px = (d.next - d.split) * total;
+        ref.current?.style.setProperty('transform', row ? `translateX(${px}px)` : `translateY(${px}px)`);
       }}
       onPointerUp={(e) => {
         e.stopPropagation();
-        drag.current = null;
+        end(true);
       }}
+      onPointerCancel={() => end(false)}
       onKeyDown={(e) => {
         const back = row ? 'ArrowLeft' : 'ArrowUp';
         const fwd = row ? 'ArrowRight' : 'ArrowDown';
         if (e.key !== back && e.key !== fwd) return;
         e.preventDefault();
         e.stopPropagation();
-        onChange(split + (e.key === fwd ? 0.05 : -0.05));
+        onChange(clampTo(split + (e.key === fwd ? 0.05 : -0.05)));
       }}
       className={cn(
-        'group absolute z-[4] flex items-center justify-center',
-        row
-          ? 'top-0 h-full w-11 cursor-col-resize flex-col'
-          : 'left-0 h-11 w-full cursor-row-resize flex-row',
+        'group absolute z-[4] flex items-center justify-center rounded-[8px] outline-none will-change-transform focus-visible:bg-kin-300/15',
+        row ? 'top-0 h-full w-11 cursor-col-resize' : 'left-0 h-11 w-full cursor-row-resize',
       )}
-      style={row ? { left: at + HINGE / 2 - 22 } : { top: at + HINGE / 2 - 22 }}
+      style={row ? { left: centre - 22 } : { top: centre - 22 }}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'flex items-center justify-around rounded-[2px]',
-          row ? 'h-full w-[6px] flex-col py-[18%]' : 'h-[6px] w-full flex-row px-[18%]',
-          'bg-sumi-800 shadow-[0_0_0_1px_var(--color-kin-400)]',
-        )}
-      >
-        {[0, 1, 2].map((i) => (
-          <span key={i} className={cn('rounded-[1px] bg-kin-400', row ? 'h-4 w-[10px]' : 'h-[10px] w-4')} />
+      {/* A gold rod with two hinge plates; the grip in the middle lights up under the finger or the focus. */}
+      <span aria-hidden className={cn('relative', row ? 'h-full w-px bg-kin-400/50' : 'h-px w-full bg-kin-400/50')}>
+        {[0.22, 0.78].map((f) => (
+          <span
+            key={f}
+            className={cn('absolute rounded-[2px] bg-kin-400', row ? 'left-1/2 h-5 w-[5px] -translate-x-1/2' : 'top-1/2 h-[5px] w-5 -translate-y-1/2')}
+            style={row ? { top: `calc(${f * 100}% - 10px)` } : { left: `calc(${f * 100}% - 10px)` }}
+          />
         ))}
+        <span
+          className={cn(
+            'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-kin-300 shadow-[0_0_0_3px_var(--color-sumi-950)] group-hover:scale-125 group-focus-visible:scale-125 group-active:scale-125',
+            row ? 'h-8 w-[5px]' : 'h-[5px] w-8',
+          )}
+        />
       </span>
-      <motion.span
-        aria-hidden
-        className="absolute grid size-7 place-items-center rounded-full bg-washi text-[10px] font-bold text-sumi-900 opacity-0 shadow-[0_4px_10px_-4px_var(--color-sumi-950)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-        whileTap={{ scale: 0.85 }}
-        transition={jelly}
-      >
-        {Math.round(split * 100)}
-      </motion.span>
     </div>
   );
 }

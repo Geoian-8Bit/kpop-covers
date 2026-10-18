@@ -9,8 +9,9 @@ import { Field } from '@/components/ui/Field';
 import { Segmented } from '@/components/ui/Segmented';
 import { currentMemberId, useMembers } from '@/data/members';
 import { useCreatePoll, useUpdatePoll, useWishInterest, useWishes, wishError } from '@/data/wishes';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
-import { jelly, soft } from '@/lib/motion';
+import { jelly } from '@/lib/motion';
 import { useToast } from '@/providers/ToastProvider';
 import { VOTE_TYPE_COPY } from './pollRules';
 import { interestByWish, liveWishes, sortByInterest } from './wishRules';
@@ -20,46 +21,24 @@ export interface PollPreset {
   title?: string;
   wishIds: string[];
   vote_type?: VoteType;
-  results_live?: boolean;
-  anonymous?: boolean;
   parent?: Pick<Poll, 'id' | 'closed_at' | 'title'> | null;
 }
 
-type Closing = 'manual' | 'time';
-const KEEP_PROMISE = 'Ya hay votos: no se puede quitar el anonimato ni enseñar antes los resultados.';
-
-/** `YYYY-MM-DDTHH:mm` in local time, for <input type="datetime-local">. */
-function toLocalInput(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-/** The next Sunday at 22:00 (the plan's example), or a week later if that's already past. */
-function nextSundayEvening(from = new Date()): Date {
-  const date = new Date(from);
-  date.setDate(date.getDate() + ((7 - date.getDay()) % 7));
-  date.setHours(22, 0, 0, 0);
-  if (date.getTime() <= from.getTime()) date.setDate(date.getDate() + 7);
-  return date;
-}
-
 /**
- * F11 · «Crear votación» (candidates from the wish list, title, closing date and time or by hand, type, results
- * live or at the end, named or anonymous) and «Editar» of an open one (the candidates and the type stay).
+ * F11 · «Crear votación» (candidates from the wish list, title, type) and «Editar» of an open one (only the title:
+ * the candidates and the type stay). 52 · No more options: results are always live, votes always named and the
+ * close always by hand (`insertPoll` writes those fixed values).
  */
 export function PollFormDialog({
   open,
   onClose,
   preset,
   poll,
-  hasVotes = false,
 }: {
   open: boolean;
   onClose: () => void;
   preset?: PollPreset | null;
   poll?: Poll | null;
-  /** Editing a poll that already has votes: what was promised to the voters (anonymous, results at the end) stays. */
-  hasVotes?: boolean;
 }) {
   const editing = Boolean(poll);
   const wishes = useWishes();
@@ -70,17 +49,10 @@ export function PollFormDialog({
   const navigate = useNavigate();
   const toast = useToast();
   const busy = create.isPending || update.isPending;
-  // With votes cast, an anonymous poll can't become named, nor «al cerrar» become live.
-  const lockNames = Boolean(poll?.anonymous && hasVotes);
-  const lockResults = Boolean(poll && !poll.results_live && hasVotes);
 
   const [title, setTitle] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
-  const [closing, setClosing] = useState<Closing>('time');
-  const [closesAt, setClosesAt] = useState('');
   const [type, setType] = useState<VoteType>('single');
-  const [live, setLive] = useState(true);
-  const [anonymous, setAnonymous] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,20 +61,12 @@ export function PollFormDialog({
     if (poll) {
       setTitle(poll.title);
       setPicked([]);
-      setClosing(poll.closes_at ? 'time' : 'manual');
-      setClosesAt(toLocalInput(poll.closes_at ? new Date(poll.closes_at) : nextSundayEvening()));
       setType(poll.vote_type);
-      setLive(poll.results_live);
-      setAnonymous(poll.anonymous);
       return;
     }
     setTitle(preset?.title ?? 'Próxima cover');
     setPicked(preset?.wishIds ?? []);
-    setClosing(preset?.parent ? 'manual' : 'time');
-    setClosesAt(toLocalInput(nextSundayEvening()));
     setType(preset?.vote_type ?? 'single');
-    setLive(preset?.results_live ?? true);
-    setAnonymous(preset?.anonymous ?? false);
     // Only when it opens: a parent re-rendering (with an equal preset) must not wipe what is being typed.
   }, [open]);
 
@@ -118,13 +82,7 @@ export function PollFormDialog({
     return [...extra, ...list];
   }, [wishes.data, interest.data, preset]);
 
-  const closesMs = closing === 'time' && closesAt ? new Date(closesAt).getTime() : null;
-  const timeProblem =
-    closing === 'time' && (!closesAt || !Number.isFinite(closesMs) || (closesMs ?? 0) <= Date.now() + 60_000)
-      ? 'Elige una fecha y hora futuras.'
-      : null;
-  const canSubmit =
-    !busy && title.trim().length > 0 && title.trim().length <= 80 && !timeProblem && (editing || picked.length >= 2);
+  const canSubmit = !busy && title.trim().length > 0 && title.trim().length <= 80 && (editing || picked.length >= 2);
 
   function toggle(id: string) {
     setPicked((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
@@ -134,13 +92,9 @@ export function PollFormDialog({
     event.preventDefault();
     if (!canSubmit) return;
     setError(null);
-    const closes_at = closing === 'time' && closesMs ? new Date(closesMs).toISOString() : null;
     try {
       if (poll) {
-        await update.mutateAsync({
-          id: poll.id,
-          patch: { title: title.trim(), closes_at, results_live: live, anonymous },
-        });
+        await update.mutateAsync({ id: poll.id, patch: { title: title.trim() } });
         toast('Votación actualizada', 'success');
         onClose();
         return;
@@ -149,9 +103,6 @@ export function PollFormDialog({
         row: {
           title: title.trim(),
           vote_type: type,
-          results_live: live,
-          anonymous,
-          closes_at,
           created_by_member_id: currentMemberId(members.data),
           parent_poll_id: preset?.parent?.id ?? null,
         },
@@ -161,7 +112,8 @@ export function PollFormDialog({
       });
       toast(preset?.parent ? 'Segunda vuelta creada' : 'Votación creada', 'success');
       onClose();
-      navigate(`/deseos/votacion/${created.id}`);
+      // From the dialog: the poll's page takes the dialog's history entry («Atrás» goes straight back to the list).
+      navigateFromLayer(navigate, `/deseos/votacion/${created.id}`);
     } catch (err) {
       setError(wishError(err));
     }
@@ -239,86 +191,13 @@ export function PollFormDialog({
           </div>
         )}
 
-        <div>
-          <p aria-hidden className="mb-1.5 text-[13px] font-medium text-washi-muted">
-            Cierre
+        {/* Editing only changes the title (and an older vote may still be anonymous or close by itself). */}
+        {!editing && (
+          <p className="text-[12px] leading-snug text-washi-subtle">
+            Resultados en directo y votos con nombre. Se cierra a mano, desde la votación. Un voto por persona según
+            «¿Quién eres?»: va por confianza, sin contraseñas.
           </p>
-          <Segmented
-            label="Cierre"
-            layoutId="poll-closing"
-            value={closing}
-            onChange={setClosing}
-            className="w-full [&>button]:min-h-10 [&>button]:flex-1"
-            options={[
-              { value: 'time', label: 'Fecha y hora' },
-              { value: 'manual', label: 'A mano' },
-            ]}
-          />
-          <AnimatePresence initial={false}>
-            {closing === 'time' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={soft}
-                className="overflow-hidden"
-              >
-                <Field
-                  className="pt-3"
-                  label="Se cierra el"
-                  type="datetime-local"
-                  value={closesAt}
-                  min={toLocalInput(new Date())}
-                  onChange={(e) => setClosesAt(e.target.value)}
-                  error={timeProblem}
-                  hint="También se puede cerrar antes, a mano."
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <p aria-hidden className="mb-1.5 text-[13px] font-medium text-washi-muted">
-              Resultados
-            </p>
-            <Segmented
-              label="Resultados"
-              layoutId="poll-results"
-              value={live ? 'live' : 'end'}
-              onChange={(v) => setLive(v === 'live')}
-              onDisabled={() => setError(KEEP_PROMISE)}
-              className="w-full [&>button]:min-h-10 [&>button]:flex-1"
-              options={[
-                { value: 'live', label: 'En directo', disabled: lockResults },
-                { value: 'end', label: 'Al cerrar' },
-              ]}
-            />
-          </div>
-          <div>
-            <p aria-hidden className="mb-1.5 text-[13px] font-medium text-washi-muted">
-              Votos
-            </p>
-            <Segmented
-              label="Votos"
-              layoutId="poll-anonymous"
-              value={anonymous ? 'anon' : 'named'}
-              onChange={(v) => setAnonymous(v === 'anon')}
-              onDisabled={() => setError(KEEP_PROMISE)}
-              className="w-full [&>button]:min-h-10 [&>button]:flex-1"
-              options={[
-                { value: 'named', label: 'Con nombre', disabled: lockNames },
-                { value: 'anon', label: 'Anónimos' },
-              ]}
-            />
-          </div>
-        </div>
-        <p className="-mt-3 text-[12px] leading-snug text-washi-subtle">
-          {lockNames || lockResults
-            ? 'Ya hay votos: lo que se prometió al votar (anónimos, resultados al cerrar) no se puede cambiar.'
-            : 'Un voto por persona según «¿Quién eres?»: va por confianza, sin contraseñas.'}
-        </p>
+        )}
 
         <AnimatePresence>
           {error && (

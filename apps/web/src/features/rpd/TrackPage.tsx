@@ -28,6 +28,7 @@ import {
 import { BagIcon } from '@/features/bags/BagIcon';
 import { countLabel } from '@/features/bags/drawRules';
 import { ClipPickList, toggleIn } from '@/features/bags/Pickers';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
 import { useAnnouncer } from '@/lib/reorderA11y';
@@ -313,7 +314,7 @@ function TrackEditor({ track }: { track: Track }) {
         suggestedName={`${track.name} (mezcla)`.slice(0, 80)}
         onSaved={(id) => {
           setMix(null);
-          navigate(`/rpd/pista/${id}`);
+          navigateFromLayer(navigate, `/rpd/pista/${id}`);
         }}
       />
       <Dialog

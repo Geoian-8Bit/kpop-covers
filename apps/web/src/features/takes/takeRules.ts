@@ -79,29 +79,21 @@ export function unnamedHere<T extends Pick<Take, 'device_id' | 'member_id'>>(tak
 
 // ───────────── Filters and order ─────────────
 
-export type DateFilter = 'today' | 'week' | 'all';
+/** 50 · By person and by clip (the date filters were dropped: nobody used them). */
 export interface TakeFilter {
   /** 'all', 'none' («Sin nombre») or a member id. */
   member: string;
   /** 'all', 'none' (no clip) or a clip id. */
   clip: string;
-  date: DateFilter;
 }
-export const NO_FILTER: TakeFilter = { member: 'all', clip: 'all', date: 'all' };
+export const NO_FILTER: TakeFilter = { member: 'all', clip: 'all' };
 
 export function isFiltered(filter: TakeFilter): boolean {
-  return filter.member !== 'all' || filter.clip !== 'all' || filter.date !== 'all';
+  return filter.member !== 'all' || filter.clip !== 'all';
 }
 
 export function startOfDay(now: Date): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-/** Monday 00:00 of this week (weeks start on Monday in Spain). */
-export function startOfWeek(now: Date): Date {
-  const day = startOfDay(now);
-  const sinceMonday = (day.getDay() + 6) % 7;
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate() - sinceMonday);
 }
 
 function matches(value: string | null, wanted: string): boolean {
@@ -110,18 +102,8 @@ function matches(value: string | null, wanted: string): boolean {
   return value === wanted;
 }
 
-export function filterTakes<T extends Pick<Take, 'member_id' | 'clip_id' | 'recorded_at'>>(
-  takes: readonly T[],
-  filter: TakeFilter,
-  now: Date = new Date(),
-): T[] {
-  const since = filter.date === 'today' ? startOfDay(now).getTime() : filter.date === 'week' ? startOfWeek(now).getTime() : null;
-  return takes.filter((t) => {
-    if (!matches(t.member_id, filter.member) || !matches(t.clip_id, filter.clip)) return false;
-    if (since == null) return true;
-    const at = Date.parse(t.recorded_at);
-    return Number.isFinite(at) && at >= since;
-  });
+export function filterTakes<T extends Pick<Take, 'member_id' | 'clip_id'>>(takes: readonly T[], filter: TakeFilter): T[] {
+  return takes.filter((t) => matches(t.member_id, filter.member) && matches(t.clip_id, filter.clip));
 }
 
 /** Best takes first (F4), then newest first. */
@@ -129,6 +111,37 @@ export function sortTakes<T extends Pick<Take, 'is_best' | 'recorded_at'>>(takes
   return [...takes].sort(
     (a, b) => Number(b.is_best) - Number(a.is_best) || b.recorded_at.localeCompare(a.recorded_at),
   );
+}
+
+/** Each take once, the first wins (a defence: the database and the cache patches never repeat one today). */
+export function uniqueTakes<T extends Pick<Take, 'id'>>(takes: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return takes.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+}
+
+/**
+ * 50 · The «Tomas» list: every take once. The one «Repaso» opens (`featuredId`: the best or newest of this device's
+ * person) goes first, highlighted, and is not repeated below; the rest keep their order (best first, then newest).
+ */
+export function takeListing<T extends Pick<Take, 'id' | 'is_best' | 'recorded_at'>>(
+  takes: readonly T[],
+  featuredId: string | null,
+): { featured: T | null; rest: T[] } {
+  const list = sortTakes(uniqueTakes(takes));
+  const featured = featuredId ? (list.find((t) => t.id === featuredId) ?? null) : null;
+  return { featured, rest: featured ? list.filter((t) => t.id !== featured.id) : list };
+}
+
+/** How many notes each take has (F6), by take id. */
+export function noteCountByTake(notes: readonly { take_id?: string | null }[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const n of notes) if (n.take_id) out.set(n.take_id, (out.get(n.take_id) ?? 0) + 1);
+  return out;
+}
+
+/** «1 nota», «3 notas». */
+export function notesCount(n: number): string {
+  return `${n} ${n === 1 ? 'nota' : 'notas'}`;
 }
 
 // ───────────── Best take (F4) ─────────────
@@ -219,6 +232,28 @@ export function takeRow(input: SaveTakeInput, deviceId: string): TablesInsert<'t
     ...(recordedAt ? { recorded_at: recordedAt } : {}),
   };
 }
+
+/**
+ * 43 · The song's second at the take's second 0. A take recorded with the new sync (its `meta.sync`, only on the
+ * phone that recorded it) knows when it really started rolling and how much its sound was delayed to meet the
+ * picture: `songAtRoll − speed × delay`. Without it, the planned start. Applied once, when the take is saved
+ * (`useSaveTake`): the row then holds the corrected start and every phone reviews the take the same way.
+ */
+export function takeSongZero(
+  saved: { songStart: number; speed: number },
+  sync: { songAtRoll: number | null; delayMs: number } | null | undefined,
+): number {
+  const speed = saved.speed > 0 ? saved.speed : 1;
+  if (!sync || sync.songAtRoll == null || !Number.isFinite(sync.songAtRoll) || !Number.isFinite(sync.delayMs)) {
+    return saved.songStart;
+  }
+  const zero = Math.max(0, Math.round((sync.songAtRoll - (speed * sync.delayMs) / 1000) * 1000) / 1000);
+  // Saved for every phone, for good: an odd reading (the song stopped, an engine with no time yet) is not trusted.
+  return Math.abs(zero - saved.songStart) <= SONG_ZERO_MAX_SHIFT ? zero : saved.songStart;
+}
+
+/** The most the recorded start may move the planned one (s). */
+export const SONG_ZERO_MAX_SHIFT = 2;
 
 // ───────────── The reduced copy shared with the group ─────────────
 

@@ -19,7 +19,6 @@ import {
   shareMimeCandidates,
   shareVideoBitrate,
   sortTakes,
-  startOfWeek,
   takeDateLabel,
   takeRow,
   takeWhere,
@@ -138,8 +137,6 @@ describe('who may delete', () => {
 });
 
 describe('filters and order', () => {
-  // Friday 16 October 2026, 18:00 local time.
-  const now = new Date(2026, 9, 16, 18, 0);
   const at = (d: Date) => d.toISOString();
   const list = [
     take({ id: 'today', member_id: 'ana', clip_id: 'c1', recorded_at: at(new Date(2026, 9, 16, 9, 0)) }),
@@ -148,27 +145,18 @@ describe('filters and order', () => {
   ];
   const ids = (xs: TakeItem[]) => xs.map((t) => t.id);
 
-  it('weeks start on Monday', () => {
-    expect(startOfWeek(now).getDay()).toBe(1);
-    expect(startOfWeek(now).getDate()).toBe(12);
-    // A Sunday belongs to the week that started six days before.
-    expect(startOfWeek(new Date(2026, 9, 18, 12)).getDate()).toBe(12);
-  });
-
-  it('by date', () => {
-    expect(ids(filterTakes(list, { member: 'all', clip: 'all', date: 'today' }, now))).toEqual(['today']);
-    expect(ids(filterTakes(list, { member: 'all', clip: 'all', date: 'week' }, now))).toEqual(['today', 'monday']);
-    expect(filterTakes(list, { member: 'all', clip: 'all', date: 'all' }, now)).toHaveLength(3);
+  it('no filter keeps them all', () => {
+    expect(filterTakes(list, { member: 'all', clip: 'all' })).toHaveLength(3);
   });
 
   it('by person, including «Sin nombre»', () => {
-    expect(ids(filterTakes(list, { member: 'ana', clip: 'all', date: 'all' }, now))).toEqual(['today', 'lastweek']);
-    expect(ids(filterTakes(list, { member: 'none', clip: 'all', date: 'all' }, now))).toEqual(['monday']);
+    expect(ids(filterTakes(list, { member: 'ana', clip: 'all' }))).toEqual(['today', 'lastweek']);
+    expect(ids(filterTakes(list, { member: 'none', clip: 'all' }))).toEqual(['monday']);
   });
 
   it('by clip, including no clip', () => {
-    expect(ids(filterTakes(list, { member: 'all', clip: 'c2', date: 'all' }, now))).toEqual(['lastweek']);
-    expect(ids(filterTakes(list, { member: 'all', clip: 'none', date: 'all' }, now))).toEqual(['monday']);
+    expect(ids(filterTakes(list, { member: 'all', clip: 'c2' }))).toEqual(['lastweek']);
+    expect(ids(filterTakes(list, { member: 'all', clip: 'none' }))).toEqual(['monday']);
   });
 
   it('puts the best takes first, then the newest', () => {
