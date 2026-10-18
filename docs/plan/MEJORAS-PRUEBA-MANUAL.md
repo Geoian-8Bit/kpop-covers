@@ -437,3 +437,25 @@ ejemplo, el primer farolillo se enciende). Propuestas para el laboratorio:
 - **Tsuki** (nueva): las fases de la luna en una fila; la luna se va llenando según se acerca el día, y el número de
   días grande al lado.
 Con «reducir movimiento», sin animaciones. En la portada no debe empujar el contenido (ver P8 de la revisión global).
+
+## Ronda 2 de la prueba manual (18-10, versión 139)
+
+Lo que no se menciona aquí está bien y no se toca.
+
+| # | Zona | Qué cambiar | Prioridad | Estado |
+| --- | --- | --- | --- | --- |
+| 40 | Laboratorio · elegidos | Cuenta atrás larga: **Tsuki**. Voz y música: **A · La ola partida mejorada**. Pantalla «Bolsas»: **Furoshiki**. Icono de bolsa: **Fukubukuro**. Dejar solo esos, borrar el resto y sus momentos del laboratorio; apuntarlos en ESTADO apartado 7 | Alta | Pendiente |
+| 41 | Menú rápido (laboratorio) | Aún sin decidir: se quedan Sensu, Hanafuda y Rueda de kamon (estos dos gustan más; **no tocarlos**). Mejorar la **animación de entrada de Sensu**. **Origami no gusta nada**: sustituirlo por un prototipo nuevo | Alta | Pendiente |
+| 42 | Aplauso | Con el detector nuevo no dispara ni en «Baja» ni en «Alta» a la misma distancia que antes. **Volver al detector anterior** (como estaba antes de la mejora 21) | Alta | Pendiente |
+| 43 | Grabador · sincronía | Ya no hay retraso en la vista previa, pero al ver la toma el vídeo va un poco por detrás del audio (bailando a tempo, la imagen llega después de la música). Igual a 1080p 60 y 30 | Crítica | Pendiente |
+| 44 | Estudio · zoom | En el móvil, con el vídeo pequeño, quitar la fila «Zoom» (y sus flechas): el zoom es solo con los dedos | Media | Pendiente |
+| 45 | Seguir a un bailarín | **Eliminar la función por completo** (fila, pantalla completa, análisis, flechas, prueba de postura de Ajustes y dependencias de modelos). La tabla `follow_paths` se queda (borrar = archivar), sin uso | Alta | Pendiente |
+| 46 | Voz y música | Funciona bien. En algunas partes la música suena floja (mejorar el modelo un poco, sin urgencia). Que «Todo / Sin voz / Voz» también salga **en pantalla completa** | Media | Pendiente |
+| 47 | Pantalla completa · salir | En pantalla completa, girar el móvil a vertical y salir: la página queda desplazada, con un hueco a la derecha, en vez de centrada | Alta | Pendiente |
+| 48 | Grabador · color de la luz | «Cálida» puso un tono azulado; otra opción, morado; después se ocultaron las opciones con «este móvil no cambia el color de la luz… se queda en automático», pero el tono había cambiado (lila) y no volvió a normal. Arreglar: valores correctos, no ocultar si sí cambia, y al ocultar volver de verdad a automático | Alta | Pendiente |
+| 49 | Grabador · acceso rápido a la luz | Al tocar para enfocar, que salga una barra pequeña con el control de luz (exposición), como en la cámara del móvil | Media | Pendiente |
+| 50 | Tomas | «Nube del grupo» más pequeño y sencillo (como mucho, avisar si se está llenando). Quitar los filtros (hoy, esta semana, todas). Las tomas salen repetidas: la última sale como «Repaso» y abajo la misma dos veces con más opciones: que salga **una sola vez** | Alta | Pendiente |
+| 51 | Repaso / comparar | No funciona: al dar a reproducir no suena nada y va con mucho retraso; la interfaz se ve rara, sin la estética de la app. **Rehacerlo** para que funcione y se vea como el resto | Crítica | Pendiente |
+| 52 | Votaciones | Quitar opciones: los resultados siempre en directo, los votos siempre con nombre y el cierre siempre a mano | Media | Pendiente |
+| 53 | Random Play Dance · crear | En el móvil la cabecera (título, descripción y «Pistas guardadas») ocupa casi media pantalla: solo el título, compacto | Alta | Pendiente |
+| 54 | Random Play Dance · ronda | Con la ronda en marcha, la pantalla completa es solo el vídeo, con las acciones abajo, como en la pantalla completa del estudio | Alta | Pendiente |
