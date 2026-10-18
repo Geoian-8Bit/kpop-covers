@@ -18,6 +18,8 @@ ronda que la pantalla completa se usa con el móvil en horizontal.
 | 10:20 | 5bf8675: puntos 40–54 anotados. 7 subagentes por zonas: diseños elegidos y voz, menú, estudio y seguir, grabador (aplauso, luz), sincronía, tomas y repaso, votaciones y RPD. |
 | 11:00–14:00 | Revisiones con nota: 2 rondas por bloque; tomas y repaso, 4 rondas y una de cierre de «Atrás». Informes `revisiones/ronda2-*.md`. Todo lo ≥6 corregido. Pruebas en el demo en silencio a 390×844 y 844×390 (grabar con cámara falsa, tomas, repaso a la par, RPD, Atrás). |
 | 14:10 | Commits: 01d7f4e (diseños y menú), 4a50952 (voz), 5ba045c (estudio, sin seguir), e646aef (grabador y sincronía), 0f92ab9 (tomas, repaso y Atrás), 7936132 (RPD y votaciones). typecheck 0, 873 tests, 129 PASS en BD, build. Sin migraciones. |
+| 12:31 | Desplegado main bda9852 (versión 149, `dpl_2TSgkRp7tJUewiSFkxsCKhUjDty5`). Verificación en producción en silencio a 390×844 y 844×390: estudio sin «Seguir» ni fila Zoom en táctil, toma «PRUEBA» con cámara falsa (sincronía 151 ms, cero corregido guardado), una sola entrada en Tomas, repaso a la par en horizontal, formulario de votación sin opciones, RPD con cabecera de 43 px y ronda en pantalla completa horizontal con la barra oculta sola. Toma «PRUEBA» borrada desde la app (archivada). |
+| 13:07 | El grupo elige Hanafuda: fb1978d (menú fijo, laboratorio retirado). Desplegado main (versión 151); comprobado en producción. |
 
 ## Ronda de mejoras de la prueba manual (desde 2026-10-17 14:00)
 

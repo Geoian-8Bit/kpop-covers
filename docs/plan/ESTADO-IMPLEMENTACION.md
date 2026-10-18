@@ -743,7 +743,7 @@ MEJORAS-PRUEBA-MANUAL.md). Las variantes perdedoras y sus momentos del laborator
 | F17 · Voz y música en el estudio | **A · La ola partida mejorada** |
 | P30 · Pantalla «Bolsas» | **Furoshiki** |
 | P29 · Icono de bolsa | **Fukubukuro** |
-| P1 · Menú rápido | **Sin decidir**: siguen en el laboratorio Sensu (entrada mejorada), Hanafuda, Rueda de kamon y **Kakejiku** (nuevo: un pergamino colgante que se desenrolla), en lugar de Origami, que no gustó |
+| P1 · Menú rápido | **Hanafuda** (elegido el 18-10 con el grupo): del botón sale una mano de cartas; la carta que tocas se eleva y vuela al centro. El laboratorio de diseño se ha retirado |
 
 ## 8. Revisiones
 
