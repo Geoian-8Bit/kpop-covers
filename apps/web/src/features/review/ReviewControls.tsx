@@ -5,7 +5,10 @@ import {
   BookmarkPlus,
   ChevronLeft,
   ChevronRight,
+  Columns2,
   Crosshair,
+  FlipHorizontal2,
+  Layers,
   MessageSquarePlus,
   Repeat,
   Scan,
@@ -15,7 +18,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { forwardRef, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import { forwardRef, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { ElasticToggle } from '@/components/ui/ElasticToggle';
@@ -25,8 +28,18 @@ import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, useReview } from '@/player/store';
 import { isZoomed, NO_ZOOM, stepZoom, zoomLabel, zoomOfClip, ZOOM_MAX } from '@/player/zoom';
-import { categoryLabel, noteStatus, REVIEW_RATE_MAX, REVIEW_RATE_MIN, REVIEW_RATES, type CompareMode, type ViewPrefs } from './reviewRules';
+import {
+  categoryLabel,
+  nextQuickOpacity,
+  nextQuickRate,
+  noteStatus,
+  REVIEW_RATE_MAX,
+  REVIEW_RATE_MIN,
+  type CompareMode,
+  type ViewPrefs,
+} from './reviewRules';
 import { capturePointer } from './pointer';
+import { useTapAnyFinger } from './tapAnyFinger';
 
 const signed = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : '±'}${Math.abs(value).toFixed(2).replace('.', ',')} s`;
 
@@ -47,6 +60,7 @@ export function ReviewTimeline({
   onNote,
   actions,
   variant = 'full',
+  showTotal = true,
 }: {
   notes: Note[];
   openNoteId: string | null;
@@ -54,6 +68,8 @@ export function ReviewTimeline({
   actions?: ReactNode;
   /** 'bar': clock and line only, for the one-row bar of a phone on its side. */
   variant?: 'full' | 'bar';
+  /** «/ 0:45» after the clock (left out when the row is busy). */
+  showTotal?: boolean;
 }) {
   const bar = variant === 'bar';
   const duration = useReview((s) => s.duration);
@@ -111,12 +127,12 @@ export function ReviewTimeline({
       const done = noteStatus(n) === 'done';
       const label = `Nota en ${formatTime(Number(n.take_seconds), { tenths: true })}${categoryLabel(n.category) ? ` · ${categoryLabel(n.category)}` : ''}${done ? ' · resuelta' : ''}: ${n.body}`;
       return (
-        <button
+        <TapButton
           key={n.id}
           type="button"
           aria-label={label}
           title={label}
-          onClick={() => onNote(n)}
+          onTap={() => onNote(n)}
           className={cn(
             'group absolute z-10 grid w-11 -translate-x-1/2 place-items-center',
             // On the one-row bar the target is the strip above the line (44 × 22 px), never the line itself.
@@ -135,7 +151,7 @@ export function ReviewTimeline({
               openNoteId === n.id && 'ring-kin-300',
             )}
           />
-        </button>
+        </TapButton>
       );
     });
 
@@ -198,7 +214,7 @@ export function ReviewTimeline({
   const clock = (
     <p className={cn('tabular shrink-0 whitespace-nowrap font-mono text-[13px] text-washi-muted', bar && 'w-[3.6rem] text-right')}>
       <span ref={clockRef} className="font-semibold text-washi" />
-      {!bar && <span className="text-washi-subtle"> / {formatTime(duration)}</span>}
+      {!bar && showTotal && <span className="text-washi-subtle"> / {formatTime(duration)}</span>}
     </p>
   );
 
@@ -229,6 +245,12 @@ export function ReviewTimeline({
   );
 }
 
+/** A plain review button that answers to any finger (see `useTapAnyFinger`). */
+function TapButton({ onTap, disabled, ...rest }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & { onTap: () => void }) {
+  const tap = useTapAnyFinger(onTap, disabled);
+  return <button {...rest} disabled={disabled} {...tap} />;
+}
+
 function Seal({ at, label }: { at: number; label: string }) {
   return (
     <span
@@ -249,11 +271,16 @@ export function SoundPill({ hasOriginal }: { hasOriginal: boolean }) {
   const audio = useReview((s) => s.audio);
   if (!hasOriginal) return null;
   const takeHeard = audio === 'take';
+  return <SoundPillButton takeHeard={takeHeard} />;
+}
+
+function SoundPillButton({ takeHeard }: { takeHeard: boolean }) {
+  const soundTap = useTapAnyFinger(() => useReview.getState().setAudio(takeHeard ? 'original' : 'take'));
   return (
     <button
       type="button"
       aria-label={takeHeard ? 'Se oye la toma. Pulsa para oír el original' : 'Se oye el original. Pulsa para oír la toma'}
-      onClick={() => useReview.getState().setAudio(takeHeard ? 'original' : 'take')}
+      {...soundTap}
       className={cn(pill, takeHeard ? pillIdle : 'bg-ai-600/50 text-ai-200 ring-1 ring-inset ring-ai-400/35')}
     >
       <Volume2 className="size-[18px]" />
@@ -264,11 +291,205 @@ export function SoundPill({ hasOriginal }: { hasOriginal: boolean }) {
 
 export function NotePill({ onNote }: { onNote: () => void }) {
   const ready = useReview((s) => s.takeEngine != null);
+  const tap = useTapAnyFinger(onNote, !ready);
   return (
-    <button type="button" aria-label="Nota en este momento (N)" title="Nota en este momento (N)" disabled={!ready} onClick={onNote} className={cn(pill, 'text-kin-300 hover:bg-washi/[0.07]')}>
+    <button type="button" aria-label="Nota en este momento (N)" title="Nota en este momento (N)" disabled={!ready} {...tap} className={cn(pill, 'text-kin-300 hover:bg-washi/[0.07]')}>
       <MessageSquarePlus className="size-[18px]" />
       <span>Nota</span>
     </button>
+  );
+}
+
+// ───────────── Quick controls ─────────────
+
+/** One square of the quick strip: 44 px, its name for screen readers and as a tooltip, its state visible. */
+function QuickButton({
+  label,
+  title,
+  onClick,
+  pressed,
+  tone = 'ai',
+  disabled,
+  children,
+}: {
+  label: string;
+  title?: string;
+  onClick: () => void;
+  pressed?: boolean;
+  tone?: 'ai' | 'shu' | 'kin';
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  const tap = useTapAnyFinger(onClick, disabled);
+  const on = { ai: 'bg-ai-600/50 text-ai-200', shu: 'bg-shu-700 text-washi', kin: 'bg-kin-300/15 text-kin-200' }[tone];
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      title={title ?? label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      {...tap}
+      whileTap={reduce ? undefined : { scale: 0.88 }}
+      transition={jelly}
+      className={cn(
+        'grid size-11 shrink-0 place-items-center rounded-[9px] text-[13px] font-bold transition-colors disabled:opacity-40',
+        pressed ? on : 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi',
+      )}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+/**
+ * The quick strip: what is used most while reviewing a dance, one tap each, always at hand (a column by the take's
+ * side of the stage on a phone on its side, a row over the controls in portrait). Never over YouTube.
+ * Speed (1 → 0,75 → 0,5), A, B, repeat, the original in a mirror, separate / overlaid (files only), how much of the
+ * original shows (overlaid only) and a note at this moment.
+ */
+export function QuickStrip({
+  orientation,
+  mode,
+  canOverlay,
+  hasOriginal,
+  opacity,
+  onTop,
+  onMode,
+  onOpacity,
+  onNote,
+  onLoopMissing,
+  withLoop = true,
+  withNote = true,
+  withMode = true,
+  bare = false,
+}: {
+  orientation: 'row' | 'column';
+  mode: CompareMode;
+  canOverlay: boolean;
+  hasOriginal: boolean;
+  /** «Superpuesto»: how much the one on top shows (0–1). */
+  opacity: number;
+  /** Which one is on top in «Superpuesto» (the see-through one). */
+  onTop: 'original' | 'take';
+  onMode: (mode: CompareMode) => void;
+  onOpacity: (opacity: number) => void;
+  onNote: () => void;
+  onLoopMissing: () => void;
+  /** The A–B buttons (the portrait controls already have them). */
+  withLoop?: boolean;
+  withNote?: boolean;
+  /** Separate / overlaid (in portrait the header has it). */
+  withMode?: boolean;
+  /** Without the tray of its own (inside another row). */
+  bare?: boolean;
+}) {
+  const rate = useReview((s) => s.rate);
+  const loop = useReview((s) => s.loop);
+  const mirrorOriginal = useReview((s) => s.mirrorOriginal);
+  const ready = useReview((s) => s.takeEngine != null);
+  const review = useReview.getState;
+  const overlay = mode === 'overlay';
+  const topName = onTop === 'take' ? 'La toma' : 'El original';
+
+  // A column taller than the room scrolls: a fade at its foot says there is more below.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || orientation !== 'column') return;
+    const check = () => setMore(el.scrollHeight - el.clientHeight - el.scrollTop > 4);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    el.addEventListener('scroll', check, { passive: true });
+    return () => {
+      observer.disconnect();
+      el.removeEventListener('scroll', check);
+    };
+  }, [orientation]);
+
+  return (
+    <div
+      role="group"
+      aria-label="Accesos rápidos del repaso"
+      className={cn(
+        // `relative`: the tray's crest backdrop (index.css, .skin-tray::before, inset 0) must cover the tray only.
+        'relative flex shrink-0',
+        !bare && 'skin-track skin-tray rounded-[12px] border border-line bg-sumi-900/80 p-0.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]',
+        orientation === 'column' && 'max-h-full',
+      )}
+    >
+      <div
+        ref={listRef}
+        className={cn(
+          'flex items-center gap-0.5',
+          orientation === 'column' ? 'max-h-full flex-col overflow-y-auto overscroll-contain scrollbar-none' : 'flex-row',
+        )}
+      >
+        {/* The most used first: a note, the speed, the section. */}
+        {withNote && (
+          <QuickButton label="Nota en este momento (N)" disabled={!ready} tone="kin" onClick={onNote}>
+            <MessageSquarePlus className="size-[18px] text-kin-300" />
+          </QuickButton>
+        )}
+        <QuickButton
+          label={`Velocidad: ${formatSpeed(rate)}. Pulsa para ${formatSpeed(nextQuickRate(rate))}`}
+          title="Velocidad (1× · 0,75× · 0,5×)"
+          pressed={rate !== 1}
+          tone="kin"
+          onClick={() => review().setRate(nextQuickRate(rate))}
+        >
+          <span className="tabular font-mono text-[12px]">{formatSpeed(rate)}</span>
+        </QuickButton>
+        {withLoop && (
+          <>
+            <QuickButton label="Marcar A (inicio del tramo)" pressed={loop.start != null} tone="shu" onClick={() => review().markStart()}>
+              <span className="font-display text-[16px] font-extrabold">A</span>
+            </QuickButton>
+            <QuickButton label="Marcar B (fin del tramo)" pressed={loop.end != null} tone="shu" onClick={() => review().markEnd()}>
+              <span className="font-display text-[16px] font-extrabold">B</span>
+            </QuickButton>
+            <QuickButton
+              label="Repetir el tramo A–B"
+              pressed={loop.enabled}
+              onClick={() => {
+                if (!review().toggleLoop()) onLoopMissing();
+              }}
+            >
+              <Repeat className="size-[18px]" />
+            </QuickButton>
+          </>
+        )}
+        {hasOriginal && (
+          <QuickButton label="Original en espejo" pressed={mirrorOriginal} onClick={() => review().toggleMirrorOriginal()}>
+            <FlipHorizontal2 className="size-[18px]" />
+          </QuickButton>
+        )}
+        {withMode && canOverlay && (
+          <QuickButton label="Superpuesto" title="Superpuesto (si no, separados)" pressed={overlay} onClick={() => onMode(overlay ? 'stacked' : 'overlay')}>
+            {overlay ? <Layers className="size-[18px]" /> : <Columns2 className="size-[18px]" />}
+          </QuickButton>
+        )}
+        {overlay && (
+          <QuickButton
+            label={`${topName} (encima) se ve al ${Math.round(opacity * 100)} %. Pulsa para cambiarlo`}
+            title={`Cuánto se ve ${onTop === 'take' ? 'la toma' : 'el original'} (encima)`}
+            tone="kin"
+            onClick={() => onOpacity(nextQuickOpacity(opacity))}
+          >
+            <span className="tabular font-mono text-[11px] text-kin-200">{Math.round(opacity * 100)}%</span>
+          </QuickButton>
+        )}
+      </div>
+      {more && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0.5 bottom-0.5 h-6 rounded-b-[10px] bg-linear-to-t from-sumi-900 to-transparent"
+        />
+      )}
+    </div>
   );
 }
 
@@ -290,6 +511,7 @@ function IconButton({
   disabled?: boolean;
 }) {
   const reduce = useReducedMotion();
+  const tap = useTapAnyFinger(onClick, disabled);
   return (
     <motion.button
       type="button"
@@ -297,7 +519,7 @@ function IconButton({
       title={label}
       aria-pressed={pressed}
       disabled={disabled}
-      onClick={onClick}
+      {...tap}
       whileTap={reduce ? undefined : { scale: 0.86 }}
       transition={jelly}
       className={cn(
@@ -316,11 +538,12 @@ export function PlayCrest({ size = 'md' }: { size?: 'md' | 'sm' }) {
   const playing = useReview((s) => s.playing);
   const ready = useReview((s) => s.takeEngine != null);
   const reduce = useReducedMotion();
+  const tap = useTapAnyFinger(() => useReview.getState().togglePlay(), !ready);
   return (
     <motion.button
       type="button"
       aria-label={playing ? 'Pausar los dos (espacio)' : 'Reproducir los dos (espacio)'}
-      onClick={() => useReview.getState().togglePlay()}
+      {...tap}
       disabled={!ready}
       whileTap={reduce ? undefined : { scale: 0.88, rotate: -6 }}
       transition={jelly}
@@ -352,37 +575,39 @@ export function LoopTray({ onLoopMissing }: { onLoopMissing: () => void }) {
     <div
       role="group"
       aria-label="Tramo A–B"
-      className="skin-track skin-tray flex shrink-0 items-center rounded-[12px] border border-line bg-sumi-900/70 p-0.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+      // `relative`: the tray's crest backdrop (index.css, .skin-tray::before, inset 0) must cover the tray only —
+      // without it, it covered the whole bar and took its taps.
+      className="skin-track skin-tray relative flex shrink-0 items-center rounded-[12px] border border-line bg-sumi-900/70 p-0.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
     >
-      <button
+      <TapButton
         type="button"
         aria-label="Marcar A (inicio del tramo)"
         aria-pressed={loop.start != null}
-        onClick={() => useReview.getState().markStart()}
+        onTap={() => useReview.getState().markStart()}
         className={cn(trayBtn, loop.start != null ? 'bg-shu-700 text-washi' : pillIdle)}
       >
         <span className="font-display text-[16px] font-extrabold">A</span>
-      </button>
-      <button
+      </TapButton>
+      <TapButton
         type="button"
         aria-label="Marcar B (fin del tramo)"
         aria-pressed={loop.end != null}
-        onClick={() => useReview.getState().markEnd()}
+        onTap={() => useReview.getState().markEnd()}
         className={cn(trayBtn, loop.end != null ? 'bg-shu-700 text-washi' : pillIdle)}
       >
         <span className="font-display text-[16px] font-extrabold">B</span>
-      </button>
-      <button
+      </TapButton>
+      <TapButton
         type="button"
         aria-label={loop.enabled ? 'Quitar el bucle del tramo' : 'Repetir el tramo A–B'}
         aria-pressed={loop.enabled}
-        onClick={() => {
+        onTap={() => {
           if (!useReview.getState().toggleLoop()) onLoopMissing();
         }}
         className={cn(trayBtn, loop.enabled ? 'bg-ai-600/50 text-ai-200' : pillIdle)}
       >
         <Repeat className="size-[18px]" />
-      </button>
+      </TapButton>
     </div>
   );
 }
@@ -391,13 +616,14 @@ export function LoopTray({ onLoopMissing }: { onLoopMissing: () => void }) {
 export const SettingsButton = forwardRef<HTMLButtonElement, { open: boolean; onClick: () => void; className?: string }>(
   function SettingsButton({ open, onClick, className }, ref) {
     const reduce = useReducedMotion();
+    const tap = useTapAnyFinger(onClick);
     return (
       <motion.button
         ref={ref}
         type="button"
         aria-label={open ? 'Cerrar ajustes del repaso' : 'Ajustes del repaso'}
         aria-expanded={open}
-        onClick={onClick}
+        {...tap}
         whileTap={reduce ? undefined : { scale: 0.86 }}
         transition={jelly}
         className={cn(
@@ -554,16 +780,8 @@ export interface ReviewSettingsProps {
   /** F8 · Save the take's A–B as a clip of the song. */
   onSaveRange: () => void;
   onClose?: () => void;
-  /**
-   * A phone on its side: the bar keeps only play, time, sound and settings, so the section, the frames, the note and
-   * the way to compare come here.
-   */
+  /** A phone on its side: frame by frame lives here (the quick strip and the bar hold the rest). */
   compact?: boolean;
-  onNote?: () => void;
-  onLoopMissing?: () => void;
-  canOverlay?: boolean;
-  onMode?: (mode: CompareMode) => void;
-  onOverlayRefused?: () => void;
   /** The sheet's title, focused when it opens. */
   titleRef?: Ref<HTMLHeadingElement>;
   /** A slider is being dragged (the panel over the take fades meanwhile, so the take shows). */
@@ -591,16 +809,10 @@ export function ReviewSettings({
   onSaveRange,
   onClose,
   compact,
-  onNote,
-  onLoopMissing,
-  canOverlay,
-  onMode,
-  onOverlayRefused,
   titleRef,
   onSliding,
 }: ReviewSettingsProps) {
   const rate = useReview((s) => s.rate);
-  const audio = useReview((s) => s.audio);
   const mirrorTake = useReview((s) => s.mirrorTake);
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
   const activeClipId = useReview((s) => s.activeClipId);
@@ -621,31 +833,42 @@ export function ReviewSettings({
         </div>
       )}
 
-      {compact && (
-        <Row title="Tramo y notas">
-          <div className="flex flex-wrap items-center gap-2">
-            <LoopTray onLoopMissing={onLoopMissing ?? (() => undefined)} />
-            <div className="flex items-center">
-              <FrameStep dir={-1} />
-              <FrameStep dir={1} />
-            </div>
-            {onNote && <NotePill onNote={onNote} />}
+      {hasOriginal && (
+        <Row title="Ajuste fino" hint="Adelanta o retrasa el original para compensar el retraso de cámara y sonido del móvil. Se guarda con la toma.">
+          <Range
+            label="Sincronía"
+            value={adjust}
+            min={-SYNC_ADJUST_LIMIT}
+            max={SYNC_ADJUST_LIMIT}
+            step={0.01}
+            onChange={(v) => onAdjust(clampAdjust(v), false)}
+            onCommit={() => onAdjust(adjust, true)}
+            onSlide={onSliding}
+            valueText={signed(adjust)}
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Retrasar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust - 0.01), 'soon')}>
+              −0,01
+            </Button>
+            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Adelantar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust + 0.01), 'soon')}>
+              +0,01
+            </Button>
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => onAdjust(0)} disabled={adjust === 0}>
+              Poner a 0
+            </Button>
+            <span role="status" className={cn('text-[12px]', adjustStatus === 'error' ? 'text-enji-300' : 'text-washi-subtle')}>
+              {STATUS_TEXT[adjustStatus]}
+            </span>
           </div>
         </Row>
       )}
 
-      {hasOriginal && (
-        <Row title="Sonido" hint="Por defecto se oye la toma: lleva la música tal como sonó al grabar.">
-          <Segmented
-            label="Qué se oye"
-            layoutId="review-audio"
-            value={audio}
-            onChange={(a) => review().setAudio(a)}
-            options={[
-              { value: 'take', label: 'La toma' },
-              { value: 'original', label: 'El original' },
-            ]}
-          />
+      {compact && (
+        <Row title="Fotograma a fotograma">
+          <div className="flex items-center">
+            <FrameStep dir={-1} />
+            <FrameStep dir={1} />
+          </div>
         </Row>
       )}
 
@@ -653,19 +876,6 @@ export function ReviewSettings({
         title="Vista"
         hint={originalIsYouTube ? '«Superpuesto» necesita el archivo del vídeo: vincúlalo en el estudio. El vídeo de YouTube se ve entero y sin tapar.' : undefined}
       >
-        {compact && hasOriginal && onMode && (
-          <Segmented
-            label="Cómo comparar"
-            layoutId="review-mode-sheet"
-            value={mode}
-            onChange={onMode}
-            onDisabled={onOverlayRefused}
-            options={[
-              { value: 'stacked', label: 'Separados' },
-              { value: 'overlay', label: 'Superpuesto', disabled: !canOverlay },
-            ]}
-          />
-        )}
         {mode === 'stacked' ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -717,46 +927,9 @@ export function ReviewSettings({
         )}
       </Row>
 
-      <Row title="Velocidad" hint="La toma va a esta velocidad y el original, en proporción a la velocidad a la que se grabó.">
-        <Segmented
-          label="Velocidad común"
-          layoutId="review-rate"
-          value={(REVIEW_RATES as readonly number[]).includes(rate) ? rate : null}
-          onChange={(r) => review().setRate(r)}
-          options={REVIEW_RATES.map((r) => ({ value: r, label: formatSpeed(r) }))}
-        />
+      <Row title="Velocidad fina" hint="Las velocidades de siempre están en los accesos rápidos. La toma va a esta velocidad y el original, en proporción a la velocidad a la que se grabó.">
         <Range label="Fina" value={rate} min={REVIEW_RATE_MIN} max={REVIEW_RATE_MAX} step={0.05} onChange={(r) => review().setRate(r)} valueText={formatSpeed(rate)} onSlide={onSliding} />
       </Row>
-
-      {hasOriginal && (
-        <Row title="Ajuste fino" hint="Adelanta o retrasa el original para compensar el retraso de cámara y sonido del móvil. Se guarda con la toma.">
-          <Range
-            label="Sincronía"
-            value={adjust}
-            min={-SYNC_ADJUST_LIMIT}
-            max={SYNC_ADJUST_LIMIT}
-            step={0.01}
-            onChange={(v) => onAdjust(clampAdjust(v), false)}
-            onCommit={() => onAdjust(adjust, true)}
-            onSlide={onSliding}
-            valueText={signed(adjust)}
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Retrasar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust - 0.01), 'soon')}>
-              −0,01
-            </Button>
-            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Adelantar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust + 0.01), 'soon')}>
-              +0,01
-            </Button>
-            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => onAdjust(0)} disabled={adjust === 0}>
-              Poner a 0
-            </Button>
-            <span role="status" className={cn('text-[12px]', adjustStatus === 'error' ? 'text-enji-300' : 'text-washi-subtle')}>
-              {STATUS_TEXT[adjustStatus]}
-            </span>
-          </div>
-        </Row>
-      )}
 
       <Row
         title="Espejo"
@@ -823,7 +996,7 @@ export function ReviewSettings({
         title="Zoom"
         hint={
           mode === 'overlay'
-            ? 'En «Superpuesto» el zoom amplía los dos a la vez. Pulsa «Ampliar» sobre el vídeo para que los dedos amplíen en vez de encajar; doble toque para verlos enteros.'
+            ? 'En «Superpuesto» los dedos amplían los dos a la vez; pulsa «Encajar» sobre el vídeo para mover y escalar el original. Doble toque para verlos enteros.'
             : 'Pellizca sobre la toma o el original para ampliar una zona; arrastra para moverla y toca dos veces para verlo entero.'
         }
       >
