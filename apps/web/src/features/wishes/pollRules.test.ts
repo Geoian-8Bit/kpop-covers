@@ -12,8 +12,8 @@ import {
   outcomeOf,
   pastVotesOf,
   pollSummary,
-  resultsVisible,
   scoreLabel,
+  showsVoterNames,
   tally,
   voterCount,
 } from './pollRules';
@@ -129,18 +129,11 @@ describe('end by time', () => {
     expect(needsClosing({ closed_at: null, closes_at: null }, now)).toBe(false);
   });
 
-  it('shows results live or only once closed', () => {
-    const open = { closed_at: null, closes_at: '2026-10-18T22:00:00Z' };
-    expect(resultsVisible({ ...open, results_live: true }, now)).toBe(true);
-    expect(resultsVisible({ ...open, results_live: false }, now)).toBe(false);
-    expect(resultsVisible({ ...open, closes_at: '2026-10-18T19:00:00Z', results_live: false }, now)).toBe(true);
-  });
-
   it('counts down to the close', () => {
     expect(msUntilClose({ closed_at: null, closes_at: '2026-10-18T20:05:00Z' }, now)).toBe(300_000);
     expect(msUntilClose({ closed_at: null, closes_at: null }, now)).toBeNull();
     expect(closingLabel({ closed_at: null, closes_at: '2026-10-18T20:05:00Z' }, now)).toBe('Cierra en 5 min');
-    expect(closingLabel({ closed_at: null, closes_at: null }, now)).toBe('Se cierra a mano');
+    expect(closingLabel({ closed_at: null, closes_at: null }, now)).toBe('Abierta');
     expect(closingLabel({ closed_at: 'x', closes_at: null }, now)).toBe('Cerrada');
   });
 });
@@ -202,21 +195,26 @@ describe('past votes of a wish', () => {
   });
 });
 
-describe('the compact summary of a vote (37)', () => {
+describe('the compact summary of a vote (37, 52)', () => {
   const now = Date.parse('2026-10-18T20:00:00Z');
-  const base = { closed_at: null, closes_at: null, vote_type: 'single' as const, anonymous: true, results_live: false };
+  const base = { closed_at: null, closes_at: null, vote_type: 'single' as const, anonymous: false };
 
-  it('lists closing, type, anonymity and when the results show', () => {
-    expect(pollSummary(base, now)).toEqual(['Se cierra a mano', 'Un voto', 'Anónima', 'Resultados al cerrar']);
-    expect(pollSummary({ ...base, vote_type: 'ranking', anonymous: false, results_live: true }, now)).toEqual([
-      'Se cierra a mano',
-      'Ranking',
-      'Con nombre',
-      'Resultados en directo',
-    ]);
+  it('a new vote (live, named, closed by hand) only shows its type', () => {
+    expect(pollSummary(base, now)).toEqual(['Un voto']);
+    expect(pollSummary({ ...base, vote_type: 'ranking' }, now)).toEqual(['Ranking']);
   });
 
-  it('a deadline that passed without the close written yet', () => {
+  it('an older vote keeps its closing time and its anonymous ballots', () => {
+    expect(pollSummary({ ...base, closes_at: '2026-10-18T20:05:00Z', anonymous: true }, now)).toEqual([
+      'Cierra en 5 min',
+      'Un voto',
+      'Votos anónimos',
+    ]);
+    expect(showsVoterNames({ anonymous: true })).toBe(false);
+    expect(showsVoterNames({ anonymous: false })).toBe(true);
+  });
+
+  it('a deadline that passed without the close written yet, or a closed one', () => {
     expect(pollSummary({ ...base, closes_at: '2026-10-18T19:00:00Z' }, now)[0]).toBe('Plazo terminado');
     expect(pollSummary({ ...base, closed_at: '2026-10-18T19:00:00Z' }, now)[0]).toBe('Cerrada');
   });

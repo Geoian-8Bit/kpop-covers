@@ -59,6 +59,20 @@ describe('planSegments', () => {
     for (const s of plan) covered.fill(1, s.start, s.start + s.length);
     expect(covered.every((c) => c === 1)).toBe(true);
   });
+
+  it('with a lead, neither end of the song sits on a segment edge (point 46)', () => {
+    const lead = DEMUCS.lead;
+    for (const total of [1000, DEMUCS.segment - lead, DEMUCS.segment, 240 * DEMUCS.sampleRate]) {
+      const plan = planSegments(total, DEMUCS.segment, DEMUCS.overlap, lead);
+      expect(plan[0]!.start).toBe(-lead);
+      const last = plan[plan.length - 1]!;
+      expect(last.start + last.length).toBe(total);
+      expect(last.start + DEMUCS.segment).toBeGreaterThanOrEqual(total + lead);
+      for (const s of plan) expect(s.length).toBeLessThanOrEqual(DEMUCS.segment);
+    }
+    // Never more than a quarter of a segment.
+    expect(planSegments(1000, 400, 0.25, 1000)[0]!.start).toBe(-100);
+  });
 });
 
 describe('overlap-add', () => {
@@ -78,6 +92,27 @@ describe('overlap-add', () => {
     const weights = triangleWeights(segment);
     for (const s of planSegments(total, segment, 0.25)) {
       accumulate(out, sum, signal.subarray(s.start, s.start + s.length), s.start, s.length, weights);
+    }
+    normalize(out, sum);
+    let worst = 0;
+    for (let i = 0; i < total; i++) worst = Math.max(worst, Math.abs(out[i]! - signal[i]!));
+    expect(worst).toBeLessThan(1e-5);
+  });
+
+  it('also with a lead of silence before the song (the part before it is skipped)', () => {
+    const total = 50_000;
+    const segment = 4000;
+    const lead = 500;
+    const signal = Float32Array.from({ length: total }, (_, i) => Math.sin(i / 37) * 0.8 + 0.1);
+    const out = new Float32Array(total);
+    const sum = new Float32Array(total);
+    const weights = triangleWeights(segment);
+    for (const s of planSegments(total, segment, 0.25, lead)) {
+      // What the model would get: silence before the song, then the song.
+      const chunk = new Float32Array(segment);
+      const from = Math.max(0, s.start);
+      chunk.set(signal.subarray(from, s.start + s.length), from - s.start);
+      accumulate(out, sum, chunk, s.start, s.length, weights);
     }
     normalize(out, sum);
     let worst = 0;

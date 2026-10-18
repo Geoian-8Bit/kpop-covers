@@ -32,7 +32,7 @@ const LOADERS: Record<string, () => Promise<{ default: ComponentType<QuickNavPro
   sensu: () => import('./prototypes/NavSensu'),
   hanafuda: () => import('./prototypes/NavHanafuda'),
   kamon: () => import('./prototypes/NavKamon'),
-  origami: () => import('./prototypes/NavOrigami'),
+  kakejiku: () => import('./prototypes/NavKakejiku'),
 };
 
 type Prototypes = Record<string, LazyExoticComponent<ComponentType<QuickNavProps>>>;

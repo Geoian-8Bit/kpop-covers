@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { TONE, type Tone } from '@/features/bags/tones';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, jelly, soft } from '@/lib/motion';
+import { roundChrome, useRoundChrome } from './roundChrome';
 import type { LeadStatus } from './roundRules';
 
 /**
@@ -12,6 +13,12 @@ import type { LeadStatus } from './roundRules';
  *
  * Layout: upright, everything in one column (bar, frame, what is on, «Siguiente», controls). Sideways (a turned
  * phone, a laptop, a TV) the frame takes the left as tall as the screen allows and the rest stacks on the right.
+ *
+ * 54 · Full screen (`fullscreen`): only the picture, as big as the screen allows. Sideways (how it is watched: the
+ * phone turned, as in the studio) the picture takes the whole height and the round's actions sit on the bottom
+ * edge in the studio's bar, which hides by itself while the clip plays and comes back on a tap (`roundChrome.ts`).
+ * Upright, the bar stays under the picture. The card still covers the picture only during the pause and the
+ * countdown, before it sounds. Same tree, other classes: the player inside is never remounted.
  */
 
 export interface PlayCard {
@@ -23,6 +30,10 @@ export interface PlayCard {
 }
 
 export interface RandomPlayScreenProps {
+  /** 54 · The «video only» layout (the browser's full screen, or its CSS stand-in). */
+  fullscreen?: boolean;
+  /** The source credit («Ver en YouTube»), outside the picture. */
+  credit?: ReactNode;
   /** The bar above: «Salir» and where the clips come from. */
   top: ReactNode;
   /** The picture (the app's player), filling a 16:9 box. */
@@ -62,16 +73,32 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
   const p = { ...props, lead };
   const hidden = !p.titleVisible;
   const covered = lead != null;
+  const fs = Boolean(p.fullscreen);
   return (
     <div
       style={LAYOUT}
-      className="grid w-full min-w-0 gap-3 landscape:grid-cols-[var(--rpd-cols)] landscape:grid-rows-[auto_minmax(0,1fr)] landscape:gap-x-4 landscape:gap-y-2"
+      className={cn(
+        'w-full min-w-0',
+        fs
+          ? 'relative flex h-full flex-col gap-2'
+          : 'grid gap-3 landscape:grid-cols-[var(--rpd-cols)] landscape:grid-rows-[auto_minmax(0,1fr)] landscape:gap-x-4 landscape:gap-y-2',
+      )}
     >
-      <div className="min-w-0 landscape:col-start-2 landscape:row-start-1">{p.top}</div>
+      <div className={cn('flex min-w-0 items-center gap-2 landscape:col-start-2 landscape:row-start-1', fs && 'hidden')}>
+        <div className="min-w-0 flex-1">{p.top}</div>
+        {p.credit}
+      </div>
 
-      {/* The butai: a wooden frame with a header plank. */}
-      <div className="w-full min-w-0 rounded-[14px] bg-kiji-700 p-2 shadow-[inset_0_0_0_2px_var(--color-kiji-400),0_18px_36px_-18px_rgb(0_0_0/0.9)] portrait:mx-auto portrait:max-w-[var(--rpd-upright-max)] sm:p-3 landscape:col-start-1 landscape:row-span-2 landscape:row-start-1 landscape:self-center">
-        <div className="mb-2 flex items-center gap-2 rounded-[6px] bg-kiji-900 px-3 py-1 sm:mb-3">
+      {/* The butai: a wooden frame with a header plank. In full screen, just a box the picture fills. */}
+      <div
+        className={cn(
+          'min-w-0',
+          fs
+            ? 'flex min-h-0 flex-1 items-center justify-center [container-type:size]'
+            : 'w-full rounded-[14px] bg-kiji-700 p-2 shadow-[inset_0_0_0_2px_var(--color-kiji-400),0_18px_36px_-18px_rgb(0_0_0/0.9)] portrait:mx-auto portrait:max-w-[var(--rpd-upright-max)] sm:p-3 landscape:col-start-1 landscape:row-span-2 landscape:row-start-1 landscape:self-center',
+        )}
+      >
+        <div className={cn('mb-2 flex items-center gap-2 rounded-[6px] bg-kiji-900 px-3 py-1 sm:mb-3', fs && 'hidden')}>
           <span aria-hidden className="font-display text-[14px] font-extrabold text-kin-300 xl:text-[18px]">
             紙芝居
           </span>
@@ -83,7 +110,8 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
             {Math.max(p.position.index, 0)}/{p.position.total}
           </span>
         </div>
-        <StageBox className="rounded-[6px]">
+        {/* Full screen: 16:9 as large as the box allows (its width or its height, whichever runs out first). */}
+        <StageBox className={fs ? 'w-[min(100cqw,calc(100cqh*16/9))] shrink-0' : 'rounded-[6px]'}>
           {p.stage}
           <AnimatePresence initial={false}>
             {covered && (
@@ -95,7 +123,12 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
                   reduce ? { opacity: 0 } : { x: '-104%', transition: { duration: 0.55, ease: easeOutExpo } }
                 }
                 transition={soft}
-                className="absolute inset-0 z-20 flex flex-col justify-between bg-washi p-[clamp(12px,4cqw,44px)] text-sumi-900"
+                className={cn(
+                  'absolute inset-0 z-20 flex flex-col justify-between bg-washi p-[clamp(12px,4cqw,44px)] text-sumi-900',
+                  // Full screen sideways the bar (44 px buttons + the home-bar inset) stays up during the lead-in,
+                  // over the card's foot: the card keeps that strip free, so text never sits under the bar.
+                  fs && 'landscape:pb-[calc(clamp(12px,4cqw,44px)+56px+env(safe-area-inset-bottom))]',
+                )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="min-w-0 truncate text-[clamp(12px,2.4cqw,24px)] font-bold uppercase tracking-[0.14em] text-sumi-700">
@@ -138,13 +171,13 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
               </motion.div>
             )}
           </AnimatePresence>
-          <Notice p={p} />
+          <Notice p={p} fs={fs} />
         </StageBox>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-3 landscape:col-start-2 landscape:row-start-2 landscape:gap-2 landscape:self-center xl:landscape:gap-4">
+      <SideColumn fs={fs}>
         {/* What is on: big enough to read from the back of the room. */}
-        <div className="min-w-0">
+        <div className={cn('min-w-0', fs && 'hidden')}>
           <p className="tabular truncate text-[clamp(12px,2.2vmin,22px)] font-bold uppercase tracking-[0.1em] text-kin-300">
             Clip {Math.max(p.position.index, 1)} de {p.position.total}
             {p.current?.clipName ? ` · ${p.current.clipName}` : ''}
@@ -160,7 +193,7 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
         </div>
 
         {/* The next card, waiting in the box. */}
-        <div className="flex min-w-0 items-center gap-3">
+        <div className={cn('flex min-w-0 items-center gap-3', fs && 'hidden')}>
           <div aria-hidden className="relative h-9 w-12 shrink-0 xl:h-12 xl:w-16">
             <span className="absolute inset-0 translate-x-1.5 translate-y-1 rounded-[4px] bg-washi-subtle" />
             <span className="absolute inset-0 grid place-items-center rounded-[4px] bg-washi font-display text-[15px] font-extrabold text-sumi-900 xl:text-[20px]">
@@ -172,8 +205,52 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
           </p>
         </div>
 
+        {/* Full screen: where the round is, in one quiet line, with the title once it may be seen. */}
+        {fs && (
+          <div className="flex min-w-0 items-center gap-2 px-1 landscape:flex-1">
+            <p className="tabular min-w-0 flex-1 truncate text-[13px] text-washi-muted xl:text-base">
+              <span className="font-bold text-kin-300">
+                {Math.max(p.position.index, 1)}/{p.position.total}
+              </span>
+              {/* While the card shows, the title is on it: not twice, and nothing over the card's own text. */}
+              {!hidden && !covered && p.current?.title && <span className="text-washi"> · {p.current.title}</span>}
+            </p>
+            {p.credit}
+          </div>
+        )}
         {p.controls}
-      </div>
+      </SideColumn>
+    </div>
+  );
+}
+
+/**
+ * What goes beside the picture. Full screen upright: a bar under it. Full screen sideways: the studio's bar on the
+ * bottom edge (a dark fade under it), faded out while hidden — only this wrapper follows the bar's visibility, so
+ * the stage never repaints for it. Touching or focusing it keeps it up.
+ */
+function SideColumn({ fs, children }: { fs: boolean; children: ReactNode }) {
+  const shown = useRoundChrome((s) => s.shown);
+  return (
+    <div
+      data-round-bar={fs || undefined}
+      onPointerDownCapture={fs ? roundChrome.wake : undefined}
+      onFocusCapture={fs ? roundChrome.wake : undefined}
+      className={cn(
+        'flex min-w-0 flex-col',
+        fs
+          ? 'shrink-0 gap-1.5 landscape:absolute landscape:inset-x-0 landscape:bottom-0 landscape:z-30 landscape:flex-row landscape:items-center landscape:gap-2 landscape:bg-[linear-gradient(to_top,rgb(0_0_0/0.75),transparent)] landscape:px-3 landscape:pb-[max(6px,env(safe-area-inset-bottom))] landscape:pt-10 landscape:transition-opacity landscape:will-change-[opacity] motion-reduce:transition-none sm:landscape:px-5'
+          : 'gap-3 landscape:col-start-2 landscape:row-start-2 landscape:gap-2 landscape:self-center xl:landscape:gap-4',
+        // Sideways the strip itself lets taps through to the picture (as the studio's layer): only the line and
+        // the buttons take them, and only while the bar shows.
+        fs && 'landscape:pointer-events-none',
+        fs &&
+          (shown
+            ? 'landscape:opacity-100 landscape:duration-100 landscape:[&>*]:pointer-events-auto'
+            : 'landscape:opacity-0 landscape:duration-200'),
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -194,10 +271,16 @@ function StageBox({ children, className }: { children: ReactNode; className?: st
 }
 
 /** What the picture is doing when it isn't playing: paused, loading, or a clip being skipped. */
-function Notice({ p }: { p: RandomPlayScreenProps }) {
+function Notice({ p, fs }: { p: RandomPlayScreenProps; fs: boolean }) {
   if (!p.notice && !p.waiting && !p.paused) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+    // Full screen sideways the bar takes the bottom edge: the notice goes to the top.
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3',
+        fs && 'landscape:bottom-auto landscape:top-3',
+      )}
+    >
       <span
         role="status"
         className="rounded-full bg-sumi-900/90 px-4 py-1.5 text-[clamp(13px,2.4cqw,24px)] font-bold text-washi ring-1 ring-line-strong"

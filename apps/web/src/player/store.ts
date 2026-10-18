@@ -8,6 +8,7 @@ import {
   songTimeAt,
 } from '@coverscape/shared';
 import { create } from 'zustand';
+import { needsAlignOnPlay } from './reviewAlign';
 import type { VoiceMode } from '@/features/voice/voiceRules';
 import type { PlayerEngine } from './engine';
 import { clampZoom, NO_ZOOM, zoomOfClip, type Zoom } from './zoom';
@@ -28,8 +29,6 @@ export interface ClipSettings {
   zoom_scale?: number;
   zoom_x?: number;
   zoom_y?: number;
-  /** F10 · The dancer the clip follows (its zoom glides with them). */
-  follow_path_id?: string | null;
 }
 
 interface PlayerStatus {
@@ -114,14 +113,8 @@ interface PlayerState extends PlayerStatus {
   zoom: Zoom;
   setZoom(zoom: Zoom): void;
   /**
-   * F10 · The «recorrido» being followed (null: nobody): while set, the zoom follows that dancer (features/follow
-   * drives it from the path; moving the zoom by hand stops following). A clip opens following its dancer.
-   */
-  followPathId: string | null;
-  setFollowPath(id: string | null): void;
-  /**
    * The studio is covered by the recorder (fixed, opaque) and keeps playing the song under it: whatever only paints
-   * the studio from the clock (time readout, timeline, follow box…) holds still meanwhile and repaints on the way
+   * the studio from the clock (time readout, timeline, zoom layer…) holds still meanwhile and repaints on the way
    * back. The clock itself keeps running: the recorder reads it.
    */
   covered: boolean;
@@ -295,7 +288,6 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       pendingSeek: null,
       voiceMode: 'original',
       zoom: NO_ZOOM,
-      followPathId: null,
     });
   },
 
@@ -452,8 +444,6 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
       countdownEndsAt: null,
       // F9 · The clip opens as it was saved: zoomed in, or the whole video.
       zoom: zoomOfClip(clip),
-      // F10 · …and following its dancer, when it was saved «siguiendo a X».
-      followPathId: clip.follow_path_id ?? null,
     });
     get().seek(range.start);
     if (!autoplay) playOnAttach = false;
@@ -484,11 +474,6 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   setZoom(zoom) {
     set({ zoom: clampZoom(zoom) });
-  },
-
-  followPathId: null,
-  setFollowPath(id) {
-    if (get().followPathId !== id) set({ followPathId: id });
   },
 
   covered: false,
@@ -693,12 +678,15 @@ export const useReview = create<ReviewState>()((set, get) => ({
       set({ time: at });
     }
     set({ playing: true });
-    takeEngine.play();
     if (originalEngine) {
       originalEngine.setRate(reviewOriginalRate(timing, rate));
-      get().alignOriginal();
+      // 51 · Paused, the original already waits at its spot: a jump here would make it load again and start late.
+      const drift = originalEngine.getCurrentTime() - get().originalTarget();
+      if (at !== time || needsAlignOnPlay(get().originalKind ?? 'file', drift)) get().alignOriginal();
       originalEngine.play();
     }
+    // Both start from the same tap (the take carries the sound: it must play inside the gesture).
+    takeEngine.play();
   },
 
   pause() {

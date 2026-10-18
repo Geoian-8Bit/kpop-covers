@@ -8,7 +8,7 @@
 import * as ort from 'onnxruntime-web/webgpu';
 // Served from our own domain (Vite emits it under /assets/, not precached: the precache only takes js/css/…).
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
-import { demucsSpec, twoStems } from './dsp';
+import { DEMUCS_SPEC, demucsSpec, energyDb, specShape, twoStems, type ResidualStats } from './dsp';
 import { clearModelCache, expectedFileBytes, fetchModelFile, isManifest, MODELS, type ModelDescriptor } from './model';
 import type { PageMessage, RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
 import {
@@ -236,25 +236,33 @@ async function separate({ engine, left, right }: RunRequest) {
 
   const total = left.length;
   const segment = DEMUCS.segment;
-  const plan = planSegments(total);
+  // Point 46 · A lead of silence before the song and after it: its first and last instants are not on an edge.
+  const plan = planSegments(total, segment, DEMUCS.overlap, DEMUCS.lead);
   const weights = triangleWeights(segment);
   const vocals: [Float32Array, Float32Array] = [new Float32Array(total), new Float32Array(total)];
   const instrumental: [Float32Array, Float32Array] = [new Float32Array(total), new Float32Array(total)];
   const sum = new Float32Array(total);
   const times: number[] = [];
+  const residual: ResidualStats = { mix: 0, residual: 0, reclaimed: 0 };
+  // The model's inputs, reused between segments (onnxruntime reads them during `run` only).
+  const segL = new Float32Array(segment);
+  const segR = new Float32Array(segment);
+  const mix = new Float32Array(2 * segment);
+  const { bins, frames } = specShape(DEMUCS_SPEC);
+  const magBuffer = new Float32Array(4 * bins * frames);
   post({ type: 'progress', phase: 'separate', done: 0, total: plan.length, etaSeconds: null });
 
   for (let i = 0; i < plan.length; i++) {
     await untilGoOn();
     const { start, length } = plan[i]!;
     const t0 = performance.now();
-    // The model always takes a full segment: the last one is padded with silence.
-    const segL = new Float32Array(segment);
-    const segR = new Float32Array(segment);
-    segL.set(left.subarray(start, start + length));
-    segR.set(right.subarray(start, start + length));
-    const mag = demucsSpec(segL, segR);
-    const mix = new Float32Array(2 * segment);
+    // The model always takes a full segment: the lead before the song and the end are silence.
+    const from = Math.max(0, start);
+    segL.fill(0);
+    segR.fill(0);
+    segL.set(left.subarray(from, start + length), from - start);
+    segR.set(right.subarray(from, start + length), from - start);
+    const mag = demucsSpec(segL, segR, DEMUCS_SPEC, magBuffer);
     mix.set(segL, 0);
     mix.set(segR, segment);
     let out: { x: Float32Array; xt: Float32Array };
@@ -265,7 +273,8 @@ async function separate({ engine, left, right }: RunRequest) {
       throw new SeparationErrorWithCause('gpu', error);
     }
     if (i === 0 && (hasNaN(out.x) || hasNaN(out.xt))) throw new SeparationError('gpu', 'nan');
-    const stems = twoStems(out.x, out.xt);
+    // Point 46 · With the segment itself (and its spectrogram), so the instrumental takes back the music no source took.
+    const stems = twoStems(out.x, out.xt, DEMUCS_SPEC, { left: segL, right: segR, spec: mag }, residual);
     accumulate(vocals[0], sum, stems.vocals[0], start, length, weights);
     accumulate(vocals[1], vocals[1], stems.vocals[1], start, length, weights);
     accumulate(instrumental[0], instrumental[0], stems.instrumental[0], start, length, weights);
@@ -280,6 +289,11 @@ async function separate({ engine, left, right }: RunRequest) {
     });
   }
   for (const track of [...vocals, ...instrumental]) normalize(track, sum);
+  // Point 46 · How much the four sources left out and how much of it went back to «Sin voz», for the whole song.
+  console.info(
+    `[voice] residual ${energyDb(residual.residual, residual.mix).toFixed(1)} dB of the mix, ` +
+      `${energyDb(residual.reclaimed, residual.mix).toFixed(1)} dB back into the instrumental`,
+  );
   post(
     { type: 'done', vocals, instrumental, seconds: (performance.now() - startedAt) / 1000 },
     [vocals[0].buffer, vocals[1].buffer, instrumental[0].buffer, instrumental[1].buffer],

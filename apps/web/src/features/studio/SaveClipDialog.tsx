@@ -202,14 +202,12 @@ interface SaveClipDialogProps {
    * e.g. YouTube). Read here, only while open, so a gesture never re-renders the page that holds the dialog.
    */
   zoomFrom?: 'player' | 'review-original' | null;
-  /** F10 · The dancer followed now: offered as «Guardar siguiendo a X» (the clip opens zoomed on them). */
-  follow?: { id: string; label: string } | null;
   description?: string;
   /** Called with the new clip (the studio marks it as the clip being practised). */
   onSaved?: (clip: Clip) => void;
 }
 
-export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFrom, follow, description, onSaved }: SaveClipDialogProps) {
+export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFrom, description, onSaved }: SaveClipDialogProps) {
   const formId = useId();
   const playerZoom = usePlayer((s) => (open && zoomFrom === 'player' ? s.zoom : null));
   const reviewZoom = useReview((s) => (open && zoomFrom === 'review-original' ? s.zoomOriginal : null));
@@ -222,8 +220,6 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
   const mirrored = draft ? draft.mirrored : playerMirrored;
   const offered = zoom != null && isZoomed(zoom) ? zoom : null;
   const [withZoom, setWithZoom] = useState(true);
-  const [withFollow, setWithFollow] = useState(true);
-  const followWins = Boolean(follow && withFollow);
   const create = useCreateClip();
   // Always on (cached): dropping it on close would make the duplicate warning vanish mid fade-out.
   const clips = useClips(video.id);
@@ -245,7 +241,6 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
     setColor(CLIP_COLORS[n % CLIP_COLORS.length]!);
     setPinned(false);
     setWithZoom(true);
-    setWithFollow(true);
     setError(null);
   }, [open]);
 
@@ -270,9 +265,7 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
         color,
         is_pinned: pinned,
         // F9 · Opened later, the clip shows this zoom (only offered on a file; YouTube is never zoomed).
-        ...(offered && withZoom && !followWins ? clipZoomColumns(offered) : {}),
-        // F10 · Opened later, the clip follows this dancer.
-        ...(follow && withFollow ? { follow_path_id: follow.id } : {}),
+        ...(offered && withZoom ? clipZoomColumns(offered) : {}),
       });
       if (onSaved) onSaved(clip);
       else usePlayer.getState().setActiveClip(clip.id);
@@ -322,21 +315,8 @@ export function SaveClipDialog({ open, onClose, video, clipCount, draft, zoomFro
 
         <ToggleGroup>
           <PinToggle checked={pinned} onChange={setPinned} />
-          {follow && <ElasticToggle checked={withFollow} onChange={setWithFollow} label={`Guardar siguiendo a «${follow.label}»`} />}
           {offered && (
-            // F10 · Following a dancer and a fixed zoom are exclusive: while following, the zoom moves with them.
-            <fieldset disabled={followWins} aria-describedby={followWins ? 'clip-zoom-why' : undefined} className={cn('contents', followWins && 'opacity-45')}>
-              <ElasticToggle
-                checked={withZoom && !followWins}
-                onChange={setWithZoom}
-                label={`Guardar con el zoom (${zoomLabel(offered)})`}
-              />
-            </fieldset>
-          )}
-          {offered && followWins && (
-            <p id="clip-zoom-why" className="pb-2 text-[12px] leading-snug text-washi-subtle">
-              Al seguir a «{follow!.label}» el zoom va con el bailarín: no se guarda un zoom fijo.
-            </p>
+            <ElasticToggle checked={withZoom} onChange={setWithZoom} label={`Guardar con el zoom (${zoomLabel(offered)})`} />
           )}
         </ToggleGroup>
 
@@ -412,8 +392,8 @@ function NowReadout() {
 }
 
 /**
- * An edit of the clip being practised, on the player: only what changed (a zoom moved by hand or the dancer being
- * followed stay as they are; only a new range goes back to its start). Returns how to put the player back.
+ * An edit of the clip being practised, on the player: only what changed (a zoom moved by hand stays as it is;
+ * only a new range goes back to its start). Returns how to put the player back.
  */
 function playClipEdit(edited: Clip, patch: TablesUpdate<'clips'>): () => void {
   const p = usePlayer.getState();

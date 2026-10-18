@@ -2,14 +2,14 @@ import type { BagKind } from '@coverscape/shared';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { navigateFromLayer } from '@/lib/backLayers';
 import { Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { useBags } from '@/data/bags';
-import { useDesignVariant } from '@/features/lab/labState';
 import { BagSettingsDialog } from './BagSettingsDialog';
-import { BAGS_LIST_VARIANTS, BagGroup, type BagsListVariant } from './BagShelf';
+import { BagGroup } from './BagShelf';
 import { KIND_COPY } from './drawRules';
 
 const KIND_ORDER: BagKind[] = ['songs', 'clips', 'people'];
@@ -20,11 +20,6 @@ export function BagsPage() {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
   const list = bags.data ?? [];
-  // Point 30 · the way of showing the bags chosen in the design lab on this device.
-  const chosen = useDesignVariant('bags-list');
-  const variant: BagsListVariant = (BAGS_LIST_VARIANTS as readonly string[]).includes(chosen)
-    ? (chosen as BagsListVariant)
-    : 'lista';
 
   return (
     // <main> already leaves room at the bottom for the floating menu button on phones (AppShell).
@@ -81,7 +76,7 @@ export function BagsPage() {
                 <SectionTitle id={`bags-${kind}`} glyph={KIND_COPY[kind].glyph} className="mb-4">
                   {KIND_COPY[kind].label}
                 </SectionTitle>
-                <BagGroup variant={variant} bags={ofKind} hrefFor={(bag) => `/bolsas/${bag.id}`} />
+                <BagGroup bags={ofKind} hrefFor={(bag) => `/bolsas/${bag.id}`} />
               </section>
             );
           })
@@ -90,7 +85,7 @@ export function BagsPage() {
       <BagSettingsDialog
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(bag) => navigate(`/bolsas/${bag.id}`)}
+        onCreated={(bag) => navigateFromLayer(navigate, `/bolsas/${bag.id}`)}
       />
     </Page>
   );

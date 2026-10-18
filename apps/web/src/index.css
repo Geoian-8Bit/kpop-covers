@@ -298,6 +298,17 @@
   }
 
   /*
+   * 47 · The real side clip. `body`'s overflow above passes to the viewport (html's is visible), where `clip` turns
+   * into `hidden`: the page could still be scrolled sideways by script or by the browser restoring a position after a
+   * rotation or a fullscreen exit (off centre, a gap on the right). Clipped here, nothing in the app is ever wider than
+   * the screen, so there is no sideways offset to keep. `clip` (not `hidden`): no scroll container, sticky bars still
+   * stick, and fixed layers (fullscreen, dialogs) aren't clipped.
+   */
+  #root {
+    overflow-x: clip;
+  }
+
+  /*
    * A grid with no column template (the phone layout of most `grid sm:grid-cols-2` lists) gets one `auto`
    * column, and an auto column grows to the widest line that can't wrap inside it (a nowrap caption, a chip):
    * every card then pokes out of its frame. Default to one column that can shrink; any grid-cols-* utility

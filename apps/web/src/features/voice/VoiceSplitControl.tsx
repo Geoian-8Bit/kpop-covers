@@ -1,11 +1,9 @@
-import { lazy, Suspense, useId, type ComponentType } from 'react';
-import { useDesignVariant } from '@/features/lab/labState';
+import { useId } from 'react';
 import { cn } from '@/lib/cn';
 import { usePlayer } from '@/player/store';
-import { VoiceNote, type VoiceVariantProps } from './controlParts';
+import { GROUP_LABEL, ModeSeals, VoiceNote } from './controlParts';
 import { VoiceOnda } from './VoiceOnda';
 import type { VoiceMode } from './voiceRules';
-import { isVoiceDesign, type VoiceDesign } from './waveRules';
 
 export type { VoiceMode } from './voiceRules';
 
@@ -16,52 +14,60 @@ export interface VoiceSplitControlProps {
   available: boolean;
   /** From `VoiceSplit.analyse()`: the track sounds mono, so «sin voz» can't separate anything (a note says so). */
   monoLike?: boolean;
-  /** Smaller, for the recorder's settings panel: no hints, a slimmer illustration. Targets stay ≥ 44 px. */
+  /** Smaller, for the studio's row and the recorder's settings panel: no hints, a slimmer wave. Targets stay ≥ 44 px. */
   compact?: boolean;
+  /**
+   * 46 · Only the three seals, no wave, and the note in one short line: for the studio's fullscreen panel, where the
+   * video plays on behind it (implies `compact`).
+   */
+  bare?: boolean;
+  className?: string;
 }
 
-/**
- * Lab moment `voice-split` (F17): the designs on trial, by variant id (see `features/lab/moments/voice.tsx`). The
- * default, «La ola partida», ships in the bundle; the rest load when chosen.
- */
-const VARIANTS: Record<VoiceDesign, ComponentType<VoiceVariantProps>> = {
-  onda: VoiceOnda,
-  audio: lazy(() => import('./VoiceOlaAudio').then((m) => ({ default: m.VoiceOlaAudio }))),
-  hokusai: lazy(() => import('./VoiceOlaHokusai').then((m) => ({ default: m.VoiceOlaHokusai }))),
-  seigaiha: lazy(() => import('./VoiceOlaSeigaiha').then((m) => ({ default: m.VoiceOlaSeigaiha }))),
-  compacta: lazy(() => import('./VoiceOlaCompacta').then((m) => ({ default: m.VoiceOlaCompacta }))),
-  fusuma: lazy(() => import('./VoiceFusuma').then((m) => ({ default: m.VoiceFusuma }))),
-  capas: lazy(() => import('./VoiceCapas').then((m) => ({ default: m.VoiceCapas }))),
-};
-
-/** The component for a variant id; anything unknown gets «La ola partida». */
-export function voiceVariant(id: string): ComponentType<VoiceVariantProps> {
-  return isVoiceDesign(id) ? VARIANTS[id] : VoiceOnda;
-}
+/** 46 · The note of the `bare` control: one short line. */
+const BARE_UNAVAILABLE = 'Solo con el archivo del vídeo';
+const BARE_MONO = 'Pista en mono: no se puede separar';
 
 /**
  * F17 · Separar voz y música: choose between the whole song, the song without the voice and the voice forward.
- * A radio group (arrows, Home/End; Tab lands on the chosen mode) drawn in the design chosen in the lab on this
- * device. Below it, a live note explains when it is off (YouTube) or useless (mono track). The waves follow the
- * studio's player (they move while it plays).
+ * A radio group (arrows, Home/End; Tab lands on the chosen mode) drawn as «La ola partida» (`VoiceOnda`, chosen in
+ * the design lab in point 40). Below it, a live note explains when it is off (YouTube) or useless (mono track). The
+ * waves drift while the studio's player plays (never with «reducir movimiento»).
  */
-export function VoiceSplitControl({ monoLike, ...props }: VoiceSplitControlProps) {
+export function VoiceSplitControl({ monoLike, className, bare, ...props }: VoiceSplitControlProps) {
   const noteId = useId();
-  const Variant = voiceVariant(useDesignVariant('voice-split'));
   const playing = usePlayer((s) => s.playing);
+  if (bare) {
+    const note = !props.available ? BARE_UNAVAILABLE : monoLike ? BARE_MONO : '';
+    return (
+      <div className={cn('min-w-0', className)}>
+        <div
+          role="radiogroup"
+          aria-label={GROUP_LABEL}
+          aria-describedby={noteId}
+          aria-disabled={!props.available || undefined}
+        >
+          <ModeSeals mode={props.mode} onChange={props.onChange} available={props.available} compact />
+        </div>
+        <p
+          id={noteId}
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'truncate text-[12px] leading-tight empty:hidden',
+            monoLike && props.mode === 'sin-voz' ? 'text-kin-300' : 'text-washi-muted',
+            note && 'mt-1 px-1',
+          )}
+        >
+          {note}
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="w-full">
-      <Suspense fallback={<VariantLoading compact={props.compact} />}>
-        <Variant {...props} monoLike={monoLike} noteId={noteId} playing={playing} />
-      </Suspense>
+    <div className={cn('w-full', className)}>
+      <VoiceOnda {...props} noteId={noteId} playing={playing} />
       <VoiceNote id={noteId} available={props.available} monoLike={monoLike} mode={props.mode} />
     </div>
-  );
-}
-
-/** Holds the place while a variant's code arrives (once per device; it is cached afterwards). */
-export function VariantLoading({ compact }: { compact?: boolean }) {
-  return (
-    <div aria-hidden className={cn('well w-full rounded-[14px]', compact ? 'h-[118px]' : 'h-[150px]')} />
   );
 }

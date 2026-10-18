@@ -39,8 +39,8 @@ import {
   needsClosing,
   outcomeOf,
   pollSummary,
-  resultsVisible,
   scoreLabel,
+  showsVoterNames,
   tally,
   voterCount,
   type OptionResult,
@@ -86,7 +86,7 @@ export function PollPage() {
 
 function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
   const now = useNow(15_000);
-  // Re-render right when it closes by time.
+  // Re-render right when an older vote closes by time (new ones close by hand only).
   const [, setTick] = useState(0);
   useEffect(() => {
     const ms = msUntilClose(poll);
@@ -133,8 +133,8 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
 
   // The tie as the server counted it (closing never trusts this phone's cached votes).
   const [serverTie, setServerTie] = useState<string[] | null>(null);
-  // Its time has come and nobody wrote the close: this phone asks the server to close it (a tie waits for a
-  // choice). A failure is retried on the next tick (15 s) or by hand, never left spinning.
+  // An older vote's time has come and nobody wrote the close: this phone asks the server to close it (a tie waits
+  // for a choice). A failure is retried on the next tick (15 s) or by hand, never left spinning.
   const [autoState, setAutoState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   useEffect(() => {
     if (autoState === 'error') setAutoState('idle');
@@ -151,7 +151,6 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
       .catch(() => setAutoState('error'));
   }, [loaded, poll, autoState, close]);
 
-  const visible = resultsVisible(poll, Date.now());
   const winner = poll.winner_wish_id ? wishById.get(poll.winner_wish_id) : undefined;
   const winnerResult = results.find((r) => r.wishId === poll.winner_wish_id);
 
@@ -192,11 +191,9 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
       title: `Segunda vuelta · ${poll.title.replace(/^(Segunda vuelta · )+/, '')}`.slice(0, 80),
       wishIds: tiedKey ? tiedKey.split(',') : [],
       vote_type: poll.vote_type,
-      results_live: poll.results_live,
-      anonymous: poll.anonymous,
       parent: { id: poll.id, closed_at: poll.closed_at, title: poll.title },
     }),
-    [poll.id, poll.title, poll.vote_type, poll.results_live, poll.anonymous, poll.closed_at, tiedKey],
+    [poll.id, poll.title, poll.vote_type, poll.closed_at, tiedKey],
   );
   const [roundOpen, setRoundOpen] = useState(false);
 
@@ -301,7 +298,7 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
               {/* A paragraph can't carry a name: the reader hears this lead-in instead. */}
               <span className="sr-only">Cómo es esta votación: </span>
               {pollSummary(poll, now).map((part, i) => (
-                <span key={part} className={cn(i === 0 && !closed && 'font-bold text-ai-200')}>
+                <span key={part} className={cn(i === 0 && !closed && poll.closes_at && 'font-bold text-ai-200')}>
                   {i > 0 && <span aria-hidden> · </span>}
                   {part}
                 </span>
@@ -322,20 +319,13 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
               >
                 Resultados
               </SectionTitle>
-              {visible ? (
-                <Results
-                  poll={poll}
-                  results={results}
-                  wishById={wishById}
-                  memberById={memberById}
-                  highlight={poll.winner_wish_id}
-                />
-              ) : (
-                <p className="flex items-center gap-2 rounded-[12px] border border-line px-4 py-4 text-sm text-washi-muted">
-                  <Lock aria-hidden className="size-4 shrink-0 text-washi-subtle" />
-                  Los resultados se verán al cerrar la votación.
-                </p>
-              )}
+              <Results
+                poll={poll}
+                results={results}
+                wishById={wishById}
+                memberById={memberById}
+                highlight={poll.winner_wish_id}
+              />
             </section>
 
             {!closed && (
@@ -394,7 +384,7 @@ function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {
       </Dialog>
 
       <PollFormDialog open={roundOpen} onClose={() => setRoundOpen(false)} preset={secondRound} />
-      <PollFormDialog open={editing} onClose={() => setEditing(false)} poll={poll} hasVotes={pollVotes.length > 0} />
+      <PollFormDialog open={editing} onClose={() => setEditing(false)} poll={poll} />
 
       <Dialog
         open={confirmDelete}
@@ -488,7 +478,8 @@ function Results({
                 transition={soft}
               />
             </div>
-            {!poll.anonymous && voters.length > 0 && (
+            {/* 52 · Named votes; an older vote cast as anonymous keeps its names hidden. */}
+            {showsVoterNames(poll) && voters.length > 0 && (
               <p className="ml-8 mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-washi-muted">
                 {voters.map((v) => (
                   <span key={v.memberId} className="inline-flex items-center gap-1">
@@ -528,15 +519,10 @@ function TieBlock({
   const names = tied.map((id) => wishById.get(id)?.title ?? '¿?');
   return (
     <div className="space-y-4">
-      {resultsVisible(poll) ? (
-        <p className="text-sm text-washi-muted">
-          Empate entre <span className="font-bold text-washi">{names.map((n) => `«${n}»`).join(' y ')}</span> en «
-          {poll.title}».
-        </p>
-      ) : (
-        // Results «al cerrar»: the tied ones stay secret until it is decided how to break the tie.
-        <p className="text-sm text-washi-muted">Hay empate. Decidid cómo desempatar: los resultados se verán al cerrar.</p>
-      )}
+      <p className="text-sm text-washi-muted">
+        Empate entre <span className="font-bold text-washi">{names.map((n) => `«${n}»`).join(' y ')}</span> en «
+        {poll.title}».
+      </p>
       {drawn ? (
         <>
           <TieDraw

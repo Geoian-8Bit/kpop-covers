@@ -1,6 +1,7 @@
 import { Maximize2, Minimize2, Pause, Play, RotateCcw, Save, SkipForward, Square } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
+import { useLandscape } from './roundChrome';
 
 interface RoundControlsProps {
   paused: boolean;
@@ -12,7 +13,9 @@ interface RoundControlsProps {
   onSave?: (() => void) | null;
   /** Nothing to repeat / skip yet (before the first clip). */
   disabled?: boolean;
-  fullscreen?: { on: boolean; toggle: () => void } | null;
+  fullscreen?: { on: boolean; toggle: () => void };
+  /** 54 · Full screen: one slim bar (a row upright, a column sideways), beside the video and never over it. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -32,8 +35,23 @@ export function RoundControls({
   onSave,
   disabled,
   fullscreen,
+  compact,
   className,
 }: RoundControlsProps) {
+  if (compact) {
+    return (
+      <CompactControls
+        paused={paused}
+        onTogglePause={onTogglePause}
+        onRepeat={onRepeat}
+        onSkip={onSkip}
+        onFinish={onFinish}
+        disabled={disabled}
+        fullscreen={fullscreen}
+        className={className}
+      />
+    );
+  }
   const extras = 1 + (fullscreen ? 1 : 0) + (onSave ? 1 : 0);
   return (
     <div role="group" aria-label="Controles de la ronda" className={cn('flex flex-col gap-2', className)}>
@@ -87,17 +105,14 @@ export function RoundControls({
           <Square aria-hidden className="size-4.5" /> Terminar
         </Button>
         {fullscreen && (
+          // Off here: in full screen the compact bar below takes over (with its own way out).
           <Button
             variant="ghost"
             onClick={fullscreen.toggle}
-            aria-pressed={fullscreen.on}
+            data-fs-toggle
             className={cn(STACK, 'min-h-12 px-1 py-1.5 text-[12px] xl:text-sm')}
           >
-            {fullscreen.on ? (
-              <Minimize2 aria-hidden className="size-4.5" />
-            ) : (
-              <Maximize2 aria-hidden className="size-4.5" />
-            )}
+            <Maximize2 aria-hidden className="size-4.5" />
             Pantalla completa
           </Button>
         )}
@@ -111,6 +126,118 @@ export function RoundControls({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// 54 · Full screen upright: five equal targets (≥ 48 px), icon over a short label. «Guardar como pista» waits for
+// the end of the round.
+const SLIM = cn(STACK, 'min-h-14 min-w-0 px-0.5 py-1.5 text-[12px]');
+// Sideways: the studio's fullscreen bar — round 44 px icons on the dark fade, the label only on a big screen.
+const EDGE =
+  'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-2.5 text-[14px] font-bold text-washi transition-colors hover:bg-washi/15 active:bg-washi/20 disabled:pointer-events-none disabled:opacity-40';
+const EDGE_LABEL = 'max-xl:sr-only';
+
+function CompactControls({
+  paused,
+  onTogglePause,
+  onRepeat,
+  onSkip,
+  onFinish,
+  disabled,
+  fullscreen,
+  className,
+}: Omit<RoundControlsProps, 'onSave' | 'compact'>) {
+  const landscape = useLandscape();
+  const pauseLabel = paused ? 'Seguir' : 'Pausa';
+  if (landscape) {
+    return (
+      <div role="group" aria-label="Controles de la ronda" className={cn('flex shrink-0 items-center gap-1', className)}>
+        <button
+          type="button"
+          onClick={onTogglePause}
+          data-round-pause
+          disabled={disabled}
+          aria-keyshortcuts="Space"
+          title={`${pauseLabel} (espacio)`}
+          className={cn(EDGE, 'bg-washi text-sumi-900 hover:bg-kin-200 active:bg-kin-200')}
+        >
+          {paused ? <Play aria-hidden className="size-5" /> : <Pause aria-hidden className="size-5" />}
+          <span className={EDGE_LABEL}>{pauseLabel}</span>
+        </button>
+        <button type="button" onClick={onRepeat} disabled={disabled} aria-keyshortcuts="R" title="Repetir (R)" className={EDGE}>
+          <RotateCcw aria-hidden className="size-5" />
+          <span className={EDGE_LABEL}>Repetir</span>
+        </button>
+        <button
+          type="button"
+          onClick={onSkip}
+          disabled={disabled}
+          aria-keyshortcuts="ArrowRight"
+          title="Saltar (→)"
+          className={EDGE}
+        >
+          <SkipForward aria-hidden className="size-5" />
+          <span className={EDGE_LABEL}>Saltar</span>
+        </button>
+        <button type="button" onClick={onFinish} disabled={disabled} title="Terminar" className={cn(EDGE, 'text-shu-300')}>
+          <Square aria-hidden className="size-4.5" />
+          <span className={EDGE_LABEL}>Terminar</span>
+        </button>
+        {fullscreen && (
+          <button
+            type="button"
+            onClick={fullscreen.toggle}
+            data-fs-toggle
+            title="Salir de pantalla completa"
+            className={EDGE}
+          >
+            <Minimize2 aria-hidden className="size-5" />
+            <span className={EDGE_LABEL}>Salir de pantalla completa</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div role="group" aria-label="Controles de la ronda" className={cn('grid grid-cols-5 gap-1.5', className)}>
+      <Button
+        variant="washi"
+        onClick={onTogglePause}
+        data-round-pause
+        disabled={disabled}
+        aria-keyshortcuts="Space"
+        className={SLIM}
+      >
+        {paused ? <Play aria-hidden className="size-5" /> : <Pause aria-hidden className="size-5" />}
+        {pauseLabel}
+      </Button>
+      <Button variant="secondary" onClick={onRepeat} disabled={disabled} aria-keyshortcuts="R" className={SLIM}>
+        <RotateCcw aria-hidden className="size-5" /> Repetir
+      </Button>
+      <Button variant="secondary" onClick={onSkip} disabled={disabled} aria-keyshortcuts="ArrowRight" className={SLIM}>
+        <SkipForward aria-hidden className="size-5" /> Saltar
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={onFinish}
+        disabled={disabled}
+        className={cn(SLIM, 'text-shu-300 hover:text-shu-300')}
+      >
+        <Square aria-hidden className="size-4.5" /> Terminar
+      </Button>
+      {fullscreen && (
+        // Visible «Reducir»; the name starts with it and says what it does.
+        <Button
+          variant="ghost"
+          onClick={fullscreen.toggle}
+          data-fs-toggle
+          aria-label="Reducir: salir de pantalla completa"
+          className={SLIM}
+        >
+          <Minimize2 aria-hidden className="size-4.5" /> Reducir
+        </Button>
+      )}
     </div>
   );
 }

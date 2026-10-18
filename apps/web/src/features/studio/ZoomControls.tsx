@@ -27,16 +27,21 @@ import { useShallow } from 'zustand/react/shallow';
 import { useToast } from '@/providers/ToastProvider';
 
 /**
- * F9 · 7 · Zoom in the studio, with the fingers only (as in any phone video): pinch to zoom in or out, drag to move,
- * double tap for the whole video, in fullscreen too. The wheel (or a trackpad pinch) and the keys (+, −, 0, arrows,
- * with the focus on the video) do the same on a computer. The row under the player offers «Ampliar» (one finger is
- * enough, WCAG 2.5.1), says how, shows the amount
- * and «Ver completo» while zoomed, and saves the zoom with the clip.
+ * F9 · 7 · 44 · Zoom in the studio, with the fingers only (as in any phone video): pinch to zoom in or out, drag to
+ * move, double tap for the whole video, in fullscreen too. On a touch screen no buttons for it (a deliberate choice of
+ * point 44, which gives up «Ampliar» as one-finger alternative): only, when a clip is on, one compact line to save
+ * the pinched zoom in the clip or take it off. The wheel
+ * (or a trackpad pinch) and the keys (+, −, 0, arrows, with the focus on the video) do the same on a computer, where
+ * the row under the player also offers «Ampliar» (no pinch with a mouse, WCAG 2.5.1), says how, shows the amount and
+ * «Ver completo» while zoomed, the arrows (no drag needed, 2.5.7), and saves the zoom with the clip.
  * Only a file can be zoomed: YouTube's player is never altered (its terms forbid changing or covering it), so with
  * YouTube the row says how to get it.
  */
 
 export const ZOOM_NEEDS_FILE = 'Vincula el archivo del vídeo para ampliar.';
+
+/** 44 · The zoom's buttons (row and fullscreen arrows) are for a mouse: hidden where the primary pointer is a finger. */
+export const ZOOM_UI_TOUCH_HIDDEN = 'pointer-coarse:hidden';
 
 /** «Ampliar» in the row: one tap, one step (around the spot already zoomed, the centre the first time). */
 const ZOOM_STEP = 1.5;
@@ -65,7 +70,7 @@ export function zoomAvailability(
 }
 
 export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[]; onLink: () => void }) {
-  // P12 · Derived values, not the zoom itself: a zoom that follows a dancer changes every frame, the row only
+  // P12 · Derived values, not the zoom itself: a pinch or a drag changes it every frame, the row only
   // when its label, a limit or «saved with the clip» changes.
   const view = usePlayer(useShallow((s) => zoomControlsView(s.zoom)));
   const stage = usePlayer((s) => s.stage);
@@ -79,22 +84,16 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
   const zoomed = can && view.zoomed;
   const saved = usePlayer((s) => clip != null && sameZoom(s.zoom, clipZoom));
   const settledLabel = useSettled(zoomed ? view.label : '', LIVE_SETTLE_MS);
+  // 44 · On a touch screen only the clip's own zoom stays, as one compact line: saving the zoom pinched now, or
+  // taking it off the clip (and the note that a YouTube clip opens zoomed with the file). Nothing else.
+  const clipLine = clip != null && ((zoomed && !saved) || clipHasZoom(clip));
 
   function saveWithClip() {
     if (!clip) return;
-    const columns = clipZoomColumns(usePlayer.getState().zoom);
-    // A fixed zoom and following a dancer are exclusive (F10): saving the zoom stops the clip following.
-    const following = clip.follow_path_id != null;
     update.mutate(
-      { clip, patch: following ? { ...columns, follow_path_id: null } : columns },
+      { clip, patch: clipZoomColumns(usePlayer.getState().zoom) },
       {
-        onSuccess: () =>
-          toast(
-            following
-              ? `Zoom guardado con «${clip.name}»: ya no sigue a nadie`
-              : `Zoom guardado con «${clip.name}»`,
-            'success',
-          ),
+        onSuccess: () => toast(`Zoom guardado con «${clip.name}»`, 'success'),
         onError: (err) => toast(friendlyError(err), 'error'),
       },
     );
@@ -113,10 +112,15 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
   }
 
   return (
-    <div className="sep-t px-4 py-3 sm:px-5" role="group" aria-labelledby="zoom-row-title">
+    // 44 · The whole row only with a mouse (or a trackpad): on a touch screen the zoom is the fingers' alone.
+    <div
+      className={cn('sep-t px-4 py-3 sm:px-5', clipLine ? 'pointer-coarse:py-2' : ZOOM_UI_TOUCH_HIDDEN)}
+      role="group"
+      aria-label="Zoom"
+    >
       <p
-        id="zoom-row-title"
-        className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle"
+        aria-hidden
+        className={cn('mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle', ZOOM_UI_TOUCH_HIDDEN)}
       >
         Zoom
       </p>
@@ -125,11 +129,11 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         {settledLabel}
       </span>
       {/* Only with something to do: «Ampliar» (one finger, 2.5.1), the amount and the way back while zoomed, the clip's saved zoom. */}
-      <div className="empty:hidden mb-1 flex flex-wrap items-center gap-1.5">
+      <div className="empty:hidden mb-1 flex flex-wrap items-center gap-1.5 pointer-coarse:mb-0">
         {can && !view.atMax && (
           <Button
             variant="ghost"
-            className="min-h-11"
+            className={cn('min-h-11', ZOOM_UI_TOUCH_HIDDEN)}
             onClick={() => usePlayer.getState().setZoom(stepZoom(usePlayer.getState().zoom, ZOOM_STEP))}
           >
             <ZoomIn className="size-4" /> Ampliar
@@ -137,13 +141,13 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         )}
         {zoomed && (
           <>
-            <span className="tabular rounded-[8px] bg-sumi-800 px-2.5 py-1 font-mono text-[13px] font-semibold text-washi">
+            <span className={cn('tabular rounded-[8px] bg-sumi-800 px-2.5 py-1 font-mono text-[13px] font-semibold text-washi', ZOOM_UI_TOUCH_HIDDEN)}>
               {view.label}
             </span>
-            <Button variant="ghost" className="min-h-11" onClick={() => usePlayer.getState().setZoom(NO_ZOOM)}>
+            <Button variant="ghost" className={cn('min-h-11', ZOOM_UI_TOUCH_HIDDEN)} onClick={() => usePlayer.getState().setZoom(NO_ZOOM)}>
               <Scan className="size-4" /> Ver completo
             </Button>
-            <PanArrows />
+            <PanArrows className={ZOOM_UI_TOUCH_HIDDEN} />
           </>
         )}
         {clip && zoomed && !saved && (
@@ -154,7 +158,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
             onClick={saveWithClip}
           >
             <Bookmark className="size-4 shrink-0" />{' '}
-            <span className="truncate">Guardar con «{clip.name}»</span>
+            <span className="truncate">Guardar el zoom en «{clip.name}»</span>
           </Button>
         )}
         {clip && clipHasZoom(clip) && (
@@ -163,7 +167,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
           </Button>
         )}
       </div>
-      <p className="text-[12px] leading-snug text-washi-subtle">
+      <p className={cn('text-[12px] leading-snug text-washi-subtle', ZOOM_UI_TOUCH_HIDDEN)}>
         {reason === 'link' ? (
           <span className="flex flex-wrap items-center gap-x-2">
             {ZOOM_NEEDS_FILE} Con YouTube no se puede ampliar su reproductor.
@@ -192,11 +196,11 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         ) : reason === 'loading' ? (
           'Cargando el vídeo…'
         ) : clip && saved && clipHasZoom(clip) ? (
-          `«${clip.name}» se abre así de ampliado. Pellizca para cambiarlo; dos toques para verlo entero.`
+          `«${clip.name}» se abre así de ampliado. Cámbialo con la rueda; doble clic para verlo entero.`
         ) : zoomed ? (
-          'Arrastra o usa las flechas para mover la zona; dos toques en el vídeo para verlo entero.'
+          'Arrastra o usa las flechas para mover la zona; doble clic en el vídeo para verlo entero.'
         ) : (
-          'Pulsa «Ampliar» o pellizca el vídeo con dos dedos, también en pantalla completa. En el ordenador, la rueda o + y −.'
+          'Pulsa «Ampliar», o usa la rueda o + y − sobre el vídeo, también en pantalla completa.'
         )}
       </p>
       {!can && clip && clipHasZoom(clip) && reason !== 'loading' && (
@@ -225,14 +229,14 @@ const PAN_KEYS = [
  * While zoomed: moves the zoomed spot with single taps, no dragging needed (WCAG 2.5.7). Same steps as the arrow
  * keys on the video, and the way they point on screen (the mirror is taken into account).
  */
-function PanArrows({ fullscreen = false }: { fullscreen?: boolean }) {
+function PanArrows({ fullscreen = false, className }: { fullscreen?: boolean; className?: string }) {
   const move = (key: string) => {
     const { zoom, mirrored, setZoom } = usePlayer.getState();
     const next = keyZoom(zoom, key, PAN_BOX, null, mirrored);
     if (next) setZoom(next);
   };
   return (
-    <span role="group" aria-label="Mover la zona ampliada" className="inline-flex gap-1">
+    <span role="group" aria-label="Mover la zona ampliada" className={cn('inline-flex gap-1', className)}>
       {PAN_KEYS.map(({ key, label, Icon }) => (
         <button
           key={key}
@@ -254,13 +258,13 @@ function PanArrows({ fullscreen = false }: { fullscreen?: boolean }) {
 
 /**
  * Global review 2 [2] · The same arrows in fullscreen's bottom bar while zoomed: moving the zoomed spot doesn't ask
- * to drag there either (WCAG 2.5.7), nor to leave fullscreen.
+ * to drag there either (WCAG 2.5.7), nor to leave fullscreen. 44 · With a mouse only: fingers drag the picture.
  */
 export function FsPanArrows() {
   const zoomed = usePlayer((s) => isZoomed(s.zoom));
   if (!zoomed) return null;
   return (
-    <div className="mb-1 flex justify-end">
+    <div className={cn('mb-1 flex justify-end', ZOOM_UI_TOUCH_HIDDEN)}>
       <PanArrows fullscreen />
     </div>
   );
@@ -283,7 +287,7 @@ export function PlayerZoomLayer({
   live: boolean;
   children: ReactNode;
 }) {
-  // Holds still under the recorder (`covered`): a dancer being followed doesn't repaint a hidden picture.
+  // Holds still under the recorder (`covered`): the zoom never repaints a hidden picture.
   const zoom = useUnlessCovered((s) => (enabled ? s.zoom : NO_ZOOM));
   return (
     <ZoomLayer zoom={zoom} box={box} media={media} live={live}>
@@ -300,7 +304,7 @@ const BADGE_MS = 1200;
  * stays on the picture. The way back is the double tap, or «Ver completo» in the row below.
  */
 export function ZoomBadge({ visible, className }: { visible: boolean; className?: string }) {
-  // P12 · Only the label (a string): following a dancer doesn't repaint the badge every frame.
+  // P12 · Only the label (a string): a pinch doesn't repaint the badge every frame.
   const label = usePlayer((s) => zoomBadgeLabel(s.zoom));
   const [shown, setShown] = useState(false);
   useEffect(() => {

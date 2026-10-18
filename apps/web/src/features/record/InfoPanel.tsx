@@ -18,6 +18,8 @@ import { watchPresentedFrames } from './compositor';
 import { paceLog, type BenchResult, type PaceRest } from './pace';
 import { clearFailedFormats, failedFamilies, type RecordFormat } from './recorder';
 import { useRecordSettings } from './settings';
+import { syncSummary } from './syncRules';
+import type { TakeSyncMeta } from './takeStore';
 
 /** What the last take really came out as (size ÷ duration says whether the bitrate was respected). */
 export interface TakeStats {
@@ -36,6 +38,8 @@ export interface TakeStats {
   restFps?: number | null;
   /** P19 review · Direct takes: camera frames the page didn't get to paint (the file has them; never judged). */
   missed?: number | null;
+  /** 43 · How the take's sound was shifted against its picture (null: a take without sound). */
+  sync?: TakeSyncMeta | null;
 }
 
 const ms = (v: number | null | undefined) => (v == null ? '—' : `${Math.round(v)} ms`);
@@ -372,6 +376,7 @@ export function InfoPanel({
               )}
               <Row k="Cámara en la cuenta atrás" v={last.restFps ? fps1(last.restFps) : 'sin medir'} />
               <Row k="Retraso de la vista previa" v={last.lagMs == null ? 'sin medir' : ms(last.lagMs)} />
+              {last.sync && <Row k="Sincronía del sonido" v={syncSummary(last.sync)} />}
             </>
           ) : (
             <p className="text-washi-subtle">Graba una toma para ver cómo ha salido.</p>
@@ -390,8 +395,7 @@ export function InfoPanel({
                     <span className="tabular shrink-0 font-mono text-[11px] text-washi-subtle">{clock(c.time)}</span>
                   </div>
                   <p className="tabular font-mono text-[11px] text-washi-muted">
-                    nivel ×{fmt(c.overThreshold)} · brillo {fmt(c.brightness)} · ataque {ms1(c.attackMs)} · caída{' '}
-                    {ms1(c.decayMs)} · cresta {fmt(c.crest)}
+                    nivel ×{fmt(c.overThreshold)} sobre el umbral
                   </p>
                 </li>
               ))}
@@ -420,7 +424,6 @@ export function InfoPanel({
 }
 
 const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
-const ms1 = (v: number) => (Number.isFinite(v) ? `${String(Math.round(v * 10) / 10).replace('.', ',')} ms` : 'larga');
 const clock = (t: number) => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

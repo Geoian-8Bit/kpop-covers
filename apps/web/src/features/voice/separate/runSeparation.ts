@@ -307,7 +307,7 @@ type SeparationRequest = {
 };
 
 /**
- * F10 · 15 · Marked as heavy work while it runs: the follow analysis waits for it, the copy for the group pauses
+ * Marked as heavy work while it runs: the copy for the group pauses
  * (lib/heavyWork). Global review [6] · It first waits for a copy being made (one encoder at a time).
  */
 export async function runSeparation(opts: SeparationRequest): Promise<VideoStems> {

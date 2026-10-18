@@ -51,20 +51,16 @@ export function RpdPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-4xl rounded-[10px] sm:rounded-[12px]">
-        <header className="flex flex-wrap items-end gap-x-4 gap-y-2 px-5 pb-5 pt-6 sm:px-9 sm:pt-8">
-          <div className="min-w-0 flex-1">
-            <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">
-              Random Play Dance
-            </h1>
-            <p className="mt-1 max-w-prose text-sm text-washi-subtle">
-              Estribillos al azar, uno detrás de otro. Se ve de lejos: ponlo en la tele.
-            </p>
-          </div>
+        {/* 53 · Just the title, on one line: the round's options and «Empezar» are what matters here. */}
+        <header className="flex min-w-0 items-center gap-2 px-5 pb-1 pt-3 sm:px-9 sm:pt-6">
+          <h1 className="min-w-0 flex-1 truncate font-display text-[22px] font-bold leading-tight sm:text-[30px]">
+            Random Play Dance
+          </h1>
           {saved > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-11 px-3"
+              className="-mr-2 h-11 shrink-0 px-2.5 text-washi-muted"
               onClick={() => {
                 const list = document.getElementById(TRACKS_SECTION);
                 const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -72,7 +68,8 @@ export function RpdPage() {
                 list?.focus({ preventScroll: true });
               }}
             >
-              <ListMusic aria-hidden className="size-4.5" /> Pistas guardadas ({saved})
+              <ListMusic aria-hidden className="size-4.5" /> Pistas<span className="sr-only"> guardadas: </span>
+              <span className="tabular rounded-full bg-washi/[0.08] px-1.5 text-[12px] font-bold text-washi">{saved}</span>
             </Button>
           )}
         </header>
@@ -170,11 +167,11 @@ function RoundBuilder() {
   const moreId = `${ids}-more`;
 
   return (
-    <section aria-labelledby="new-round" className="sep-t px-5 pt-7 sm:px-9">
-      <SectionTitle id="new-round" glyph="舞" className="mb-4">
+    <section aria-labelledby="new-round" className="px-5 pt-3 sm:px-9 sm:pt-5">
+      {/* 53 · Not shown (the page's title is enough), but still a heading to jump to. */}
+      <h2 id="new-round" className="sr-only">
         Nueva ronda
-      </SectionTitle>
-
+      </h2>
       {/* 1 · Where the clips come from */}
       <p className="mb-1.5 text-[13px] font-medium text-washi-muted">De dónde salen los clips</p>
       <Segmented

@@ -1,11 +1,10 @@
 import { Page } from '@/components/AppShell';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { DesignLabSection } from '@/features/lab/DesignLabSection';
-import { PoseLabSection } from '@/features/pose/PoseLabSection';
 import { MembersSection } from '@/features/members/MembersUI';
 import { VersionCheck } from '@/features/nav/version/VersionCheck';
 
-/** Ajustes: what lives on this device, the group's members, the (temporary) design lab, the pose test and the version. */
+/** Ajustes: what lives on this device, the group's members, the (temporary) design lab and the version. */
 export function SettingsPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
@@ -32,8 +31,6 @@ export function SettingsPage() {
         <MembersSection />
 
         <DesignLabSection />
-
-        <PoseLabSection />
 
         <section aria-labelledby="version-title" className="sep-t px-5 py-7 sm:px-9">
           <SectionTitle id="version-title" glyph="版">

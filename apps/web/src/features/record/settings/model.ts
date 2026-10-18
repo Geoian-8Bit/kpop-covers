@@ -10,6 +10,7 @@ import {
 } from '@coverscape/shared';
 import { forgetPaceFps, forgetPaceSize, usePaceCap } from '../pace';
 import { useRecordSettings, type RecordSettings } from '../settings';
+import { clampTrim, MAX_TRIM_MS, TRIM_STEP_MS, trimLabel } from '../syncRules';
 
 /** Props of the recorder's settings panel (A1). */
 export interface RecorderSettingsProps {
@@ -41,6 +42,7 @@ export type FieldKey =
   | 'sound'
   | 'micChannels'
   | 'clapSensitivity'
+  | 'syncTrim'
   | 'grid'
   | 'level'
   | 'info';
@@ -80,7 +82,22 @@ export interface SwitchField extends FieldBase {
   toggle(): void;
 }
 
-export type Field = ChoiceField | SwitchField;
+/** 43 · A number moved in steps with − and + (the sync fine adjustment). */
+export interface StepperField extends FieldBase {
+  kind: 'stepper';
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  /** The value as said («+30 ms»). */
+  valueText: string;
+  /** What − and + do, for screen readers. */
+  decreaseLabel: string;
+  increaseLabel: string;
+  set(value: number): void;
+}
+
+export type Field = ChoiceField | SwitchField | StepperField;
 
 export interface Fields {
   quality: ChoiceField;
@@ -91,6 +108,7 @@ export interface Fields {
   sound: ChoiceField;
   micChannels: ChoiceField;
   clapSensitivity: ChoiceField;
+  syncTrim: StepperField;
   grid: SwitchField;
   level: SwitchField;
   info: SwitchField;
@@ -105,18 +123,13 @@ const QUALITY_HELP: Record<RecordSettings['quality'], string> = {
   auto: 'Lo mejor que este móvil graba sin cortes.',
 };
 
-export const CLAP_LABEL: Record<RecordSettings['clapSensitivity'], string> = {
-  low: 'Baja',
-  medium: 'Media',
-  high: 'Alta',
-  max: 'Muy alta',
-};
+export const CLAP_LABEL: Record<RecordSettings['clapSensitivity'], string> = { low: 'Baja', medium: 'Media', high: 'Alta' };
 
+// P42 · The F7 levels and their words, as before P21.
 const CLAP_HELP: Record<RecordSettings['clapSensitivity'], string> = {
-  low: 'Solo palmadas fuertes y secas, cerca del móvil: para salas con eco o ruido.',
+  low: 'Solo palmadas fuertes y claras: para salas con eco o ruido.',
   medium: 'Dos palmadas normales a unos metros del móvil.',
-  high: 'Palmadas más suaves o algo más lejos.',
-  max: 'Oye palmadas suaves o lejanas; en una sala ruidosa puede saltar sola.',
+  high: 'Oye palmadas suaves o lejanas; en una sala ruidosa puede saltar sola.',
 };
 
 /**
@@ -316,12 +329,29 @@ export function useSettingsFields({
       help: `Sensibilidad para empezar con un doble aplauso. ${CLAP_HELP[s.clapSensitivity]}`,
       display: CLAP_LABEL[s.clapSensitivity],
       value: s.clapSensitivity,
-      options: (['low', 'medium', 'high', 'max'] as const).map((c) => ({
+      options: (['low', 'medium', 'high'] as const).map((c) => ({
         value: c,
         label: CLAP_LABEL[c],
         ariaLabel: `Sensibilidad ${CLAP_LABEL[c].toLowerCase()}`,
       })),
       select: (v) => patch({ clapSensitivity: v as RecordSettings['clapSensitivity'] }),
+    },
+    syncTrim: {
+      kind: 'stepper',
+      key: 'syncTrim',
+      label: 'Ajuste fino de sincronía',
+      help: 'Si en la toma ves los pasos después de la música, súbelo; si los ves antes, bájalo.',
+      note: s.syncTrimMs !== 0 ? 'Ajustado en este móvil: vale para las próximas tomas.' : undefined,
+      noteAction: s.syncTrimMs !== 0 ? { label: 'Volver a 0', run: () => patch({ syncTrimMs: 0 }) } : undefined,
+      display: trimLabel(s.syncTrimMs),
+      value: s.syncTrimMs,
+      min: -MAX_TRIM_MS,
+      max: MAX_TRIM_MS,
+      step: TRIM_STEP_MS,
+      valueText: trimLabel(s.syncTrimMs),
+      decreaseLabel: `Bajar ${TRIM_STEP_MS} ms`,
+      increaseLabel: `Subir ${TRIM_STEP_MS} ms`,
+      set: (v) => patch({ syncTrimMs: clampTrim(v) }),
     },
     grid: {
       kind: 'switch',

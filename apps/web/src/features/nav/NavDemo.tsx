@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { noteNavDemoOnScreen } from './navDemoPresence';
 import NavHanafuda from './prototypes/NavHanafuda';
+import NavKakejiku from './prototypes/NavKakejiku';
 import NavKamon from './prototypes/NavKamon';
-import NavOrigami from './prototypes/NavOrigami';
 import NavSensu from './prototypes/NavSensu';
 import type { QuickNavProps } from './quickNavCore';
 
@@ -74,6 +74,6 @@ export function KamonDemo() {
   return <Stage Prototype={NavKamon} />;
 }
 
-export function OrigamiDemo() {
-  return <Stage Prototype={NavOrigami} />;
+export function KakejikuDemo() {
+  return <Stage Prototype={NavKakejiku} />;
 }

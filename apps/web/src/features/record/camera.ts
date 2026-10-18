@@ -4,11 +4,14 @@ import {
   createLatestQueue,
   noteWbOutcome,
   parseWbMemory,
-  runWhiteBalance,
+  requestWhiteBalance,
   wbHidden,
   type WbMemoryEntry,
   type WhiteBalanceOutcome,
+  type WhiteBalanceResult,
 } from './whiteBalanceRules';
+
+export type { WhiteBalanceResult } from './whiteBalanceRules';
 
 /**
  * Camera and microphone access for the recording studio. Picture and sound are asked for separately:
@@ -256,46 +259,61 @@ export function canLock(info: TrackInfo | null): boolean {
   );
 }
 
-/** C3 · Exposure compensation, in the camera's own steps (usually −2 to +2). */
-export function setExposureCompensation(track: MediaStreamTrack | undefined, value: number): Promise<boolean> {
-  return applyAdvanced(track, { exposureCompensation: value });
-}
+let exposureRunning = false;
+let exposureNext: { track: MediaStreamTrack | undefined; value: number } | null = null;
 
-/** C4 · White balance presets (Kelvin), as the phone's camera app names them. Null = automatic. */
-export const WHITE_BALANCE: { label: string; kelvin: number | null }[] = [
-  { label: 'Auto', kelvin: null },
-  { label: 'Cálida', kelvin: 3000 },
-  { label: 'Fluorescente', kelvin: 4000 },
-  { label: 'Día', kelvin: 5500 },
-  { label: 'Nublado', kelvin: 6500 },
-];
+/**
+ * C3 · Exposure compensation, in the camera's own steps (usually −2 to +2). P49: requests in a row (the panel's
+ * slider or the quick bar being dragged) coalesce: one reaches the camera at a time and the latest always wins, so
+ * the camera never queues up a drag's worth of old values.
+ */
+export function setExposureCompensation(track: MediaStreamTrack | undefined, value: number): void {
+  exposureNext = { track, value };
+  if (exposureRunning) return;
+  exposureRunning = true;
+  void (async () => {
+    try {
+      while (exposureNext) {
+        const job = exposureNext;
+        exposureNext = null;
+        await applyAdvanced(job.track, { exposureCompensation: job.value });
+      }
+    } finally {
+      exposureRunning = false;
+    }
+  })();
+}
 
 const wbQueue = createLatestQueue();
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * C4 / P24 · Applies a preset (or «Auto», null) in steps and checks it took (`whiteBalanceRules`). Requests are
- * serialised and only the latest runs: an overtaken one resolves true (it isn't a failure to undo). False when it
- * didn't work: the camera is put back on automatic. A camera that accepted presets twice in a row without showing
- * them is remembered (30 days, this browser) and the option hides on it; a refusal never hides it.
+ * C4 / P24 / P48 · Applies a preset (or «Auto», null) and checks the camera shows it (`whiteBalanceRules`).
+ * Requests are serialised and only the latest runs (an overtaken one resolves `superseded`). A preset that didn't
+ * take puts the camera back on automatic, checked: `stuck` when the camera keeps a manual balance anyway (the
+ * recorder then reopens the camera). A camera that twice in a row stayed on automatic after a preset is remembered
+ * (30 days, this browser) and the option hides on it; a refusal never hides it.
  */
-export function setWhiteBalance(track: MediaStreamTrack | undefined, kelvin: number | null, info: TrackInfo): Promise<boolean> {
+export function setWhiteBalance(
+  track: MediaStreamTrack | undefined,
+  kelvin: number | null,
+  info: TrackInfo,
+): Promise<WhiteBalanceResult> {
   const caps = { modes: info.whiteBalanceModes, range: info.colorTemperature };
-  return wbQueue(async (isStale) => {
-    if (!track) return false;
-    const outcome = await runWhiteBalance(track, kelvin, caps, { wait: sleep, isStale });
-    if (outcome === 'superseded') return true;
-    if (kelvin != null) noteWhiteBalance(info.label, outcome);
-    if (outcome === 'applied') return true;
-    if (kelvin != null && (outcome === 'ignored' || outcome === 'refused') && !isStale())
-      await runWhiteBalance(track, null, caps, { wait: sleep, isStale });
-    return false;
-  }, true);
+  return wbQueue(async (isStale): Promise<WhiteBalanceResult> => {
+    if (!track) return 'auto';
+    return requestWhiteBalance(track, kelvin, caps, {
+      wait: sleep,
+      isStale,
+      onPresetOutcome: (outcome) => noteWhiteBalance(info.label, outcome),
+    });
+  }, 'superseded');
 }
 
-// P24 · Cameras (by label) whose presets didn't show: remembered on this phone only.
-const WB_MEMORY_KEY = 'oneshoot.wb-ignored.v2';
-const WB_OLD_KEY = 'oneshoot.wb-ignored.v1';
+// P24 · Cameras (by label) whose presets didn't show: remembered on this phone only. P48: v1/v2 were written by a
+// check that took Chrome's nearest preset for «not applied»; they are dropped, and every camera offers it again.
+const WB_MEMORY_KEY = 'oneshoot.wb-ignored.v3';
+const WB_OLD_KEYS = ['oneshoot.wb-ignored.v2', 'oneshoot.wb-ignored.v1'];
 let wbMemory: WbMemoryEntry[] | null = null;
 /** Hidden during this visit (the panel says why, once). */
 const wbHiddenNow = new Set<string>();
@@ -307,8 +325,8 @@ const uaNow = () => (typeof navigator !== 'undefined' ? navigator.userAgent : ''
 function memory(): WbMemoryEntry[] {
   if (!wbMemory) {
     try {
-      const raw = localStorage.getItem(WB_MEMORY_KEY) ?? localStorage.getItem(WB_OLD_KEY);
-      wbMemory = parseWbMemory(raw, Date.now(), uaNow());
+      for (const old of WB_OLD_KEYS) localStorage.removeItem(old);
+      wbMemory = parseWbMemory(localStorage.getItem(WB_MEMORY_KEY), Date.now(), uaNow());
     } catch {
       wbMemory = [];
     }
@@ -320,7 +338,6 @@ function saveMemory(next: WbMemoryEntry[]) {
   wbMemory = next;
   try {
     localStorage.setItem(WB_MEMORY_KEY, JSON.stringify(next));
-    localStorage.removeItem(WB_OLD_KEY);
   } catch {
     /* for this visit only */
   }

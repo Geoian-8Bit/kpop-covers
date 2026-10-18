@@ -8,14 +8,14 @@ import {
   ModeSeals,
   useVoiceMotion,
   WaveTags,
-  type VoiceVariantProps,
+  type VoiceWaveProps,
 } from './controlParts';
 import type { VoiceMode } from './voiceRules';
 import { bandPath, crestXs, linePath, sineWave, STRIP_WIDTH, trochoidWave } from './waveRules';
 
 /**
- * A · «La ola partida» (fixed): the sea of the timeline split in two, the voice in vermilion riding on top and the
- * music in indigo below, each in two layers. The waves repeat at their own width (a pattern, never stretched: a
+ * «La ola partida» (chosen in the design lab, point 40): the sea of the timeline split in two, the voice in
+ * vermilion riding on top and the music in indigo below, each in two layers. The waves repeat at their own width (a pattern, never stretched: a
  * wave is as wide on a phone as on a 1.400 px screen), the voice's crest is sharp and carries white foam, and the
  * layers drift slowly, at different speeds, while the song plays. Taking a part out lays it flat and fades it,
  * like water going still. Under it, three seals (全 todo · 楽 sin voz · 声 voz).
@@ -81,7 +81,7 @@ function poses(mode: VoiceMode, reduce: boolean, h: number): { voice: Pose; musi
   return { voice: whole, music: whole };
 }
 
-export function VoiceOnda({ mode, onChange, available, compact, noteId, playing }: VoiceVariantProps) {
+export function VoiceOnda({ mode, onChange, available, compact, noteId, playing }: VoiceWaveProps) {
   const { reduce, transition } = useVoiceMotion(soft);
   const h = compact ? 56 : 72;
   const paths = layersFor(h);

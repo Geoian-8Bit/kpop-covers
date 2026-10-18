@@ -7,6 +7,7 @@ import {
   type LagLog,
   type MedianLog,
 } from '@coverscape/shared';
+import { medianOf } from './syncRules';
 
 /**
  * The recorded picture when it has to be redrawn (Q6). Every camera frame is drawn upright onto a canvas of the
@@ -40,6 +41,12 @@ export interface Compositor {
   stream(): MediaStream;
   /** Frames drawn so far and frames the camera delivered (R4). */
   counts(): { drawn: number; delivered: number };
+  /**
+   * 43 · Median time from a camera frame's capture to its drawing (ms) over the last frames drawn: a canvas take
+   * stamps each frame when drawn, this much after the camera's own stamp. Null where the browser gives no capture
+   * times (or nothing was drawn since drawing resumed).
+   */
+  drawLagMs(): number | null;
   dispose(): void;
 }
 
@@ -53,6 +60,8 @@ type FrameVideo = HTMLVideoElement & {
 
 /** Long side cap: the camera's own size up to 4K (Q3); beyond that the browser can't encode anyway. */
 const MAX_LONG = 3840;
+/** 43 · Draw lags kept (the last ones before a take starts say how late its frames are stamped). */
+const DRAW_LAGS = 64;
 /** Fallback pacing: the screen refreshes at 60–120 Hz, the camera at 30 or 60. */
 const frameGap = (fps: number) => 1000 / (fps + 2);
 /** No camera frame for this long while drawing per frame: the source stopped being presented, pace by the screen. */
@@ -186,8 +195,12 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
   let delivered = 0;
   let presentedAt: number | null = null;
   let track: FrameTrack | null = null;
+  /** 43 · Ring of capture → draw delays (nothing allocated per frame). */
+  const drawLags = new Float32Array(DRAW_LAGS);
+  let drawLagCount = 0;
+  let drawLagAt = 0;
 
-  const draw = () => {
+  const draw = (captureTime?: number) => {
     const sw = source.videoWidth;
     const sh = source.videoHeight;
     if (!ctx || !sw || !sh || source.readyState < 2) return;
@@ -215,6 +228,14 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     ctx.drawImage(source, (sw - cw) / 2, (sh - ch) / 2, cw, ch, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
     if (drawn === 0) canvas.style.opacity = '';
     drawn++;
+    if (typeof captureTime === 'number' && captureTime > 0) {
+      const lag = performance.now() - captureTime;
+      if (lag >= 0 && lag < 2000) {
+        drawLags[drawLagAt] = lag;
+        drawLagAt = (drawLagAt + 1) % DRAW_LAGS;
+        if (drawLagCount < DRAW_LAGS) drawLagCount++;
+      }
+    }
     try {
       track?.requestFrame?.();
     } catch {
@@ -230,7 +251,7 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
     // presentedFrames jumps by more than one when the page missed frames (busy main thread).
     delivered += presentedAt == null ? 1 : Math.max(1, meta.presentedFrames - presentedAt);
     presentedAt = meta.presentedFrames;
-    draw();
+    draw(meta.captureTime);
   };
 
   /**
@@ -298,6 +319,9 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
   const schedule = () => {
     if (handle || disposed || frozen) return;
     presentedAt = null;
+    // 43 · Lags from before a pause or a stall would describe another moment.
+    drawLagCount = 0;
+    drawLagAt = 0;
     if (perFrame) {
       handle = video.requestVideoFrameCallback!(onVideoFrame);
       watch();
@@ -380,6 +404,7 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
       return capture.call(canvas);
     },
     counts: () => ({ drawn, delivered }),
+    drawLagMs: () => medianOf(drawLags, drawLagCount),
     dispose() {
       disposed = true;
       clearInterval(watchdog);

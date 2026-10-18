@@ -12,12 +12,13 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
 | Ideas | F3 Tomas · F4 Mejor toma · F17 Voz y música | **Hechas y desplegadas** (16-10 19:14) | 2 rondas de revisión; migración `takes` aplicada |
 | Ideas | F5 Repaso · F6 Notas sobre la toma · F7 Aplauso | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión por feature (repaso y notas en dos informes, aplauso en otro) con correcciones. Lo que queda, en el apartado 5. El aplauso no se ha probado en un iPhone ni en un Android reales |
 | Ideas | F8 Clips en tomas · F9 Zoom | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `clip_zoom` aplicada |
-| Ideas | F10 Seguir a un bailarín y prueba de postura con IA | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `follow_paths` aplicada. Incluye la prueba de postura de Ajustes (MoveNet y MediaPipe, solo para medir tiempos) |
+| Ideas | F10 Seguir a un bailarín y prueba de postura con IA | **Retirada** (18-10, ronda 2, punto 45) | La función y la prueba de postura de Ajustes se han quitado de la app, con sus modelos y dependencias. La tabla `follow_paths` sigue en la BD, sin uso (borrar = archivar). Antes: desplegada el 17-10 00:01 con 1 ronda de revisión |
 | Ideas | F18 | No se hace | No está definida en el plan (ver PREGUNTAS) |
 | Grupo | F13 Bolsas · F14 Random Play Dance | **Hechas y desplegadas** (16-10 21:58) | 1 ronda de revisión (BD e interfaz) con correcciones |
 | Grupo | F11 Votaciones · F12 Lista de deseos | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión (BD e interfaz, dos informes) con correcciones. Migraciones `wishes_and_polls`, `close_poll_zero_votes` y `close_poll_live_rank` (17-10 02:16) aplicadas |
 | Grupo | F15 Reacciones · F16 Cuenta atrás | **Hechas y desplegadas** (17-10 00:01) | 1 ronda de revisión con correcciones. Migración `events_and_reactions` |
 | Mejoras | 39 puntos de la prueba manual (MEJORAS-PRUEBA-MANUAL.md) | **Hechos** (17-10, commits 2a29b94 a 0e6df92) | Revisiones con nota por bloque (2–3 rondas) y global (2 rondas); 6 diseños en el laboratorio para que elija el responsable. Migraciones `20261017120000`, `130000` y `140000` |
+| Mejoras | Ronda 2 de la prueba manual (puntos 40–54) | **Hecha** (18-10) | 2 rondas de revisión por bloque; todo lo ≥6 corregido (tomas y repaso necesitaron 4 rondas más una de cierre de «Atrás»). Sin migraciones. Falta probar en iPhone y Android (apartado 5) |
 | Todo | Revisión global, rendimiento y verificación en producción | **Hecha y desplegada** (17-10 02:47) | 4 revisores (funcional, BD, rendimiento, accesibilidad); ninguno ≥6 en funcional y BD; lo ≥6 de accesibilidad y rendimiento corregido. Prueba manual de todo en producción con datos «PRUEBA», ya archivados (apartado 9) |
 
 ## 2. Cómo probar
@@ -61,12 +62,13 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
     de esta canción». Cierra el grabador y abre la pestaña «Tomas» del estudio: está ahí con quién, cuándo, desde qué
     segundo y a qué velocidad. Recarga la página: sigue ahí y se reproduce. Sin red, «Guardar» avisa y se puede
     reintentar.
-20. **Filtros y descarga:** filtra por persona, clip y fecha; «Descargar» desde la lista (en iPhone abre la hoja
-    para guardarla en Fotos).
+20. **Filtros y descarga:** filtra por persona y clip (los de fecha se quitaron en la ronda 2, punto 50);
+    «Descargar» desde la lista (en iPhone abre la hoja para guardarla en Fotos).
 21. **Mejor toma (F4):** la estrella marca una por persona y tramo; aparece primera; «Limpiar» borra las que no
     tienen estrella.
 22. **Compartir con el grupo:** «Compartir» hace una copia de 720p (≤ 50 MB) y la sube. En otro móvil se ve «En la
-    nube» y se puede reproducir y descargar. El medidor «Nube del grupo» enseña el espacio real (vídeos y tomas).
+    nube» y se puede reproducir y descargar. El espacio real (vídeos y tomas) sale en la hoja «Compartir»; el aviso
+    «Nube del grupo» solo aparece con la nube al 80 % o más (ronda 2, punto 50).
 23. **Voz y música (F17):** con un vídeo de archivo, la fila «Voz y música» del estudio: «Todo», «Sin voz» (baja
     la voz del centro; sale en mono) y «Voz» (el centro al frente). Con YouTube la fila explica que no se puede.
     Graba con «Sin voz»: el grabador dice «Con la canción sin voz» y la toma suena así.
@@ -84,8 +86,9 @@ El día a día está en [PROGRESO.md](PROGRESO.md).
     instalar) la toma va «por lienzo». Graba una en vertical y otra en horizontal y comprueba en la Galería que
     salen derechas.
 11. **Enfoque y luz:** toca un punto de la imagen (anillo dorado) y mantén pulsado para fijarlos («Enfoque y luz
-    fijos»). Botón «Imagen»: luz −2 a +2 y color de la luz (Cálida, Fluorescente, Día, Nublado). Solo aparece lo
-    que ofrezca la cámara.
+    fijos»). Botón «Imagen»: luz −2 a +2 y color de la luz (Auto, Fría, Día, Cálida, Muy cálida; los nombres dicen
+    el tono que toma la imagen). Volver a «Auto» puede reiniciar la cámara un momento. Solo aparece lo que ofrezca
+    la cámara (ronda 2, punto 48).
 12. **Sonido:** con un vídeo de archivo, toca la píldora de sonido de arriba para cambiar entre canción limpia y
     micro (estéreo). Comprueba en la toma que se oye lo elegido y va sincronizado.
 13. **Rejilla y nivel:** actívalos en Ajustes del grabador; el nivel se pone dorado con el móvil recto.
@@ -106,7 +109,7 @@ de arriba.
     espejo» y «Original en espejo», y la sincronía con «Retrasar el original 0,01 s» y «Adelantar el original
     0,01 s». Con «,» y «.» avanzas por fotogramas. Con «Marcar A (inicio del tramo)» y «Marcar B (fin del tramo)»
     repites un tramo. Cierra con «Cerrar el repaso» o con Escape. En el móvil, los ajustes salen con «Ajustes del
-    repaso»; en el ordenador están a la derecha.
+    repaso»; en el ordenador están a la derecha. El repaso se rehízo en la ronda 2 (punto 51): ver la prueba 59.
 25. **Notas sobre la toma (F6).** En el repaso, pausa en el momento y pulsa «Nota en este momento (N)». Escribe el
     texto. Si quieres, elige una categoría (Tiempo, Brazos, Piernas, Dirección o mirada, Espacio, Expresión o
     Energía) y dibuja con «Dibujar sobre el fotograma». En «Para quién» queda quien grabó la toma, o eliges otra
@@ -122,10 +125,11 @@ de arriba.
     en el suelo o en un trípode, aléjate unos metros y da dos palmadas: empieza la cuenta atrás y la toma. Cancela
     con «Cancelar» o con Escape. Tras una toma que empezó con aplauso aparece «Armar otra vez». Si no llega señal
     en 3 minutos, se desarma solo.
-27. **Sensibilidad del aplauso.** En Ajustes del grabador: Baja, Media (por defecto), Alta o Muy alta (mejora 21). Prueba cada una a varias distancias
-    y anota desde dónde dispara. «Media» promete dos palmadas normales a unos metros, y esa distancia no está
-    medida (apartado 5). Si no dispara, prueba «Alta» o «Muy alta» y mira la marca roja del medidor. Con «Información
-    técnica» activada, el panel «i» lista los últimos sonidos juzgados y por qué se rechazaron.
+27. **Sensibilidad del aplauso.** En Ajustes del grabador › Sonido: Baja, Media (por defecto) o Alta. Vuelve el
+    detector de antes de la mejora 21 (ronda 2, punto 42). Prueba cada una a varias distancias y anota desde dónde
+    dispara. «Media» promete dos palmadas normales a unos metros, y esa distancia no está medida (apartado 5). Si no
+    dispara, prueba «Alta» y mira la marca roja del medidor. Con «Información técnica» activada, el panel «i» lista
+    los últimos sonidos juzgados y por qué se rechazaron.
 
 ### Clips y zoom · F8 y F9 (navegador; el pellizco, en el móvil)
 
@@ -134,7 +138,9 @@ de arriba.
     el original repiten ese tramo a la vez. Si marcas A y B, «Guardar el tramo como clip» o «Guardar como clip»
     abren el diálogo «Guardar clip» con el tramo, su velocidad y el espejo. El clip aparece en la lista de clips
     del estudio.
-29. **Zoom (F9, mejora 7).** Con un archivo, pellizca el vídeo con dos dedos (también en pantalla completa) o usa
+29. **Zoom (F9, mejora 7).** En el móvil el zoom es solo con los dedos (ronda 2, punto 44): no hay fila «Zoom» ni
+    flechas, solo la línea para guardar o quitar el zoom del clip. Lo que sigue es para el ordenador, con ratón.
+    Con un archivo, pellizca el vídeo con dos dedos (también en pantalla completa) o usa
     «Ampliar» en la fila «Zoom»; la fila muestra el porcentaje y «Ver completo» solo con zoom. Antes había «Reducir el zoom», el porcentaje,
     «Ampliar el centro del vídeo» y «Ver completo». Con la rueda o arrastrando amplías y mueves. Con dos dedos
     (en el móvil) también. Doble clic o doble toque vuelve al vídeo entero. Con el foco en el vídeo: «+» amplía,
@@ -142,26 +148,16 @@ de arriba.
     con «Guardar con el zoom» en el diálogo «Guardar clip»: el clip se abre ampliado y la lista muestra una lupa.
     «Quitar el zoom del clip» lo borra. Con YouTube la fila sale desactivada.
 
-### Seguir a un bailarín y prueba de postura · F10 (navegador; los tiempos, en el móvil)
+### Seguir a un bailarín y prueba de postura · F10 (retirada)
 
-30. **Seguir a un bailarín (F10).** Con un archivo cargado y el vídeo en pausa, en la fila «Seguir a un bailarín»
-    pulsa «Seguir a alguien» y toca a la persona en la imagen. Salen «Persona 1», «Persona 2»…; también puedes
-    dibujar un recuadro. La app analiza el vídeo una sola vez («Progreso del análisis», con «Cancelar»). Al
-    terminar, el zoom va con esa persona. Si en un cruce salta a otra, pausa ahí y pulsa «Corregir desde aquí».
-    «¿A quién sigues?» cambia de bailarín o quita el seguimiento («Nadie»). En «Modo manual» pones tú el recuadro
-    en varios momentos con «Añadir punto aquí», «Mover el punto» y «Quitar punto». Al guardar un clip, «Guardar
-    siguiendo a «X»» y el zoom fijo no van juntos.
-31. **Prueba de postura (Ajustes).** Ajustes → «Análisis de postura (prueba)» → «Abrir la prueba» → «Elegir vídeo» →
-    «Probar los dos» (o solo MoveNet, o solo MediaPipe). Muestra tiempos por fotograma, carga y personas detectadas.
-    «Copiar» copia los resultados. El vídeo no sale del dispositivo. Los tiempos del ordenador no sirven para
-    decidir: en el equipo de pruebas, sin GPU, tardó unos 250 ms por fotograma. Las cifras buenas salen en el móvil.
+30–31. **Retiradas** (18-10, ronda 2, punto 45): la app ya no tiene «Seguir a un bailarín» ni la prueba de postura.
 
 ### Votaciones y lista de deseos · F11 y F12 (navegador; para votar a la vez, dos pestañas o dos móviles)
 
 32. **Votaciones (F11).** Menú «Próxima cover» (/deseos) → «Nueva votación». Puedes marcar antes las candidatas
-    con «Elegir para votar» (hacen falta dos propuestas). Pon título, candidatas, cuándo cierra («Fecha y hora» o
-    «A mano»), tipo («Un voto», «Varios votos» o «Ranking»), resultados («En directo» o «Al cerrar») y votantes
-    («Con nombre» o «Anónimos») → «Crear votación». Para votar, pon tu nombre («Elegir mi nombre para votar») y
+    con «Elegir para votar» (hacen falta dos propuestas). Pon título, candidatas y tipo («Un voto», «Varios votos» o
+    «Ranking») → «Crear votación». Desde la ronda 2 (punto 52) no hay más opciones: resultados en directo, votos con
+    nombre y cierre a mano. Para votar, pon tu nombre («Elegir mi nombre para votar») y
     «Votar». Luego «Cambiar voto» o «Retirar mi voto». En ranking, «Subir» y «Bajar». «Cerrar votación» →
     «¿Cerrar la votación?»: el servidor cuenta y elige la ganadora. Con empate salen «Sorteo entre empatadas» y
     «Segunda vuelta». La ganadora ofrece «Añadir a la biblioteca», «Abrir en el estudio» y «Meter en «Próxima
@@ -214,28 +210,26 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
 38. **Navegación (1, 2).** Abajo a la derecha, el botón redondo dice en qué sección estás. Ábrelo: las 5 secciones
     y «¿Quién eres?». Se cierra con «Atrás», tocando fuera o al elegir. En el «⋯» de arriba: Ajustes, «Instalar app»,
     Privacidad y «Versión N · fecha» con «Buscar actualización». En el estudio, la ronda y el grabador no sale.
-39. **Laboratorio (17).** Ajustes → «Laboratorio de diseño»: menú rápido (P1: Sensu, Hanafuda, Rueda de kamon,
-    Origami), voz y música (F17: siete olas), lista de bolsas (P30) e icono (P29), cuenta atrás larga (F16: Koyomi,
-    Sunadokei, Tsuki). Cada una con su demo; «Usar esta» la aplica en ese móvil.
+39. **Laboratorio (17).** Ajustes → «Laboratorio de diseño»: desde la ronda 2 solo queda el menú rápido (P1: Sensu,
+    Hanafuda, Rueda de kamon y Kakejiku); lo demás ya está elegido (apartado 7). Cada una con su demo; «Usar esta»
+    la aplica en ese móvil.
 40. **Estudio (3–12).** Sin botón rojo sobre el vídeo: tocar el vídeo pausa. Pantalla completa: un toque muestra
-    los controles sin tirones. Pellizca para ampliar (solo con archivo), arrastra o usa las flechas, doble toque
-    vuelve. Bucle A–B sin pausa: la vuelta es inmediata. Mantén «Bucle»: el panel de pausa se ve entero. Lápiz de
+    los controles sin tirones. Pellizca para ampliar (solo con archivo) y arrastra; doble toque vuelve (las flechas,
+    solo con ratón: ronda 2, punto 44). Bucle A–B sin pausa: la vuelta es inmediata. Mantén «Bucle»: el panel de pausa se ve entero. Lápiz de
     un clip: «Editar clip». «Guardar clip» cabe en media pantalla. «Fijar en la portada». Con archivo vinculado
     la canción abre con el archivo; la fila «Vídeo: Archivo | YouTube» está bajo la barra.
 41. **Archivo de más de 50 MB (13, hace falta el archivo).** Vincúlalo: el dispositivo hace una copia más ligera
     para el grupo (barra, tiempo, «Cancelar») y sigue usando el original. En otro móvil la fila «Vídeo» dice
     «Copia del grupo · 720p». Con el grabador abierto, la copia espera.
-42. **Seguir a un bailarín (14, 15, hace falta un archivo).** Pausa, «Seguir a alguien», toca a la persona: primero
-    analiza el tramo que ves («quedan unos N s») y ya te sigue; el resto, en segundo plano. En pantalla completa, el
-    botón de persona arriba. En un ordenador sin GPU, Ajustes → prueba de postura → MoveNet con WASM.
+42. **Seguir a un bailarín (14, 15).** Retirada (ronda 2, punto 45).
 43. **Separar voz y música (18, en el ordenador con Chrome y un archivo).** «Separar voz y música» → confirmación
     (descarga del modelo de unos 120–172 MB la primera vez) → «Empezar». Al acabar, «Sin voz» y «Voz» suenan con las
     pistas en todos los móviles. «Quitar las pistas separadas» lo deshace.
 44. **Grabador (19–27, hace falta el Samsung).** 1080p 60: vista previa fluida; panel «i» → «Fluidez» y «Retraso».
     «Descartar» deja la cámara lista. «Empieza en»: tocar cambia, mantener abre la lista con los clips. Lentes
     0,5× / 1× / 2×. Abre la última cámara usada. El chip de arriba abre solo «Calidad». Abanico con «Calidad» e
-    «Imagen». Aplauso: Baja, Media, Alta, Muy alta (mover la silla no dispara). Color de la luz: cambia al primer
-    toque.
+    «Imagen». Aplauso: Baja, Media y Alta, con el detector de antes (ronda 2, punto 42). Color de la luz: cambia al
+    primer toque (opciones de la ronda 2 en la prueba 11).
 45. **Bolsas (28–32).** En una bolsa de canciones, «Añadir» → «Buscar en YouTube»: entra en la bolsa sin pasar a la
     biblioteca; al salir en el sorteo, «Añadir a la biblioteca». Cabecera en una línea, sorteo y «Sacar» / «Añadir»
     a la vista, pestañas «En la bolsa», «Fuera» e «Historial».
@@ -243,6 +237,62 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
     «Empezar» fijo abajo. La ronda: fondo de la app, tarjeta Kamishibai, controles grandes. «Salir» pregunta.
 47. **Próxima cover (35–37).** «Proponer» con el buscador de YouTube. «Elegir para votar» con su barra. En la votación,
     la papeleta y «Votar» primero. Solo «Añadir a la biblioteca» lleva una propuesta a la biblioteca.
+
+### Ronda 2 de la prueba manual (18-10, puntos 40–54 de MEJORAS-PRUEBA-MANUAL.md)
+
+Primero en el móvil, con toques. La pantalla completa, siempre en **horizontal**: «cuando vemos el vídeo en pantalla
+grande el móvil está en horizontal», dice el responsable. Lo que necesita cámara, micro o un archivo propio está
+marcado.
+
+48. **Diseños elegidos (40).** Una canción a más de 7 días: la portada enseña Tsuki (la luna crece); en la última
+    semana, Chōchin. Voz y música del estudio: la ola partida. Menú «Bolsas»: Furoshiki, y el icono de bolsa,
+    Fukubukuro. No queda ninguna otra variante.
+49. **Laboratorio, solo el menú (41).** Ajustes → «Laboratorio de diseño»: solo sale el menú rápido. Prueba los
+    cuatro: Sensu (entrada nueva: el abanico se abre de una vez, sin huecos entre hojas), Hanafuda, Rueda de kamon y
+    Kakejiku (nuevo, pergamino colgante que se desenrolla). Origami ya no está. Prueba también Kakejiku en
+    horizontal: el papel se enrolla y se desplaza.
+50. **Aplauso (42, hace falta el móvil).** Arma la grabación y da dos palmadas a la misma distancia que en la primera
+    prueba (la de antes de la mejora 21). Debe disparar en «Media» y en «Alta». Si no, apunta la distancia y la
+    sensibilidad.
+51. **Sincronía (43, hace falta el móvil y un archivo).** Graba con «Canción» a 1080p 60 y luego a 30, bailando a
+    tempo. Mira la toma: los pasos tienen que caer a tempo, sin la imagen detrás de la música. Con «Información
+    técnica», el panel «i» enseña la fila «Sincronía del sonido» (cuánto se ha retrasado el sonido y si se aplicó).
+    Si aún se nota, Ajustes del grabador › Sonido › «Ajuste fino de sincronía»: súbelo si ves los pasos después de
+    la música, bájalo si los ves antes (±150 ms, de 10 en 10, por móvil). Repite con «Micrófono».
+52. **Zoom solo con los dedos (44, con archivo).** En el móvil no hay fila «Zoom» ni flechas. Pellizca y arrastra;
+    doble toque vuelve. Con un clip activo sale solo una línea: «Guardar el zoom en «X»» si has ampliado, o «Quitar
+    el zoom del clip» si el clip ya tiene zoom. En el ordenador, con ratón, la fila sigue.
+53. **Sin «Seguir» (45).** El estudio y la pantalla completa no tienen fila ni botón de persona; Ajustes no tiene la
+    prueba de postura. Los clips que se guardaron «siguiendo a X» se abren con su tramo, sin ampliar.
+54. **Voz en pantalla completa (46, con archivo).** Pantalla completa en horizontal → botón de ondas arriba: un panel
+    pequeño con «Todo», «Sin voz» y «Voz», sin tapar media imagen. Se cierra con «Cerrar», tocando fuera o con Esc.
+    Con YouTube el botón no sale. Para oír la mejora de «Sin voz» en una canción ya separada: «Quitar las pistas
+    separadas» y volver a separar; el worker escribe `[voice] residual …` en la consola.
+55. **Salir de pantalla completa tras girar (47).** Entra en pantalla completa, gira a horizontal, vuelve a vertical
+    y sal. La página queda centrada, sin hueco a la derecha ni desplazada. Igual en la ronda de Random Play Dance.
+56. **Color de la luz (48, hace falta el móvil).** «Imagen» → color de la luz: Auto, Fría, Día, Cálida y Muy cálida.
+    El nombre dice el tono que toma la imagen («Fría» azulea, «Muy cálida» da naranja). Ya no hay fluorescente (el
+    tono lila). Cada toque cambia el tono al momento. Volver a «Auto» puede reiniciar la cámara un momento; la luz y
+    el flash se conservan. Si un móvil no cambia el color, las opciones se ocultan y el tono vuelve de verdad a automático.
+57. **Barra de luz (49, hace falta el móvil).** Toca para enfocar: junto al anillo sale una barra pequeña de luz.
+    Arrastra arriba para más luz, abajo para menos. Se oculta sola a los 3 s; un segundo dedo la quita. No tapa
+    botones ni la pantalla del aplauso.
+58. **Tomas (50).** Pestaña «Tomas»: la toma del repaso sale primera, resaltada, con «Repasar con el original», y no
+    se repite más abajo. Una sola entrada por toma. Sin los filtros de fecha (hoy, esta semana, todas). La «Nube
+    del grupo» solo avisa si la nube está al 80 % o más.
+59. **Repaso (51, hace falta una toma).** «Repasar con el original»: el play suena con el sonido de la toma desde el
+    primer toque, y la toma y el original van a la par, sin saltos repetidos. Gira a horizontal: la toma y el
+    original ocupan la pantalla, con los ajustes a la derecha. Arrastra la bisagra para repartir el sitio. Con
+    YouTube, el reproductor nunca baja de 356×200 ni queda tapado. «Atrás» cierra solo lo de arriba (los ajustes o
+    la nota); otro «Atrás» cierra el repaso. Prueba con YouTube y con archivo.
+60. **Votaciones (52).** «Nueva votación»: solo título, candidatas y tipo. Resultados en directo, votos con nombre y
+    cierre a mano con «Cerrar votación». Las votaciones antiguas mantienen su anonimato y su plazo.
+61. **Random Play Dance, crear (53).** En el móvil la cabecera es una sola línea: «Random Play Dance» y «Pistas». Lo
+    demás sube a la vista.
+62. **Random Play Dance, ronda (54).** Empieza una ronda → «Pantalla completa» y gira a horizontal: solo el vídeo y
+    la barra abajo, como en el estudio. Mientras suena, la barra se oculta sola; un toque en el vídeo la enseña.
+    En la pausa y la cuenta atrás, la barra no tapa el pie de la tarjeta Kamishibai. «Reducir» sale de la pantalla
+    completa. «Ver en YouTube» va fuera del vídeo.
 
 ## 3. DECISIONES
 
@@ -353,6 +403,41 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
     (o a 1080p) solo tras dos medidas seguidas; las tomas directas se juzgan por el retraso. Se recuerda 30 días y se
     puede «Volver a medir».
 
+**Ronda 2 de la prueba manual (18-10)**
+
+42. **F10 retirada sin migración destructiva (punto 45).** La función, la prueba de postura y sus modelos se han
+    quitado de la app. La tabla `follow_paths` y `clips.follow_path_id` siguen en la BD, sin uso: borrar = archivar,
+    y no se borran datos del grupo. Al arrancar, la app borra del móvil la caché de los modelos y sus claves locales.
+    Las decisiones 28, 30 y 31 ya no aplican.
+43. **Zoom táctil solo con pellizco (punto 44).** Pedido por el responsable. En el móvil no quedan «Ampliar» ni las
+    flechas, así que se renuncia en táctil a la alternativa de un solo dedo de WCAG 2.5.1 y 2.5.7. Quedan el doble
+    toque, las teclas y, con ratón, la fila completa. Un revisor futuro no debe «arreglarlo». Sí se queda la línea
+    para guardar o quitar el zoom de un clip, que no tenía otra vía en el móvil. Responde a la PREGUNTA 5.
+44. **Votaciones con reglas fijas (punto 52).** Las nuevas son siempre en directo, con nombre y con cierre a mano. Las
+    antiguas conservan su anonimato (los nombres siguen ocultos) y su plazo (la base las cierra a su hora). «Resultados
+    al cerrar» ya no se respeta: el 18-10 no había en producción ninguna votación abierta con resultados ocultos ni
+    anónima. La base sigue aceptando esas columnas; la regla la pone la app. Sustituye en parte a la decisión 23.
+45. **Color de la luz por el tono de la imagen (punto 48).** Cuatro presets, como los de Chrome en Android: «Fría»
+    (2850 K), «Día» (5000), «Cálida» (6000) y «Muy cálida» (7000). El nombre dice el tono que toma la imagen, no la
+    luz de la sala. Sin fluorescente (4250 K, el tono lila). Cualquier modo manual cuenta como aplicado; si dos
+    presets acaban en la misma temperatura, se enseña uno. Volver a «Auto» se comprueba y, si la cámara no vuelve,
+    se reabre (nunca durante una toma) y se reponen la luz y el flash.
+46. **Sincronía: se retrasa el audio de la canción al grabar (punto 43).** La imagen llega tarde (latencia del
+    altavoz, de la cámara y, por lienzo, del dibujo), así que se retrasa la pista de audio que graba el
+    MediaRecorder. Lo que suena y la vista previa no cambian. Con el micrófono solo se compensa la cámara. Los valores
+    son estimados (unos 110–130 ms con la canción); hay un «Ajuste fino de sincronía» por móvil (±150 ms) y el
+    panel «i» enseña lo aplicado. En iPhone el retraso va dentro del grafo de audio del motor, sin un segundo
+    contexto. El cero corregido de la toma se guarda en `song_start_seconds`, así que el repaso, las notas y los
+    clips usan el mismo cero en todos los móviles.
+47. **Pantalla completa pensada en horizontal.** El responsable ve el vídeo en grande con el móvil girado. El panel de
+    voz, la ronda de Random Play Dance y el repaso se diseñan y revisan sobre todo a 844×390 y 667×375. Al salir, la
+    página se reajusta al ancho real (punto 47).
+48. **Repaso: la toma manda y el original se corrige sin bucles (punto 51).** El play arranca la toma en el mismo
+    toque; la toma no espera nunca al original. El original se acelera o frena un poco si se desfasa poco y salta si
+    se desfasa más, con correcciones espaciadas, así que no hay bucles de saltos. YouTube nunca baja de 356×200
+    (lo que pide su reproductor) ni queda tapado, sin recorte ni etiqueta encima; «Superpuesto» solo con archivo.
+    Amplía la decisión 13.
+
 ## 4. PREGUNTAS
 
 **Bloquean algo**
@@ -375,15 +460,38 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
 4. **Copia del grupo frente a YouTube.** En los móviles sin el original, ¿la copia ligera (720p) debe ganar a YouTube
    (que puede verse a 1080p), o mejor YouTube y la copia solo para el zoom, seguir y voz?
 5. **Botón «Ampliar» del zoom.** Se dejó (y flechas para mover) para quien no puede pellizcar (accesibilidad), aunque el
-   punto 7 pedía sin botones. ¿Se queda?
+   punto 7 pedía sin botones. ¿Se queda? **Resuelta (18-10):** en el móvil, no (decisión 43).
 6. **Licencia del modelo de respaldo** (`timcsy/demucs-web-onnx`, para tarjetas sin fp16): su ficha no declara licencia
    (el código y Demucs son MIT). ¿Lo aceptamos o se usa solo el de `monteslu` (MIT declarada)?
 7. **Cuenta atrás:** Chōchin empieza a 6 días (1 farolillo) para cubrir la semana con el día del evento; Tsuki va en una
    escala fija de una luna. ¿Os vale?
 8. **Seguir con otro archivo a mitad:** si se cambia el archivo mientras se guarda un recorrido nuevo, se archiva ese
-   recorrido. ¿Correcto?
+   recorrido. ¿Correcto? **Ya no aplica:** F10 retirada (decisión 42).
 
 ## 5. PENDIENTES
+
+**Ronda 2 de la prueba manual (18-10).** Todo lo ≥6 está corregido. Queda por probar
+en dispositivos reales, en un iPhone y en un Android (este ordenador no tiene cámara, micro ni GPU buena):
+- Sincronía medida (punto 43): una palmada delante de la cámara con «Micrófono» y clics de metrónomo con «Canción»,
+  por lienzo y directa, a 30 y 60. Con esos datos, fijar el retraso de la cámara y del altavoz, que hoy son
+  estimados. En iPhone, además: pausa, llamada entrante y reanudar, y aplauso con «Canción».
+- Color de la luz en el Samsung (48): que cada opción cambie el tono al primer toque y que «Auto» vuelva de verdad.
+  Entre «Fría» (2850 K) y «Día» (5000 K) no hay ninguna opción intermedia.
+- Barra de luz al tocar para enfocar (49): posición junto al anillo, zona segura y arrastre.
+- Pantalla completa nativa con giro (47, 54): entrar, girar dentro y salir, en el estudio y en la ronda.
+- Repaso con YouTube y con archivo (51): play desde el primer toque, cuántos saltos en un tramo de 3 s durante 30 s, y
+  que el panel de YouTube no baje de 356×200, en vertical y a 844×390 y 667×375.
+- «Atrás» en pantalla completa nativa con el panel de voz abierto (46): Chrome para Android sale antes de la pantalla
+  completa, así que «Atrás» la cierra en vez de cerrar solo el panel. No se puede evitar desde la app; confirmar.
+- Hallazgos de 1–2 que quedan en los informes `ronda2-*-2.md`: la separación tarda unos 140 ms más por segmento por
+  el residuo, que casi nunca se salta (unos 13–22 s más en un móvil para una canción de 4 min; N5); «Atrás» en el
+  modo CSS de pantalla completa (iPhone) pregunta «¿Salir de la ronda?» en vez de salir de la pantalla completa,
+  igual que en el estudio.
+- Tomas y repaso: los hallazgos de las rondas 2 a 4 (`revisiones/ronda2-tomas-repaso-*.md`) están corregidos, con
+  «Atrás» rehecho en `lib/backLayers.ts` (id de carga, varias capas, diálogos que navegan con `replace`). Queda: si
+  una capa se cierra sin ninguna capa abierta debajo mientras hay otra encima, su entrada cuesta un «Atrás» sin efecto
+  (caso raro); con los ajustes abiertos en horizontal el panel tapa la toma (se ve a través al mover un deslizador);
+  faltan pruebas del reloj del repaso y de `useSaveTake`.
 
 **Ronda de mejoras de la prueba manual (17-10).** Todo lo ≥6 está corregido. Lo menor que queda (detalle y nota en
 `revisiones/mejoras-*`):
@@ -547,6 +655,9 @@ Todo a 390×844, con toques. Lo que necesita cámara, micro o un archivo propio 
 | 16-10 23:50 | `20261016070000_follow_paths` | Recorridos del bailarín (`follow_paths`), tope de 500 vivos y 2000 en total | Aplicada y verificada (6 PASS en F10, todo revertido) |
 | 17-10 00:00 | `20261016080000_close_poll_zero_votes` | `close_poll` cuenta como 0 una opción sin votos (antes contaba 1) | Aplicada. Idempotente: producción ya tenía esta versión |
 | 17-10 02:16 | `20261017010000_close_poll_live_rank` | `close_poll` con ranking: renumera los puestos sobre las candidatas vivas (archivar una candidata ya no da puntos 0 o negativos); no cuenta los votos de miembros archivados | Aplicada y verificada (empates esperados en producción, todo revertido) |
+| 17-10 21:15 | `20261017120000_bag_youtube_items` | Canciones de YouTube en una bolsa (columnas en `bag_items`, una fuente por fila, enlace a la biblioteca) | Aplicada y verificada (12 PASS, todo revertido) |
+| 17-10 21:18 | `20261017130000_video_stems` | Pistas de voz y música separadas con IA (`video_stems`, reglas del bucket) | Aplicada y verificada (20 PASS, todo revertido) |
+| 17-10 21:20 | `20261017140000_videos_storage_cap` | Tope de 1 GiB del grupo en el servidor para el bucket `videos`, reservando 50 MB para tomas | Aplicada y verificada (7 PASS; copia 5 PASS; archivado 12 PASS) |
 
 Las fechas son la hora de aplicación en producción. El commit que añade cada migración está en `git log`:
 `683e39c` (takes), `cfc6296` y `7bd80cd` (020000, 030000, 035000), `675a775` (040000 a 070000) y `85d6bf6` (080000).
@@ -623,6 +734,17 @@ variantes se han eliminado; estos son los únicos diseños de la app.
 | F16 · Cuenta atrás al próximo evento | **Chōchin**: siete farolillos; uno encendido por día de la última semana y todos el día del evento |
 | F15 · Reacciones en las tomas compartidas | **Hanko**: cada reacción es un sello bermellón que se estampa al tocar |
 
+Segunda tanda, elegida el 18-10 tras probar el laboratorio de la ronda de mejoras (ronda 2, puntos 40 y 41 de
+MEJORAS-PRUEBA-MANUAL.md). Las variantes perdedoras y sus momentos del laboratorio se han eliminado.
+
+| Momento | Diseño |
+| --- | --- |
+| F16 · Cuenta atrás larga (más de una semana) | **Tsuki**: la luna crece hasta el día del evento |
+| F17 · Voz y música en el estudio | **A · La ola partida mejorada** |
+| P30 · Pantalla «Bolsas» | **Furoshiki** |
+| P29 · Icono de bolsa | **Fukubukuro** |
+| P1 · Menú rápido | **Sin decidir**: siguen en el laboratorio Sensu (entrada mejorada), Hanafuda, Rueda de kamon y **Kakejiku** (nuevo: un pergamino colgante que se desenrolla), en lugar de Origami, que no gustó |
+
 ## 8. Revisiones
 
 | Funcionalidad | Rondas | Hallazgos (nota) | Corregido |
@@ -656,6 +778,21 @@ Informes: [funcional](revisiones/grabacion-paso1-ronda-1-funcional.md) ·
 [F7 aplauso](revisiones/F7-ronda-1.md) · [B1 BD](revisiones/B1-ronda-1-bd.md) · [B1 interfaz](revisiones/B1-ronda-1-interfaz.md) ·
 [B2 BD](revisiones/B2-ronda-1-bd.md) · [B2 interfaz](revisiones/B2-ronda-1-interfaz.md) · [B3](revisiones/B3-ronda-1.md) ·
 [F8/F9](revisiones/F8-F9-ronda-1.md) · [F10](revisiones/F10-ronda-1.md)
+
+**Ronda 2 de la prueba manual (18-10, puntos 40–54).** Dos rondas por bloque, de solo lectura.
+
+| Bloque | Rondas | Hallazgos (nota) | Corregido |
+| --- | --- | --- | --- |
+| Grabador (42, 43, 48, 49) | 2 | Ronda 1: ninguno ≥6. 5: en iPhone el audio retrasado cruzaba a un segundo contexto (posible toma muda) · 5: retraso estimado sin forma de verlo ni corregirlo · 4: una vuelta a «Auto» pendiente deshacía un preset · 3: «Auto» perdía la luz; la barra de luz quedaba encima de otras pantallas. Ronda 2: ninguno ≥6. 3: la vigilancia del contexto no miraba al reanudar · 3: «Auto» apagaba el flash | Todo lo ≥3 de las dos rondas: retraso dentro del grafo del motor, «Ajuste fino de sincronía» y fila en «i», luz y flash repuestos, barra que se va con otras capas y respeta la zona segura. Queda sin opción entre 2850 y 5000 K (apartado 5) |
+| Estudio (44–47) | 2 | Ronda 1: 6: en táctil no se podía guardar ni quitar el zoom de un clip · 3: trampa de foco del panel de voz · 3: el panel tapaba media imagen en horizontal | Todo lo ≥3: línea del zoom del clip en táctil, foco, panel de una línea. Ronda 2 en el informe «resto» |
+| Laboratorio, menú y voz (40, 41, 46) | 2 | Ronda 1: 4: el residuo devuelto a «Sin voz» podía llevar voz · 3: el 46 no se medía · 3: Kakejiku no enseñaba la línea con foco · 3: huecos entre hojas al abrir Sensu | Todo lo ≥3 (el 46, con el `console.info` y la nota de la prueba 54). Queda el coste del residuo (2, apartado 5) |
+| Votaciones y Random Play Dance (52–54) | 2 | Ronda 1: ninguno ≥6. 3: votaciones antiguas «al cerrar» con resultados a la vista · 3: sin reajuste al salir del modo CSS · 3: foco perdido al entrar o salir · 3: la columna no cabía en horizontal. Ronda 2 («resto»): 4: la barra tapaba el pie de la tarjeta Kamishibai | Todo lo ≥3: votaciones aceptadas (decisión 44), reajuste, foco también al girar, barra abajo como en el estudio, tarjeta con hueco para la barra |
+| Tomas y repaso (50, 51) | 2 | Ronda 1: 8: en horizontal el escenario se quedaba en ~150 px · 6: «Atrás» con los ajustes abiertos cerraba el repaso · 5: YouTube por debajo de 200 px · 5: un salto en cada vuelta del tramo con YouTube. Ronda 2: 6: tras una recarga, «Atrás» deja de cerrar las capas (`useBackToClose`) · 5: con los ajustes abiertos y YouTube, la toma se queda en nada · 4: entradas de historial sobrantes al guardar una nota o cerrar con la X · 4: en horizontal, tocar el rombo de una nota mueve el tiempo | Ronda 1: todo lo ≥3 (disposición para pantallas bajas, capas apiladas, mínimo de YouTube, latencia, aviso si la toma no arranca, cero corregido en la fila). Ronda 2: **pendiente** al escribir esto (apartado 5) |
+
+Informes: [estudio 1](revisiones/ronda2-estudio-1.md) · [laboratorio, menú y voz 1](revisiones/ronda2-lab-voz-menu-1.md) ·
+[votaciones y RPD 1](revisiones/ronda2-votaciones-rpd-1.md) · [resto 2](revisiones/ronda2-resto-2.md) (ronda 2 de los
+tres anteriores) · [grabador 1](revisiones/ronda2-grabador-1.md) · [grabador 2](revisiones/ronda2-grabador-2.md) ·
+[tomas y repaso 1](revisiones/ronda2-tomas-repaso-1.md) · [tomas y repaso 2](revisiones/ronda2-tomas-repaso-2.md) · [tomas y repaso 3](revisiones/ronda2-tomas-repaso-3.md) · [tomas y repaso 4](revisiones/ronda2-tomas-repaso-4.md).
 
 ## 9. Verificación en producción (17-10, 02:20–02:50)
 
@@ -701,6 +838,8 @@ datos del grupo igual que antes (2 vídeos vivos, 3 clips, 2 notas, 0 archivos).
 | Estudio con un clip en bucle | 58 fps, p95 16,9 ms | igual |
 | Chunk del estudio (gzip) | 73,8 kB | 48,9 kB (el grabador va aparte: 20,8 kB) |
 | Lighthouse móvil (accesibilidad / buenas prácticas / SEO) | 95 / 100 / 80 | 100 / 100 / 100 |
+
+**Ronda de mejoras (17-10 21:26–21:40, versiones 137 y 139).** En producción, a 390×844 táctil y con todo el sonido anulado: portada sin desbordes; menú flotante; «⋯» con «Versión 137» y «Ya tienes la última versión»; «Añadir vídeo» con el buscador (0,8 s); estudio sin botón propio sobre el vídeo, tocar para reproducir y pausar, «Guardar clip» compacto (443 px), «Editar clip», panel de pausa del bucle visible; bolsa con una canción de YouTube (sacar 0,8 s, «Añadir a la biblioteca»); dos propuestas con el buscador sin crear vídeos, votación, voto y cierre con 当選; evento a 20 días con Koyomi en la portada; ronda de RPD y «¿Salir de la ronda?»; 0 errores de consola. Datos «PRUEBA» (2 vídeos, 1 clip, 1 bolsa, 2 deseos, 1 votación, 1 evento, 1 miembro) borrados desde la app; el voto colgado de la votación archivada se archivó a mano. Después: 0 «PRUEBA» vivos y el grupo igual (2 vídeos, 3 clips, 2 bolsas, 5 elementos, 1 miembro, 1 archivo). Lighthouse móvil: accesibilidad 94, buenas prácticas 100, SEO 100; LCP 360 ms (visita repetida), CLS 0. No probado aquí (sin cámara, micro ni GPU): grabar, aplauso, lentes, color de la luz, separar voz y los tiempos de seguir.
 
 ## 10. Texto del correo
 

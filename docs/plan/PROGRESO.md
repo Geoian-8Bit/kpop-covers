@@ -8,6 +8,17 @@
 - **Planes:** [ideas-one-shoot.md](ideas-one-shoot.md) · [grabacion-calidad-maxima-one-shoot.md](grabacion-calidad-maxima-one-shoot.md)
 - **Estado para el usuario:** [ESTADO-IMPLEMENTACION.md](ESTADO-IMPLEMENTACION.md)
 
+## Ronda 2 de la prueba manual (2026-10-18)
+
+Lista: puntos 40–54 al final de [MEJORAS-PRUEBA-MANUAL.md](MEJORAS-PRUEBA-MANUAL.md). El responsable añadió durante la
+ronda que la pantalla completa se usa con el móvil en horizontal.
+
+| Hora | Qué |
+| --- | --- |
+| 10:20 | 5bf8675: puntos 40–54 anotados. 7 subagentes por zonas: diseños elegidos y voz, menú, estudio y seguir, grabador (aplauso, luz), sincronía, tomas y repaso, votaciones y RPD. |
+| 11:00–14:00 | Revisiones con nota: 2 rondas por bloque; tomas y repaso, 4 rondas y una de cierre de «Atrás». Informes `revisiones/ronda2-*.md`. Todo lo ≥6 corregido. Pruebas en el demo en silencio a 390×844 y 844×390 (grabar con cámara falsa, tomas, repaso a la par, RPD, Atrás). |
+| 14:10 | Commits: 01d7f4e (diseños y menú), 4a50952 (voz), 5ba045c (estudio, sin seguir), e646aef (grabador y sincronía), 0f92ab9 (tomas, repaso y Atrás), 7936132 (RPD y votaciones). typecheck 0, 873 tests, 129 PASS en BD, build. Sin migraciones. |
+
 ## Ronda de mejoras de la prueba manual (desde 2026-10-17 14:00)
 
 Lista de trabajo: [MEJORAS-PRUEBA-MANUAL.md](MEJORAS-PRUEBA-MANUAL.md) (39 puntos). Decisiones del responsable al
@@ -20,6 +31,9 @@ YouTube (si las condiciones de YouTube lo permiten), punto 13 copia reducida aut
 | 14:30 | Punto 38 hecho (2a29b94): rejillas con una columna que encoge, chip «con archivo» que pasa a icono si no cabe. Revisión ronda 1 ([informe](revisiones/mejoras-38-ronda-1.md)): un 6 (chip a 360–384 px) corregido y medido a 360, 390 y en giro. |
 | 15:00–19:30 | Oleada 2: seguir (14, 15), archivo grande (13), bolsas (28–32), voz IA (18), ola (16), RPD (33, 34), eventos (39). Revisiones con nota por bloque (de 2 a 3 rondas), informes en `revisiones/mejoras-*-ronda-*.md`; todo lo ≥6 corregido. |
 | 19:45 | Commits por zona: caa8abe (nav, versión, laboratorio), af63e2b (grabador), 684c3c8 (estudio), a926739 (seguir), baf83fe (copia para la nube y tope del bucket), daf2f35 (voz IA y olas), d389da9 (bolsas), 87759a0 (próxima cover y RPD), 81d6e0e (cuenta atrás). Árbol entero: typecheck 0, 860 tests, 129 PASS en BD, build. Migraciones nuevas sin aplicar: 20261017120000, 130000 y 140000. |
+| 21:12–21:25 | Copia de seguridad en `~/one-shoot-backups/20261017-2112-mejoras/` (`backup.json`, `rollback.sql`). Migraciones `20261017120000`, `130000` y `140000` aplicadas; comprobaciones en producción, todo revertido: bolsas 12 PASS, tope 7 PASS, pistas 20 PASS, archivado 12 PASS, copia 5 PASS. Advisors sin novedades; tipos iguales a la base. |
+| 21:26 | Desplegado main 7edb09e (versión 137, `dpl_21jeJXZsU43PAyFwreuqdUArwQKX`). Verificación en producción a 390×844 en silencio con datos «PRUEBA», todo borrado desde la app. |
+| 21:40 | Desplegado main ca04a7f (versión 139): nombres accesibles de los enlaces. Lighthouse móvil: accesibilidad 94 (viewport `maximum-scale=1` de 2fa8679 y kanji decorativos en logo y botón flotante), buenas prácticas 100, SEO 100. LCP 360 ms, CLS 0. |
 
 ## Antes (2026-10-17 02:50): todo el plan hecho
 

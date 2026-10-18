@@ -93,8 +93,8 @@ export function startCloudCopy(input: StartCopyInput): void {
   if (controllers.has(id)) return;
   const controller = new AbortController();
   controllers.set(id, controller);
-  // Heavy work for as long as the job lasts (busy while it encodes, idle while it waits or uploads): the follow
-  // analysis and the separation wait for it, the recorder doesn't learn from its load, an update doesn't cut it.
+  // Heavy work for as long as the job lasts (busy while it encodes, idle while it waits or uploads): the
+  // separation waits for it, the recorder doesn't learn from its load, an update doesn't cut it.
   const work = beginHeavyWork('copy');
   setCopyJob(id, { status: 'working', phase: 'preparing', progress: 0, etaSeconds: null, attempt: 1, mode: 'copy' });
   void import('./cloudCopyRun')

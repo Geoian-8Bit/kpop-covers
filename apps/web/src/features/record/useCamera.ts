@@ -445,11 +445,22 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
     void start(viewRef.current.facing, viewRef.current.deviceId);
   }, [start]);
 
-  const toggleTorch = useCallback(() => {
+  /**
+   * P48 · The same camera, lens and zoom, opened afresh: the only sure way back to automatic colour on browsers that
+   * keep a white-balance preset for as long as the camera stays open. Never during a take (the caller checks).
+   */
+  const reopen = useCallback(() => {
+    const v = viewRef.current;
+    void start(v.facing, v.deviceId, v.zoom);
+  }, [start]);
+
+  /** Resolves with whether the camera took it (false: the switch went back). */
+  const toggleTorch = useCallback((): Promise<boolean> => {
     const next = !viewRef.current.torch;
     setView((s) => ({ ...s, torch: next }));
-    void applyTrack(track(), { torch: next }).then((ok) => {
+    return applyTrack(track(), { torch: next }).then((ok) => {
       if (!ok) setView((s) => ({ ...s, torch: !next }));
+      return ok;
     });
   }, []);
 
@@ -518,6 +529,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
     pickChip,
     flip,
     retry,
+    reopen,
     retryMainLens,
     toggleTorch,
     /** Shown (muted) on a lens without flash when another rear camera has it. */

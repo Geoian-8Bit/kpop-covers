@@ -69,7 +69,7 @@ export function startLabel(choice: StartChoice): { short: string; spoken: string
 
 /**
  * P22 review · The section a clip picked in «Empieza en» becomes: only its span (the take keeps the studio's speed,
- * mirror, zoom and follow, the clip doesn't bring its own); null when the clip falls outside this video.
+ * mirror and zoom, the clip doesn't bring its own); null when the clip falls outside this video.
  */
 export function clipSection(
   clip: { start_seconds: number; end_seconds: number },

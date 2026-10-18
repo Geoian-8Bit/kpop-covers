@@ -16,6 +16,11 @@ export const DEMUCS = {
   hop: 1024,
   /** Demucs' default: consecutive segments share a quarter of their length. */
   overlap: 0.25,
+  /**
+   * Point 46 · Silence before the song's first segment and after its last (46 ms): the model's inverse transform
+   * comes out quieter in a segment's first and last ~1.000 samples, which only overlapping segments hide.
+   */
+  lead: 2048,
   /** Order of the model's outputs. */
   sources: ['drums', 'bass', 'other', 'vocals'] as const,
 } as const;
@@ -34,22 +39,31 @@ export function maxSeparateSeconds(deviceMemoryGb: number | null): number {
 // ───────────────────────── Segments and overlap-add ─────────────────────────
 
 export interface Segment {
+  /** Song sample at the segment's first sample; negative for a first segment that starts with a `lead` of silence. */
   start: number;
-  /** Real samples in it (the last one is shorter; the model gets it padded with silence). */
+  /** Samples of it up to the song's end, from its first (the last one is shorter; the model gets it padded). */
   length: number;
 }
 
 /**
  * Where each segment starts: every `segment·(1 − overlap)` samples, until one reaches the end. Like Demucs'
- * `apply_model(split=True)`, minus the trailing segments that would only repeat the end.
+ * `apply_model(split=True)`, minus the trailing segments that would only repeat the end. With `lead`, the first
+ * segment starts that many samples before the song and the last one ends at least that many after it, so neither
+ * end of the song falls on a segment's edge (see `DEMUCS.lead`).
  */
-export function planSegments(total: number, segment: number = DEMUCS.segment, overlap: number = DEMUCS.overlap): Segment[] {
+export function planSegments(
+  total: number,
+  segment: number = DEMUCS.segment,
+  overlap: number = DEMUCS.overlap,
+  lead = 0,
+): Segment[] {
   if (!(total > 0) || !(segment > 0)) return [];
   const stride = Math.max(1, Math.floor(segment * (1 - Math.min(0.9, Math.max(0, overlap)))));
+  const before = Math.max(0, Math.min(Math.floor(lead), Math.floor(segment / 4)));
   const out: Segment[] = [];
-  for (let start = 0; start < total; start += stride) {
+  for (let start = before > 0 ? -before : 0; start < total; start += stride) {
     out.push({ start, length: Math.min(segment, total - start) });
-    if (start + segment >= total) break;
+    if (start + segment >= total + before) break;
   }
   return out;
 }
@@ -67,7 +81,10 @@ export function triangleWeights(segment: number): Float32Array {
   return w;
 }
 
-/** Adds `weight · chunk` (first `length` samples) at `start`, and the weight to `sum`. */
+/**
+ * Adds `weight · chunk` (first `length` samples) at `start`, and the weight to `sum`. A chunk that starts before
+ * the song (`start` < 0, the lead of silence) skips that part.
+ */
 export function accumulate(
   out: Float32Array,
   sum: Float32Array,
@@ -77,7 +94,7 @@ export function accumulate(
   weights: ArrayLike<number>,
 ): void {
   const n = Math.min(length, out.length - start);
-  for (let i = 0; i < n; i++) {
+  for (let i = Math.max(0, -start); i < n; i++) {
     const w = weights[i]!;
     out[start + i]! += chunk[i]! * w;
     if (sum !== out) sum[start + i]! += w;

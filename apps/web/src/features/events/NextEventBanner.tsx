@@ -38,7 +38,6 @@ export function NextEventBanner() {
         <EventCountdown
           name={event.name}
           startsAt={event.starts_at}
-          createdAt={event.created_at}
           place={event.place}
           now={now}
           compact

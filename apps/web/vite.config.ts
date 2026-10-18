@@ -133,7 +133,6 @@ export default defineConfig(({ mode, command }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        // The pose models' code (~1 MB) is only for whoever uses F10 or the pose test: cached when first used instead.
         // P17 · The design lab's demos (every `*Demo.tsx` / `*Demo-*.tsx` file → `*Demo-<hash>.js` chunk) are for
         // whoever opens the lab: cached when first opened (runtime cache below), not downloaded by every install.
         // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
@@ -141,36 +140,17 @@ export default defineConfig(({ mode, command }) => {
         // P1 · The quick-menu prototypes on trial other than the default (Sensu): only for whoever picks one in the
         // lab, cached when first loaded (runtime cache `lab-demos` below). Offline before that, QuickNav falls back to
         // its plain list of sections. Delete with the losing files.
-        // The voice-split variants stay: VoiceSplitControl has no fallback if one can't load.
         globIgnores: [
-          '**/pose-*.js',
           '**/*Demo-*.js',
           '**/stemSeparator.worker-*.js',
           '**/NavHanafuda-*.js',
           '**/NavKamon-*.js',
-          '**/NavOrigami-*.js',
+          '**/NavKakejiku-*.js',
         ],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
-          {
-            // F10 · 5.5 · Pose models (MoveNet weights, MediaPipe's WASM and model): downloaded the first time they
-            // are used, then kept, so following a dancer again doesn't download them again.
-            urlPattern: ({ url, sameOrigin }) =>
-              (sameOrigin && /^\/assets\/pose-[^/]+\.js$/.test(url.pathname)) ||
-              // 15 · TensorFlow.js's WASM binaries (only fetched on a computer that uses them).
-              (sameOrigin && /^\/assets\/tfjs-backend-wasm[^/]*\.wasm$/.test(url.pathname)) ||
-              url.origin === 'https://tfhub.dev' ||
-              (url.origin === 'https://storage.googleapis.com' && url.pathname.startsWith('/mediapipe-models/')) ||
-              (url.origin === 'https://cdn.jsdelivr.net' && url.pathname.startsWith('/npm/@mediapipe/tasks-vision@')),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'pose-models',
-              cacheableResponse: { statuses: [200] },
-              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true },
-            },
-          },
           {
             // 18 · onnxruntime's WASM for the voice separation (26,8 MB, hashed name): only in the HTTP cache it is
             // evicted early on Android and a later separation downloads it again. One entry: a new version replaces it.
@@ -188,7 +168,7 @@ export default defineConfig(({ mode, command }) => {
             urlPattern: ({ url, sameOrigin }) =>
               sameOrigin &&
               (/^\/assets\/[A-Za-z]+Demo-[^/]+\.js$/.test(url.pathname) ||
-                /^\/assets\/Nav(Hanafuda|Kamon|Origami)-[^/]+\.js$/.test(url.pathname)),
+                /^\/assets\/Nav(Hanafuda|Kamon|Kakejiku)-[^/]+\.js$/.test(url.pathname)),
             handler: 'CacheFirst',
             options: {
               cacheName: 'lab-demos',
@@ -238,8 +218,6 @@ export default defineConfig(({ mode, command }) => {
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      // F10 · pose-detection imports the legacy BlazePose script for a runtime we never use (MoveNet only).
-      '@mediapipe/pose': fileURLToPath(new URL('./src/features/pose/mediapipePoseStub.ts', import.meta.url)),
     },
   },
   server: { port: 5173 },
@@ -259,11 +237,6 @@ export default defineConfig(({ mode, command }) => {
           if (pkg.startsWith('@supabase/')) return 'supabase';
           if (pkg.startsWith('@tanstack/')) return 'query';
           if (pkg.startsWith('lucide-react/')) return 'icons';
-          // F10 · 5.5 · Pose models' code: only loaded when used, and kept out of the offline precache (below).
-          // 15 · The WASM backend only for computers without a graphics chip: its own chunk, loaded when chosen.
-          if (pkg.startsWith('@tensorflow/tfjs-backend-wasm/')) return 'pose-tf-wasm';
-          if (/^@tensorflow(-models)?\//.test(pkg)) return 'pose-tf';
-          if (pkg.startsWith('@mediapipe/')) return 'pose-mediapipe';
         },
       },
     },

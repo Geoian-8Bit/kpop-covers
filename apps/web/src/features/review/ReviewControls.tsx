@@ -1,5 +1,5 @@
 import { clampAdjust, formatSpeed, formatTime, SYNC_ADJUST_LIMIT, type Clip, type Note } from '@coverscape/shared';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import {
   ArrowLeftRight,
   BookmarkPlus,
@@ -10,11 +10,12 @@ import {
   Repeat,
   Scan,
   SlidersHorizontal,
+  Volume2,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { forwardRef, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { ElasticToggle } from '@/components/ui/ElasticToggle';
@@ -24,35 +25,40 @@ import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, useReview } from '@/player/store';
 import { isZoomed, NO_ZOOM, stepZoom, zoomLabel, zoomOfClip, ZOOM_MAX } from '@/player/zoom';
-import {
-  categoryLabel,
-  noteStatus,
-  REVIEW_RATE_MAX,
-  REVIEW_RATE_MIN,
-  REVIEW_RATES,
-  SPLIT_MAX,
-  SPLIT_MIN,
-  type CompareMode,
-  type ViewPrefs,
-} from './reviewRules';
+import { categoryLabel, noteStatus, REVIEW_RATE_MAX, REVIEW_RATE_MIN, REVIEW_RATES, type CompareMode, type ViewPrefs } from './reviewRules';
 import { capturePointer } from './pointer';
 
 const signed = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : '±'}${Math.abs(value).toFixed(2).replace('.', ',')} s`;
 
+/** A small pill like the studio's tray buttons: 38 px to the eye, 44 px to the finger. */
+const pill =
+  "relative flex h-[38px] shrink-0 items-center gap-1.5 rounded-[10px] px-2.5 text-[13px] font-bold transition-colors after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-[''] disabled:opacity-40";
+const pillIdle = 'text-washi-muted hover:bg-washi/[0.07] hover:text-washi';
+
 // ───────────── Timeline of the take ─────────────
 
-/** The take's time bar: drag to scrub (both follow), A–B band, and the take's notes as dots. */
+/**
+ * The take's time bar: drag to scrub (both follow), the A–B band and the take's notes as diamonds; under it the
+ * clock and, on the right, `actions` (sound, note).
+ */
 export function ReviewTimeline({
   notes,
   openNoteId,
   onNote,
+  actions,
+  variant = 'full',
 }: {
   notes: Note[];
   openNoteId: string | null;
   onNote: (note: Note) => void;
+  actions?: ReactNode;
+  /** 'bar': clock and line only, for the one-row bar of a phone on its side. */
+  variant?: 'full' | 'bar';
 }) {
+  const bar = variant === 'bar';
   const duration = useReview((s) => s.duration);
   const loop = useReview((s) => s.loop);
+  const reduce = useReducedMotion();
   const trackRef = useRef<HTMLDivElement>(null);
   const fillRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLSpanElement>(null);
@@ -60,7 +66,8 @@ export function ReviewTimeline({
   const f = (t: number) => (duration > 0 ? Math.min(1, Math.max(0, t / duration)) : 0);
 
   // P1 · Fill, thumb, clock and aria follow the take's clock through the DOM (like the studio's FsProgress), so
-  // playback never re-renders the timeline: the fill moves every frame, the label each tenth, aria each second.
+  // playback never re-renders the timeline: the fill moves every frame (a transform), the label each tenth, aria
+  // each second.
   useLayoutEffect(() => {
     const track = trackRef.current;
     if (!track) return;
@@ -73,9 +80,9 @@ export function ReviewTimeline({
       const totalChanged = total !== lastDuration;
       lastTime = time;
       lastDuration = total;
-      const pct = `${(total > 0 ? Math.min(1, Math.max(0, time / total)) : 0) * 100}%`;
-      fillRef.current?.style.setProperty('width', pct);
-      thumbRef.current?.style.setProperty('left', pct);
+      const ratio = total > 0 ? Math.min(1, Math.max(0, time / total)) : 0;
+      fillRef.current?.style.setProperty('transform', `scaleX(${ratio})`);
+      thumbRef.current?.style.setProperty('left', `${ratio * 100}%`);
       const tenth = Math.floor(time * 10);
       if (tenth !== lastTenth && clockRef.current) {
         lastTenth = tenth;
@@ -91,98 +98,132 @@ export function ReviewTimeline({
     const { time, duration: total } = useReview.getState();
     paint(time, total);
     return useReview.subscribe((s) => paint(s.time, s.duration));
-  }, []);
+  }, [bar]);
 
   const at = (clientX: number) => {
     const rect = trackRef.current!.getBoundingClientRect();
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * duration;
   };
 
-  return (
-    <div className="relative px-1 pt-1">
-      {/* Note dots: each a 44 px target over a small seal. */}
-      <div className="relative h-7">
-        {duration > 0 &&
-          notes.map((n) => {
-            const done = noteStatus(n) === 'done';
-            const label = `Nota en ${formatTime(Number(n.take_seconds), { tenths: true })}${categoryLabel(n.category) ? ` · ${categoryLabel(n.category)}` : ''}${done ? ' · resuelta' : ''}: ${n.body}`;
-            return (
-              <button
-                key={n.id}
-                type="button"
-                aria-label={label}
-                title={label}
-                onClick={() => onNote(n)}
-                className="group absolute top-1/2 z-10 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center"
-                style={{ left: `${f(Number(n.take_seconds)) * 100}%` }}
-              >
-                <motion.span
-                  aria-hidden
-                  animate={{ scale: openNoteId === n.id ? 1.45 : 1 }}
-                  transition={jelly}
-                  className={cn(
-                    'block size-3 rotate-45 rounded-[2px] ring-2 ring-sumi-950 group-hover:scale-125',
-                    done ? 'bg-rokusho' : 'bg-ai-300',
-                    openNoteId === n.id && 'ring-kin-300',
-                  )}
-                />
-              </button>
-            );
-          })}
-      </div>
-      <div
-        ref={trackRef}
-        role="slider"
-        tabIndex={0}
-        aria-label="Tiempo de la toma"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(duration * 10) / 10}
-        className="relative h-9 cursor-pointer touch-none"
-        onPointerDown={(e) => {
-          if (duration <= 0) return;
-          capturePointer(e);
-          const s = useReview.getState();
-          s.setScrubbing(true);
-          s.seek(at(e.clientX), { preview: true });
-        }}
-        onPointerMove={(e) => {
-          if (!useReview.getState().scrubbing) return;
-          useReview.getState().seek(at(e.clientX), { preview: true });
-        }}
-        onPointerUp={() => useReview.getState().setScrubbing(false)}
-        onPointerCancel={() => useReview.getState().setScrubbing(false)}
-        onKeyDown={(e) => {
-          const s = useReview.getState();
-          const step = e.shiftKey ? 5 : 1;
-          if (e.key === 'ArrowLeft') s.seek(s.time - step);
-          else if (e.key === 'ArrowRight') s.seek(s.time + step);
-          else if (e.key === 'Home') s.seek(0);
-          else if (e.key === 'End') s.seek(s.duration);
-          else return;
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-      >
-        <div className="well absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full">
-          {hasRange(loop) && (
-            <div
-              className={cn('absolute inset-y-0 rounded-full', loop.enabled ? 'bg-shu-500/70' : 'bg-shu-500/30')}
-              style={{ left: `${f(loop.start) * 100}%`, width: `${(f(loop.end) - f(loop.start)) * 100}%` }}
-            />
+  const dots =
+    duration > 0 &&
+    notes.map((n) => {
+      const done = noteStatus(n) === 'done';
+      const label = `Nota en ${formatTime(Number(n.take_seconds), { tenths: true })}${categoryLabel(n.category) ? ` · ${categoryLabel(n.category)}` : ''}${done ? ' · resuelta' : ''}: ${n.body}`;
+      return (
+        <button
+          key={n.id}
+          type="button"
+          aria-label={label}
+          title={label}
+          onClick={() => onNote(n)}
+          className={cn(
+            'group absolute z-10 grid w-11 -translate-x-1/2 place-items-center',
+            // On the one-row bar the target is the strip above the line (44 × 22 px), never the line itself.
+            bar ? '-top-2 h-[22px]' : 'top-1/2 h-11 -translate-y-1/2',
           )}
-          <div ref={fillRef} className="absolute inset-y-0 left-0 rounded-full bg-washi/35" />
-        </div>
-        {loop.start != null && <Seal at={f(loop.start)} label="A" />}
-        {loop.end != null && <Seal at={f(loop.end)} label="B" />}
-        <span
-          ref={thumbRef}
-          aria-hidden
-          className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-washi shadow-[0_0_0_3px_var(--color-sumi-950)]"
-        />
+          style={{ left: `${f(Number(n.take_seconds)) * 100}%` }}
+        >
+          <motion.span
+            aria-hidden
+            animate={{ scale: openNoteId === n.id ? 1.45 : 1 }}
+            transition={reduce ? { duration: 0 } : jelly}
+            className={cn(
+              'block rotate-45 rounded-[2px] ring-2 ring-sumi-850 group-hover:scale-125',
+              bar ? 'size-2.5' : 'size-3',
+              done ? 'bg-rokusho' : 'bg-ai-300',
+              openNoteId === n.id && 'ring-kin-300',
+            )}
+          />
+        </button>
+      );
+    });
+
+  const track = (
+    <div
+      ref={trackRef}
+      role="slider"
+      tabIndex={0}
+      aria-label="Tiempo de la toma"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(duration * 10) / 10}
+      className={cn(
+        'relative h-10 cursor-pointer touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-kin-300',
+        bar ? 'min-w-0 flex-1' : 'mx-2',
+      )}
+      onPointerDown={(e) => {
+        if (duration <= 0) return;
+        capturePointer(e);
+        const s = useReview.getState();
+        s.setScrubbing(true);
+        s.seek(at(e.clientX), { preview: true });
+      }}
+      onPointerMove={(e) => {
+        if (!useReview.getState().scrubbing) return;
+        useReview.getState().seek(at(e.clientX), { preview: true });
+      }}
+      onPointerUp={() => useReview.getState().setScrubbing(false)}
+      onPointerCancel={() => useReview.getState().setScrubbing(false)}
+      onKeyDown={(e) => {
+        const s = useReview.getState();
+        const step = e.shiftKey ? 5 : 1;
+        if (e.key === 'ArrowLeft') s.seek(s.time - step);
+        else if (e.key === 'ArrowRight') s.seek(s.time + step);
+        else if (e.key === 'Home') s.seek(0);
+        else if (e.key === 'End') s.seek(s.duration);
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <div className="well absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full">
+        {hasRange(loop) && (
+          <div
+            className={cn('absolute inset-y-0', loop.enabled ? 'bg-shu-500/70' : 'bg-shu-500/30')}
+            style={{ left: `${f(loop.start) * 100}%`, width: `${(f(loop.end) - f(loop.start)) * 100}%` }}
+          />
+        )}
+        <div ref={fillRef} className="absolute inset-0 origin-left scale-x-0 bg-kin-300/45" />
       </div>
-      <div className="tabular flex justify-between px-0.5 font-mono text-[11px] text-washi-muted">
-        <span ref={clockRef} />
-        <span>{formatTime(duration)}</span>
+      {loop.start != null && <Seal at={f(loop.start)} label="A" />}
+      {loop.end != null && <Seal at={f(loop.end)} label="B" />}
+      <span
+        ref={thumbRef}
+        aria-hidden
+        className="absolute top-1/2 size-[18px] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[4px] border border-kin-400 bg-washi shadow-[0_0_0_3px_var(--color-sumi-850)]"
+      />
+    </div>
+  );
+
+  const clock = (
+    <p className={cn('tabular shrink-0 whitespace-nowrap font-mono text-[13px] text-washi-muted', bar && 'w-[3.6rem] text-right')}>
+      <span ref={clockRef} className="font-semibold text-washi" />
+      {!bar && <span className="text-washi-subtle"> / {formatTime(duration)}</span>}
+    </p>
+  );
+
+  if (bar) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        {clock}
+        {/* The line keeps clear of the clock (its thumb overhangs its start); the note marks sit just above it, as
+            buttons of their own beside the slider, so a tap on one opens the note instead of moving the time. */}
+        <div className="relative ml-3 mr-1 flex min-w-0 flex-1">
+          {track}
+          {notes.length > 0 && <div className="pointer-events-none absolute inset-x-0 top-0 h-0 [&>button]:pointer-events-auto">{dots}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      {/* Note diamonds: each a 44 px target over a small mark, just above the bar. */}
+      {notes.length > 0 && <div className="relative mx-2 h-6">{dots}</div>}
+      {track}
+      <div className="flex min-h-11 items-center gap-2 px-1">
+        {clock}
+        {actions && <div className="ml-auto flex items-center gap-1">{actions}</div>}
       </div>
     </div>
   );
@@ -193,13 +234,41 @@ function Seal({ at, label }: { at: number; label: string }) {
     <span
       aria-hidden
       className={cn(
-        'pointer-events-none absolute grid size-5 -translate-x-1/2 place-items-center rounded-[3px] bg-shu-500 font-display text-[11px] font-extrabold text-washi',
-        label === 'A' ? 'top-0' : 'bottom-0',
+        'pointer-events-none absolute grid size-5 -translate-x-1/2 place-items-center rounded-[4px] bg-shu-600 font-display text-[11px] font-extrabold text-washi',
+        label === 'A' ? '-top-1' : '-bottom-1',
       )}
       style={{ left: `${at * 100}%` }}
     >
       {label}
     </span>
+  );
+}
+
+/** «Se oye: la toma / el original»: one tap switches which of the two is heard. */
+export function SoundPill({ hasOriginal }: { hasOriginal: boolean }) {
+  const audio = useReview((s) => s.audio);
+  if (!hasOriginal) return null;
+  const takeHeard = audio === 'take';
+  return (
+    <button
+      type="button"
+      aria-label={takeHeard ? 'Se oye la toma. Pulsa para oír el original' : 'Se oye el original. Pulsa para oír la toma'}
+      onClick={() => useReview.getState().setAudio(takeHeard ? 'original' : 'take')}
+      className={cn(pill, takeHeard ? pillIdle : 'bg-ai-600/50 text-ai-200 ring-1 ring-inset ring-ai-400/35')}
+    >
+      <Volume2 className="size-[18px]" />
+      <span>{takeHeard ? 'Toma' : 'Original'}</span>
+    </button>
+  );
+}
+
+export function NotePill({ onNote }: { onNote: () => void }) {
+  const ready = useReview((s) => s.takeEngine != null);
+  return (
+    <button type="button" aria-label="Nota en este momento (N)" title="Nota en este momento (N)" disabled={!ready} onClick={onNote} className={cn(pill, 'text-kin-300 hover:bg-washi/[0.07]')}>
+      <MessageSquarePlus className="size-[18px]" />
+      <span>Nota</span>
+    </button>
   );
 }
 
@@ -220,6 +289,7 @@ function IconButton({
   className?: string;
   disabled?: boolean;
 }) {
+  const reduce = useReducedMotion();
   return (
     <motion.button
       type="button"
@@ -228,10 +298,10 @@ function IconButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      whileTap={{ scale: 0.86 }}
+      whileTap={reduce ? undefined : { scale: 0.86 }}
       transition={jelly}
       className={cn(
-        'grid size-11 shrink-0 place-items-center rounded-[10px] text-washi-muted transition-colors hover:bg-washi/[0.08] hover:text-washi disabled:opacity-40',
+        'grid size-11 shrink-0 place-items-center rounded-full text-washi-muted transition-colors hover:bg-washi/[0.08] hover:text-washi disabled:opacity-40',
         pressed && 'bg-washi/[0.12] text-washi',
         className,
       )}
@@ -241,62 +311,131 @@ function IconButton({
   );
 }
 
-/** Frame ‹ ▶ › · A B loop · Nota · settings. Fits a 390 px phone (8 × 44 px). */
-export function ReviewTransport({
-  onNote,
-  settingsOpen,
-  onSettings,
-  onLoopMissing,
-}: {
-  onNote: () => void;
-  settingsOpen: boolean;
-  onSettings: () => void;
-  onLoopMissing: () => void;
-}) {
+/** The play crest, as in the studio: plays and pauses both (inside the tap). */
+export function PlayCrest({ size = 'md' }: { size?: 'md' | 'sm' }) {
   const playing = useReview((s) => s.playing);
   const ready = useReview((s) => s.takeEngine != null);
-  const loop = useReview((s) => s.loop);
+  const reduce = useReducedMotion();
   return (
-    <div className="mx-auto flex max-w-xl items-center justify-between gap-0.5">
-      <IconButton label="Fotograma anterior (,)" onClick={() => useReview.getState().step(-1)} disabled={!ready}>
-        <ChevronLeft className="size-6" />
-      </IconButton>
-      <motion.button
+    <motion.button
+      type="button"
+      aria-label={playing ? 'Pausar los dos (espacio)' : 'Reproducir los dos (espacio)'}
+      onClick={() => useReview.getState().togglePlay()}
+      disabled={!ready}
+      whileTap={reduce ? undefined : { scale: 0.88, rotate: -6 }}
+      transition={jelly}
+      className={cn(
+        'relative shrink-0 drop-shadow-[0_8px_12px_rgb(0_0_0/0.55)] disabled:opacity-40',
+        size === 'md' ? 'size-12' : 'size-11',
+      )}
+    >
+      <ButtonSkin kind={playing ? 'pause' : 'play'} />
+    </motion.button>
+  );
+}
+
+/** ‹ and › frame by frame. */
+export function FrameStep({ dir }: { dir: -1 | 1 }) {
+  const ready = useReview((s) => s.takeEngine != null);
+  return (
+    <IconButton label={dir < 0 ? 'Fotograma anterior (,)' : 'Fotograma siguiente (.)'} onClick={() => useReview.getState().step(dir)} disabled={!ready}>
+      {dir < 0 ? <ChevronLeft className="size-6" /> : <ChevronRight className="size-6" />}
+    </IconButton>
+  );
+}
+
+/** The section of the take: A, B and repeat, together like the studio's tray. */
+export function LoopTray({ onLoopMissing }: { onLoopMissing: () => void }) {
+  const loop = useReview((s) => s.loop);
+  const trayBtn = "relative grid h-[38px] w-11 place-items-center rounded-[8px] transition-colors after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-['']";
+  return (
+    <div
+      role="group"
+      aria-label="Tramo A–B"
+      className="skin-track skin-tray flex shrink-0 items-center rounded-[12px] border border-line bg-sumi-900/70 p-0.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
+    >
+      <button
         type="button"
-        aria-label={playing ? 'Pausar (espacio)' : 'Reproducir (espacio)'}
-        onClick={() => useReview.getState().togglePlay()}
-        disabled={!ready}
-        whileTap={{ scale: 0.88 }}
-        transition={jelly}
-        className="size-12 shrink-0 drop-shadow-[0_6px_10px_var(--color-sumi-950)] disabled:opacity-40"
+        aria-label="Marcar A (inicio del tramo)"
+        aria-pressed={loop.start != null}
+        onClick={() => useReview.getState().markStart()}
+        className={cn(trayBtn, loop.start != null ? 'bg-shu-700 text-washi' : pillIdle)}
       >
-        <ButtonSkin kind={playing ? 'pause' : 'play'} />
-      </motion.button>
-      <IconButton label="Fotograma siguiente (.)" onClick={() => useReview.getState().step(1)} disabled={!ready}>
-        <ChevronRight className="size-6" />
-      </IconButton>
-      <IconButton label="Marcar A (inicio del tramo)" onClick={() => useReview.getState().markStart()} pressed={loop.start != null}>
-        <span className="font-display text-[17px] font-extrabold">A</span>
-      </IconButton>
-      <IconButton label="Marcar B (fin del tramo)" onClick={() => useReview.getState().markEnd()} pressed={loop.end != null}>
-        <span className="font-display text-[17px] font-extrabold">B</span>
-      </IconButton>
-      <IconButton
-        label={loop.enabled ? 'Quitar el bucle del tramo' : 'Repetir el tramo A–B'}
-        pressed={loop.enabled}
+        <span className="font-display text-[16px] font-extrabold">A</span>
+      </button>
+      <button
+        type="button"
+        aria-label="Marcar B (fin del tramo)"
+        aria-pressed={loop.end != null}
+        onClick={() => useReview.getState().markEnd()}
+        className={cn(trayBtn, loop.end != null ? 'bg-shu-700 text-washi' : pillIdle)}
+      >
+        <span className="font-display text-[16px] font-extrabold">B</span>
+      </button>
+      <button
+        type="button"
+        aria-label={loop.enabled ? 'Quitar el bucle del tramo' : 'Repetir el tramo A–B'}
+        aria-pressed={loop.enabled}
         onClick={() => {
           if (!useReview.getState().toggleLoop()) onLoopMissing();
         }}
-        className={loop.enabled ? 'text-shu-400' : undefined}
+        className={cn(trayBtn, loop.enabled ? 'bg-ai-600/50 text-ai-200' : pillIdle)}
       >
-        <Repeat className="size-5" />
-      </IconButton>
-      <IconButton label="Nota en este momento (N)" onClick={onNote} disabled={!ready} className="text-kin-300">
-        <MessageSquarePlus className="size-5" />
-      </IconButton>
-      <IconButton label={settingsOpen ? 'Cerrar ajustes del repaso' : 'Ajustes del repaso'} pressed={settingsOpen} onClick={onSettings} className="lg:hidden">
+        <Repeat className="size-[18px]" />
+      </button>
+    </div>
+  );
+}
+
+/** The settings button (it says when they're open). */
+export const SettingsButton = forwardRef<HTMLButtonElement, { open: boolean; onClick: () => void; className?: string }>(
+  function SettingsButton({ open, onClick, className }, ref) {
+    const reduce = useReducedMotion();
+    return (
+      <motion.button
+        ref={ref}
+        type="button"
+        aria-label={open ? 'Cerrar ajustes del repaso' : 'Ajustes del repaso'}
+        aria-expanded={open}
+        onClick={onClick}
+        whileTap={reduce ? undefined : { scale: 0.86 }}
+        transition={jelly}
+        className={cn(
+          'grid size-11 shrink-0 place-items-center rounded-full text-washi-muted transition-colors hover:bg-washi/[0.08] hover:text-washi',
+          open && 'bg-washi/[0.12] text-washi',
+          className,
+        )}
+      >
         <SlidersHorizontal className="size-5" />
-      </IconButton>
+      </motion.button>
+    );
+  },
+);
+
+/** A–B · ‹ ▶ › · settings: one row that fits a 390 px phone, the play crest in the middle as in the studio. */
+export function ReviewTransport({
+  settingsOpen,
+  onSettings,
+  onLoopMissing,
+  settingsRef,
+  hideSettings,
+}: {
+  settingsOpen: boolean;
+  onSettings: () => void;
+  onLoopMissing: () => void;
+  settingsRef?: Ref<HTMLButtonElement>;
+  /** The settings live beside (a wide screen): the button keeps its room, unseen. */
+  hideSettings?: boolean;
+}) {
+  return (
+    <div className="mx-auto flex max-w-xl items-center justify-between gap-1">
+      <LoopTray onLoopMissing={onLoopMissing} />
+      <div className="flex items-center">
+        <FrameStep dir={-1} />
+        <PlayCrest />
+        <FrameStep dir={1} />
+      </div>
+      <SettingsButton ref={settingsRef} open={settingsOpen} onClick={onSettings} className={hideSettings ? 'invisible' : undefined} />
     </div>
   );
 }
@@ -320,11 +459,7 @@ function ZoomStepper({ label, which }: { label: string; which: 'take' | 'origina
       <IconButton label={`Ampliar (${label.toLowerCase()})`} onClick={() => set(1.5)} disabled={zoom.scale >= ZOOM_MAX}>
         <ZoomIn className="size-5" />
       </IconButton>
-      <IconButton
-        label={`Ver entero (${label.toLowerCase()})`}
-        onClick={() => useReview.getState().setZoom(which, NO_ZOOM)}
-        disabled={!isZoomed(zoom)}
-      >
+      <IconButton label={`Ver entero (${label.toLowerCase()})`} onClick={() => useReview.getState().setZoom(which, NO_ZOOM)} disabled={!isZoomed(zoom)}>
         <Scan className="size-5" />
       </IconButton>
     </div>
@@ -333,10 +468,10 @@ function ZoomStepper({ label, which }: { label: string; which: 'take' | 'origina
 
 function Row({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
   return (
-    <section className="space-y-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
-      <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">{title}</h3>
+    <section className="space-y-2.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
+      <h3 className="font-display text-[15px] font-bold text-washi">{title}</h3>
       {children}
-      {hint && <p className="text-[12px] leading-snug text-washi-subtle">{hint}</p>}
+      {hint && <p className="text-[13px] leading-snug text-washi-subtle">{hint}</p>}
     </section>
   );
 }
@@ -350,6 +485,7 @@ function Range({
   onChange,
   valueText,
   onCommit,
+  onSlide,
 }: {
   label: string;
   value: number;
@@ -358,11 +494,18 @@ function Range({
   step: number;
   onChange: (v: number) => void;
   valueText: string;
+  /** The finger (or the key) let go. */
   onCommit?: () => void;
+  /** A finger is on the slider (true) or has let go (false). */
+  onSlide?: (sliding: boolean) => void;
 }) {
+  const end = () => {
+    onCommit?.();
+    onSlide?.(false);
+  };
   return (
     <label className="flex min-h-11 items-center gap-3">
-      <span className="w-28 shrink-0 text-[13px] text-washi-muted">{label}</span>
+      <span className="w-24 shrink-0 text-[13px] text-washi-muted">{label}</span>
       <input
         type="range"
         min={min}
@@ -371,8 +514,13 @@ function Range({
         value={value}
         aria-valuetext={valueText}
         onChange={(e) => onChange(Number(e.target.value))}
-        onPointerUp={onCommit}
-        onKeyUp={onCommit}
+        // Let go however it ends: lifted, cancelled (the sheet took it as a scroll), lost, or left with the keys.
+        onPointerDown={() => onSlide?.(true)}
+        onPointerUp={end}
+        onPointerCancel={end}
+        onLostPointerCapture={end}
+        onKeyUp={() => onCommit?.()}
+        onBlur={end}
         className="h-11 min-w-0 flex-1 accent-kin-400"
       />
       <span className="tabular w-16 shrink-0 text-right font-mono text-[12px] text-washi">{valueText}</span>
@@ -384,12 +532,21 @@ export interface ReviewSettingsProps {
   mode: CompareMode;
   prefs: ViewPrefs;
   onPrefs: (patch: Partial<ViewPrefs>) => void;
+  /** «Separados»: the hinge moved by hand (null: automatic). */
+  split: number | null;
+  onAutoSplit: () => void;
   onResetFit: () => void;
   fitStatus: 'idle' | 'saving' | 'saved' | 'error';
   adjust: number;
-  onAdjust: (value: number) => void;
+  /**
+   * `settled` false while the slider is being dragged (the original is put in place once it is let go); 'soon' for
+   * the ±0,01 taps (put in place once the taps stop).
+   */
+  onAdjust: (value: number, settled?: boolean | 'soon') => void;
   adjustStatus: 'idle' | 'saving' | 'saved' | 'error';
   hasOriginal: boolean;
+  /** The original is YouTube: «Superpuesto» needs the file. */
+  originalIsYouTube: boolean;
   practisedMirrored: boolean;
   clips: { clip: Clip; start: number; end: number }[];
   /** F9 · The original can be zoomed (a file; YouTube's player is never altered). */
@@ -397,6 +554,20 @@ export interface ReviewSettingsProps {
   /** F8 · Save the take's A–B as a clip of the song. */
   onSaveRange: () => void;
   onClose?: () => void;
+  /**
+   * A phone on its side: the bar keeps only play, time, sound and settings, so the section, the frames, the note and
+   * the way to compare come here.
+   */
+  compact?: boolean;
+  onNote?: () => void;
+  onLoopMissing?: () => void;
+  canOverlay?: boolean;
+  onMode?: (mode: CompareMode) => void;
+  onOverlayRefused?: () => void;
+  /** The sheet's title, focused when it opens. */
+  titleRef?: Ref<HTMLHeadingElement>;
+  /** A slider is being dragged (the panel over the take fades meanwhile, so the take shows). */
+  onSliding?: (sliding: boolean) => void;
 }
 
 const STATUS_TEXT = { idle: '', saving: 'Guardando…', saved: 'Guardado en la toma', error: 'No se pudo guardar' } as const;
@@ -405,17 +576,28 @@ export function ReviewSettings({
   mode,
   prefs,
   onPrefs,
+  split,
+  onAutoSplit,
   onResetFit,
   fitStatus,
   adjust,
   onAdjust,
   adjustStatus,
   hasOriginal,
+  originalIsYouTube,
   practisedMirrored,
   clips,
   canZoomOriginal,
   onSaveRange,
   onClose,
+  compact,
+  onNote,
+  onLoopMissing,
+  canOverlay,
+  onMode,
+  onOverlayRefused,
+  titleRef,
+  onSliding,
 }: ReviewSettingsProps) {
   const rate = useReview((s) => s.rate);
   const audio = useReview((s) => s.audio);
@@ -423,51 +605,98 @@ export function ReviewSettings({
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
   const activeClipId = useReview((s) => s.activeClipId);
   const loop = useReview((s) => s.loop);
+  const reduce = useReducedMotion();
   const review = useReview.getState;
 
   return (
     <div className="space-y-4 text-washi">
       {onClose && (
-        <div className="flex items-center justify-between">
-          <p className="font-display text-[17px] font-bold">Ajustes del repaso</p>
-          <Button variant="ghost" size="icon" aria-label="Cerrar ajustes" onClick={onClose}>
+        <div className="-mb-1 flex items-center justify-between">
+          <h2 ref={titleRef} tabIndex={-1} className="font-display text-[18px] font-bold outline-none">
+            Ajustes del repaso
+          </h2>
+          <Button variant="ghost" size="icon" aria-label="Cerrar ajustes" onClick={onClose} className="-mr-2">
             <X className="size-5" />
           </Button>
         </div>
       )}
 
-      <Row title="Vista">
+      {compact && (
+        <Row title="Tramo y notas">
+          <div className="flex flex-wrap items-center gap-2">
+            <LoopTray onLoopMissing={onLoopMissing ?? (() => undefined)} />
+            <div className="flex items-center">
+              <FrameStep dir={-1} />
+              <FrameStep dir={1} />
+            </div>
+            {onNote && <NotePill onNote={onNote} />}
+          </div>
+        </Row>
+      )}
+
+      {hasOriginal && (
+        <Row title="Sonido" hint="Por defecto se oye la toma: lleva la música tal como sonó al grabar.">
+          <Segmented
+            label="Qué se oye"
+            layoutId="review-audio"
+            value={audio}
+            onChange={(a) => review().setAudio(a)}
+            options={[
+              { value: 'take', label: 'La toma' },
+              { value: 'original', label: 'El original' },
+            ]}
+          />
+        </Row>
+      )}
+
+      <Row
+        title="Vista"
+        hint={originalIsYouTube ? '«Superpuesto» necesita el archivo del vídeo: vincúlalo en el estudio. El vídeo de YouTube se ve entero y sin tapar.' : undefined}
+      >
+        {compact && hasOriginal && onMode && (
+          <Segmented
+            label="Cómo comparar"
+            layoutId="review-mode-sheet"
+            value={mode}
+            onChange={onMode}
+            onDisabled={onOverlayRefused}
+            options={[
+              { value: 'stacked', label: 'Separados' },
+              { value: 'overlay', label: 'Superpuesto', disabled: !canOverlay },
+            ]}
+          />
+        )}
         {mode === 'stacked' ? (
-          <>
-            <Button variant="secondary" className="min-h-11" onClick={() => onPrefs({ order: prefs.order === 'original-first' ? 'take-first' : 'original-first' })}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              className="min-h-11"
+              onClick={() => onPrefs({ order: prefs.order === 'original-first' ? 'take-first' : 'original-first' })}
+            >
               <ArrowLeftRight className="size-4" /> Cambiar el orden
             </Button>
-            <Range
-              label="Reparto"
-              value={prefs.split}
-              min={SPLIT_MIN}
-              max={SPLIT_MAX}
-              step={0.01}
-              onChange={(split) => onPrefs({ split })}
-              valueText={`${Math.round(prefs.split * 100)} / ${Math.round((1 - prefs.split) * 100)}`}
-            />
-          </>
+            <Button variant="ghost" className="min-h-11" onClick={onAutoSplit} disabled={split == null}>
+              Reparto automático
+            </Button>
+          </div>
         ) : (
           <>
             <Range
               label="Transparencia"
               value={Math.round((1 - prefs.opacity) * 100)}
               min={0}
-              max={100}
+              max={90}
               step={1}
               onChange={(v) => onPrefs({ opacity: Math.round((1 - v / 100) * 100) / 100 })}
               valueText={`${Math.round((1 - prefs.opacity) * 100)} %`}
+              onSlide={onSliding}
             />
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[13px] text-washi-muted">Encima</span>
               <Segmented
                 label="Qué va encima"
                 layoutId="review-on-top"
+                size="sm"
                 value={prefs.onTop}
                 onChange={(onTop) => onPrefs({ onTop })}
                 options={[
@@ -496,15 +725,7 @@ export function ReviewSettings({
           onChange={(r) => review().setRate(r)}
           options={REVIEW_RATES.map((r) => ({ value: r, label: formatSpeed(r) }))}
         />
-        <Range
-          label="Fina"
-          value={rate}
-          min={REVIEW_RATE_MIN}
-          max={REVIEW_RATE_MAX}
-          step={0.05}
-          onChange={(r) => review().setRate(r)}
-          valueText={formatSpeed(rate)}
-        />
+        <Range label="Fina" value={rate} min={REVIEW_RATE_MIN} max={REVIEW_RATE_MAX} step={0.05} onChange={(r) => review().setRate(r)} valueText={formatSpeed(rate)} onSlide={onSliding} />
       </Row>
 
       {hasOriginal && (
@@ -515,14 +736,16 @@ export function ReviewSettings({
             min={-SYNC_ADJUST_LIMIT}
             max={SYNC_ADJUST_LIMIT}
             step={0.01}
-            onChange={(v) => onAdjust(clampAdjust(v))}
+            onChange={(v) => onAdjust(clampAdjust(v), false)}
+            onCommit={() => onAdjust(adjust, true)}
+            onSlide={onSliding}
             valueText={signed(adjust)}
           />
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Retrasar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust - 0.01))}>
+            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Retrasar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust - 0.01), 'soon')}>
               −0,01
             </Button>
-            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Adelantar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust + 0.01))}>
+            <Button variant="secondary" size="sm" className="min-h-11" aria-label="Adelantar el original 0,01 s" onClick={() => onAdjust(clampAdjust(adjust + 0.01), 'soon')}>
               +0,01
             </Button>
             <Button variant="ghost" size="sm" className="min-h-11" onClick={() => onAdjust(0)} disabled={adjust === 0}>
@@ -549,22 +772,10 @@ export function ReviewSettings({
         </div>
       </Row>
 
-      {hasOriginal && (
-        <Row title="Sonido">
-          <Segmented
-            label="Qué se oye"
-            layoutId="review-audio"
-            value={audio}
-            onChange={(a) => review().setAudio(a)}
-            options={[
-              { value: 'take', label: 'La toma' },
-              { value: 'original', label: 'El original' },
-            ]}
-          />
-        </Row>
-      )}
-
-      <Row title="Tramos de la canción en esta toma" hint={clips.length ? 'Elige uno para repetirlo en la toma y en el original a la vez.' : 'Ningún clip de la canción cae dentro de esta toma.'}>
+      <Row
+        title="Tramos de la canción en esta toma"
+        hint={clips.length ? 'Elige uno para repetirlo en la toma y en el original a la vez.' : 'Ningún clip de la canción cae dentro de esta toma.'}
+      >
         {clips.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {clips.map(({ clip, start, end }) => (
@@ -572,7 +783,7 @@ export function ReviewSettings({
                 key={clip.id}
                 type="button"
                 aria-pressed={activeClipId === clip.id}
-                whileTap={{ scale: 0.92 }}
+                whileTap={reduce ? undefined : { scale: 0.92 }}
                 transition={jelly}
                 onClick={() => {
                   review().loopRange({ start, end }, clip.id);
@@ -613,17 +824,16 @@ export function ReviewSettings({
         hint={
           mode === 'overlay'
             ? 'En «Superpuesto» el zoom amplía los dos a la vez. Pulsa «Ampliar» sobre el vídeo para que los dedos amplíen en vez de encajar; doble toque para verlos enteros.'
-            : 'Pellizca o usa la rueda sobre la toma o el original para ampliar una zona; arrastra para moverla y toca dos veces para verlo entero.'
+            : 'Pellizca sobre la toma o el original para ampliar una zona; arrastra para moverla y toca dos veces para verlo entero.'
         }
       >
         <ZoomStepper label={mode === 'overlay' ? 'Los dos' : 'Toma'} which="take" />
-        {hasOriginal && mode === 'stacked' &&
+        {hasOriginal &&
+          mode === 'stacked' &&
           (canZoomOriginal ? (
             <ZoomStepper label="Original" which="original" />
           ) : (
-            <p className="text-[12px] leading-snug text-washi-muted">
-              Original de YouTube: vincula el archivo del vídeo para ampliar.
-            </p>
+            <p className="text-[13px] leading-snug text-washi-muted">Original de YouTube: vincula el archivo del vídeo para ampliar.</p>
           ))}
       </Row>
     </div>

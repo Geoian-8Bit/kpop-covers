@@ -7,6 +7,7 @@ import {
   CloudUpload,
   Download,
   Eraser,
+  MessageSquare,
   FlipHorizontal2,
   Play,
   Smartphone,
@@ -18,10 +19,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH } from '@/data/clips';
 import { useMe, useMembers } from '@/data/members';
+import { useNotes } from '@/data/notes';
 import {
   deviceId,
   downloadTake,
@@ -54,16 +55,18 @@ import {
   isFiltered,
   maxShareSeconds,
   NO_FILTER,
+  noteCountByTake,
+  notesCount,
   quotaState,
   shareBytes,
   shareVideoBitrate,
-  sortTakes,
   takeDateLabel,
+  takeListing,
+  uniqueTakes,
   takesCount,
   unnamedHere,
   whereLabel,
   wouldOverflow,
-  type DateFilter,
   type TakeFilter,
 } from './takeRules';
 
@@ -75,12 +78,6 @@ interface TakesPanelProps {
   /** Play a take. `url` is an object URL (this phone's copy) or a signed cloud URL: pass it to `releaseTakeUrl` on close. */
   onPlay: (take: TakeItem, url: string) => void;
 }
-
-const DATE_OPTIONS = [
-  { value: 'today', label: 'Hoy' },
-  { value: 'week', label: 'Esta semana' },
-  { value: 'all', label: 'Todas' },
-] as const satisfies readonly { value: DateFilter; label: string }[];
 
 type Busy = { id: string; action: 'play' | 'download' } | null;
 
@@ -104,12 +101,17 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
   /** The last object URL handed to `onPlay`: released when another take plays. */
   const lastUrl = useRef<string | null>(null);
 
-  const all = useMemo(() => takes.data ?? [], [takes.data]);
-  const visible = useMemo(() => sortTakes(filterTakes(all, filter)), [all, filter]);
+  const notes = useNotes(video.id);
+  // 50 · Each take once, whatever the cache holds.
+  const all = useMemo(() => uniqueTakes(takes.data ?? []), [takes.data]);
+  const reviewTake = useMemo(() => defaultReviewTake(all, me?.id ?? null), [all, me?.id]);
+  // The take «Repaso» opens leads the list, highlighted; it is not repeated below.
+  const listing = useMemo(() => takeListing(filterTakes(all, filter), reviewTake?.id ?? null), [all, filter, reviewTake?.id]);
+  const visible = useMemo(() => (listing.featured ? [listing.featured, ...listing.rest] : listing.rest), [listing]);
+  const noteCounts = useMemo(() => noteCountByTake(notes.data ?? []), [notes.data]);
   const ctx = useMemo(() => ({ deviceId: device, meId: me?.id ?? null }), [device, me?.id]);
   const unnamed = useMemo(() => unnamedHere(all, device), [all, device]);
   const cleanable = useMemo(() => cleanupCandidates(visible, ctx), [visible, ctx]);
-  const reviewTake = useMemo(() => defaultReviewTake(all, me?.id ?? null), [all, me?.id]);
 
   const memberById = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m])), [members.data]);
   const clipById = useMemo(() => new Map(clips.map((c) => [c.id, c])), [clips]);
@@ -177,27 +179,8 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
         Tomas
       </SectionTitle>
 
-      {reviewTake && (
-        // F5 · «Repaso» opens the best take of whoever this device is (F4), else the newest.
-        <Button
-          variant="secondary"
-          className="mt-3 h-auto min-h-11 w-full justify-start whitespace-normal py-2 text-left"
-          loading={busy?.id === reviewTake.id && busy.action === 'play'}
-          disabled={busy != null}
-          onClick={() => void play(reviewTake)}
-          aria-label={`Repaso: comparar con el original la toma de ${memberName(reviewTake)} (${takeDateLabel(reviewTake.recorded_at)})`}
-        >
-          <Columns2 className="size-4 shrink-0 text-shu-400" />
-          <span className="min-w-0">
-            Repaso
-            <span className="block truncate text-[12px] font-medium text-washi-muted">
-              {reviewTake.is_best ? 'La mejor' : 'La última'} · {memberName(reviewTake)} · {takeDateLabel(reviewTake.recorded_at)}
-            </span>
-          </span>
-        </Button>
-      )}
-
-      <CloudMeter />
+      {/* 50 · The group's cloud only speaks up when it is filling. */}
+      <CloudNotice />
 
       {me && unnamed.length > 0 && (
         <motion.div
@@ -267,6 +250,8 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
                   <TakeRow
                     key={take.id}
                     take={take}
+                    featured={take.id === listing.featured?.id}
+                    notes={noteCounts.get(take.id) ?? 0}
                     member={memberOf(take)}
                     memberName={memberName(take)}
                     clip={take.clip_id ? (clipById.get(take.clip_id) ?? null) : null}
@@ -327,53 +312,19 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
 
 // ───────────── Cloud space ─────────────
 
-function CloudMeter() {
+function CloudNotice() {
   const bytes = useSharedTakesBytes();
-  if (bytes.isPending) return <div className="skeleton mt-4 h-[52px] rounded-[12px]" />;
-  if (bytes.isError) {
-    return <p className="mt-4 text-[13px] text-washi-subtle">No se pudo saber cuánto ocupa la nube del grupo.</p>;
-  }
+  if (!bytes.data) return null;
   const q = quotaState(bytes.data.total);
+  if (!q.warn) return null;
   const pct = Math.round(q.ratio * 100);
   return (
-    <div className="well mt-4 rounded-[12px] px-3.5 py-3">
-      <div className="flex items-center justify-between gap-3 text-[13px]">
-        <span className="flex min-w-0 items-center gap-1.5 text-washi-muted">
-          <Cloud className="size-4 shrink-0" />{' '}
-          <span className="truncate">
-            Nube del grupo <span className="text-washi-subtle">· tomas {formatBytes(bytes.data.takes)}</span>
-          </span>
-        </span>
-        <span className="tabular shrink-0 whitespace-nowrap font-mono text-[12px] text-washi">
-          {formatBytes(q.used)} <span className="text-washi-subtle">de 1 GB</span>
-        </span>
-      </div>
-      <div
-        role="meter"
-        aria-label="Espacio usado de la nube del grupo (vídeos y tomas compartidas)"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        aria-valuetext={`${pct} %`}
-        className="mt-2 h-2 overflow-hidden rounded-full bg-sumi-800"
-      >
-        <div
-          className={cn(
-            'h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none',
-            q.warn ? 'bg-shu-500' : 'bg-ai-400',
-          )}
-          style={{ width: `${Math.max(q.used > 0 ? 1 : 0, pct)}%` }}
-        />
-      </div>
-      {q.warn && (
-        <p className="mt-2 flex items-start gap-1.5 text-[13px] leading-snug text-shu-400">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          {q.full
-            ? 'La nube del grupo está llena: no se pueden compartir más tomas.'
-            : `La nube del grupo va por el ${pct} %. Borrar tomas no libera espacio: avisad a quien administra la app para vaciarla.`}
-        </p>
-      )}
-    </div>
+    <p role="status" className="mt-3 flex items-start gap-1.5 text-[13px] leading-snug text-shu-300">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+      {q.full
+        ? 'La nube del grupo está llena: no se pueden compartir más tomas. Avisad a quien administra la app para vaciarla.'
+        : `La nube del grupo va por el ${pct} % (${formatBytes(q.used)} de 1 GB). Avisad a quien administra la app para vaciarla.`}
+    </p>
   );
 }
 
@@ -433,7 +384,7 @@ function Filters({
   const set = (patch: Partial<TakeFilter>) => onChange({ ...filter, ...patch });
 
   return (
-    <div className="mt-4 space-y-2">
+    <div className="mt-3 space-y-2 empty:hidden">
       {memberIds.length + Number(hasUnnamed) > 1 && (
         <ChipRow label="Filtrar por persona">
           <Chip active={filter.member === 'all'} onClick={() => set({ member: 'all' })}>
@@ -478,15 +429,8 @@ function Filters({
           )}
         </ChipRow>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Segmented
-          options={DATE_OPTIONS}
-          value={filter.date}
-          onChange={(date) => set({ date })}
-          layoutId="takes-date"
-          label="Filtrar por fecha"
-        />
-        {isFiltered(filter) && (
+      {isFiltered(filter) && (
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => onChange(NO_FILTER)}
@@ -494,8 +438,8 @@ function Filters({
           >
             Quitar filtros
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -504,6 +448,10 @@ function Filters({
 
 interface TakeRowProps {
   take: TakeItem;
+  /** The one «Repaso» opens: first, highlighted, with its «Repasar» button. */
+  featured: boolean;
+  /** Notes on this take (F6). */
+  notes: number;
   member: Member | null;
   memberName: string;
   clip: Clip | null;
@@ -524,6 +472,8 @@ const ELSEWHERE_REASON = 'Esta toma está en otro móvil: solo se puede ver all�
 
 function TakeRow({
   take,
+  featured,
+  notes,
   member,
   memberName,
   clip,
@@ -556,8 +506,18 @@ function TakeRow({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -30, transition: { duration: 0.16 } }}
       transition={jelly}
-      className={cn('well rounded-[12px] p-2.5', take.is_best && 'border-kin-300/45')}
+      className={cn(
+        'rounded-[12px] p-2.5',
+        featured ? 'border border-kin-300/50 bg-sumi-850 shadow-[inset_0_1px_0_rgb(255_246_230/0.07)]' : 'well',
+        !featured && take.is_best && 'border-kin-300/45',
+      )}
     >
+      {featured && (
+        <p className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-shu-300">
+          <Columns2 className="size-3.5" aria-hidden />
+          Para repasar · {take.is_best ? 'la mejor' : 'la última'}
+        </p>
+      )}
       <div className={cn('flex items-center gap-3', !playable && 'opacity-60')}>
         <span className="relative shrink-0">
           <MemberSeal member={member} />
@@ -577,7 +537,8 @@ function TakeRow({
             <span className="text-washi-subtle">·</span>
             <span>{formatSpeed(Number(take.speed))}</span>
             <span className="text-washi-subtle">·</span>
-            <span>desde {formatTime(Number(take.song_start_seconds))}</span>
+            {/* The start as planned, to the second (the saved one may be a few hundredths earlier: where it really rolled). */}
+            <span>desde {formatTime(Math.round(Number(take.song_start_seconds)))}</span>
             {take.mirrored && <FlipHorizontal2 className="size-3 text-ai-300" aria-label="espejo" />}
           </p>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
@@ -591,19 +552,39 @@ function TakeRow({
               <WhereIcon className="size-3.5" aria-hidden />
               {where}
             </span>
+            {notes > 0 && (
+              <span className="flex items-center gap-1 text-kin-300">
+                <MessageSquare className="size-3.5" aria-hidden />
+                {notesCount(notes)}
+              </span>
+            )}
           </p>
         </div>
+        {!featured && (
+          <Button
+            variant="washi"
+            size="icon"
+            aria-label={playable ? 'Repasar la toma con el original' : 'No se puede ver: está en otro móvil'}
+            loading={busy === 'play'}
+            disabled={!playable || (anyBusy && busy !== 'play')}
+            onClick={onPlay}
+          >
+            {busy !== 'play' && <Play className="size-5 translate-x-px fill-current" />}
+          </Button>
+        )}
+      </div>
+
+      {featured && (
         <Button
-          variant="washi"
-          size="icon"
-          aria-label={playable ? 'Reproducir la toma' : 'No se puede reproducir: está en otro móvil'}
+          className="mt-2.5 w-full"
           loading={busy === 'play'}
           disabled={!playable || (anyBusy && busy !== 'play')}
           onClick={onPlay}
+          aria-label={playable ? `Repasar con el original: toma de ${memberName} (${takeDateLabel(take.recorded_at)})` : 'Repasar con el original: no se puede, está en otro móvil'}
         >
-          {busy !== 'play' && <Play className="size-5 translate-x-px fill-current" />}
+          {busy !== 'play' && <Columns2 className="size-4" />} Repasar con el original
         </Button>
-      </div>
+      )}
 
       <div className="mt-2 flex items-center justify-end gap-0.5 border-t border-line pt-1.5">
         <motion.button
@@ -887,6 +868,12 @@ function ShareDialog({ take, onClose }: { take: TakeItem | null; onClose: () => 
           {estimate > 0 ? <> de unos <span className="tabular font-mono text-washi">{formatBytes(estimate)}</span></> : null}. La
           original sigue en este móvil. Prepararla tarda lo mismo que dura la toma: deja la app abierta.
         </p>
+
+        {bytes.data && (
+          <p className="tabular text-[12px] text-washi-subtle">
+            Nube del grupo: {formatBytes(quotaState(bytes.data.total).used)} de 1 GB.
+          </p>
+        )}
 
         {tooLong && (
           <p role="alert" className="text-[14px] text-enji-300">

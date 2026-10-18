@@ -64,7 +64,7 @@ export function zoomLabel(zoom: Zoom): string {
 }
 
 /**
- * P12 · What the zoom controls show, as plain values a store selector can compare: following a dancer moves the
+ * P12 · What the zoom controls show, as plain values a store selector can compare: a pinch or a drag moves the
  * zoom every frame, but the controls only repaint when the label or a limit actually changes.
  */
 export interface ZoomControlsView {

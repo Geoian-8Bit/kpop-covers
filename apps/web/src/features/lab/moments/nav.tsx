@@ -2,7 +2,7 @@ import { lazy } from 'react';
 import type { LabMoment } from '../types';
 
 // One chunk for the four demos (`NavDemo-<hash>.js`): out of the precache, downloaded when the lab shows it.
-const demo = (name: 'SensuDemo' | 'HanafudaDemo' | 'KamonDemo' | 'OrigamiDemo') =>
+const demo = (name: 'SensuDemo' | 'HanafudaDemo' | 'KamonDemo' | 'KakejikuDemo') =>
   lazy(() => import('@/features/nav/NavDemo').then((m) => ({ default: m[name] })));
 
 /** P1 · The phone's quick menu at the bottom right: the five sections and «¿Quién eres?». */
@@ -19,7 +19,7 @@ export const navMoment: LabMoment = {
       id: 'sensu',
       label: 'Sensu',
       description:
-        'Un abanico de washi y laca se abre desde la esquina en un cuarto de círculo; cada varilla es una sección y la tuya va en bermellón.',
+        'Un abanico de washi y laca se abre desde la esquina: las varillas se despliegan juntas desde el remache, con el papel siempre tenso, y se asientan con un pequeño rebote. Cada varilla es una sección y la tuya va en bermellón.',
       Demo: demo('SensuDemo'),
     },
     {
@@ -37,11 +37,12 @@ export const navMoment: LabMoment = {
       Demo: demo('KamonDemo'),
     },
     {
-      id: 'origami',
-      label: 'Origami',
+      // Replaces «Origami» (round 2, point 41). Whoever had it saved falls back to the default.
+      id: 'kakejiku',
+      label: 'Kakejiku',
       description:
-        'Un cuadrado de washi doblado en la esquina se despliega pliegue a pliegue hasta formar un panel con una sección en cada cara; al cerrar, se vuelve a doblar.',
-      Demo: demo('OrigamiDemo'),
+        'Un pergamino colgante enrollado sobre el botón. Al tocarlo, la varilla sube y el papel se desenrolla con una sección por línea, la tuya con sello bermellón. Al elegir, un hanko la marca; al cerrar, se vuelve a enrollar.',
+      Demo: demo('KakejikuDemo'),
     },
   ],
 };

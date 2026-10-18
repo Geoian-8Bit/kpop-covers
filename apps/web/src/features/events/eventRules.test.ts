@@ -13,21 +13,14 @@ import {
   ignitesFirstLantern,
   isChorusName,
   litLanterns,
-  LONG_COUNTDOWN_MOMENT,
-  LONG_COUNTDOWN_VARIANTS,
-  longVariantOf,
   MOON_MIN_ILLUMINATION,
   moonLitPath,
   moonPhase,
   nearestEvent,
-  pageFace,
-  sandRun,
   splitEvents,
-  tornPages,
   toLocalInput,
   uniqueName,
 } from './eventRules';
-import { countdownMoment } from '@/features/lab/moments/countdown';
 
 /** Local wall time on this machine's zone (the tests below pin the zone where it matters). */
 const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi);
@@ -169,35 +162,6 @@ describe('the long countdown and the switch to the lanterns', () => {
     expect(countdownStage(countdown(startIso, new Date(nowIso)))).toBe('long');
   });
 
-  it('koyomi: big number and unit on the page', () => {
-    expect(pageFace(countdown(start, at(2026, 12, 1, 12)))).toEqual({ big: '11', unit: 'días' });
-    expect(pageFace(countdown(start, at(2026, 12, 11, 12)))).toEqual({ big: '1', unit: 'día' });
-    expect(pageFace(countdown(start, at(2026, 12, 11, 22)))).toEqual({ big: '23', unit: 'horas' });
-    expect(pageFace(countdown(at(2026, 12, 13, 0, 10), at(2026, 12, 12, 23, 40)))).toMatchObject({ big: '30', unit: 'min' });
-    expect(pageFace(countdown(start, at(2026, 12, 12, 10)))).toMatchObject({ big: '今日', unit: 'Hoy' });
-    expect(pageFace(countdown(start, at(2026, 12, 13, 10)))).toMatchObject({ big: '祭', unit: 'Ayer' });
-    expect(pageFace(countdown(start, at(2026, 12, 14, 21)))).toMatchObject({ big: '終', unit: 'Pasó' });
-  });
-
-  it('koyomi: one torn page per day since the event was created, newest first, at most four', () => {
-    const now = at(2026, 12, 1, 12); // 11 days left
-    const c = countdown(start, now);
-    expect(tornPages(c, iso(at(2026, 12, 1, 8)), now)).toEqual([]);
-    expect(tornPages(c, iso(at(2026, 11, 29, 23)), now)).toEqual([12, 13]);
-    expect(tornPages(c, iso(at(2026, 10, 1)), now)).toEqual([12, 13, 14, 15]);
-    expect(tornPages(c, 'not a date', now)).toEqual([]);
-    expect(tornPages(countdown(start, at(2026, 12, 12, 10)), iso(at(2026, 10, 1)), at(2026, 12, 12, 10))).toEqual([]);
-  });
-
-  it('sunadokei: the sand runs from the creation to the start', () => {
-    const created = iso(at(2026, 12, 2, 21));
-    expect(sandRun(iso(start), created, at(2026, 12, 2, 21))).toBe(0);
-    expect(sandRun(iso(start), created, at(2026, 12, 7, 21))).toBeCloseTo(0.5, 2);
-    expect(sandRun(iso(start), created, at(2026, 12, 20))).toBe(1);
-    expect(sandRun(iso(start), iso(at(2027, 1, 1)), at(2026, 12, 1))).toBe(0); // created «after» the start
-    expect(sandRun('nope', created, at(2026, 12, 7))).toBe(0);
-  });
-
   it('tsuki: a thin crescent five weeks before or more (never dark), full a week before', () => {
     expect(moonPhase(60)).toEqual({ illumination: MOON_MIN_ILLUMINATION, index: 0 });
     expect(moonPhase(35)).toEqual({ illumination: MOON_MIN_ILLUMINATION, index: 0 });
@@ -214,16 +178,6 @@ describe('the long countdown and the switch to the lanterns', () => {
       expect(index).toBeLessThan(7);
       last = illumination;
     }
-  });
-
-  it('the lab’s choice maps to a long design; anything unknown is Koyomi', () => {
-    expect(longVariantOf('tsuki')).toBe('tsuki');
-    expect(longVariantOf('sunadokei')).toBe('sunadokei');
-    expect(longVariantOf('')).toBe('koyomi');
-    expect(longVariantOf('chochin')).toBe('koyomi');
-    expect(countdownMoment.id).toBe(LONG_COUNTDOWN_MOMENT);
-    expect(countdownMoment.variants.map((v) => v.id)).toEqual([...LONG_COUNTDOWN_VARIANTS]);
-    expect(LONG_COUNTDOWN_VARIANTS).toContain(countdownMoment.defaultVariant);
   });
 
   it('tsuki: the lit part of the moon', () => {

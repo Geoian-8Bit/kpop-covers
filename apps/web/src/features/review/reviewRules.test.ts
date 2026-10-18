@@ -35,9 +35,9 @@ import {
 const frame = { width: 400, height: 300 };
 
 describe('layout limits', () => {
-  it('keeps the stacked split between 30 and 70 %', () => {
-    expect(clampSplit(0.1)).toBe(0.3);
-    expect(clampSplit(0.9)).toBe(0.7);
+  it('keeps the split between 15 and 85 %', () => {
+    expect(clampSplit(0.1)).toBe(0.15);
+    expect(clampSplit(0.9)).toBe(0.85);
     expect(clampSplit(0.55)).toBe(0.55);
     expect(clampSplit(Number.NaN)).toBe(0.5);
   });
@@ -79,7 +79,7 @@ describe('view preferences', () => {
   it('repairs each field on its own and drops fields no longer used', () => {
     expect(
       parseViewPrefs(JSON.stringify({ mode: 'overlay', order: 'take-first', split: 0.95, wipe: -1, opacity: 3, onTop: 'take' })),
-    ).toEqual({ mode: 'overlay', order: 'take-first', split: 0.7, opacity: 1, onTop: 'take' });
+    ).toEqual({ mode: 'overlay', order: 'take-first', split: 0.85, opacity: 1, onTop: 'take' });
     expect(parseViewPrefs(JSON.stringify({ mode: 'side', split: '0.4', opacity: Number.NaN })).mode).toBe('stacked');
   });
 });

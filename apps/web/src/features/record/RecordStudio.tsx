@@ -93,8 +93,12 @@ import {
   type FrameWatch,
 } from './compositor';
 import { countedPace, createSkipWindows, type PaceCounts, type SkipWindows } from './paceSkip';
+import { primeSyncAudio, restSyncAudio, syncTakeAudio, type SyncedAudio } from './syncAudio';
 import { InfoPanel, type TakeStats } from './InfoPanel';
 import { IMAGE_DEFAULT, ImageControls, type ImageState } from './ImageControls';
+import { QuickExposure, quickBarBox } from './QuickExposure';
+import { formatExposure, snapExposure, type Box as QuickBarBox } from './quickExposureRules';
+import { presetLabel } from './whiteBalanceRules';
 import {
   createTakeSink,
   forgetTake,
@@ -106,6 +110,7 @@ import {
   releaseTake,
   type Leftover,
   type TakeSink,
+  type TakeSyncMeta,
   type TakeTimingMeta,
 } from './takeStore';
 import {
@@ -307,6 +312,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const micTrack = useRef<MediaStreamTrack | null>(null);
   /** Stops listening for the take's sound going away. */
   const unwatchSound = useRef<() => void>(() => undefined);
+  /** 43 · The take's sound as recorded: delayed to land where the dancer heard it (syncAudio.ts). */
+  const syncedSound = useRef<SyncedAudio | null>(null);
+  /** 43 · What was applied to the take being recorded (shown in «i» once it ends). */
+  const takeSync = useRef<TakeSyncMeta | null>(null);
+  /** 43 · What to do when the take's sound is lost (pause with the notice), for the checks on resuming. */
+  const soundLost = useRef<() => void>(() => undefined);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const cancelTicks = useRef<() => void>(() => undefined);
   const armFrame = useRef(0);
@@ -485,6 +496,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const releasePicture = () => {
     unwatchSound.current();
     unwatchSound.current = () => undefined;
+    syncedSound.current?.dispose();
+    syncedSound.current = null;
     canvasStream.current?.getTracks().forEach((t) => t.stop());
     canvasStream.current = null;
     cam.compositor.current?.lock(false);
@@ -574,6 +587,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       recorder.current = null;
       dropUnusedSink();
       releasePicture();
+      restSyncAudio();
       micTrack.current?.stop();
       micTrack.current = null;
       void wakeLock.current?.release().catch(() => undefined);
@@ -616,6 +630,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     songTrack.current = tap;
     micTrack.current?.stop();
     micTrack.current = null;
+    // 43 · The context that will delay this sound, woken early (Chrome allows it after any tap): one that just
+    // started may not know its latency yet. Only when this sound needs it (see primeSyncAudio).
+    if (tap) primeSyncAudio(tap);
     if (tap) setSound('song');
     else {
       setSound('pending');
@@ -625,6 +642,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
           return;
         }
         micTrack.current = track;
+        primeSyncAudio(track);
         setSound(track ? 'mic' : 'none');
       });
     }
@@ -637,6 +655,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const [imageOpen, setImageOpen] = useState(false);
   const [image, setImage] = useState<ImageState>(IMAGE_DEFAULT);
   const [focusMark, setFocusMark] = useState<{ x: number; y: number; key: number } | null>(null);
+  /** P48 · Automatic colour stuck during a take: the camera is reopened once the recorder is idle. */
+  const wbReopenLater = useRef(false);
+  /** P48 · The camera is being reopened for the colour: what to apply again once it is back. */
+  const colourReopen = useRef<{ exposure: number; torch: boolean } | null>(null);
+  /** P49 · Where the quick light bar is (after a tap to focus); null when hidden. */
+  const [quickLight, setQuickLight] = useState<QuickBarBox | null>(null);
   /** What this camera offers (read again when the camera or its mode changes). */
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const trackInfo = useMemo(() => (view.status === 'ready' ? readTrackInfo(cam.track()) : null), [view.status, view.deviceId, view.mode]);
@@ -649,9 +673,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   imageRef.current = image;
   useEffect(() => {
     if (view.status !== 'starting') return;
-    if (imageRef.current.locked) setNotice('La cámara se ha reiniciado: el enfoque y la luz vuelven a automático.');
+    // A reopen for the colour has its own notice (and keeps the light).
+    if (imageRef.current.locked && !colourReopen.current)
+      setNotice('La cámara se ha reiniciado: el enfoque y la luz vuelven a automático.');
     setImage(IMAGE_DEFAULT);
     setFocusMark(null);
+    setQuickLight(null);
+    // A camera opened afresh is on automatic colour already.
+    wbReopenLater.current = false;
   }, [view.status]);
   // A tap's ring fades; a lock's ring stays.
   useEffect(() => {
@@ -688,6 +717,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     stopBench();
     const t = cam.track();
     setFocusMark({ x: clientX, y: clientY, key: performance.now() });
+    // P49 · The quick light bar comes up beside the ring (when this camera has an exposure compensation).
+    const root = cam.host.current?.parentElement;
+    if (info.exposureCompensation && root && !imageOpen) setQuickLight(quickBarBox(root, clientX, clientY));
     void (async () => {
       if (info.pointsOfInterest) await focusAt(t, p.x, p.y, info);
       if (lock || image.locked) {
@@ -716,6 +748,8 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       if (p) {
         // A second finger: a pinch is coming (zoom), which a rehearsal must not measure.
         stopBench();
+        // The quick light bar would sit under the fingers: it goes until the next tap.
+        if (!p.multi) setQuickLight(null);
         p.multi = true;
         clearTimeout(p.timer);
         return;
@@ -776,15 +810,71 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     stopBench();
     const ask = ++wbAsk.current;
     const t = cam.track();
+    // A new choice replaces a return to automatic still owed from earlier in the take.
+    wbReopenLater.current = false;
     setImage((s) => ({ ...s, kelvin }));
-    void setWhiteBalance(t, kelvin, trackInfo).then((ok) => {
+    void setWhiteBalance(t, kelvin, trackInfo).then((result) => {
       // Another camera (or the same one reopened) since: its own reset already says «Auto».
-      if (ok || ask !== wbAsk.current || cam.track() !== t) return;
-      // A failed preset leaves the camera on automatic (setWhiteBalance puts it back): say so, as it is.
+      if (result === 'applied' || result === 'superseded' || ask !== wbAsk.current || cam.track() !== t) return;
       setImage((s) => ({ ...s, kelvin: null }));
-      if (kelvin != null) setNotice('La cámara no ha aplicado ese color de la luz: sigue en automático.');
+      if (result === 'auto') {
+        // A failed preset left the camera on automatic (checked): say so, as it is.
+        if (kelvin != null) setNotice('La cámara no ha aplicado ese color de la luz: sigue en automático.');
+        return;
+      }
+      // P48 · `stuck`: the browser keeps a manual colour while this camera stays open. Reopening it is the sure
+      // way back to automatic; never under a take (then once it is over).
+      if (cameraBusy.current()) {
+        wbReopenLater.current = true;
+        setNotice('Este móvil no deja volver al color automático en plena toma: volverá al terminar.');
+      } else reopenForColour();
     });
   }
+  /**
+   * P48 · Back to automatic colour by opening the camera afresh. The light («Luz») and the flash are applied again
+   * once it is back; a hold (focus and light fixed) can't be, and the notice says so.
+   */
+  function reopenForColour() {
+    const { exposure, locked } = imageRef.current;
+    colourReopen.current = { exposure, torch: view.torch };
+    setNotice(
+      locked
+        ? 'Vuelvo al color automático: la cámara se reinicia un momento y el enfoque fijo se suelta.'
+        : 'Vuelvo al color automático: la cámara se reinicia un momento.',
+    );
+    cam.reopen();
+  }
+  // The camera is back after that reopen: the same light as before, on this camera's steps, and the flash on again.
+  useEffect(() => {
+    const keep = colourReopen.current;
+    if (!keep || view.status === 'starting') return;
+    colourReopen.current = null;
+    if (view.status !== 'ready') return;
+    // Opening afresh turns the flash off: on again, or said when this camera can't.
+    const flashLost = keep.torch && !view.torchAvailable;
+    if (keep.torch && view.torchAvailable && !view.torch)
+      void cam.toggleTorch().then((ok) => {
+        if (!ok) setNotice('La cámara se ha reiniciado: el flash se ha apagado.');
+      });
+    const ev = trackInfo?.exposureCompensation;
+    const light = Math.abs(keep.exposure) >= 0.001;
+    if (light && ev) {
+      const value = snapExposure(keep.exposure, ev);
+      setImage((s) => ({ ...s, exposure: value }));
+      setExposureCompensation(cam.track(), value);
+    }
+    const lost = [light && !ev ? 'la luz vuelve a 0' : null, flashLost ? 'el flash se ha apagado' : null].filter(Boolean);
+    if (lost.length) setNotice(`La cámara se ha reiniciado: ${lost.join(' y ')}.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.status, trackInfo]);
+  // P48 · Automatic colour is owed (it stuck during a take): the camera reopens as soon as the recorder is idle.
+  useEffect(() => {
+    if (!wbReopenLater.current || phase !== 'idle' || clap != null || view.status !== 'ready') return;
+    if (cameraBusy.current()) return;
+    wbReopenLater.current = false;
+    reopenForColour();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, clap, view.status]);
   function changeLock(locked: boolean) {
     if (!trackInfo) return;
     stopBench();
@@ -867,6 +957,12 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   // row steps down (60 → 30, or a smaller size) and says so; the camera reopens lighter on its own (the cap is part
   // of its mode). A first «too slow» is only said; the next opening's rehearsal (or a long take) confirms it or not.
   const clapArmed = clap != null;
+  // P49 · Anything that covers the preview (a panel, a dialog, the armed clap, the review) sends the quick light bar
+  // away for good: it only comes back with a new tap, placed for that tap.
+  const quickCovered = imageOpen || infoOpen || settingsOpen || startListOpen || confirm != null || clapArmed || phase === 'review';
+  useEffect(() => {
+    if (quickCovered) setQuickLight(null);
+  }, [quickCovered]);
   useEffect(() => {
     if (open) benchTried.current = new Set();
   }, [open]);
@@ -1068,6 +1164,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       lagMs,
       restFps: countdown?.fps ?? null,
       missed: m?.delivered ? null : (counted?.missed ?? null),
+      sync: takeSync.current,
     });
     // P19 · A take whose preview couldn't keep up (frames lost, or a delay that grew): this phone doesn't keep up
     // with the mode. Confirmed by a second measurement, the next takes step down by themselves (60 → 30, or a
@@ -1180,9 +1277,25 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
         // The song's sound if it's still there, else the microphone; say so when there's neither.
         const audio = [songTrack.current, micTrack.current].find((t) => t?.readyState === 'live') ?? null;
         if (!audio && sound !== 'none') setNotice('No llega el sonido: esta toma se graba sin audio.');
-        const tracks = [...videoTracks, ...(audio ? [audio] : [])];
         const target = sink.current;
         if (!target) throw new Error('no sink');
+        // 43 · The recorded sound is delayed to where the dancer heard it (speaker + camera latency); the preview
+        // and what plays are untouched. `audio` stays the one watched for going away.
+        const how = { sound: audio === songTrack.current ? 'song' : 'mic', path: direct.current ? 'direct' : 'canvas' } as const;
+        const synced = audio
+          ? syncTakeAudio(audio, {
+              ...how,
+              fps: captureFps(),
+              drawLagMs: direct.current ? null : compositor.drawLagMs(),
+              trimMs: settings.syncTrimMs,
+            })
+          : null;
+        syncedSound.current = synced;
+        takeSync.current = synced
+          ? { ...synced.plan, ...how, applied: synced.applied, songAtRoll: usePlayer.getState().engine?.getCurrentTime() ?? null }
+          : null;
+        if (takeSync.current) target.setSync(takeSync.current);
+        const tracks = [...videoTracks, ...(synced ? [synced.track] : [])];
         // A format the browser claims but whose encoder refuses to start: remember it and try the next one.
         let rec: TakeRecorder | null = null;
         for (let attempt = 0; attempt < 6 && !rec; attempt++) {
@@ -1215,7 +1328,14 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
             setNotice('Se ha perdido el sonido: la grabación está en pausa.');
           };
           audio.addEventListener('ended', onEnded);
-          unwatchSound.current = () => audio.removeEventListener('ended', onEnded);
+          soundLost.current = onEnded;
+          // 43 · …or the context that delays it interrupted (iOS: a call, Siri) or the delayed copy ended, and it
+          // didn't come back within a moment.
+          const unwatchSync = synced?.watch(onEnded) ?? (() => undefined);
+          unwatchSound.current = () => {
+            audio.removeEventListener('ended', onEnded);
+            unwatchSync();
+          };
         }
       } catch {
         recorder.current = null;
@@ -1229,6 +1349,9 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       setNotice('La grabación se ha cortado. Te dejo lo grabado hasta ahí.');
       void finish();
       return;
+    } else {
+      // 43 · Its sound may have stopped while paused (iOS: a call): woken again, or the take pauses with the notice.
+      syncedSound.current?.ensure(() => soundLost.current());
     }
     meter.current?.drawn.run();
     meter.current?.delivered?.run();
@@ -1295,6 +1418,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const countIn = (back: 'idle' | 'paused') => {
     countFrom.current = back;
     unlockAudio();
+    primeSyncAudio(songTrack.current, micTrack.current);
     // P19 review · A new take's countdown measures the camera as it is right now (same light, nothing encoding).
     if (back === 'idle') {
       countRest.current = null;
@@ -1488,6 +1612,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setImageOpen(false);
     setInfoOpen(false);
     unlockAudio();
+    primeSyncAudio(songTrack.current, micTrack.current);
     // Made inside the tap: Safari only lets audio start in one.
     const ctx = createListeningContext();
     if (!ctx) {
@@ -1760,7 +1885,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
 
   /**
    * P22 · A start picked from the list. A clip becomes the A–B section (without looping: the take ends at B), and
-   * only that: the take keeps the studio's speed, mirror, zoom and follow (a clip saved at 0,75× would otherwise
+   * only that: the take keeps the studio's speed, mirror and zoom (a clip saved at 0,75× would otherwise
    * record at 0,75×, mirrored, and move the studio's zoom under the recorder). The studio gets its own A–B and clip
    * back on closing.
    */
@@ -2088,6 +2213,22 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
               </span>
             )}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* P49 · Quick light beside the focus ring: the panel's «Luz», same value, same way to the camera. */}
+      <AnimatePresence>
+        {quickLight && trackInfo?.exposureCompensation && showCamera && camReady && !imageOpen && !confirm && clap == null && (
+          <QuickExposure
+            key="quick-light"
+            box={quickLight}
+            range={trackInfo.exposureCompensation}
+            value={image.exposure}
+            onAdjustStart={stopBench}
+            onPreview={(v) => setExposureCompensation(cam.track(), v)}
+            onCommit={changeExposure}
+            onDismiss={() => setQuickLight(null)}
+          />
         )}
       </AnimatePresence>
 
@@ -2703,8 +2844,8 @@ function useSongProgressPaint(span: Span | null, paint: (progress: number) => vo
 /** P27 · What the «Imagen» stick shows under its name. */
 function imageSummary(s: ImageState): string {
   const parts: string[] = [];
-  if (Math.abs(s.exposure) > 0.001) parts.push(`Luz ${s.exposure > 0 ? '+' : ''}${String(Math.round(s.exposure * 10) / 10).replace('.', ',')}`);
-  if (s.kelvin != null) parts.push(`${s.kelvin} K`);
+  if (Math.abs(s.exposure) > 0.001) parts.push(`Luz ${formatExposure(s.exposure)}`);
+  if (s.kelvin != null) parts.push(presetLabel(s.kelvin));
   if (s.locked) parts.push('Fijo');
   return parts.length ? parts.join(' · ') : 'Automática';
 }
@@ -2763,6 +2904,7 @@ function Shutter({
   return (
     <motion.button
       type="button"
+      data-record-shutter
       aria-label={label}
       disabled={disabled || phase === 'finishing'}
       onClick={onPress}

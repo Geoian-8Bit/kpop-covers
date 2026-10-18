@@ -10,6 +10,7 @@ import {
   isDeviceId,
   newDeviceId,
   takeRow,
+  takeSongZero,
   withWhere,
   type SaveTakeInput,
   type TakeItem,
@@ -196,6 +197,10 @@ export function useSaveTake() {
           fileName: vars.fileName ?? (file instanceof File ? file.name : null),
           // When it was recorded, not when it was saved (a recovered take may be days old).
           recordedAt: vars.recordedAt ?? meta.startedAt,
+          // 43 · Where its second 0 really is in the song (the roll moment, minus the sound delay), worked out once
+          // here from this phone's record: the row carries it, so every phone reviews it alike. `vars.songStart` is the
+          // planned start, never an already corrected one.
+          songStart: takeSongZero({ songStart: vars.songStart, speed: vars.speed }, meta.sync),
         },
         deviceId(),
       );

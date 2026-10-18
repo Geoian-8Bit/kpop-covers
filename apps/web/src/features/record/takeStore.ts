@@ -36,6 +36,28 @@ export interface TakeMeta {
   kept?: boolean;
   /** What the take was synced to (F3/F5): kept here so a recovered take can still be saved to «Tomas». */
   timing?: TakeTimingMeta;
+  /** 43 · How the take's sound was shifted against its picture (diagnosis only; the file already carries it). */
+  sync?: TakeSyncMeta;
+}
+
+/**
+ * 43 · The sound delay applied when recording (syncRules.ts) and what it was made of, in ms. `applied` false: it
+ * was planned but the take recorded its sound undelayed (the delay line couldn't run).
+ */
+export interface TakeSyncMeta {
+  delayMs: number;
+  applied: boolean;
+  sound: 'song' | 'mic';
+  path: 'direct' | 'canvas';
+  speakerMs: number;
+  speakerMeasured: boolean;
+  cameraMs: number;
+  drawMs: number;
+  drawMeasured: boolean;
+  hopMs: number;
+  trimMs: number;
+  /** The song's own second when the take really started rolling (the song starts a moment before the camera). */
+  songAtRoll: number | null;
 }
 
 /** The song moment a take starts at, its end (null: to the end), speed, mirror and clip. */
@@ -59,6 +81,8 @@ export interface TakeSink {
   failed(): boolean;
   /** The type the recorder really uses (known once it started). */
   setMimeType(type: string): void;
+  /** 43 · Remember the sound delay applied to this take (diagnosis; nothing reads it to play the take). */
+  setSync(sync: TakeSyncMeta): void;
   /** Forget the take: deletes the disk copy and lets go of its lock. */
   discard(): Promise<void>;
 }
@@ -141,6 +165,29 @@ async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
     noSpace: Boolean(raw.noSpace),
     kept: Boolean(raw.kept),
     timing: readTiming(raw.timing),
+    sync: readSync(raw.sync),
+  };
+}
+
+const num = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+
+function readSync(raw: unknown): TakeSyncMeta | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const s = raw as Partial<TakeSyncMeta>;
+  if (typeof s.delayMs !== 'number' || !Number.isFinite(s.delayMs)) return undefined;
+  return {
+    delayMs: s.delayMs,
+    applied: Boolean(s.applied),
+    sound: s.sound === 'mic' ? 'mic' : 'song',
+    path: s.path === 'canvas' ? 'canvas' : 'direct',
+    speakerMs: num(s.speakerMs),
+    speakerMeasured: Boolean(s.speakerMeasured),
+    cameraMs: num(s.cameraMs),
+    drawMs: num(s.drawMs),
+    drawMeasured: Boolean(s.drawMeasured),
+    hopMs: num(s.hopMs),
+    trimMs: num(s.trimMs),
+    songAtRoll: typeof s.songAtRoll === 'number' && Number.isFinite(s.songAtRoll) ? s.songAtRoll : null,
   };
 }
 
@@ -214,6 +261,7 @@ function memorySink(id: string): TakeSink {
     finish: (type) => Promise.resolve(new Blob(pieces, { type })),
     failed: () => false,
     setMimeType: () => undefined,
+    setSync: () => undefined,
     discard: () => {
       pieces.length = 0;
       return Promise.resolve();
@@ -291,6 +339,11 @@ export async function createTakeSink(
       if (!type || type === full.mimeType) return;
       full.mimeType = type;
       void patchMeta(dir, id, () => ({ mimeType: type })).catch(() => undefined);
+    },
+    setSync(sync) {
+      if (gone) return;
+      full.sync = sync;
+      void patchMeta(dir, id, () => ({ sync })).catch(() => undefined);
     },
     async discard() {
       gone = true;

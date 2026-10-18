@@ -1,18 +1,10 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useState,
-  type ComponentType,
-  type LazyExoticComponent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { MapPin } from 'lucide-react';
-import { useDesignVariant } from '@/features/lab/labState';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
-import { instant, type LongProps } from './countdownBand';
+import { instant } from './countdownBand';
+import { Tsuki } from './CountdownTsuki';
 import {
   countdown,
   countdownDetail,
@@ -21,19 +13,16 @@ import {
   eventDateLabel,
   ignitesFirstLantern,
   litLanterns,
-  LONG_COUNTDOWN_MOMENT,
-  longVariantOf,
   type Countdown,
   type CountdownStage,
-  type LongCountdownVariant,
 } from './eventRules';
 
 /**
  * F16 · The countdown to an event. Two stages (`countdownStage`):
- *  - seven or more days left: the long design chosen in the lab (`countdown-long`, point 39): Koyomi (a tear-off
- *    calendar), Sunadokei (an hourglass running since the event was created) or Tsuki (the moon filling up);
+ *  - seven or more days left: Tsuki, the phases of the moon filling up until it is full a week before (point 39,
+ *    chosen in the design lab in point 40);
  *  - the last seven days: Chōchin, seven paper lanterns, one lit per day and all of them on the day.
- * The switch shows as the first lantern lighting up. Every design draws in the same 280×66 band above the words
+ * The switch shows as the first lantern lighting up. Both designs draw in the same 280×66 band above the words
  * (beside them from `sm`), so the banner keeps its height whatever the design (P8: nothing below moves). The
  * drawings are decoration: the words carry it all («Faltan 12 días», hours and minutes the last day, «Hoy»…).
  */
@@ -41,20 +30,14 @@ import {
 export interface EventCountdownProps {
   name: string;
   startsAt: string;
-  /** When the event was created: Sunadokei's sand and Koyomi's torn pages start there. */
-  createdAt: string;
   place: string | null;
   now: Date;
   /** Smaller words (the home banner on a phone). */
   compact?: boolean;
-  /** The lab's demos show one long design whatever this device has chosen. */
-  longVariant?: LongCountdownVariant;
   className?: string;
 }
 
-export function EventCountdown({ name, startsAt, createdAt, place, now, compact, longVariant, className }: EventCountdownProps) {
-  const chosen = longVariantOf(useDesignVariant(LONG_COUNTDOWN_MOMENT));
-  const variant = longVariant ?? chosen;
+export function EventCountdown({ name, startsAt, place, now, compact, className }: EventCountdownProps) {
   const c = countdown(startsAt, now);
   const detail = countdownDetail(c);
   const headline = countdownHeadline(c);
@@ -67,9 +50,9 @@ export function EventCountdown({ name, startsAt, createdAt, place, now, compact,
   return (
     // The band hangs across the top on a phone, beside the words from `sm`.
     <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5', className)}>
-      <Band id={stage === 'long' ? `long-${variant}` : 'lanterns'}>
+      <Band id={stage}>
         {stage === 'long' ? (
-          <LongVisual variant={variant} c={c} startsAt={startsAt} createdAt={createdAt} now={now} />
+          <Tsuki c={c} />
         ) : (
           <Chochin c={c} ignite={seen.ignite} />
         )}
@@ -101,7 +84,7 @@ export function EventCountdown({ name, startsAt, createdAt, place, now, compact,
 }
 
 /**
- * The fixed 280×66 frame every design draws in (its size never depends on the design). A change of design
+ * The fixed 280×66 frame both designs draw in (its size never depends on the design). The switch to the lanterns
  * cross-fades; nothing animates on the first paint, and with reduced motion the swap is instant.
  */
 function Band({ id, children }: { id: string; children: ReactNode }) {
@@ -121,29 +104,6 @@ function Band({ id, children }: { id: string; children: ReactNode }) {
         </motion.div>
       </AnimatePresence>
     </div>
-  );
-}
-
-/**
- * The three long designs, one chunk each: only the one chosen on this device loads (they're in the precache, so
- * offline too). While it loads the band stays empty at its fixed size: nothing below moves (P8). A chunk that
- * can't load (a deploy swapped it mid-visit) leaves the band empty: it is decoration, the words say it all.
- */
-const NoDesign: ComponentType<LongProps> = () => null;
-const longDesign = (load: () => Promise<ComponentType<LongProps>>) =>
-  lazy(() => load().then((Design) => ({ default: Design }), () => ({ default: NoDesign })));
-const LONG: Record<LongCountdownVariant, LazyExoticComponent<ComponentType<LongProps>>> = {
-  koyomi: longDesign(() => import('./CountdownKoyomi').then((m) => m.Koyomi)),
-  sunadokei: longDesign(() => import('./CountdownSunadokei').then((m) => m.Sunadokei)),
-  tsuki: longDesign(() => import('./CountdownTsuki').then((m) => m.Tsuki)),
-};
-
-function LongVisual({ variant, ...props }: LongProps & { variant: LongCountdownVariant }) {
-  const Design = LONG[variant] ?? LONG.koyomi;
-  return (
-    <Suspense fallback={null}>
-      <Design {...props} />
-    </Suspense>
   );
 }
 
