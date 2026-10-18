@@ -142,7 +142,7 @@ describe('the long countdown and the switch to the lanterns', () => {
     expect(ignitesFirstLantern(six, 'lanterns')).toBe(false);
     const five = countdown(start, at(2026, 12, 7, 9));
     expect(ignitesFirstLantern(five, null)).toBe(false);
-    expect(ignitesFirstLantern(five, 'long')).toBe(true); // the lab's slider can jump several days
+    expect(ignitesFirstLantern(five, 'long')).toBe(true); // time can jump several days between two looks
     expect(ignitesFirstLantern(countdown(start, at(2026, 12, 1)), 'long')).toBe(false);
   });
 
