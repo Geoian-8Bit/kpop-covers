@@ -139,6 +139,15 @@ export function App() {
                             </Suspense>
                           }
                         />
+                        {/* REQ-06 · The formation editor is the studio itself (same player and store) in another layout. */}
+                        <Route
+                          path="/v/:videoId/formaciones/:planId"
+                          element={
+                            <Suspense fallback={<Splash />}>
+                              <StudioPage />
+                            </Suspense>
+                          }
+                        />
                         <Route
                           path="/ajustes"
                           element={

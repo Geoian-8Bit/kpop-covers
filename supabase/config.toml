@@ -22,3 +22,7 @@ additional_redirect_urls = ["http://localhost:5173"]
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+
+# REQ-05 · Calendar notices: called by a Database Webhook with its own secret header (x-webhook-secret), not a user JWT.
+[functions.notify-calendar]
+verify_jwt = false

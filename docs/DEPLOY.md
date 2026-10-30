@@ -64,6 +64,75 @@ La app enseña «Versión N · fecha» (menú «⋯» y Ajustes) y «Buscar actu
   números que comparar. Se arregla desplegando otra vez con `pnpm deploy:prod`.
 - (No se llama `pnpm deploy` porque ese nombre es un comando propio de pnpm.)
 
+## Avisos del calendario (Web Push, REQ-05)
+
+Cuando alguien cambia el calendario (ausencias, ensayos semanales, cancelaciones, ensayos extra) la base de datos
+escribe una fila en `public.calendar_changes` con el texto del aviso. Con eso ya funciona el **punto de dentro de la
+app** (carta 暦, botón del menú rápido y barra lateral). El **aviso en el móvil** necesita además la Edge Function
+`notify-calendar`, sus secretos, un Database Webhook y la clave pública en Vercel. Mientras falte cualquiera de esas
+piezas la app funciona igual: sin `VITE_VAPID_PUBLIC_KEY` el interruptor «Avisos» de Ajustes no aparece, y sin la
+función o el webhook simplemente no llega ningún aviso.
+
+Orden (cada paso deja la app funcionando):
+
+1. **Migración.** Aplicar `supabase/migrations/20261030120000_calendar_push.sql` (después de
+   `20261030110000_calendar.sql`), comprobar los advisors y ejecutar `supabase/tests/calendar_push_checks.sql` en el
+   SQL editor (termina en `rollback`). Desde aquí ya funciona el punto dentro de la app.
+2. **Claves VAPID** (una sola vez; guárdalas en tu gestor de contraseñas):
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+   Da una clave pública y una privada. La privada no va nunca al repositorio ni a Vercel.
+3. **Secretos de la función** (Supabase CLI con sesión iniciada; `PUSH_WEBHOOK_SECRET` es una cadena larga al azar,
+   por ejemplo `openssl rand -hex 32`):
+
+   ```bash
+   supabase secrets set --project-ref pevbjaowyctqqldvzovz \
+     VAPID_PUBLIC_KEY=<clave pública> \
+     VAPID_PRIVATE_KEY=<clave privada> \
+     VAPID_SUBJECT=mailto:<correo del responsable> \
+     PUSH_WEBHOOK_SECRET=<secreto al azar>
+   ```
+
+   `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` los pone Supabase en todas las funciones: no hay que crearlos.
+4. **Desplegar la función** (desde la raíz del repositorio):
+
+   ```bash
+   supabase functions deploy notify-calendar --project-ref pevbjaowyctqqldvzovz --no-verify-jwt
+   ```
+
+   `--no-verify-jwt` porque la llama el webhook con su propio secreto, no un usuario (también está en
+   `supabase/config.toml`).
+5. **Database Webhook** (Dashboard → Database → Webhooks → Create a new hook):
+   - Nombre `notify-calendar`, tabla `public.calendar_changes`, evento **Insert** (solo ese).
+   - Tipo *HTTP Request*, método `POST`, URL `https://pevbjaowyctqqldvzovz.supabase.co/functions/v1/notify-calendar`.
+   - Cabeceras: `Content-Type: application/json` y `x-webhook-secret: <el mismo PUSH_WEBHOOK_SECRET>`.
+   - Timeout 5000 ms.
+6. **Vercel:** añadir `VITE_VAPID_PUBLIC_KEY=<clave pública>` (Production + Preview) y desplegar con
+   `pnpm deploy:prod`. Desde ese despliegue aparece el interruptor «Avisos» en Ajustes y la sugerencia tras elegir
+   «¿Quién eres?» por primera vez.
+
+   ```bash
+   vercel env add VITE_VAPID_PUBLIC_KEY
+   ```
+
+7. **Prueba real en el móvil** (no se puede probar en local): en Ajustes, activar «Avisos» en dos móviles con
+   personas distintas en «¿Quién eres?». Marcar una ausencia futura en uno: al otro le llega «Calendario · Ana no
+   puede el …»; al tocarlo se abre el calendario en ese día. En el iPhone solo funciona con la app añadida a la
+   pantalla de inicio (iOS 16.4 o posterior). En Android el punto del icono lo pone el sistema con la notificación.
+   Si no llega nada: Dashboard → Edge Functions → `notify-calendar` → Logs (401 = secreto del webhook distinto;
+   500 `vapid_not_configured` = faltan secretos), y Database → Webhooks para ver los envíos.
+
+Notas:
+
+- Las suscripciones (`public.push_subscriptions`) no las puede leer `anon`: solo las RPC
+  `save_push_subscription` / `delete_push_subscription` y la función con la service role. Las que caducan (404/410)
+  las borra la función.
+- `calendar_changes` guarda 120 días; lo más antiguo se borra solo.
+- Cambiar las claves VAPID invalida todas las suscripciones: cada persona tendrá que volver a activar «Avisos».
+
 ## Argus (retirado)
 
 El proyecto Supabase **Argus** está **pausado** (no borrado) y su proyecto de Vercel también (Settings → Resume para

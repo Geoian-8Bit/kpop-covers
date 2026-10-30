@@ -17,8 +17,10 @@ import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from 
 import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coverscape/shared';
 import type { Tables } from '@coverscape/shared';
-import type { Absence, RehearsalException, RehearsalRule } from '@coverscape/shared';
+import type { Absence, CalendarChange, RehearsalException, RehearsalRule } from '@coverscape/shared';
 import { isMemberColor } from '@coverscape/shared';
+import type { Formation, FormationPlan, FormationPlanMember, FormationPositions, Json } from '@coverscape/shared';
+import { fitPositions, formationError, planNameError, roundTime, stageSizeError } from '@/features/formations/formationRules';
 import { drawOrder } from '@/features/bags/drawRules';
 import {
   ABSENCE_MAX_SPAN,
@@ -32,6 +34,17 @@ import {
   minutes,
 } from '@/features/calendar/calendarRules';
 import { ruleRunsOn } from '@/features/calendar/rehearsalRules';
+import {
+  absenceEditedText,
+  absenceRemovedText,
+  absenceText,
+  cancelText,
+  extraRemovedText,
+  extraText,
+  nextWeekday,
+  ruleText,
+  uncancelText,
+} from '@/features/calendar/calendarFeedRules';
 import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 import { cutChars, songYoutubeId, youtubeSongRow } from '@/features/bags/songRules';
 
@@ -2424,16 +2437,19 @@ export interface CalendarBackend {
   /** Absences touching the days from `from` to `to` (both included). */
   listAbsences(from: string, to: string): Promise<Absence[]>;
   insertAbsence(row: NewAbsence): Promise<Absence>;
-  updateAbsence(id: string, patch: AbsencePatch): Promise<Absence>;
-  deleteAbsence(id: string): Promise<void>;
+  /** `author`: who makes the change (REQ-05: their own devices aren't notified); null when the device has no name. */
+  updateAbsence(id: string, patch: AbsencePatch, author: string | null): Promise<Absence>;
+  deleteAbsence(id: string, author: string | null): Promise<void>;
   /** Every rule (ended ones too: past weeks are drawn from them). */
   listRehearsalRules(): Promise<RehearsalRule[]>;
-  insertRehearsalRule(row: NewRehearsalRule): Promise<RehearsalRule>;
-  editRehearsalRule(id: string, row: NewRehearsalRule): Promise<RehearsalRule>;
-  endRehearsalRule(id: string): Promise<void>;
+  insertRehearsalRule(row: NewRehearsalRule, author: string | null): Promise<RehearsalRule>;
+  editRehearsalRule(id: string, row: NewRehearsalRule, author: string | null): Promise<RehearsalRule>;
+  endRehearsalRule(id: string, author: string | null): Promise<void>;
   listRehearsalExceptions(from: string, to: string): Promise<RehearsalException[]>;
-  insertRehearsalException(row: NewRehearsalException): Promise<RehearsalException>;
-  deleteRehearsalException(id: string): Promise<void>;
+  insertRehearsalException(row: NewRehearsalException, author: string | null): Promise<RehearsalException>;
+  deleteRehearsalException(id: string, author: string | null): Promise<void>;
+  /** REQ-05 · The newest changes of the calendar after `since` (ISO), newest first (at most 50). */
+  listCalendarChanges(since: string): Promise<CalendarChange[]>;
 }
 
 const supabaseCalendar: CalendarBackend = {
@@ -2461,13 +2477,19 @@ const supabaseCalendar: CalendarBackend = {
     if (error) throw error;
     return data as Absence;
   },
-  async updateAbsence(id, patch) {
-    const { data, error } = await supabase.from('absences').update(patch).eq('id', id).select().single();
+  async updateAbsence(id, patch, author) {
+    const { data, error } = await supabase
+      .from('absences')
+      .update({ ...patch, changed_by_member: author })
+      .eq('id', id)
+      .select()
+      .single();
     if (error) throw error;
     return data as Absence;
   },
-  async deleteAbsence(id) {
-    const { error } = await supabase.from('absences').delete().eq('id', id);
+  async deleteAbsence(id, author) {
+    // Archives saying who did it (REQ-05), in one request.
+    const { error } = await supabase.rpc('archive_calendar_row', { p_table: 'absences', p_id: id, p_member: author });
     if (error) throw error;
   },
   async listRehearsalRules() {
@@ -2475,20 +2497,30 @@ const supabaseCalendar: CalendarBackend = {
     if (error) throw error;
     return data;
   },
-  async insertRehearsalRule(row) {
-    const { data, error } = await supabase.from('rehearsal_rules').insert(row).select().single();
+  async insertRehearsalRule(row, author) {
+    const { data, error } = await supabase
+      .from('rehearsal_rules')
+      .insert({ ...row, changed_by_member: author })
+      .select()
+      .single();
     if (error) throw error;
     return data;
   },
-  async editRehearsalRule(id, row) {
+  async editRehearsalRule(id, row, author) {
     const { data, error } = await supabase
-      .rpc('edit_rehearsal_rule', { p_rule: id, p_weekday: row.weekday, p_starts: row.starts_at, p_ends: row.ends_at })
+      .rpc('edit_rehearsal_rule', {
+        p_rule: id,
+        p_weekday: row.weekday,
+        p_starts: row.starts_at,
+        p_ends: row.ends_at,
+        p_member: author,
+      })
       .single();
     if (error) throw error;
     return data as RehearsalRule;
   },
-  async endRehearsalRule(id) {
-    const { error } = await supabase.rpc('end_rehearsal_rule', { p_rule: id });
+  async endRehearsalRule(id, author) {
+    const { error } = await supabase.rpc('end_rehearsal_rule', { p_rule: id, p_member: author });
     if (error) throw error;
   },
   async listRehearsalExceptions(from, to) {
@@ -2501,15 +2533,29 @@ const supabaseCalendar: CalendarBackend = {
     if (error) throw error;
     return data as RehearsalException[];
   },
-  async insertRehearsalException(row) {
-    const insert: TablesInsert<'rehearsal_exceptions'> = { ...row };
+  async insertRehearsalException(row, author) {
+    const insert: TablesInsert<'rehearsal_exceptions'> = { ...row, changed_by_member: author };
     const { data, error } = await supabase.from('rehearsal_exceptions').insert(insert).select().single();
     if (error) throw error;
     return data as RehearsalException;
   },
-  async deleteRehearsalException(id) {
-    const { error } = await supabase.from('rehearsal_exceptions').delete().eq('id', id);
+  async deleteRehearsalException(id, author) {
+    const { error } = await supabase.rpc('archive_calendar_row', {
+      p_table: 'rehearsal_exceptions',
+      p_id: id,
+      p_member: author,
+    });
     if (error) throw error;
+  },
+  async listCalendarChanges(since) {
+    const { data, error } = await supabase
+      .from('calendar_changes')
+      .select('*')
+      .gt('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return data;
   },
 };
 
@@ -2520,7 +2566,31 @@ type CalendarDemoDb = DemoDb & {
   absences?: Absence[];
   rehearsal_rules?: RehearsalRule[];
   rehearsal_exceptions?: RehearsalException[];
+  calendar_changes?: CalendarChange[];
+  push_subscriptions?: { endpoint: string; member_id: string | null }[];
 };
+
+/** REQ-05 · The demo twin of the database's feed triggers: a change that affects today or later gets its text. */
+function postDemoChange(
+  db: CalendarDemoDb,
+  change: { author: string | null; subject?: string | null; date: string; body: string },
+) {
+  const known = (id: string | null | undefined) => (id && (db.members ?? []).some((m) => m.id === id) ? id : null);
+  (db.calendar_changes ??= []).push({
+    id: crypto.randomUUID(),
+    crew_id: db.crews[0]!.id,
+    author_member: known(change.author),
+    subject_member: known(change.subject),
+    target_date: change.date,
+    body: change.body,
+    created_at: now(),
+  });
+  // Bounded like the server (which keeps 120 days).
+  if (db.calendar_changes.length > 200) db.calendar_changes.splice(0, db.calendar_changes.length - 200);
+}
+
+const demoMemberName = (db: CalendarDemoDb, id: string) => (db.members ?? []).find((m) => m.id === id)?.name ?? null;
+const laterOf = (a: string, b: string) => (a > b ? a : b);
 
 const checkViolation = (constraint: string, table: string) =>
   demoError(`new row for relation "${table}" violates check constraint "${constraint}"`, '23514');
@@ -2572,24 +2642,62 @@ const demoCalendar: CalendarBackend = {
         note: row.note,
         created_by_member:
           row.created_by_member && (db.members ?? []).some((m) => m.id === row.created_by_member) ? row.created_by_member : null,
+        changed_by_member: null,
         created_at: now(),
         archived_at: null,
       };
       (db.absences ??= []).push(absence);
+      const today = madridToday(new Date());
+      if (absence.ends_on >= today) {
+        postDemoChange(db, {
+          author: absence.created_by_member,
+          subject: absence.member_id,
+          date: laterOf(absence.starts_on, today),
+          body: absenceText(demoMemberName(db, absence.member_id), absence.kind, absence.at_time, absence.starts_on, absence.ends_on),
+        });
+      }
       return absence;
     }),
-  updateAbsence: async (id, patch) =>
+  updateAbsence: async (id, patch, author) =>
     mutate((raw) => {
-      const absence = ((raw as CalendarDemoDb).absences ?? []).find((a) => a.id === id && isLive(a));
+      const db = raw as CalendarDemoDb;
+      const absence = (db.absences ?? []).find((a) => a.id === id && isLive(a));
       if (!absence) throw demoError('PGRST116 0 rows');
       checkDemoAbsence(patch);
-      Object.assign(absence, { ...patch, at_time: patch.at_time ? demoTime(patch.at_time) : null });
+      const before = { ...absence };
+      Object.assign(absence, { ...patch, at_time: patch.at_time ? demoTime(patch.at_time) : null, changed_by_member: author });
+      const today = madridToday(new Date());
+      const moved =
+        before.starts_on !== absence.starts_on ||
+        before.ends_on !== absence.ends_on ||
+        before.kind !== absence.kind ||
+        hhmm(before.at_time) !== hhmm(absence.at_time);
+      if (moved && (absence.ends_on >= today || before.ends_on >= today)) {
+        postDemoChange(db, {
+          author,
+          subject: absence.member_id,
+          date: absence.ends_on >= today ? laterOf(absence.starts_on, today) : laterOf(before.starts_on, today),
+          body: absenceEditedText(demoMemberName(db, absence.member_id), absence.kind, absence.at_time, absence.starts_on, absence.ends_on),
+        });
+      }
       return absence;
     }),
-  deleteAbsence: async (id) =>
+  deleteAbsence: async (id, author) =>
     mutate((raw) => {
-      const absence = ((raw as CalendarDemoDb).absences ?? []).find((a) => a.id === id);
-      if (absence && isLive(absence)) absence.archived_at = now();
+      const db = raw as CalendarDemoDb;
+      const absence = (db.absences ?? []).find((a) => a.id === id);
+      if (!absence || !isLive(absence)) return;
+      absence.archived_at = now();
+      absence.changed_by_member = author;
+      const today = madridToday(new Date());
+      if (absence.ends_on >= today) {
+        postDemoChange(db, {
+          author,
+          subject: absence.member_id,
+          date: laterOf(absence.starts_on, today),
+          body: absenceRemovedText(demoMemberName(db, absence.member_id), absence.starts_on, absence.ends_on),
+        });
+      }
     }),
   listRehearsalRules: () =>
     query((raw) =>
@@ -2597,7 +2705,7 @@ const demoCalendar: CalendarBackend = {
         .filter(isLive)
         .sort((a, b) => a.weekday - b.weekday || a.starts_at.localeCompare(b.starts_at)),
     ),
-  insertRehearsalRule: async (row) =>
+  insertRehearsalRule: async (row, author) =>
     mutate((raw) => {
       const db = raw as CalendarDemoDb;
       if (!Number.isInteger(row.weekday) || row.weekday < 1 || row.weekday > 7) {
@@ -2612,13 +2720,16 @@ const demoCalendar: CalendarBackend = {
         ends_at: demoTime(row.ends_at),
         valid_from: madridToday(new Date()),
         valid_until: null,
+        changed_by_member: author,
         created_at: now(),
         archived_at: null,
       };
       (db.rehearsal_rules ??= []).push(rule);
+      const from = nextWeekday(rule.valid_from, rule.weekday);
+      postDemoChange(db, { author, date: from, body: ruleText(rule.weekday, rule.starts_at, rule.ends_at, from, false) });
       return rule;
     }),
-  editRehearsalRule: async (id, row) =>
+  editRehearsalRule: async (id, row, author) =>
     mutate((raw) => {
       const db = raw as CalendarDemoDb;
       const today = madridToday(new Date());
@@ -2634,10 +2745,14 @@ const demoCalendar: CalendarBackend = {
         ends_at: demoTime(row.ends_at),
         valid_from: today,
         valid_until: null,
+        changed_by_member: author,
         created_at: now(),
         archived_at: null,
       };
       db.rehearsal_rules!.push(rule);
+      // Only the new rule speaks (as in edit_rehearsal_rule).
+      const from = nextWeekday(today, rule.weekday);
+      postDemoChange(db, { author, date: from, body: ruleText(rule.weekday, rule.starts_at, rule.ends_at, from, false) });
       if (row.weekday === old.weekday) {
         for (const e of db.rehearsal_exceptions ?? []) {
           if (e.rule_id === old.id && e.kind === 'cancel' && e.on_date >= today && isLive(e)) e.rule_id = rule.id;
@@ -2645,12 +2760,16 @@ const demoCalendar: CalendarBackend = {
       }
       return rule;
     }),
-  endRehearsalRule: async (id) =>
+  endRehearsalRule: async (id, author) =>
     mutate((raw) => {
+      const db = raw as CalendarDemoDb;
       const today = madridToday(new Date());
-      const rule = liveDemoRule(raw as CalendarDemoDb, id, today);
+      const rule = liveDemoRule(db, id, today);
       if (!rule) throw demoError('rehearsal_rule_not_found');
       rule.valid_until = addDays(today, -1);
+      rule.changed_by_member = author;
+      const from = nextWeekday(laterOf(rule.valid_from, today), rule.weekday);
+      postDemoChange(db, { author, date: from, body: ruleText(rule.weekday, rule.starts_at, rule.ends_at, from, true) });
     }),
   listRehearsalExceptions: (from, to) =>
     query((raw) => {
@@ -2660,12 +2779,19 @@ const demoCalendar: CalendarBackend = {
         .filter((e) => isLive(e) && e.on_date >= from && e.on_date <= to && (e.rule_id == null || liveRules.has(e.rule_id)))
         .sort((a, b) => a.on_date.localeCompare(b.on_date));
     }),
-  insertRehearsalException: async (row) =>
+  insertRehearsalException: async (row, author) =>
     mutate((raw) => {
       const db = raw as CalendarDemoDb;
       if (!isDayKey(row.on_date)) throw demoError('invalid input syntax for type date', '22007');
       const list = (db.rehearsal_exceptions ??= []);
-      const base = { id: crypto.randomUUID(), crew_id: db.crews[0]!.id, on_date: row.on_date, created_at: now(), archived_at: null };
+      const base = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        on_date: row.on_date,
+        changed_by_member: author,
+        created_at: now(),
+        archived_at: null,
+      };
       let exception: RehearsalException;
       if (row.kind === 'cancel') {
         const rule = (db.rehearsal_rules ?? []).find((r) => r.id === row.rule_id && isLive(r));
@@ -2679,13 +2805,450 @@ const demoCalendar: CalendarBackend = {
         exception = { ...base, kind: 'extra', rule_id: null, starts_at: demoTime(row.starts_at), ends_at: demoTime(row.ends_at) };
       }
       list.push(exception);
+      if (exception.on_date >= madridToday(new Date())) {
+        postDemoChange(db, {
+          author,
+          date: exception.on_date,
+          body:
+            exception.kind === 'cancel'
+              ? cancelText(exception.on_date)
+              : extraText(exception.on_date, exception.starts_at ?? '', exception.ends_at ?? ''),
+        });
+      }
       return exception;
     }),
-  deleteRehearsalException: async (id) =>
+  deleteRehearsalException: async (id, author) =>
     mutate((raw) => {
-      const exception = ((raw as CalendarDemoDb).rehearsal_exceptions ?? []).find((e) => e.id === id);
-      if (exception && isLive(exception)) exception.archived_at = now();
+      const db = raw as CalendarDemoDb;
+      const exception = (db.rehearsal_exceptions ?? []).find((e) => e.id === id);
+      if (!exception || !isLive(exception)) return;
+      exception.archived_at = now();
+      exception.changed_by_member = author;
+      if (exception.on_date < madridToday(new Date())) return;
+      if (exception.kind === 'extra') {
+        postDemoChange(db, { author, date: exception.on_date, body: extraRemovedText(exception.on_date) });
+        return;
+      }
+      const rule = (db.rehearsal_rules ?? []).find((r) => r.id === exception.rule_id);
+      if (rule && isLive(rule) && (rule.valid_until == null || rule.valid_until >= exception.on_date)) {
+        postDemoChange(db, { author, date: exception.on_date, body: uncancelText(exception.on_date) });
+      }
     }),
+  listCalendarChanges: (since) =>
+    query((raw) =>
+      ((raw as CalendarDemoDb).calendar_changes ?? [])
+        .filter((c) => c.created_at > since)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 50),
+    ),
 };
 
 export const calendarBackend: CalendarBackend = IS_DEMO ? demoCalendar : supabaseCalendar;
+
+// ───────────────────────────── REQ-05 push subscriptions ─────────────────────────────
+
+export interface PushKeys {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/**
+ * REQ-05 · This device's Web Push subscription on the server. Write-only for the app: the table is unreadable for
+ * anon (RPCs `save_push_subscription` / `delete_push_subscription`); the Edge Function reads it to send.
+ */
+export interface PushBackend {
+  saveSubscription(keys: PushKeys, member: string | null): Promise<void>;
+  deleteSubscription(endpoint: string): Promise<void>;
+}
+
+const supabasePush: PushBackend = {
+  async saveSubscription(keys, member) {
+    const { error } = await supabase.rpc('save_push_subscription', {
+      p_endpoint: keys.endpoint,
+      p_p256dh: keys.p256dh,
+      p_auth: keys.auth,
+      p_member: member,
+    });
+    if (error) throw error;
+  },
+  async deleteSubscription(endpoint) {
+    const { error } = await supabase.rpc('delete_push_subscription', { p_endpoint: endpoint });
+    if (error) throw error;
+  },
+};
+
+const demoPush: PushBackend = {
+  saveSubscription: async (keys, member) =>
+    mutate((raw) => {
+      const list = ((raw as CalendarDemoDb).push_subscriptions ??= []);
+      const row = list.find((s) => s.endpoint === keys.endpoint);
+      if (row) row.member_id = member;
+      else list.push({ endpoint: keys.endpoint, member_id: member });
+    }),
+  deleteSubscription: async (endpoint) =>
+    mutate((raw) => {
+      const db = raw as CalendarDemoDb;
+      db.push_subscriptions = (db.push_subscriptions ?? []).filter((s) => s.endpoint !== endpoint);
+    }),
+};
+
+export const pushBackend: PushBackend = IS_DEMO ? demoPush : supabasePush;
+
+// ───────────────────────────── REQ-06 formation plans ─────────────────────────────
+
+/** A person the editor can draw: the live members plus archived ones still in a live plan (greyed out). */
+export type FormationMember = Pick<Member, 'id' | 'name' | 'color'> & { archived: boolean };
+/** A plan in the «Formaciones» list: its participants (member ids) and how many formations it has. */
+export type FormationPlanSummary = FormationPlan & { members: string[]; formationCount: number };
+export interface FormationPlanFull {
+  plan: FormationPlan;
+  members: string[];
+  formations: Formation[];
+}
+export interface NewFormationPlan {
+  video_id: string;
+  name: string;
+  members: string[];
+  stage_width: number;
+  stage_depth: number;
+}
+export type FormationPlanPatch = Partial<
+  Pick<FormationPlan, 'name' | 'stage_width' | 'stage_depth' | 'grid' | 'bpm' | 'first_beat'> & { members: string[] }
+>;
+/** What `save_formation` takes: a formation without its row bookkeeping (`id` lets the editor keep its own ids). */
+export interface FormationInput {
+  id: string;
+  at: number;
+  transition: number;
+  positions: FormationPositions;
+  note: string | null;
+}
+/** A write against the plan's revision: done (with the new revision) or refused because somebody changed the plan. */
+export type RevisionResult<T = object> = ({ ok: true; revision: number } & T) | { ok: false; conflict: true; revision: number };
+
+/**
+ * REQ-06 · Formation plans of a song. Every write of a plan or its formations carries the revision the editor loaded
+ * and bumps it; a stale one is refused without writing (the editor says «Alguien ha cambiado este plan»).
+ */
+export interface FormationsBackend {
+  listFormationMembers(): Promise<FormationMember[]>;
+  listPlans(videoId: string): Promise<FormationPlanSummary[]>;
+  getPlan(planId: string): Promise<FormationPlanFull | null>;
+  createPlan(row: NewFormationPlan): Promise<FormationPlan>;
+  updatePlan(planId: string, expected: number, patch: FormationPlanPatch): Promise<RevisionResult<{ plan: FormationPlan }>>;
+  duplicatePlan(planId: string, name: string): Promise<FormationPlan>;
+  deletePlan(planId: string): Promise<void>;
+  saveFormation(planId: string, expected: number, formation: FormationInput): Promise<RevisionResult<{ formation: Formation }>>;
+  deleteFormation(planId: string, expected: number, formationId: string): Promise<RevisionResult>;
+}
+
+const toFormation = (row: Tables<'formations'>): Formation => ({
+  ...row,
+  at: Number(row.at),
+  transition: Number(row.transition),
+  positions: (row.positions ?? {}) as unknown as FormationPositions,
+});
+const toPlan = (row: Tables<'formation_plans'>): FormationPlan => ({
+  ...row,
+  stage_width: Number(row.stage_width),
+  stage_depth: Number(row.stage_depth),
+  grid: Number(row.grid),
+  bpm: row.bpm == null ? null : Number(row.bpm),
+  first_beat: row.first_beat == null ? null : Number(row.first_beat),
+});
+interface RpcRevision {
+  ok: boolean;
+  revision: number;
+  plan?: Tables<'formation_plans'>;
+  formation?: Tables<'formations'>;
+}
+
+const supabaseFormations: FormationsBackend = {
+  async listFormationMembers() {
+    const { data, error } = await supabase.rpc('formation_members');
+    if (error) throw error;
+    return (data ?? []).map((m) => ({ ...m, color: isMemberColor(m.color) ? m.color : 'ai' }));
+  },
+  async listPlans(videoId) {
+    const { data, error } = await supabase
+      .from('formation_plans')
+      .select('*, formation_plan_members(member_id), formations(count)')
+      .eq('video_id', videoId)
+      .order('created_at')
+      .order('id');
+    if (error) throw error;
+    return ((data ?? []) as unknown[]).map((row) => {
+      const { formation_plan_members: members, formations, ...plan } = row as Tables<'formation_plans'> & {
+        formation_plan_members: { member_id: string }[];
+        formations: { count: number }[];
+      };
+      return { ...toPlan(plan), members: members.map((m) => m.member_id), formationCount: formations[0]?.count ?? 0 };
+    });
+  },
+  async getPlan(planId) {
+    const [plan, members, formations] = await Promise.all([
+      supabase.from('formation_plans').select('*').eq('id', planId).maybeSingle(),
+      supabase.from('formation_plan_members').select('member_id').eq('plan_id', planId).order('created_at').order('id'),
+      supabase.from('formations').select('*').eq('plan_id', planId).order('at').order('id'),
+    ]);
+    if (plan.error) throw plan.error;
+    if (members.error) throw members.error;
+    if (formations.error) throw formations.error;
+    if (!plan.data) return null;
+    return {
+      plan: toPlan(plan.data),
+      members: (members.data ?? []).map((m) => m.member_id),
+      formations: (formations.data ?? []).map(toFormation),
+    };
+  },
+  async createPlan(row) {
+    const { data, error } = await supabase.rpc('create_formation_plan', {
+      p_video: row.video_id,
+      p_name: row.name,
+      p_members: row.members,
+      p_width: row.stage_width,
+      p_depth: row.stage_depth,
+    });
+    if (error) throw error;
+    return toPlan(data as Tables<'formation_plans'>);
+  },
+  async updatePlan(planId, expected, patch) {
+    const { data, error } = await supabase.rpc('update_formation_plan', {
+      p_plan: planId,
+      p_expected_revision: expected,
+      p_patch: patch as unknown as Json,
+    });
+    if (error) throw error;
+    const r = data as unknown as RpcRevision;
+    return r.ok ? { ok: true, revision: r.revision, plan: toPlan(r.plan!) } : { ok: false, conflict: true, revision: r.revision };
+  },
+  async duplicatePlan(planId, name) {
+    const { data, error } = await supabase.rpc('duplicate_formation_plan', { p_plan: planId, p_name: name });
+    if (error) throw error;
+    return toPlan(data as Tables<'formation_plans'>);
+  },
+  async deletePlan(planId) {
+    const { error } = await supabase.from('formation_plans').delete().eq('id', planId);
+    if (error) throw error;
+  },
+  async saveFormation(planId, expected, formation) {
+    const { data, error } = await supabase.rpc('save_formation', {
+      p_plan: planId,
+      p_expected_revision: expected,
+      p_formation: formation as unknown as Json,
+    });
+    if (error) throw error;
+    const r = data as unknown as RpcRevision;
+    return r.ok
+      ? { ok: true, revision: r.revision, formation: toFormation(r.formation!) }
+      : { ok: false, conflict: true, revision: r.revision };
+  },
+  async deleteFormation(planId, expected, formationId) {
+    const { data, error } = await supabase.rpc('delete_formation', {
+      p_plan: planId,
+      p_expected_revision: expected,
+      p_formation_id: formationId,
+    });
+    if (error) throw error;
+    const r = data as unknown as RpcRevision;
+    return r.ok ? { ok: true, revision: r.revision } : { ok: false, conflict: true, revision: r.revision };
+  },
+};
+
+// Demo twin: the same rules as the database (revision per plan, positions inside the stage, one formation per
+// moment, a smaller stage pulls points inside, removed participants kept archived, deleting archives).
+
+type FormationsDemoDb = DemoDb & {
+  formation_plans?: FormationPlan[];
+  formation_plan_members?: FormationPlanMember[];
+  formations?: Formation[];
+};
+
+function demoPlan(db: FormationsDemoDb, id: string): FormationPlan {
+  const plan = (db.formation_plans ?? []).find((p) => p.id === id && isLive(p));
+  if (!plan) throw demoError('formation_plan_not_found');
+  return plan;
+}
+
+const demoPlanMembers = (db: FormationsDemoDb, planId: string) =>
+  (db.formation_plan_members ?? [])
+    .filter((m) => m.plan_id === planId && isLive(m))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+    .map((m) => m.member_id);
+
+function demoSetParticipants(db: FormationsDemoDb, planId: string, ids: string[]) {
+  const live = new Set((db.members ?? []).map((m) => m.id));
+  if (ids.length > 40 || ids.some((id) => !live.has(id))) throw demoError('formation_member_invalid');
+  const rows = (db.formation_plan_members ??= []);
+  for (const row of rows) {
+    if (row.plan_id !== planId) continue;
+    const wanted = ids.includes(row.member_id);
+    if (!wanted && isLive(row)) row.archived_at = now();
+    if (wanted && !isLive(row)) {
+      row.archived_at = null;
+      row.created_at = now();
+    }
+  }
+  for (const id of new Set(ids)) {
+    if (rows.some((r) => r.plan_id === planId && r.member_id === id)) continue;
+    rows.push({ id: crypto.randomUUID(), crew_id: db.crews[0]!.id, plan_id: planId, member_id: id, created_at: now(), archived_at: null });
+  }
+}
+
+function demoCheckPlan(plan: Pick<FormationPlan, 'name' | 'stage_width' | 'stage_depth' | 'grid' | 'bpm' | 'first_beat'>) {
+  if (planNameError(plan.name)) throw checkViolation('formation_plans_name_check', 'formation_plans');
+  if (stageSizeError(plan.stage_width, plan.stage_depth)) throw checkViolation('formation_plans_stage_width_check', 'formation_plans');
+  if (!(plan.grid >= 0.1 && plan.grid <= 2)) throw checkViolation('formation_plans_grid_check', 'formation_plans');
+  if (plan.bpm != null && !(plan.bpm >= 40 && plan.bpm <= 240)) throw checkViolation('formation_plans_bpm_check', 'formation_plans');
+  if (plan.first_beat != null && !(plan.first_beat >= 0)) throw checkViolation('formation_plans_first_beat_check', 'formation_plans');
+}
+
+const demoConflict = (plan: FormationPlan) => ({ ok: false as const, conflict: true as const, revision: plan.revision });
+
+const demoFormations: FormationsBackend = {
+  listFormationMembers: () =>
+    query((db) =>
+      [...(db.members ?? [])]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((m) => ({ id: m.id, name: m.name, color: m.color, archived: false })),
+    ),
+  listPlans: (videoId) =>
+    query((raw) => {
+      const db = raw as FormationsDemoDb;
+      return (db.formation_plans ?? [])
+        .filter((p) => p.video_id === videoId && isLive(p))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+        .map((p) => ({
+          ...p,
+          members: demoPlanMembers(db, p.id),
+          formationCount: (db.formations ?? []).filter((f) => f.plan_id === p.id && isLive(f)).length,
+        }));
+    }),
+  getPlan: (planId) =>
+    query((raw) => {
+      const db = raw as FormationsDemoDb;
+      const plan = (db.formation_plans ?? []).find((p) => p.id === planId && isLive(p));
+      if (!plan) return null;
+      return {
+        plan,
+        members: demoPlanMembers(db, plan.id),
+        formations: (db.formations ?? [])
+          .filter((f) => f.plan_id === plan.id && isLive(f))
+          .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id)),
+      };
+    }),
+  createPlan: async (row) =>
+    mutate((raw) => {
+      const db = raw as FormationsDemoDb;
+      if (!db.videos.some((v) => v.id === row.video_id)) throw demoError('formation_video_not_found');
+      const plan: FormationPlan = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        video_id: row.video_id,
+        name: row.name.trim(),
+        stage_width: row.stage_width,
+        stage_depth: row.stage_depth,
+        grid: 0.5,
+        bpm: null,
+        first_beat: null,
+        revision: 0,
+        created_at: now(),
+        archived_at: null,
+      };
+      demoCheckPlan(plan);
+      (db.formation_plans ??= []).push(plan);
+      demoSetParticipants(db, plan.id, row.members);
+      return plan;
+    }),
+  updatePlan: async (planId, expected, patch) =>
+    mutate((raw): RevisionResult<{ plan: FormationPlan }> => {
+      const db = raw as FormationsDemoDb;
+      const plan = demoPlan(db, planId);
+      if (plan.revision !== expected) return demoConflict(plan);
+      const { members, ...fields } = patch;
+      const next = { ...plan, ...fields, name: (fields.name ?? plan.name).trim() };
+      demoCheckPlan(next);
+      if (members) demoSetParticipants(db, plan.id, members);
+      Object.assign(plan, next, { revision: plan.revision + 1 });
+      for (const f of db.formations ?? []) {
+        if (f.plan_id === plan.id && isLive(f)) f.positions = fitPositions(f.positions, { width: plan.stage_width, depth: plan.stage_depth });
+      }
+      return { ok: true, revision: plan.revision, plan: { ...plan } };
+    }),
+  duplicatePlan: async (planId, name) =>
+    mutate((raw) => {
+      const db = raw as FormationsDemoDb;
+      const source = demoPlan(db, planId);
+      const plan: FormationPlan = { ...source, id: crypto.randomUUID(), name: name.trim(), revision: 0, created_at: now() };
+      demoCheckPlan(plan);
+      (db.formation_plans ??= []).push(plan);
+      demoSetParticipants(db, plan.id, demoPlanMembers(db, source.id));
+      const copies = (db.formations ?? [])
+        .filter((f) => f.plan_id === source.id && isLive(f))
+        .map((f) => ({ ...structuredClone(f), id: crypto.randomUUID(), plan_id: plan.id, created_at: now() }));
+      (db.formations ??= []).push(...copies);
+      return plan;
+    }),
+  deletePlan: async (planId) =>
+    mutate((raw) => {
+      const db = raw as FormationsDemoDb;
+      const plan = (db.formation_plans ?? []).find((p) => p.id === planId && isLive(p));
+      if (!plan) return;
+      const at = now();
+      plan.archived_at = at;
+      for (const f of db.formations ?? []) if (f.plan_id === planId && isLive(f)) f.archived_at = at;
+      for (const m of db.formation_plan_members ?? []) if (m.plan_id === planId && isLive(m)) m.archived_at = at;
+    }),
+  saveFormation: async (planId, expected, input) =>
+    mutate((raw): RevisionResult<{ formation: Formation }> => {
+      const db = raw as FormationsDemoDb;
+      const plan = demoPlan(db, planId);
+      if (plan.revision !== expected) return demoConflict(plan);
+      const at = roundTime(input.at);
+      const note = input.note?.trim() || null;
+      const problem = formationError({ ...input, at, note }, { width: plan.stage_width, depth: plan.stage_depth });
+      if (problem) throw demoError(problem);
+      const known = new Set((db.members ?? []).map((m) => m.id));
+      if (Object.keys(input.positions).some((id) => !known.has(id))) throw demoError('formation_invalid');
+      const list = (db.formations ??= []);
+      if (list.some((f) => f.plan_id === plan.id && isLive(f) && f.id !== input.id && Math.abs(f.at - at) < 0.005)) {
+        throw demoError('formation_time_taken');
+      }
+      let row = list.find((f) => f.id === input.id);
+      if (row && row.plan_id !== plan.id) throw demoError('formation_not_found');
+      if (row) {
+        Object.assign(row, { at, transition: input.transition, positions: structuredClone(input.positions), note, archived_at: null });
+      } else {
+        if (list.filter((f) => f.plan_id === plan.id && isLive(f)).length >= 300) throw demoError('formations_cap_reached');
+        row = {
+          id: input.id,
+          crew_id: plan.crew_id,
+          plan_id: plan.id,
+          at,
+          transition: input.transition,
+          positions: structuredClone(input.positions),
+          note,
+          props: [],
+          created_at: now(),
+          archived_at: null,
+        };
+        list.push(row);
+      }
+      plan.revision += 1;
+      return { ok: true, revision: plan.revision, formation: { ...row } };
+    }),
+  deleteFormation: async (planId, expected, formationId) =>
+    mutate((raw): RevisionResult => {
+      const db = raw as FormationsDemoDb;
+      const plan = demoPlan(db, planId);
+      if (plan.revision !== expected) return demoConflict(plan);
+      const row = (db.formations ?? []).find((f) => f.id === formationId && f.plan_id === plan.id && isLive(f));
+      if (!row) throw demoError('formation_not_found');
+      row.archived_at = now();
+      plan.revision += 1;
+      return { ok: true, revision: plan.revision };
+    }),
+};
+
+export const formationsBackend: FormationsBackend = IS_DEMO ? demoFormations : supabaseFormations;

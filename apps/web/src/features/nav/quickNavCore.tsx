@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useCalendarUnseen } from '@/data/calendar';
 import { openWho, useMe } from '@/data/members';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
@@ -36,6 +37,8 @@ export interface NavEntry {
   to: string | null;
   active: boolean;
   tone: NavTone;
+  /** REQ-05 · Unseen changes there (the calendar): a dot on its card and on the button. */
+  dot?: boolean;
 }
 
 export interface QuickNavApi {
@@ -70,6 +73,7 @@ export function useQuickNav(): QuickNavApi {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const me = useMe();
+  const calendarUnseen = useCalendarUnseen();
   const reduce = useReducedMotion() ?? false;
   const [stage, setStage] = useState<QuickNavApi['stage']>(null);
   const picking = useRef(false);
@@ -93,6 +97,7 @@ export function useQuickNav(): QuickNavApi {
         to: s.to,
         active: i === activeIndex,
         tone: s.tone,
+        dot: s.to === '/calendario' && calendarUnseen,
       })),
       {
         id: 'who',
@@ -105,7 +110,7 @@ export function useQuickNav(): QuickNavApi {
         tone: WHO_TONE,
       },
     ],
-    [activeIndex, me],
+    [activeIndex, me, calendarUnseen],
   );
   const current = entries[activeIndex] ?? null;
 
@@ -301,6 +306,7 @@ export function QuickNavTrigger({
   className?: string;
 }) {
   const { current, open, reduce } = api;
+  const dot = api.entries.some((e) => e.dot);
   const [tag, setTag] = useState(true);
   useEffect(() => {
     setTag(true);
@@ -314,7 +320,7 @@ export function QuickNavTrigger({
       type="button"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-label={open ? 'Cerrar secciones' : quickNavLabel(current?.label)}
+      aria-label={open ? 'Cerrar secciones' : quickNavLabel(current?.label) + (dot ? '. Hay cambios en el calendario' : '')}
       onClick={api.toggle}
       whileTap={{ scale: 0.88 }}
       transition={jelly}
@@ -348,6 +354,13 @@ export function QuickNavTrigger({
             transition={jelly}
           >
             {face}
+            {dot && (
+              <span
+                aria-hidden
+                data-unseen-dot
+                className="absolute right-0.5 top-0.5 size-3 rounded-full bg-shu-400 ring-2 ring-sumi-950"
+              />
+            )}
           </motion.span>
         )}
       </AnimatePresence>

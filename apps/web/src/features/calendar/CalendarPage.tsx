@@ -17,6 +17,7 @@ import {
   type CalendarMember,
 } from '@/data/calendar';
 import { askWho, MEMBER_SWATCH } from '@/data/members';
+import { useMarkCalendarSeen } from '@/data/calendar';
 import { useEvents } from '@/data/events';
 import { useNow } from '@/features/events/useNow';
 import { cn } from '@/lib/cn';
@@ -66,6 +67,8 @@ export function CalendarPage() {
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [layer, setLayer] = useState<Layer | null>(null);
   const toast = useToast();
+  // REQ-05 · Looking at the calendar takes the dot away.
+  useMarkCalendarSeen();
 
   // A link with ?dia= (a notification, a shared link) opens that day, once.
   const linkedDay = params.get('dia');

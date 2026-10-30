@@ -32,6 +32,8 @@ import { Avatar } from './ui/Avatar';
 import { Button } from './ui/Button';
 import { WhoButton, WhoPromptHost } from '@/features/members/MembersUI';
 import { MAIN_NAV } from '@/features/nav/navItems';
+import { PushHost } from '@/features/calendar/PushHost';
+import { useCalendarUnseen } from '@/data/calendar';
 import { QuickNav, useQuickNavShown } from '@/features/nav/QuickNav';
 import { noteSaving } from '@/features/nav/version/appUpdate';
 import { VersionCheck } from '@/features/nav/version/VersionCheck';
@@ -223,6 +225,8 @@ export function AppShell() {
       {/* One help dialog for every install button, outside the phone menu so closing the menu can't take it down. */}
       <InstallAppHelp />
       <WhoPromptHost />
+      {/* REQ-05 · Badge reset, a tapped notice's day and the one-time suggestion. */}
+      <PushHost />
       {/* P1 · Phones: the sections and «¿Quién eres?» in the quick menu, bottom right (desktop keeps the rail). */}
       <QuickNav shown={quickNav} />
       <SavingReporter />
@@ -235,6 +239,7 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
   const { user, signOut } = useAuth();
   const quick = useQuickClips(activeCrew?.id);
   const pinned = (quick.data ?? []).filter((c) => c.is_pinned).slice(0, 10);
+  const calendarUnseen = useCalendarUnseen();
   const name = profile?.display_name ?? user?.email ?? 'Tú';
 
   return (
@@ -275,6 +280,7 @@ function SideRail({ onAdd }: { onAdd: () => void }) {
                   />
                 )}
                 <item.Icon className="size-4.5" /> {item.label}
+                {item.to === '/calendario' && calendarUnseen && <UnseenDot className="ml-auto" label="cambios sin ver" />}
               </>
             )}
           </NavLink>
@@ -540,5 +546,17 @@ export function Page({ children, className }: { children: ReactNode; className?:
     >
       {children}
     </motion.div>
+  );
+}
+
+/** REQ-05 · Someone else changed the calendar since this device last looked. */
+export function UnseenDot({ className, label }: { className?: string; label?: string }) {
+  return (
+    <span
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      className={cn('inline-block size-2.5 shrink-0 rounded-full bg-shu-400 ring-2 ring-sumi-950', className)}
+    />
   );
 }
