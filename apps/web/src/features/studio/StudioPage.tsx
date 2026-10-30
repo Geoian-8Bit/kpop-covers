@@ -122,6 +122,10 @@ const RecordStudio = lazy(() => loadRecordStudio().then((m) => ({ default: m.Rec
 const warmRecordStudio = () => void loadRecordStudio().catch(() => undefined);
 /** P4 · «Tomas» loads when its tab is first opened. */
 const TakesPanel = lazy(() => import('@/features/takes/TakesPanel').then((m) => ({ default: m.TakesPanel })));
+/** REQ-06 · «Formaciones»: the tab's list and the editor load when first opened. */
+const FormationsPanel = lazy(() => import('@/features/formations/FormationsPanel').then((m) => ({ default: m.FormationsPanel })));
+const FormationEditor = lazy(() => import('@/features/formations/FormationEditor').then((m) => ({ default: m.FormationEditor })));
+type SideTab = 'clips' | 'takes' | 'formations';
 /**
  * Global review 2 [3] · An extra part of the studio in a chunk of its own: if the chunk can't load (offline before the
  * precache finished, no service worker, an iPhone that emptied its cache) it shows nothing, like the long countdowns,
@@ -156,7 +160,7 @@ const releaseTakeUrl = (url: string | null | undefined) => {
 const NO_NOTES: Note[] = [];
 
 export function StudioPage() {
-  const { videoId } = useParams();
+  const { videoId, planId } = useParams();
   const video = useVideo(videoId);
   const clips = useClips(videoId);
   const toast = useToast();
@@ -185,7 +189,10 @@ export function StudioPage() {
     requestAnimationFrame(refocus);
   }, []);
   const [linking, setLinking] = useState(false);
-  const [sideTab, setSideTab] = useState<'clips' | 'takes'>('clips');
+  // REQ-06 · Back from the formation editor (?tab=formaciones) the studio opens on «Formaciones».
+  const [sideTab, setSideTab] = useState<SideTab>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'formaciones' ? 'formations' : 'clips',
+  );
   /** F5 · The take open in «Repaso» (its URL is released when the review closes). */
   const [playingTake, setPlayingTake] = useState<{ take: TakeItem; url: string } | null>(null);
   // The review's object URL goes when the review does, also when the page itself goes with it open.
@@ -207,6 +214,10 @@ export function StudioPage() {
   }, [location, navigateTo]);
   const [params, setParams] = useSearchParams();
   const clipParam = params.get('clip');
+  const tabParam = params.get('tab');
+  useEffect(() => {
+    if (!planId && tabParam === 'formaciones') setSideTab('formations');
+  }, [planId, tabParam]);
   const ready = usePlayer((s) => s.ready);
   const duration = usePlayer((s) => s.duration);
   // F9 · No zoom subscription here: every gesture would repaint the whole page (the dialog reads it itself).
@@ -279,7 +290,7 @@ export function StudioPage() {
     askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () => setNoteTarget({ note: null, at }));
   }, []);
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
-  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !saving && !help && !noteTarget && !recording && !playingTake });
+  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !planId && !saving && !help && !noteTarget && !recording && !playingTake });
 
   /** A clip cut on a longer copy of the song may not fit this one: say so instead of a stray loop. */
   const applyClip = useCallback(
@@ -380,6 +391,35 @@ export function StudioPage() {
           Volver a la biblioteca
         </Link>
       </Page>
+    );
+  }
+
+  if (planId) {
+    // REQ-06 · The formation editor: the same player (and store) in the editor's layout.
+    return (
+      <Suspense
+        fallback={
+          <div className="grid min-h-[70dvh] place-items-center" role="status" aria-label="Abriendo el editor de formaciones">
+            <Spinner className="size-9 text-washi-muted" />
+          </div>
+        }
+      >
+        <FormationEditor
+          video={current}
+          planId={planId}
+          playsFile={current.source === 'upload' || (stage === 'file' && hasLinkedFile(current))}
+          stage={
+            <MediaStage
+              video={current}
+              clips={clips.data ?? []}
+              notes={songNoteList}
+              onClipSelect={tapClipLine}
+              hold={stageHeld}
+              onCopyLabel={setCopyLabel}
+            />
+          }
+        />
+      </Suspense>
     );
   }
 
@@ -491,17 +531,28 @@ export function StudioPage() {
           <Dormant className="sep-t lg:sep-l">
             <div className="px-4 pt-4 sm:px-5">
               <Segmented
-                label="Clips o tomas"
+                label="Clips, tomas o formaciones"
                 layoutId={`side-${current.id}`}
                 value={sideTab}
                 onChange={setSideTab}
                 options={[
                   { value: 'clips', label: 'Clips' },
                   { value: 'takes', label: 'Tomas' },
+                  { value: 'formations', label: 'Formaciones' },
                 ]}
               />
             </div>
-            {sideTab === 'clips' ? (
+            {sideTab === 'formations' ? (
+              <Suspense
+                fallback={
+                  <div className="grid place-items-center py-10" role="status" aria-label="Cargando formaciones">
+                    <Spinner className="size-6 text-washi-muted" />
+                  </div>
+                }
+              >
+                <FormationsPanel video={current} />
+              </Suspense>
+            ) : sideTab === 'clips' ? (
               <ClipList
                 clips={clips.data ?? []}
                 loading={clips.isPending}

@@ -133,6 +133,9 @@ export default defineConfig(({ mode, command }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // REQ-05 · Calendar notices (push, notification tap, icon badge): public/push-sw.js. Without VAPID keys or
+        // the Edge Function no push ever arrives and it simply stays idle.
+        importScripts: ['/push-sw.js'],
         // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
         // .wasm isn't in globPatterns either. The HTTP cache keeps both (hashed, immutable).
         globIgnores: ['**/stemSeparator.worker-*.js'],

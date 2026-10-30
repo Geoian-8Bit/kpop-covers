@@ -89,3 +89,18 @@ export type RehearsalRule = Tables<'rehearsal_rules'>;
 /** REQ-04 · A per-date change: one session called off, or a one-off rehearsal. */
 export type RehearsalExceptionKind = 'cancel' | 'extra';
 export type RehearsalException = Omit<Tables<'rehearsal_exceptions'>, 'kind'> & { kind: RehearsalExceptionKind };
+/** REQ-05 · One change of the calendar, with its text (written by the database; feeds the notices and the dot). */
+export type CalendarChange = Tables<'calendar_changes'>;
+
+/** REQ-06 · A point on the stage, in metres from the stage's back-left corner as the audience sees it. */
+export interface StagePoint {
+  x: number;
+  y: number;
+}
+/** REQ-06 · Where each participant stands in one formation, by member id. */
+export type FormationPositions = Record<string, StagePoint>;
+/** REQ-06 · A plan of formations for a song (one line-up: «Con 5», «Con 4 si falta alguien»…). */
+export type FormationPlan = Tables<'formation_plans'>;
+export type FormationPlanMember = Tables<'formation_plan_members'>;
+/** REQ-06 · One keyframe: reached at `at`, the move starts `transition` seconds earlier. */
+export type Formation = Omit<Tables<'formations'>, 'positions'> & { positions: FormationPositions };

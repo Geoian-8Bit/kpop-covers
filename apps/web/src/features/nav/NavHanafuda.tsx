@@ -153,7 +153,7 @@ function Hand({ api }: { api: QuickNavApi }) {
               delay={reduce ? 0 : FLY_MS}
               onPicked={() => setFlying(i)}
               onFocus={() => setLifted(i)}
-              aria-label={entry.label}
+              aria-label={entry.dot ? `${entry.label}. Hay cambios sin ver` : entry.label}
               className={cn(
                 'relative flex size-full flex-col items-center overflow-hidden rounded-[8px] border-2 px-1 pb-1.5 pt-2 text-center outline-none',
                 'shadow-[0_14px_24px_-12px_rgb(0_0_0/0.95)] focus-visible:ring-2 focus-visible:ring-kin-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sumi-950',
@@ -200,6 +200,16 @@ function Hand({ api }: { api: QuickNavApi }) {
                 <span aria-hidden className="absolute right-1 top-1 rounded-[3px] bg-washi px-1 font-display text-[9px] font-extrabold leading-[14px] text-shu-600">
                   今
                 </span>
+              )}
+              {entry.dot && (
+                <span
+                  aria-hidden
+                  data-unseen-dot
+                  className={cn(
+                    'absolute top-1 size-3 rounded-full bg-shu-400 ring-2 ring-sumi-950',
+                    entry.active ? 'left-1' : 'right-1',
+                  )}
+                />
               )}
             </EntryLink>
           </motion.div>

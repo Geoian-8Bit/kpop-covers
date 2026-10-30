@@ -7,7 +7,8 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    // REQ-05 · The Edge Function's pure rules are tested here too (no Deno needed).
+    include: ['src/**/*.test.ts', '../../supabase/functions/**/*.test.ts'],
     environment: 'node',
   },
 });

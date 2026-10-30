@@ -5,6 +5,7 @@ describe('pageTitle', () => {
   it('names every route', () => {
     expect(pageTitle('/')).toBe('Biblioteca · One Shoot');
     expect(pageTitle('/v/abc123')).toBe('Estudio · One Shoot');
+    expect(pageTitle('/v/abc123/formaciones/p1')).toBe('Formaciones · One Shoot');
     expect(pageTitle('/ajustes')).toBe('Ajustes · One Shoot');
     expect(pageTitle('/bolsas')).toBe('Bolsas · One Shoot');
     expect(pageTitle('/bolsas/42')).toBe('Bolsa · One Shoot');

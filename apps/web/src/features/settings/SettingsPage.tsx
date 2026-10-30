@@ -1,5 +1,6 @@
 import { Page } from '@/components/AppShell';
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { PushSettings } from '@/features/calendar/PushSettings';
 import { MembersSection } from '@/features/members/MembersUI';
 import { VersionCheck } from '@/features/nav/version/VersionCheck';
 
@@ -28,6 +29,8 @@ export function SettingsPage() {
         </section>
 
         <MembersSection />
+
+        <PushSettings />
 
         <section aria-labelledby="version-title" className="sep-t px-5 py-7 sm:px-9">
           <SectionTitle id="version-title" glyph="版">

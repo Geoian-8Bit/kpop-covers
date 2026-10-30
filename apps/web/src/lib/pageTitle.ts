@@ -4,6 +4,7 @@ export const APP_NAME = 'One Shoot';
 const PAGES: [RegExp, string][] = [
   [/^\/$/, 'Biblioteca'],
   [/^\/v\/[^/]+\/?$/, 'Estudio'],
+  [/^\/v\/[^/]+\/formaciones\/[^/]+\/?$/, 'Formaciones'],
   [/^\/ajustes\/?$/, 'Ajustes'],
   [/^\/bolsas\/?$/, 'Bolsas'],
   [/^\/bolsas\/[^/]+\/?$/, 'Bolsa'],

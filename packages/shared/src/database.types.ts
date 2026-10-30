@@ -13,6 +13,7 @@ export type Database = {
         Row: {
           archived_at: string | null;
           at_time: string | null;
+          changed_by_member: string | null;
           created_at: string;
           created_by_member: string | null;
           crew_id: string;
@@ -26,6 +27,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null;
           at_time?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           created_by_member?: string | null;
           crew_id?: string;
@@ -39,6 +41,7 @@ export type Database = {
         Update: {
           archived_at?: string | null;
           at_time?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           created_by_member?: string | null;
           crew_id?: string;
@@ -50,6 +53,13 @@ export type Database = {
           starts_on?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'absences_changed_by_member_fkey';
+            columns: ['changed_by_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'absences_created_by_member_fkey';
             columns: ['created_by_member'];
@@ -272,6 +282,58 @@ export type Database = {
             columns: ['crew_id'];
             isOneToOne: false;
             referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      calendar_changes: {
+        Row: {
+          author_member: string | null;
+          body: string;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          subject_member: string | null;
+          target_date: string;
+        };
+        Insert: {
+          author_member?: string | null;
+          body: string;
+          created_at?: string;
+          crew_id: string;
+          id?: string;
+          subject_member?: string | null;
+          target_date: string;
+        };
+        Update: {
+          author_member?: string | null;
+          body?: string;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          subject_member?: string | null;
+          target_date?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'calendar_changes_author_member_fkey';
+            columns: ['author_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'calendar_changes_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'calendar_changes_subject_member_fkey';
+            columns: ['subject_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
             referencedColumns: ['id'];
           },
         ];
@@ -561,6 +623,169 @@ export type Database = {
             columns: ['video_id'];
             isOneToOne: false;
             referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      formation_plan_members: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          member_id: string;
+          plan_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id: string;
+          plan_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          member_id?: string;
+          plan_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'formation_plan_members_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formation_plan_members_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formation_plan_members_plan_id_fkey';
+            columns: ['plan_id'];
+            isOneToOne: false;
+            referencedRelation: 'formation_plans';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      formation_plans: {
+        Row: {
+          archived_at: string | null;
+          bpm: number | null;
+          created_at: string;
+          crew_id: string;
+          first_beat: number | null;
+          grid: number;
+          id: string;
+          name: string;
+          revision: number;
+          stage_depth: number;
+          stage_width: number;
+          video_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          bpm?: number | null;
+          created_at?: string;
+          crew_id?: string;
+          first_beat?: number | null;
+          grid?: number;
+          id?: string;
+          name: string;
+          revision?: number;
+          stage_depth?: number;
+          stage_width?: number;
+          video_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          bpm?: number | null;
+          created_at?: string;
+          crew_id?: string;
+          first_beat?: number | null;
+          grid?: number;
+          id?: string;
+          name?: string;
+          revision?: number;
+          stage_depth?: number;
+          stage_width?: number;
+          video_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'formation_plans_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formation_plans_video_id_fkey';
+            columns: ['video_id'];
+            isOneToOne: false;
+            referencedRelation: 'videos';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      formations: {
+        Row: {
+          archived_at: string | null;
+          at: number;
+          created_at: string;
+          crew_id: string;
+          id: string;
+          note: string | null;
+          plan_id: string;
+          positions: Json;
+          props: Json;
+          transition: number;
+        };
+        Insert: {
+          archived_at?: string | null;
+          at: number;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          note?: string | null;
+          plan_id: string;
+          positions?: Json;
+          props?: Json;
+          transition?: number;
+        };
+        Update: {
+          archived_at?: string | null;
+          at?: number;
+          created_at?: string;
+          crew_id?: string;
+          id?: string;
+          note?: string | null;
+          plan_id?: string;
+          positions?: Json;
+          props?: Json;
+          transition?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'formations_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'formations_plan_id_fkey';
+            columns: ['plan_id'];
+            isOneToOne: false;
+            referencedRelation: 'formation_plans';
             referencedColumns: ['id'];
           },
         ];
@@ -881,9 +1106,61 @@ export type Database = {
         };
         Relationships: [];
       };
+      push_subscriptions: {
+        Row: {
+          auth: string;
+          created_at: string;
+          crew_id: string;
+          endpoint: string;
+          id: string;
+          last_ok_at: string | null;
+          member_id: string | null;
+          p256dh: string;
+          updated_at: string;
+        };
+        Insert: {
+          auth: string;
+          created_at?: string;
+          crew_id: string;
+          endpoint: string;
+          id?: string;
+          last_ok_at?: string | null;
+          member_id?: string | null;
+          p256dh: string;
+          updated_at?: string;
+        };
+        Update: {
+          auth?: string;
+          created_at?: string;
+          crew_id?: string;
+          endpoint?: string;
+          id?: string;
+          last_ok_at?: string | null;
+          member_id?: string | null;
+          p256dh?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'push_subscriptions_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'push_subscriptions_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       rehearsal_exceptions: {
         Row: {
           archived_at: string | null;
+          changed_by_member: string | null;
           created_at: string;
           crew_id: string;
           ends_at: string | null;
@@ -895,6 +1172,7 @@ export type Database = {
         };
         Insert: {
           archived_at?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           crew_id?: string;
           ends_at?: string | null;
@@ -906,6 +1184,7 @@ export type Database = {
         };
         Update: {
           archived_at?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           crew_id?: string;
           ends_at?: string | null;
@@ -916,6 +1195,13 @@ export type Database = {
           starts_at?: string | null;
         };
         Relationships: [
+          {
+            foreignKeyName: 'rehearsal_exceptions_changed_by_member_fkey';
+            columns: ['changed_by_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'rehearsal_exceptions_crew_id_fkey';
             columns: ['crew_id'];
@@ -935,6 +1221,7 @@ export type Database = {
       rehearsal_rules: {
         Row: {
           archived_at: string | null;
+          changed_by_member: string | null;
           created_at: string;
           crew_id: string;
           ends_at: string;
@@ -946,6 +1233,7 @@ export type Database = {
         };
         Insert: {
           archived_at?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           crew_id?: string;
           ends_at: string;
@@ -957,6 +1245,7 @@ export type Database = {
         };
         Update: {
           archived_at?: string | null;
+          changed_by_member?: string | null;
           created_at?: string;
           crew_id?: string;
           ends_at?: string;
@@ -967,6 +1256,13 @@ export type Database = {
           weekday?: number;
         };
         Relationships: [
+          {
+            foreignKeyName: 'rehearsal_rules_changed_by_member_fkey';
+            columns: ['changed_by_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'rehearsal_rules_crew_id_fkey';
             columns: ['crew_id'];
@@ -1507,6 +1803,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      archive_calendar_row: {
+        Args: { p_id: string; p_member?: string | null; p_table: string };
+        Returns: undefined;
+      };
       calendar_members: {
         Args: never;
         Returns: { archived: boolean; color: string; id: string; name: string }[];
@@ -1520,7 +1820,7 @@ export type Database = {
         Returns: Json;
       };
       edit_rehearsal_rule: {
-        Args: { p_ends: string; p_rule: string; p_starts: string; p_weekday: number };
+        Args: { p_ends: string; p_member?: string | null; p_rule: string; p_starts: string; p_weekday: number };
         Returns: {
           archived_at: string | null;
           created_at: string;
@@ -1540,8 +1840,78 @@ export type Database = {
         };
       };
       end_rehearsal_rule: {
-        Args: { p_rule: string };
+        Args: { p_member?: string | null; p_rule: string };
         Returns: undefined;
+      };
+      delete_push_subscription: {
+        Args: { p_endpoint: string };
+        Returns: undefined;
+      };
+      save_push_subscription: {
+        Args: { p_auth: string; p_endpoint: string; p_member?: string | null; p_p256dh: string };
+        Returns: undefined;
+      };
+      create_formation_plan: {
+        Args: { p_depth?: number; p_members: Json; p_name: string; p_video: string; p_width?: number };
+        Returns: {
+          archived_at: string | null;
+          bpm: number | null;
+          created_at: string;
+          crew_id: string;
+          first_beat: number | null;
+          grid: number;
+          id: string;
+          name: string;
+          revision: number;
+          stage_depth: number;
+          stage_width: number;
+          video_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'formation_plans';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      delete_formation: {
+        Args: { p_expected_revision: number; p_formation_id: string; p_plan: string };
+        Returns: Json;
+      };
+      duplicate_formation_plan: {
+        Args: { p_name: string; p_plan: string };
+        Returns: {
+          archived_at: string | null;
+          bpm: number | null;
+          created_at: string;
+          crew_id: string;
+          first_beat: number | null;
+          grid: number;
+          id: string;
+          name: string;
+          revision: number;
+          stage_depth: number;
+          stage_width: number;
+          video_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'formation_plans';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      formation_members: {
+        Args: never;
+        Returns: { archived: boolean; color: string; id: string; name: string }[];
+      };
+      save_formation: {
+        Args: { p_expected_revision: number; p_formation: Json; p_plan: string };
+        Returns: Json;
+      };
+      update_formation_plan: {
+        Args: { p_expected_revision: number; p_patch: Json; p_plan: string };
+        Returns: Json;
       };
       draw_from_bag: {
         Args: { p_bag: string; p_count?: number; p_member?: string | null; p_remove?: boolean | null };
