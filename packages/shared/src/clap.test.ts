@@ -125,7 +125,7 @@ describe('background noise', () => {
 
   it('a room that gets loud mid-way becomes the new background, and claps above it count again', () => {
     const detector = createClapDetector();
-    let state: ClapState = 'idle';
+    let state: ClapState;
     let firedAt: number | null = null;
     for (let t = 0; t <= 9; t += FRAME) {
       const background = t < 2 ? 0.01 : 0.2;

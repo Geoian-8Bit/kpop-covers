@@ -56,6 +56,7 @@ import { fsChrome, useFsChrome, useFsChromeDriver } from './fullscreenChrome';
 import {
   axisFraction,
   inTurnedLayer,
+  layerPoint,
   lockTarget,
   needsCssRotation,
   nextOrientationPref,
@@ -819,9 +820,10 @@ function MediaStage({
   geometry.current = { box, media, mirrored };
   useEffect(() => () => clearTimeout(zoomTap.current.timer), []);
 
+  // REQ-02 · In the CSS-turned fullscreen the picture's own axes are not the screen's (layerPoint).
   const boxPoint = (e: { clientX: number; clientY: number }): Pt => {
-    const rect = boxEl?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    if (!boxEl) return { x: e.clientX, y: e.clientY };
+    return layerPoint(e, boxEl.getBoundingClientRect(), inTurnedLayer(boxEl));
   };
   const restartZoomGesture = (moved: boolean) => {
     zoomGesture.current = { start: usePlayer.getState().zoom, from: [...zoomPointers.current.values()].slice(0, 2), moved };
@@ -890,7 +892,8 @@ function MediaStage({
       const g = geometry.current;
       const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
       setZoomLive(true);
-      usePlayer.getState().setZoom(wheelZoom(current, delta, { x: e.clientX - rect.left, y: e.clientY - rect.top }, g.box, g.media, g.mirrored));
+      const at = layerPoint(e, rect, inTurnedLayer(el));
+      usePlayer.getState().setZoom(wheelZoom(current, delta, at, g.box, g.media, g.mirrored));
       clearTimeout(settle);
       settle = setTimeout(() => setZoomLive(false), 200);
     };

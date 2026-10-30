@@ -33,6 +33,7 @@ export function FormationTimeline({
   onMoveMarker,
   underlay,
   clashes = [],
+  locked = false,
 }: {
   list: FormationInput[];
   selectedId: string | null;
@@ -40,6 +41,8 @@ export function FormationTimeline({
   underlay?: (span: number) => ReactNode;
   /** REQ-08 · Stretches with a clash, in red over the transitions. */
   clashes?: { start: number; end: number }[];
+  /** A save conflict: markers still take you to their moment but can't be dragged. */
+  locked?: boolean;
 }) {
   const duration = usePlayer((s) => s.duration);
   const loop = usePlayer((s) => s.loop);
@@ -114,7 +117,7 @@ export function FormationTimeline({
   }
   function trackMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (marker && marker.pointerId === e.pointerId) {
-      const moved = marker.moved || Math.abs(e.clientX - marker.x) > 6;
+      const moved = !locked && (marker.moved || Math.abs(e.clientX - marker.x) > 6);
       setMarker({ ...marker, moved, at: moved ? timeAt(e.clientX) : marker.at });
       return;
     }
@@ -125,7 +128,7 @@ export function FormationTimeline({
       const f = list.find((x) => x.id === marker.id);
       setMarker(null);
       if (!f) return;
-      if (marker.moved) onMoveMarker(f.id, marker.at);
+      if (marker.moved && !locked) onMoveMarker(f.id, marker.at);
       else usePlayer.getState().seek(f.at);
       return;
     }
@@ -212,7 +215,7 @@ export function FormationTimeline({
               <motion.button
                 key={f.id}
                 type="button"
-                aria-label={`Formación ${i + 1} en ${formatMoment(f.at)}${f.note ? `: ${f.note}` : ''}. Toca para ir; arrastra para moverla.`}
+                aria-label={`Formación ${i + 1} en ${formatMoment(f.at)}${f.note ? `: ${f.note}` : ''}. Toca para ir${locked ? '' : '; arrastra para moverla'}.`}
                 title={f.note ?? undefined}
                 onPointerDown={(e) => markerDown(f.id, e)}
                 onKeyDown={(e) => {
@@ -223,7 +226,7 @@ export function FormationTimeline({
                 }}
                 animate={{ scale: dragging ? 1.15 : 1 }}
                 transition={jelly}
-                className="absolute top-1 z-10 grid size-11 -translate-x-1/2 cursor-ew-resize touch-none place-items-center"
+                className={cn('absolute top-1 z-10 grid size-11 -translate-x-1/2 touch-none place-items-center', locked ? 'cursor-pointer' : 'cursor-ew-resize')}
                 style={{ left: `${pct(at)}%` }}
               >
                 <span

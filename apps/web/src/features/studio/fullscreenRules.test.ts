@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   axisFraction,
+  layerPoint,
   lockTarget,
   needsCssRotation,
   nextOrientationPref,
@@ -72,5 +73,21 @@ describe('pointer along a turned layer', () => {
     expect(axisFraction({ clientX: 0, clientY: 200 }, rect, true)).toBeCloseTo(0.25);
     expect(axisFraction({ clientX: 0, clientY: 900 }, rect, true)).toBe(1);
     expect(axisFraction({ clientX: 0, clientY: 0 }, rect, true)).toBe(0);
+  });
+});
+
+describe('layerPoint', () => {
+  it('is the offset from the top-left corner when nothing is turned', () => {
+    expect(layerPoint({ clientX: 30, clientY: 50 }, { left: 10, top: 20, width: 200, height: 100 }, false)).toEqual({ x: 20, y: 30 });
+  });
+  it('maps screen axes to the layer turned 90° clockwise', () => {
+    // A 400×200 box turned on screen: its bounding rect is 200 wide and 400 tall.
+    const rect = { left: 100, top: 0, width: 200, height: 400 };
+    // The box's top-left corner sits at the screen's top-right of the rect.
+    expect(layerPoint({ clientX: 300, clientY: 0 }, rect, true)).toEqual({ x: 0, y: 0 });
+    // Its bottom-right corner at the rect's bottom-left.
+    expect(layerPoint({ clientX: 100, clientY: 400 }, rect, true)).toEqual({ x: 400, y: 200 });
+    // Moving down the screen moves along the box's width.
+    expect(layerPoint({ clientX: 250, clientY: 100 }, rect, true)).toEqual({ x: 100, y: 50 });
   });
 });

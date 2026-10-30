@@ -74,3 +74,18 @@ export function axisFraction(
 export function inTurnedLayer(el: Element | null | undefined): boolean {
   return Boolean(el?.closest('[data-fs-turned]'));
 }
+
+/**
+ * A pointer in an element's own (layout) coordinates, px from its top-left corner. In the CSS-turned fullscreen
+ * (`turned`: 90° clockwise, see ROTATED_STAGE_STYLE) the element's x runs down the screen and its y runs right to
+ * left, while `rect` (getBoundingClientRect) is in screen axes; so the zoom's pinch and drag land where the fingers
+ * are on the turned picture.
+ */
+export function layerPoint(
+  point: { clientX: number; clientY: number },
+  rect: { left: number; top: number; width: number; height: number },
+  turned: boolean,
+): { x: number; y: number } {
+  if (!turned) return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  return { x: point.clientY - rect.top, y: rect.left + rect.width - point.clientX };
+}

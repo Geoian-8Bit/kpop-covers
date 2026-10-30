@@ -132,17 +132,24 @@ export function useFormationEditor(full: FormationPlanFull, onError: (message: s
     [flush, queryClient, videoId],
   );
 
+  // A conflict stops every edit (stage, markers, props, undo) until «Recargar»: what isn't saved can't pile up.
   const commit = useCallback((next: FormationInput[]) => {
+    if (stopped.current) return;
     setHistory((h) => historyPush(h, sortKeyframes(next.map(tidy))));
   }, []);
   const update = useCallback((fn: (list: FormationInput[]) => FormationInput[]) => {
+    if (stopped.current) return;
     setHistory((h) => {
       const next = fn(h.present);
       return next === h.present ? h : historyPush(h, sortKeyframes(next.map(tidy)));
     });
   }, []);
-  const undo = useCallback(() => setHistory(historyUndo), []);
-  const redo = useCallback(() => setHistory(historyRedo), []);
+  const undo = useCallback(() => {
+    if (!stopped.current) setHistory(historyUndo);
+  }, []);
+  const redo = useCallback(() => {
+    if (!stopped.current) setHistory(historyRedo);
+  }, []);
 
   /** «Recargar»: drop the unsaved changes and take the server's version (also after an error). */
   const reload = useCallback(async () => {
