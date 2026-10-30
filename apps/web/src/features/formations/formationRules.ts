@@ -1,4 +1,6 @@
-import type { FormationPositions, StagePoint } from '@coverscape/shared';
+import type { FormationProp, FormationPositions, FormationSpot, StagePoint } from '@coverscape/shared';
+import { clampPath, pathPolyline, pathValid, pointOnPath, samePath } from './pathRules';
+import { lerpAngle, propsError, sameProps } from './propRules';
 
 /**
  * REQ-06 · Pure rules of the formation editor: where everybody is at a moment, the grid, the mirror, the moments
@@ -19,6 +21,8 @@ export interface Keyframe {
   transition: number;
   positions: FormationPositions;
   note?: string | null;
+  /** REQ-10 · Props on stage in this formation (old rows: none). */
+  props?: FormationProp[];
 }
 
 export const PLAN_NAME_MAX = 60;
@@ -118,7 +122,8 @@ export function withDefaults(positions: FormationPositions, memberIds: readonly 
   for (const id of memberIds) {
     const p = positions[id];
     if (p) {
-      out[id] = clampPoint(p, stage);
+      // REQ-08: the path that leads here travels with the place.
+      out[id] = p.path ? { ...clampPoint(p, stage), path: p.path } : clampPoint(p, stage);
       taken.push(out[id]);
     }
   }
@@ -189,7 +194,70 @@ export function positionsAt(list: readonly Keyframe[], t: number, memberIds: rea
   const to = withDefaults(next.positions, memberIds, stage);
   const p = ease(end > start ? (t - start) / (end - start) : 1);
   const out: FormationPositions = {};
-  for (const id of memberIds) out[id] = lerpPoint(from[id]!, to[id]!, p);
+  // REQ-08: along the destination's path (straight without one).
+  for (const id of memberIds) out[id] = pointOnPath(from[id]!, to[id]!, to[id]!.path, p);
+  return out;
+}
+
+/** REQ-10 · A prop as drawn at a moment: fading in or out when only one side of the move has it. */
+export interface PropFrame extends FormationProp {
+  opacity: number;
+}
+
+/** REQ-10 · The props at `t` (`list` sorted): the same timing as people, matched by id; turns take the short way. */
+export function propsAt(list: readonly Keyframe[], t: number): PropFrame[] {
+  if (list.length === 0) return [];
+  const still = (f: Keyframe) => (f.props ?? []).map((p) => ({ ...p, opacity: 1 }));
+  const first = list[0]!;
+  if (t <= first.at) return still(first);
+  const last = list[list.length - 1]!;
+  if (t >= last.at) return still(last);
+  let i = 0;
+  while (i < list.length - 1 && list[i + 1]!.at <= t) i++;
+  const prev = list[i]!;
+  const next = list[i + 1]!;
+  const { start, end } = moveWindow(prev, next);
+  if (t <= start) return still(prev);
+  const p = ease(end > start ? (t - start) / (end - start) : 1);
+  const after = new Map((next.props ?? []).map((q) => [q.id, q]));
+  const out: PropFrame[] = [];
+  for (const a of prev.props ?? []) {
+    const b = after.get(a.id);
+    if (!b) {
+      out.push({ ...a, opacity: 1 - p });
+      continue;
+    }
+    after.delete(a.id);
+    out.push({ ...b, ...lerpPoint(a, b, p), rot: lerpAngle(a.rot, b.rot, p), opacity: 1 });
+  }
+  for (const b of after.values()) out.push({ ...b, opacity: p });
+  return out;
+}
+
+/** REQ-10 · The props a new formation made at `t` starts with: those (mostly) on stage at that moment. */
+export function propsSnapshot(list: readonly Keyframe[], t: number): FormationProp[] {
+  return propsAt(list, t)
+    .filter((p) => p.opacity >= 0.5)
+    .map(({ opacity: _opacity, ...p }) => ({ ...p, x: round3(p.x), y: round3(p.y) }));
+}
+
+/** REQ-08 · Places without the path that led to them (a copy elsewhere in time can't keep the old route). */
+export function withoutPaths(positions: FormationPositions): FormationPositions {
+  const out: FormationPositions = {};
+  for (const [id, p] of Object.entries(positions)) out[id] = { x: p.x, y: p.y };
+  return out;
+}
+
+/**
+ * REQ-08 · After an edit that moved people (drag, template, flip…), each one keeps the path that led to their old
+ * place: the path's ends follow the formations, so it still joins them. Only explicit path edits change it.
+ */
+export function keepPaths(before: FormationPositions, after: FormationPositions): FormationPositions {
+  const out: FormationPositions = {};
+  for (const [id, p] of Object.entries(after)) {
+    const old = before[id]?.path;
+    out[id] = p.path === undefined && old ? { x: p.x, y: p.y, path: old } : p;
+  }
   return out;
 }
 
@@ -219,11 +287,17 @@ export function duplicateMoment(list: readonly Keyframe[], source: Keyframe, now
 /** «Mi recorrido»: the places somebody passes through, formation after formation (consecutive repeats dropped). */
 export function memberTrack(list: readonly Keyframe[], memberId: string, memberIds: readonly string[], stage: Stage): StagePoint[] {
   const out: StagePoint[] = [];
+  let before: FormationSpot | null = null;
   for (const f of list) {
     const p = withDefaults(f.positions, memberIds, stage)[memberId];
     if (!p) continue;
-    const prev = out[out.length - 1];
-    if (!prev || Math.hypot(prev.x - p.x, prev.y - p.y) > 1e-6) out.push(p);
+    // REQ-08: the route between two places follows the path into the second one.
+    const route = before && p.path ? pathPolyline(before, p, p.path, 16).slice(1) : [p];
+    for (const q of route) {
+      const prev = out[out.length - 1];
+      if (!prev || Math.hypot(prev.x - q.x, prev.y - q.y) > 1e-6) out.push({ x: q.x, y: q.y });
+    }
+    before = p;
   }
   return out;
 }
@@ -231,14 +305,18 @@ export function memberTrack(list: readonly Keyframe[], memberId: string, memberI
 /** Points pulled inside a smaller stage (the server does the same when the plan shrinks). */
 export function fitPositions(positions: FormationPositions, stage: Pick<Stage, 'width' | 'depth'>): FormationPositions {
   const out: FormationPositions = {};
-  for (const [id, p] of Object.entries(positions)) out[id] = clampPoint(p, stage);
+  for (const [id, p] of Object.entries(positions)) {
+    out[id] = p.path ? { ...clampPoint(p, stage), path: clampPath(p.path, stage) } : clampPoint(p, stage);
+  }
   return out;
 }
 
 export function samePositions(a: FormationPositions, b: FormationPositions): boolean {
   const ka = Object.keys(a);
   if (ka.length !== Object.keys(b).length) return false;
-  return ka.every((k) => b[k] != null && Math.abs(a[k]!.x - b[k]!.x) < 1e-6 && Math.abs(a[k]!.y - b[k]!.y) < 1e-6);
+  return ka.every(
+    (k) => b[k] != null && Math.abs(a[k]!.x - b[k]!.x) < 1e-6 && Math.abs(a[k]!.y - b[k]!.y) < 1e-6 && samePath(a[k]!.path, b[k]!.path),
+  );
 }
 
 export function sameKeyframe(a: Keyframe, b: Keyframe): boolean {
@@ -247,7 +325,8 @@ export function sameKeyframe(a: Keyframe, b: Keyframe): boolean {
     Math.abs(a.at - b.at) < 1e-6 &&
     Math.abs(a.transition - b.transition) < 1e-6 &&
     (a.note ?? null) === (b.note ?? null) &&
-    samePositions(a.positions, b.positions)
+    samePositions(a.positions, b.positions) &&
+    sameProps(a.props, b.props)
   );
 }
 
@@ -276,10 +355,13 @@ export function formationError(f: Keyframe, stage: Pick<Stage, 'width' | 'depth'
   if (entries.length > 40) return 'formation_invalid';
   for (const [id, p] of entries) {
     if (!UUID.test(id) || typeof p?.x !== 'number' || typeof p?.y !== 'number') return 'formation_invalid';
+    if (Object.keys(p).some((k) => k !== 'x' && k !== 'y' && k !== 'path')) return 'formation_invalid';
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return 'formation_invalid';
     if (p.x < 0 || p.y < 0 || p.x > stage.width || p.y > stage.depth) return 'formation_out_of_stage';
+    // REQ-08: a path out of the stage is malformed too (the client keeps it inside).
+    if (p.path !== undefined && !pathValid(p.path, stage)) return 'formation_invalid';
   }
-  return null;
+  return f.props === undefined ? null : propsError(f.props, stage);
 }
 
 /** «m:ss.d» for the markers (a formation can sit between seconds). */

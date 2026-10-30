@@ -97,10 +97,35 @@ export interface StagePoint {
   x: number;
   y: number;
 }
+/**
+ * REQ-08 · How somebody travels into a formation (straight when absent): `curve` has one control point, `points` the
+ * places passed through, `free` a simplified hand-drawn line. Start and end are the two formations' positions.
+ */
+export type FormationPathKind = 'curve' | 'points' | 'free';
+export interface FormationPath {
+  kind: FormationPathKind;
+  points: StagePoint[];
+}
+/** REQ-06 · A participant's place in a formation; REQ-08 adds the path that leads there (optional: old rows lack it). */
+export interface FormationSpot extends StagePoint {
+  path?: FormationPath;
+}
 /** REQ-06 · Where each participant stands in one formation, by member id. */
-export type FormationPositions = Record<string, StagePoint>;
+export type FormationPositions = Record<string, FormationSpot>;
+/** REQ-10 · Stage props: they move between formations like people, but never count in clashes. */
+export type FormationPropKind = 'chair' | 'bench' | 'mark' | 'step';
+export interface FormationProp {
+  id: string;
+  kind: FormationPropKind;
+  x: number;
+  y: number;
+  /** Degrees, 0–359, clockwise as seen from above. */
+  rot: number;
+  /** Short text of a free mark. */
+  label?: string;
+}
 /** REQ-06 · A plan of formations for a song (one line-up: «Con 5», «Con 4 si falta alguien»…). */
 export type FormationPlan = Tables<'formation_plans'>;
 export type FormationPlanMember = Tables<'formation_plan_members'>;
 /** REQ-06 · One keyframe: reached at `at`, the move starts `transition` seconds earlier. */
-export type Formation = Omit<Tables<'formations'>, 'positions'> & { positions: FormationPositions };
+export type Formation = Omit<Tables<'formations'>, 'positions' | 'props'> & { positions: FormationPositions; props: FormationProp[] };

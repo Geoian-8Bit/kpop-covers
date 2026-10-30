@@ -14,6 +14,7 @@ import {
   sortKeyframes,
   type History,
 } from './formationRules';
+import { fitProps } from './propRules';
 
 /** «Guardado», «Guardando…», «Sin guardar» (with retry) or the conflict notice. */
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict';
@@ -27,6 +28,7 @@ const toInput = (f: Formation): FormationInput => ({
   transition: f.transition,
   positions: f.positions ?? {},
   note: f.note?.trim() || null,
+  props: f.props ?? [],
 });
 
 const tidy = (f: FormationInput): FormationInput => ({ ...f, at: roundTime(f.at), note: f.note?.trim() || null });
@@ -179,7 +181,8 @@ export function useFormationEditor(full: FormationPlanFull, onError: (message: s
         if (patch.members) setMembers(patch.members);
         // The server pulled every point inside a smaller stage: the working copy (and its history) does the same.
         const stage = { width: r.plan.stage_width, depth: r.plan.stage_depth };
-        const fit = (list: FormationInput[]) => list.map((f) => ({ ...f, positions: fitPositions(f.positions, stage) }));
+        const fit = (list: FormationInput[]) =>
+          list.map((f) => ({ ...f, positions: fitPositions(f.positions, stage), props: fitProps(f.props, stage) }));
         saved.current = fit(saved.current);
         setHistory((h) => mapHistory(h, fit));
         setStatus('saved');
