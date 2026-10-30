@@ -424,7 +424,7 @@ export function ReviewScreen({
       }
       setComposer(null);
     } catch (err) {
-      throw new Error(friendlyError(err));
+      throw new Error(friendlyError(err), { cause: err });
     }
   }
 

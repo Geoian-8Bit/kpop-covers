@@ -2393,7 +2393,7 @@ const demoStems: StemsBackend = {
       const stems = db.video_stems?.find((s) => s.id === id && isLive(s));
       if (!stems) throw demoError('PGRST116 0 rows');
       if (stems.vocals_path || stems.instrumental_path) throw demoError('stems_locked');
-      const own = (p: string, kind: string) => new RegExp(`^${stems.crew_id}/stems/${stems.id}/${kind}\.(m4a|mp4|webm|ogg)$`).test(p);
+      const own = (p: string, kind: string) => new RegExp(`^${stems.crew_id}/stems/${stems.id}/${kind}\\.(m4a|mp4|webm|ogg)$`).test(p);
       if (!own(paths.vocals_path, 'vocals') || !own(paths.instrumental_path, 'instrumental')) {
         throw demoError('new row for relation "video_stems" violates check constraint "video_stems_vocals_path_own"', '23514');
       }

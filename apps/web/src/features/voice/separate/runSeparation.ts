@@ -42,7 +42,7 @@ interface GpuAdapterLike {
 /** What this device offers for the separation (one adapter request, no device is created). */
 export async function deviceCaps(): Promise<DeviceCaps> {
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(o?: object): Promise<GpuAdapterLike | null> } }).gpu;
-  let adapter: GpuAdapterLike | null = null;
+  let adapter: GpuAdapterLike | null;
   try {
     adapter = gpu ? await gpu.requestAdapter({ powerPreference: 'high-performance' }) : null;
   } catch {
@@ -402,6 +402,8 @@ async function separate(opts: SeparationRequest, work: HeavyWork): Promise<Video
   await whileCovered(signal, work);
   // The voice gets the instrumental's edit list (a quiet voice can't be measured on its own).
   const vocals = await encodeFitting(done.vocals[0], done.vocals[1], choice, instrumental.primingSamples);
+  // Not useless: drops the last reference to the voice's raw samples before the network waits below.
+  // eslint-disable-next-line no-useless-assignment
   done = null;
   check();
   const measured = [instrumental.delaySeconds, vocals.delaySeconds].find((d) => Number.isFinite(d));

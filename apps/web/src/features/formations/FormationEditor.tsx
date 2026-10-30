@@ -601,6 +601,7 @@ function EditorBody({
                   if (id) setSelection([]);
                 }}
                 onMoveProp={(id, to) => editProps((props) => patchProp(props, id, to, stage))}
+                locked={conflict}
               />
             )}
           </div>
@@ -625,6 +626,7 @@ function EditorBody({
         selectedId={selectedId}
         onMoveMarker={moveMarker}
         clashes={ranges}
+        locked={conflict}
         underlay={(span) => <RhythmUnderlay span={span} bpm={ed.plan.bpm} firstBeat={ed.plan.first_beat} wave={playsFile ? wave : null} />}
       />
       <FormationTransport />

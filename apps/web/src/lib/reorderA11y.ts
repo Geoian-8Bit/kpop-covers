@@ -17,6 +17,6 @@ export function positionMessage(name: string, index: number, total: number): str
  */
 export function useAnnouncer(): [message: string, announce: (text: string) => void] {
   const [message, setMessage] = useState('');
-  const announce = useCallback((text: string) => setMessage((prev) => (prev === text ? `${text} ` : text)), []);
+  const announce = useCallback((text: string) => setMessage((prev) => (prev === text ? `${text}\u00a0` : text)), []);
   return [message, announce];
 }

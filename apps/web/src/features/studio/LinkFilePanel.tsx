@@ -79,7 +79,6 @@ export function LinkFilePanel({
     setConfirm(null);
     replacing.current = false;
     if (initialFile) void onPick(initialFile);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
   useEffect(() => {
     if (step.kind !== 'sync' || !step.revoke) return;

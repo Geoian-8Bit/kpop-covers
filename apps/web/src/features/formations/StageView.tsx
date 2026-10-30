@@ -120,6 +120,8 @@ export interface StageViewProps {
   selectedProp: string | null;
   onSelectProp: (id: string | null) => void;
   onMoveProp: (id: string, to: StagePoint) => void;
+  /** A save conflict: nothing on the stage can be moved, drawn or selected until «Recargar». */
+  locked?: boolean;
 }
 
 /**
@@ -152,6 +154,7 @@ export function StageView({
   selectedProp,
   onSelectProp,
   onMoveProp,
+  locked = false,
 }: StageViewProps) {
   const mirrored = usePlayer((s) => s.mirrored);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -254,7 +257,7 @@ export function StageView({
   }
 
   function onDotDown(id: string, e: ReactPointerEvent<SVGGElement>) {
-    if (e.button > 0) return;
+    if (locked || e.button > 0) return;
     if (drawing) {
       startStroke(e);
       return;
@@ -271,7 +274,7 @@ export function StageView({
   }
 
   function onPropDown(id: string, e: ReactPointerEvent<SVGGElement>) {
-    if (e.button > 0) return;
+    if (locked || e.button > 0) return;
     if (drawing) {
       startStroke(e);
       return;
@@ -285,7 +288,7 @@ export function StageView({
   }
 
   function onHandleDown(index: number, point: StagePoint, e: ReactPointerEvent<SVGCircleElement>) {
-    if (e.button > 0) return;
+    if (locked || e.button > 0) return;
     e.preventDefault();
     e.stopPropagation();
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -293,7 +296,7 @@ export function StageView({
   }
 
   function onFloorDown(e: ReactPointerEvent<SVGSVGElement>) {
-    if (e.button > 0 || drag.current || propDrag.current) return;
+    if (locked || e.button > 0 || drag.current || propDrag.current) return;
     if (drawing) {
       startStroke(e);
       return;
@@ -409,6 +412,7 @@ export function StageView({
   }
 
   function onDotKey(id: string, e: React.KeyboardEvent<SVGGElement>) {
+    if (locked) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onSelect([id], e.shiftKey);
@@ -426,6 +430,7 @@ export function StageView({
   }
 
   function onPropKey(id: string, e: React.KeyboardEvent<SVGGElement>) {
+    if (locked) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onSelectProp(id);
@@ -523,6 +528,7 @@ export function StageView({
       viewBox={`${-PAD} ${-PAD} ${W + PAD * 2} ${D + PAD + AUDIENCE}`}
       role="group"
       aria-label={`Escenario de ${W.toLocaleString('es-ES')} × ${D.toLocaleString('es-ES')} m, visto ${mirrored ? 'desde los bailarines' : 'desde el público'}`}
+      aria-disabled={locked || undefined}
       onPointerDown={onFloorDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -531,6 +537,7 @@ export function StageView({
         'block h-auto w-full select-none',
         selectMode || drawing ? 'touch-none' : 'touch-pan-y',
         drawing && 'cursor-crosshair',
+        locked && 'cursor-not-allowed',
         dragging && 'cursor-grabbing',
       )}
     >

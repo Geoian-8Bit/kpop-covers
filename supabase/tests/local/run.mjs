@@ -63,7 +63,7 @@ try {
   } catch (err) {
     failures.push(rel(stubPath));
     console.error(`FAIL stub ${rel(stubPath)}\n${describeError(err)}`);
-    throw new Error('stub');
+    throw new Error('stub', { cause: err });
   }
 
   // 2) Migrations from scratch, each one atomic (like `supabase db push`).
@@ -76,7 +76,7 @@ try {
     } catch (err) {
       failures.push(rel(file));
       console.error(`FAIL migration ${rel(file)}\n${describeError(err)}`);
-      throw new Error('migration');
+      throw new Error('migration', { cause: err });
     }
   }
 

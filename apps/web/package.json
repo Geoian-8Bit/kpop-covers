@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "pwa-assets": "pwa-assets-generator"
+    "pwa-assets": "pwa-assets-generator",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@coverscape/shared": "workspace:*",
@@ -30,6 +31,8 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.1.13",
     "@types/node": "^22.18.1",
     "@types/react": "^19.1.13",

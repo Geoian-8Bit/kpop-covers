@@ -1928,7 +1928,6 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const showCamera = phase !== 'review';
   const vertical = view.aspect < 1;
   // What the next take will use; asked again only when the camera or its shape changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const nextFormat = useMemo(
     () => (camReady ? plannedFormat() : null),
     [camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality, badVersion],
