@@ -138,7 +138,9 @@ export default defineConfig(({ mode, command }) => {
         importScripts: ['/push-sw.js'],
         // 18 · The voice separator's worker (with onnxruntime-web, ~150 KB) only for whoever separates a song; its
         // .wasm isn't in globPatterns either. The HTTP cache keeps both (hashed, immutable).
-        globIgnores: ['**/stemSeparator.worker-*.js'],
+        // REQ-13 · The 3D view (three.js + @react-three/fiber, ~1 MB) only for whoever opens it, like the separator.
+        // REQ-11 · Likewise jspdf's optional extras (html2canvas, canvg, dompurify), which the PDF export never asks for.
+        globIgnores: ['**/stemSeparator.worker-*.js', '**/three3d-*.js', '**/Stage3D-*.js', '**/pdf-extras-*.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -215,6 +217,16 @@ export default defineConfig(({ mode, command }) => {
           if (pkg.startsWith('@supabase/')) return 'supabase';
           if (pkg.startsWith('@tanstack/')) return 'query';
           if (pkg.startsWith('lucide-react/')) return 'icons';
+          // zustand is shared with @react-three/fiber: left unassigned, Rollup would put it in the lazy 3D chunk and the
+          // entry would import (and preload) that chunk. Its `traditional` build is only the 3D renderer's.
+          if (/^zustand\/esm\/(?!traditional)/.test(pkg)) return 'react';
+          // REQ-13 · three.js and its React renderer in one lazy chunk (kept out of the precache, see globIgnores).
+          if (/^(three|@react-three\/fiber|its-fine|suspend-react|react-use-measure)\//.test(pkg)) return 'three3d';
+          // REQ-11 · What jspdf only loads for `.html()` and SVG (never used here): one chunk, out of the precache.
+          if (/^(html2canvas|dompurify|canvg|core-js|raf|rgbcolor|stackblur-canvas|svg-pathdata|performance-now)\//.test(pkg)) return 'pdf-extras';
+          // Babel helpers shared by jspdf, its extras and the 3D renderer: a tiny chunk of their own, so none of those
+          // chunks has to load another one just for them.
+          if (pkg.startsWith('@babel/runtime/')) return 'babel-helpers';
         },
       },
     },
