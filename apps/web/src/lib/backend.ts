@@ -3082,9 +3082,13 @@ const demoPlanMembers = (db: FormationsDemoDb, planId: string) =>
     .map((m) => m.member_id);
 
 function demoSetParticipants(db: FormationsDemoDb, planId: string, ids: string[]) {
-  const live = new Set((db.members ?? []).map((m) => m.id));
-  if (ids.length > 40 || ids.some((id) => !live.has(id))) throw demoError('formation_member_invalid');
   const rows = (db.formation_plan_members ??= []);
+  // Live members, plus people already in the plan who left the group (kept, greyed out; as the server does).
+  const live = new Set([
+    ...(db.members ?? []).map((m) => m.id),
+    ...rows.filter((r) => r.plan_id === planId && isLive(r)).map((r) => r.member_id),
+  ]);
+  if (ids.length > 40 || ids.some((id) => !live.has(id))) throw demoError('formation_member_invalid');
   for (const row of rows) {
     if (row.plan_id !== planId) continue;
     const wanted = ids.includes(row.member_id);

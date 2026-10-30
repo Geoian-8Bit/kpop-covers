@@ -1823,6 +1823,7 @@ export type Database = {
         Args: { p_ends: string; p_member?: string | null; p_rule: string; p_starts: string; p_weekday: number };
         Returns: {
           archived_at: string | null;
+          changed_by_member: string | null;
           created_at: string;
           crew_id: string;
           ends_at: string;

@@ -54,6 +54,8 @@ import { loadLocalVideo } from '@/lib/localVideos';
 import { groupCopyLabel, initialStage, needsLocalCheck, playsGroupCopy } from './stageRules';
 import { fsChrome, useFsChrome, useFsChromeDriver } from './fullscreenChrome';
 import {
+  axisFraction,
+  inTurnedLayer,
   lockTarget,
   needsCssRotation,
   nextOrientationPref,
@@ -932,6 +934,8 @@ function MediaStage({
     const detail = event.detail;
     const clientX = event.clientX;
     const rect = event.currentTarget.getBoundingClientRect();
+    // REQ-02 · In the CSS-turned layer the stage's left–right runs down the screen.
+    const along = axisFraction(event, rect, inTurnedLayer(event.currentTarget));
     // F9 · Zoomed in: a double tap (or double click) goes back to the whole video, so a single tap waits a moment.
     if (canZoom && isZoomed(usePlayer.getState().zoom) && detail !== 0) {
       const now = { at: performance.now(), x: clientX, y: event.clientY };
@@ -944,13 +948,13 @@ function MediaStage({
         return;
       }
       t.last = now;
-      t.timer = setTimeout(() => stageTap(detail, clientX, rect), 300);
+      t.timer = setTimeout(() => stageTap(detail, along), 300);
       return;
     }
-    stageTap(detail, clientX, rect);
+    stageTap(detail, along);
   }
 
-  function stageTap(detail: number, clientX: number, rect: DOMRect) {
+  function stageTap(detail: number, x: number) {
     const player = usePlayer.getState();
     // detail 0: a keyboard press, whatever the last pointer was.
     if (!fullscreen || pointerType.current !== 'touch' || detail === 0) {
@@ -958,7 +962,6 @@ function MediaStage({
       if (fullscreen) fsChrome.wake();
       return;
     }
-    const x = (clientX - rect.left) / rect.width;
     const side = x < 0.35 ? 'left' : x > 0.65 ? 'right' : 'center';
     const now = performance.now();
     const t = tap.current;
@@ -1008,6 +1011,8 @@ function MediaStage({
       data-fs={fullscreen || undefined}
       // REQ-02 · A fixed orientation the system could not hold: the whole layer turns 90° and takes the whole screen.
       style={fullscreen && rotated ? ROTATED_STAGE_STYLE : undefined}
+      // Pointer maths inside the turned layer reads the screen's vertical axis (axisFraction).
+      data-fs-turned={(fullscreen && rotated) || undefined}
       className={cn(
         fullscreen &&
           '[container-type:size] ' +
@@ -1620,11 +1625,12 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
   }, []);
 
   const pct = (t: number) => (duration > 0 ? Math.min(100, Math.max(0, (t / duration) * 100)) : 0);
-  const fractionAt = (clientX: number) => {
+  const fractionAt = (point: { clientX: number; clientY: number }) => {
     const rect = (dragging.current && rectRef.current) || barRef.current!.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    // REQ-02 · Inside the CSS-turned layer the bar runs down the screen.
+    return axisFraction(point, rect, inTurnedLayer(barRef.current));
   };
-  const scrubAt = (clientX: number) => usePlayer.getState().scrubTo(fractionAt(clientX) * duration);
+  const scrubAt = (point: { clientX: number; clientY: number }) => usePlayer.getState().scrubTo(fractionAt(point) * duration);
   const release = () => {
     if (!dragging.current) return;
     dragging.current = false;
@@ -1703,13 +1709,13 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
           rectRef.current = e.currentTarget.getBoundingClientRect();
           dragging.current = true;
           usePlayer.getState().setScrubbing(true);
-          scrubAt(e.clientX);
-          setHover(fractionAt(e.clientX));
+          scrubAt(e);
+          setHover(fractionAt(e));
         }}
         onPointerMove={(e) => {
           // Fingers only get the time bubble while dragging; a mouse gets it on hover too.
-          if (e.pointerType !== 'touch' || dragging.current) setHover(fractionAt(e.clientX));
-          if (dragging.current) scrubAt(e.clientX);
+          if (e.pointerType !== 'touch' || dragging.current) setHover(fractionAt(e));
+          if (dragging.current) scrubAt(e);
         }}
         onPointerUp={(e) => {
           release();

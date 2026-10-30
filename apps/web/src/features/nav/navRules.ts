@@ -54,9 +54,12 @@ export interface HandLayout {
  * (`buttonTop`). Every card keeps at least 10 px from the sides.
  */
 export function handLayout(n: number, w: number, buttonTop: number): HandLayout {
-  const cardW = Math.round(Math.max(56, Math.min(80, (w - 24) / (n * 0.86))));
+  // Seven cards or more (six sections and «¿Quién eres?»): a touch narrower and a flatter arc, because a tilted card's
+  // bottom slides under its neighbour and would hide the end of its label («Biblioteca», «Calendario»).
+  const crowded = n >= 7;
+  const cardW = Math.round(Math.max(56, Math.min(80, (w - 24) / (n * (crowded ? 0.9 : 0.86)))));
   const cardH = Math.round(cardW * 1.6);
-  const radius = 560;
+  const radius = crowded ? 900 : 560;
   const span = Math.max(0, w - 20 - cardW);
   const step = n > 1 ? Math.min(span / (n - 1), cardW * 0.94) : 0;
   const cx = w / 2;

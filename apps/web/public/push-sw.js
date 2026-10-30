@@ -40,7 +40,10 @@ async function updateCount(delta, reset) {
 
 /** Only paths of this app (a payload can't send the app anywhere else). */
 function safePath(url) {
-  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') ? url : '/calendario';
+  // `/\host` is read as `//host` by URL parsing: backslashes are refused too.
+  return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//') && !url.includes('\\')
+    ? url
+    : '/calendario';
 }
 
 self.addEventListener('push', (event) => {

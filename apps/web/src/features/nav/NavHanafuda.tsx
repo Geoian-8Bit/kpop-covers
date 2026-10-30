@@ -155,7 +155,8 @@ function Hand({ api }: { api: QuickNavApi }) {
               onFocus={() => setLifted(i)}
               aria-label={entry.dot ? `${entry.label}. Hay cambios sin ver` : entry.label}
               className={cn(
-                'relative flex size-full flex-col items-center overflow-hidden rounded-[8px] border-2 px-1 pb-1.5 pt-2 text-center outline-none',
+                narrow ? 'px-0.5' : 'px-1',
+                'relative flex size-full flex-col items-center overflow-hidden rounded-[8px] border-2 pb-1.5 pt-2 text-center outline-none',
                 'shadow-[0_14px_24px_-12px_rgb(0_0_0/0.95)] focus-visible:ring-2 focus-visible:ring-kin-300 focus-visible:ring-offset-2 focus-visible:ring-offset-sumi-950',
                 entry.tone.field,
                 entry.active ? 'border-kin-300' : 'border-sumi-950',
@@ -189,9 +190,9 @@ function Hand({ api }: { api: QuickNavApi }) {
               <span
                 lang="es"
                 className={cn(
-                  'relative mt-auto w-full hyphens-auto rounded-[4px] bg-washi px-0.5 py-0.5 font-bold leading-[1.15] text-sumi-900 [overflow-wrap:anywhere]',
+                  'relative mt-auto w-full hyphens-auto rounded-[4px] bg-washi py-0.5 font-bold leading-[1.15] text-sumi-900 [overflow-wrap:anywhere]',
                   // Seven cards on a phone are narrow: a touch smaller so «Biblioteca» or «Calendario» fit on one line.
-                  narrow ? 'text-[10px] tracking-[-0.03em]' : 'text-[11px]',
+                  narrow ? 'px-px text-[9.5px] tracking-[-0.03em]' : 'px-0.5 text-[11px]',
                 )}
               >
                 {entry.short}
