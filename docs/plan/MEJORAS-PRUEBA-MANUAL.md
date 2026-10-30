@@ -459,3 +459,4 @@ Lo que no se menciona aquí está bien y no se toca.
 | 52 | Votaciones | Quitar opciones: los resultados siempre en directo, los votos siempre con nombre y el cierre siempre a mano | Media | **Hecho** (7936132) |
 | 53 | Random Play Dance · crear | En el móvil la cabecera (título, descripción y «Pistas guardadas») ocupa casi media pantalla: solo el título, compacto | Alta | **Hecho** (7936132) |
 | 54 | Random Play Dance · ronda | Con la ronda en marcha, la pantalla completa es solo el vídeo, con las acciones abajo, como en la pantalla completa del estudio | Alta | **Hecho** (7936132) |
+| 55 | Repaso · «Superpuesto» y ajustes | En «Superpuesto» no dejaba mover la línea de tiempo ni abrir los ajustes; ajustes mejores, con accesos rápidos y pensados para horizontal | Alta | **Hecho** (48f2926) |

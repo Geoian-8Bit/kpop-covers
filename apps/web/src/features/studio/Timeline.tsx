@@ -665,12 +665,14 @@ function Handle({
   onPointerDown: (e: ReactPointerEvent) => void;
 }) {
   return (
+    // Only the seal grabs (a 44 px target centred on it); the red edge lets touches through to the track,
+    // so scrubbing over the edge — or over the playhead sitting on it — moves the time.
     <div
       onPointerDown={onPointerDown}
       className={cn(
-        'absolute -inset-y-3.5 z-10 flex w-7 cursor-ew-resize touch-none justify-center',
+        'absolute z-10 grid size-11 -translate-x-1/2 cursor-ew-resize touch-none place-items-center',
         // A sits above the band, B below it, so short loops never stack the two seals.
-        side === 'start' ? '-left-[15px] items-start' : '-right-[15px] items-end',
+        side === 'start' ? '-top-6 left-[-1px]' : '-bottom-6 left-[calc(100%+1px)]',
       )}
     >
       <motion.span
