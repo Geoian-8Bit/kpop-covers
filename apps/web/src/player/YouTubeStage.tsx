@@ -9,7 +9,7 @@ import { hasRange, usePlayer } from './store';
  * Streams the original YouTube video through the IFrame API (no download needed).
  * Native controls are hidden; our overlay drives play/seek/speed and the mirror is a CSS flip.
  */
-export function YouTubeStage({ videoId }: { videoId: string }) {
+export function YouTubeStage({ videoId, vertical = false }: { videoId: string; vertical?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const toastRef = useRef(toast);
@@ -142,10 +142,15 @@ export function YouTubeStage({ videoId }: { videoId: string }) {
 
   // The iframe is 24% taller than the 16:9 stage: the video still fits the width, while YouTube's
   // title bar and bottom "more videos" strip land in the letterbox that the stage crops away.
+  // A vertical video (REQ-02) is not cropped: its stage has its own shape and the iframe fills it.
   return (
     <div
       ref={hostRef}
-      className="absolute inset-0 overflow-hidden [&_iframe]:absolute [&_iframe]:left-0 [&_iframe]:top-[-12%] [&_iframe]:h-[124%] [&_iframe]:w-full"
+      className={
+        vertical
+          ? 'absolute inset-0 overflow-hidden [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:size-full'
+          : 'absolute inset-0 overflow-hidden [&_iframe]:absolute [&_iframe]:left-0 [&_iframe]:top-[-12%] [&_iframe]:h-[124%] [&_iframe]:w-full'
+      }
     />
   );
 }

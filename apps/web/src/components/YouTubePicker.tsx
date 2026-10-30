@@ -1,4 +1,4 @@
-import { formatDuration, youTubeThumbnail } from '@coverscape/shared';
+import { formatDuration, videoAspectRatio, youTubeThumbnail } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, ClipboardPaste, Search, X, Youtube } from 'lucide-react';
 import {
@@ -38,6 +38,8 @@ export interface YouTubePick {
   /** Known for search hits; null for a pasted link. */
   durationSeconds: number | null;
   via: 'search' | 'link';
+  /** Width / height when known (oEmbed, or a /shorts/ link); null/undefined: unknown, shown as horizontal. */
+  aspectRatio?: number | null;
 }
 
 /** A note on a result, e.g. «Ya en la biblioteca». `warn`: picking it will be refused or redirected by the form. */
@@ -146,6 +148,8 @@ export function YouTubePicker({
   };
   const input = readPickerInput(text);
   const linkId = input.kind === 'link' ? input.youtubeId : null;
+  const textRef = useRef(text);
+  textRef.current = text;
   const query = input.kind === 'search' ? input.query : null;
 
   const { state: search, run } = useYouTubeSearch();
@@ -198,8 +202,25 @@ export function YouTubePicker({
         thumbnailUrl: hit.thumbnail || youTubeThumbnail(hit.id, 'mqdefault'),
         durationSeconds: hit.duration,
         via: 'search',
+        aspectRatio: null,
       });
-      return;
+      // A search hit has no size: the lookup adds the proportion without waiting for it (no title change).
+      const lookup = new AbortController();
+      fetchYouTubeMeta(hit.id, lookup.signal)
+        .then((next) => {
+          if (lookup.signal.aborted || next.status !== 'ok' || next.aspectRatio == null) return;
+          onPickRef.current({
+            youtubeId: hit.id,
+            title: hit.title,
+            channel: hit.channel,
+            thumbnailUrl: hit.thumbnail || youTubeThumbnail(hit.id, 'mqdefault'),
+            durationSeconds: hit.duration,
+            via: 'search',
+            aspectRatio: next.aspectRatio,
+          });
+        })
+        .catch(() => undefined);
+      return () => lookup.abort();
     }
     const base: YouTubePick = {
       youtubeId: linkId,
@@ -208,6 +229,7 @@ export function YouTubePicker({
       thumbnailUrl: youTubeThumbnail(linkId, 'mqdefault'),
       durationSeconds: null,
       via: 'link',
+      aspectRatio: videoAspectRatio({ url: textRef.current }),
     };
     onPickRef.current(base);
     const controller = new AbortController();
@@ -226,7 +248,12 @@ export function YouTubePicker({
           hasPick.current = false;
           onClearRef.current?.();
         } else if (next.status === 'ok' && (next.title || next.author)) {
-          onPickRef.current({ ...base, title: next.title ?? '', channel: next.author ?? '' });
+          onPickRef.current({
+            ...base,
+            title: next.title ?? '',
+            channel: next.author ?? '',
+            aspectRatio: next.aspectRatio ?? base.aspectRatio,
+          });
         }
       })
       .catch(() => undefined);

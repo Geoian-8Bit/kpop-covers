@@ -82,3 +82,37 @@ export function youTubeWatchUrl(id: string, startSeconds?: number): string {
   const t = startSeconds && startSeconds > 0 ? `&t=${Math.floor(startSeconds)}s` : '';
   return `https://www.youtube.com/watch?v=${id}${t}`;
 }
+
+/** Proportion (width / height) given to a YouTube Short whose real size is not known. */
+export const SHORTS_ASPECT = 9 / 16;
+
+/** The link is a YouTube Short (`/shorts/<id>`): always vertical. */
+export function isYouTubeShortsUrl(input: string): boolean {
+  try {
+    const raw = input.trim();
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    const host = url.hostname.toLowerCase().replace(HOST_PREFIX_RE, '');
+    return (host === 'youtube.com' || host === 'youtube-nocookie.com') && /^\/shorts\/[^/?#]+/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Width / height of a video, to keep in `videos.aspect_ratio`. The oEmbed size wins (when it is a plausible
+ * size); otherwise a Shorts link means 9:16; otherwise unknown (null: treated as horizontal, as before).
+ */
+export function videoAspectRatio(opts: { width?: unknown; height?: unknown; url?: string }): number | null {
+  const w = Number(opts.width);
+  const h = Number(opts.height);
+  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    const ratio = w / h;
+    if (ratio >= 0.2 && ratio <= 5) return Math.round(ratio * 10000) / 10000;
+  }
+  return opts.url && isYouTubeShortsUrl(opts.url) ? SHORTS_ASPECT : null;
+}
+
+/** A stored or measured proportion says «vertical» (taller than wide). Unknown means horizontal. */
+export function isVerticalAspect(ratio: number | null | undefined): boolean {
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 && ratio < 1;
+}

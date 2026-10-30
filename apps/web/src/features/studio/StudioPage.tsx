@@ -2,6 +2,7 @@ import {
   formatSpeed,
   formatTime,
   hasLinkedFile,
+  isVerticalAspect,
   round3,
   SPEED_PRESETS,
   youTubeWatchUrl,
@@ -25,6 +26,8 @@ import {
   Play,
   Repeat,
   Repeat1,
+  RotateCw,
+  Smartphone,
   Video as VideoIcon,
   WifiOff,
   Youtube,
@@ -39,6 +42,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -49,6 +53,16 @@ import { forgetStage, readStage, rememberStage } from '@/lib/stagePref';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { groupCopyLabel, initialStage, needsLocalCheck, playsGroupCopy } from './stageRules';
 import { fsChrome, useFsChrome, useFsChromeDriver } from './fullscreenChrome';
+import {
+  lockTarget,
+  needsCssRotation,
+  nextOrientationPref,
+  orientationButtonLabel,
+  orientationLabel,
+  showOrientationButton,
+  youtubeFrameRatio,
+  type OrientationPref,
+} from './fullscreenRules';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
@@ -836,7 +850,8 @@ function MediaStage({
 
   const missing = playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
-  const { stageRef, fullscreen, toggleFullscreen } = useFullscreen();
+  const { stageRef, fullscreen, toggleFullscreen, orientation, cycleOrientation, rotated, showOrientation } = useFullscreen();
+  const youtubeStage = !playsFile && Boolean(video.youtube_id);
   // 5 · The controls' visibility lives in its own small store: showing them never repaints this stage.
   useFsChromeDriver(fullscreen);
   const pointerType = useRef<string>('mouse');
@@ -940,19 +955,25 @@ function MediaStage({
       ref={stageRef}
       // Lifts the pinned container over the top bar in the CSS fullscreen; menus inside it mind only the screen.
       data-fs={fullscreen || undefined}
+      // REQ-02 · A fixed orientation the system could not hold: the whole layer turns 90° and takes the whole screen.
+      style={fullscreen && rotated ? ROTATED_STAGE_STYLE : undefined}
       className={cn(
         fullscreen &&
+          '[container-type:size] ' +
           // The idle pointer hides over the video, never over a dialog (or its backdrop) open on top of it.
           'fixed inset-0 z-[70] grid place-items-center bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
       )}
     >
       <div
         ref={boxRef}
+        // REQ-02 · Fullscreen: a file fills the screen (object-contain inside); YouTube takes the video's own shape,
+        // as large as fits (16:9 when horizontal or unknown, as before).
+        style={fullscreen && youtubeStage ? youtubeFsBoxStyle(video.aspect_ratio) : undefined}
         className={cn(
-          'relative aspect-video w-full overflow-hidden bg-black',
+          'relative overflow-hidden bg-black',
           fullscreen
-            ? 'max-h-dvh max-w-[calc(100dvh*16/9)]'
-            : 'rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
+            ? !youtubeStage && 'size-full'
+            : 'aspect-video w-full rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
         )}
       >
         <motion.div
@@ -962,7 +983,7 @@ function MediaStage({
           transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
         >
           {hold ? null : !playsFile && video.youtube_id ? (
-            <YouTubeStage key={reloadKey} videoId={video.youtube_id} />
+            <YouTubeStage key={reloadKey} videoId={video.youtube_id} vertical={isVerticalAspect(video.aspect_ratio)} />
           ) : file.status === 'ready' ? (
             // F9 · Inside the mirror: the zoom follows the picture when it flips.
             <PlayerZoomLayer enabled={canZoom} box={box} media={media} live={zoomLive}>
@@ -1109,7 +1130,13 @@ function MediaStage({
           <FsSeekFlash />
           <FsChromeLayer stageRef={stageRef}>
             <FsTopBar video={video} />
-            <FullscreenBar clips={clips} onClipSelect={onClipSelect} onExit={() => void toggleFullscreen()} />
+            <FullscreenBar
+              clips={clips}
+              onClipSelect={onClipSelect}
+              onExit={() => void toggleFullscreen()}
+              orientation={showOrientation ? orientation : null}
+              onCycleOrientation={cycleOrientation}
+            />
           </FsChromeLayer>
           <FsNoteBubble notes={notes} />
         </>
@@ -1126,6 +1153,11 @@ function MediaStage({
 function useFullscreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<'none' | 'native' | 'css'>('none');
+  // REQ-02 · Fixed orientation: automatic (the view follows the phone), upright or sideways.
+  const [orientation, setOrientation] = useState<OrientationPref>('auto');
+  const [lockHeld, setLockHeld] = useState(false);
+  const deviceLandscape = useDeviceLandscape();
+  const touch = useCoarsePointer();
 
   const toggleFullscreen = useCallback(async () => {
     if (document.fullscreenElement) {
@@ -1140,9 +1172,8 @@ function useFullscreen() {
     if (el && document.fullscreenEnabled && el.requestFullscreen) {
       try {
         await el.requestFullscreen({ navigationUI: 'hide' });
+        // No orientation lock any more: the view follows how the phone is held (the button fixes it).
         setMode('native');
-        const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
-        void orientation.lock?.('landscape').catch(() => undefined);
         return;
       } catch {
         /* fall through to the CSS layer */
@@ -1161,6 +1192,8 @@ function useFullscreen() {
         /* not locked / not supported */
       }
       setMode((m) => (m === 'native' ? 'none' : m));
+      setOrientation('auto');
+      setLockHeld(false);
     };
     const onToggle = () => void toggleFullscreen();
     document.addEventListener('fullscreenchange', onChange);
@@ -1192,6 +1225,45 @@ function useFullscreen() {
       refitViewport();
     };
   }, [mode]);
+  // Leaving the CSS fullscreen also goes back to automatic (the next time starts clean).
+  useEffect(() => {
+    if (mode === 'none') {
+      setOrientation('auto');
+      setLockHeld(false);
+    }
+  }, [mode]);
+
+  // The orientation lock (native only). If the system refuses, the CSS turn takes over without any message.
+  useEffect(() => {
+    if (mode !== 'native') return;
+    const target = lockTarget(orientation);
+    const api = screen.orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
+    if (!target) {
+      setLockHeld(false);
+      try {
+        api?.unlock?.();
+      } catch {
+        /* not locked / not supported */
+      }
+      return;
+    }
+    let current = true;
+    if (!api?.lock) {
+      setLockHeld(false);
+      return;
+    }
+    api
+      .lock(target)
+      .then(() => current && setLockHeld(true))
+      .catch(() => current && setLockHeld(false));
+    return () => {
+      current = false;
+    };
+  }, [mode, orientation]);
+
+  const cycleOrientation = useCallback(() => setOrientation((o) => nextOrientationPref(o)), []);
+  const rotated = mode !== 'none' && needsCssRotation({ pref: orientation, deviceLandscape, lockHeld });
+
   // The CSS fullscreen (iPhone) is a layer: «Atrás» (or the edge swipe) leaves it, not the song — like Escape.
   const leaveCss = useCallback(() => setMode('none'), []);
   useBackToClose(mode === 'css', leaveCss);
@@ -1210,7 +1282,51 @@ function useFullscreen() {
     [],
   );
 
-  return { stageRef, fullscreen: mode !== 'none', toggleFullscreen };
+  return {
+    stageRef,
+    fullscreen: mode !== 'none',
+    toggleFullscreen,
+    orientation,
+    cycleOrientation,
+    rotated,
+    showOrientation: mode !== 'none' && showOrientationButton({ cssMode: mode === 'css', touch }),
+  };
+}
+
+/** The device is held sideways (the window is wider than tall). */
+function useDeviceLandscape(): boolean {
+  const [landscape, setLandscape] = useState(() => window.matchMedia('(orientation: landscape)').matches);
+  useEffect(() => {
+    const query = window.matchMedia('(orientation: landscape)');
+    const onChange = () => setLandscape(query.matches);
+    onChange();
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+  return landscape;
+}
+
+/** A touch screen (a phone or tablet that can turn): the orientation button has something to do there. */
+function useCoarsePointer(): boolean {
+  return useMemo(() => window.matchMedia('(pointer: coarse)').matches, []);
+}
+
+/** The fullscreen layer turned 90° over a screen held the other way: it takes the whole screen, sideways. */
+const ROTATED_STAGE_STYLE: CSSProperties = {
+  top: 0,
+  left: 0,
+  right: 'auto',
+  bottom: 'auto',
+  width: '100dvh',
+  height: '100dvw',
+  transformOrigin: 'top left',
+  transform: 'translateX(100dvw) rotate(90deg)',
+};
+
+/** A YouTube frame in fullscreen: its own shape (16:9 when horizontal or unknown), the largest that fits. */
+function youtubeFsBoxStyle(aspectRatio: number | null | undefined): CSSProperties {
+  const r = youtubeFrameRatio(aspectRatio);
+  return { aspectRatio: String(r), width: `min(100cqw, calc(100cqh * ${r}))` };
 }
 
 /**
@@ -1593,10 +1709,15 @@ function FullscreenBar({
   clips,
   onClipSelect,
   onExit,
+  orientation,
+  onCycleOrientation,
 }: {
   clips: Clip[];
   onClipSelect: (clip: Clip) => void;
   onExit: () => void;
+  /** REQ-02 · The fixed-orientation state; null where the button would do nothing (a desktop with a mouse). */
+  orientation: OrientationPref | null;
+  onCycleOrientation: () => void;
 }) {
   const mirrored = usePlayer((s) => s.mirrored);
   const rate = usePlayer((s) => s.rate);
@@ -1765,6 +1886,23 @@ function FullscreenBar({
             >
               <FlipHorizontal2 className="size-[18px]" />
             </button>
+            {orientation && (
+              <button
+                type="button"
+                aria-label={orientationButtonLabel(orientation)}
+                title={`Orientación ${orientationLabel(orientation)}`}
+                onClick={onCycleOrientation}
+                className={cn(btn, orientation !== 'auto' && 'text-ai-300')}
+              >
+                {orientation === 'portrait' ? (
+                  <Smartphone className="size-[18px]" />
+                ) : orientation === 'landscape' ? (
+                  <Smartphone className="size-[18px] rotate-90" />
+                ) : (
+                  <RotateCw className="size-[18px]" />
+                )}
+              </button>
+            )}
             <button type="button" aria-label="Salir de pantalla completa" className={btn} onClick={onExit}>
               <Minimize2 className="size-[18px]" />
             </button>

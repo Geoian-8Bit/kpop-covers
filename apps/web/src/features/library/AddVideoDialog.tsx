@@ -154,6 +154,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
               youtubeId: youtubeId!,
               // The search already knows the length: the card shows it before anyone opens the studio.
               duration: pick?.durationSeconds ?? null,
+              // REQ-02 · Vertical or not, for the fullscreen (null: unknown, shown as horizontal).
+              aspectRatio: pick?.aspectRatio ?? null,
             }
           : { crewId: activeCrew.id, title, artist, file: file!, duration: probe?.duration, poster: probe?.poster },
       );

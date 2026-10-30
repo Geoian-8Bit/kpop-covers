@@ -7,6 +7,8 @@ interface OEmbed {
   title?: string;
   author_name?: string;
   thumbnail_url?: string;
+  width?: number;
+  height?: number;
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -54,6 +56,9 @@ export async function GET(request: Request): Promise<Response> {
       id,
       title: data.title ?? null,
       author: data.author_name ?? null,
+      // The player frame size oEmbed reports: the browser turns it into the video's proportion (vertical or not).
+      width: typeof data.width === 'number' ? data.width : null,
+      height: typeof data.height === 'number' ? data.height : null,
       thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
     },
     200,

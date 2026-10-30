@@ -7,7 +7,7 @@ import {
   trapFocusIndex,
 } from './navRules';
 
-const SECTIONS = [{ to: '/', end: true }, { to: '/bolsas' }, { to: '/deseos' }, { to: '/rpd' }, { to: '/eventos' }];
+const SECTIONS = [{ to: '/', end: true }, { to: '/bolsas' }, { to: '/deseos' }, { to: '/rpd' }, { to: '/eventos' }, { to: '/calendario' }];
 
 describe('activeSectionIndex', () => {
   it('matches the library only on /', () => {
@@ -21,6 +21,7 @@ describe('activeSectionIndex', () => {
     expect(activeSectionIndex('/deseos/votacion/1', SECTIONS)).toBe(2);
     expect(activeSectionIndex('/rpd/pista/9', SECTIONS)).toBe(3);
     expect(activeSectionIndex('/eventos/3', SECTIONS)).toBe(4);
+    expect(activeSectionIndex('/calendario', SECTIONS)).toBe(5);
     expect(activeSectionIndex('/bolsasx', SECTIONS)).toBe(-1);
     expect(activeSectionIndex('/v/abc', SECTIONS)).toBe(-1);
   });
@@ -34,7 +35,7 @@ describe('quickNavHidden', () => {
   });
 
   it('shows everywhere else', () => {
-    for (const path of ['/', '/bolsas/1', '/rpd', '/rpd/pista/2', '/deseos', '/eventos', '/ajustes']) {
+    for (const path of ['/', '/bolsas/1', '/rpd', '/rpd/pista/2', '/deseos', '/eventos', '/calendario', '/ajustes']) {
       expect(quickNavHidden(path, false)).toBe(false);
     }
   });
@@ -71,6 +72,16 @@ describe('handLayout', () => {
         expect(card.x + cardW / 2).toBeLessThanOrEqual(w - 9);
         expect(card.y + cardH / 2).toBeLessThan(772 + 20);
       }
+    }
+  });
+
+  it('fits the six sections and «¿Quién eres?» (7 cards) from 320 px, each card showing most of its face', () => {
+    for (const w of [320, 375, 390]) {
+      const { cardW, cards } = handLayout(7, w, 772);
+      expect(cards[0]!.x - cardW / 2).toBeGreaterThanOrEqual(9);
+      expect(cards[6]!.x + cardW / 2).toBeLessThanOrEqual(w - 9);
+      // Neighbours overlap like a hand of cards, but never hide more than a third of the card below.
+      for (let i = 1; i < cards.length; i++) expect(cards[i]!.x - cards[i - 1]!.x).toBeGreaterThan(cardW * 0.66);
     }
   });
 

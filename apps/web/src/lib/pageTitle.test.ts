@@ -15,6 +15,7 @@ describe('pageTitle', () => {
     expect(pageTitle('/deseos/votacion/9')).toBe('Votación · One Shoot');
     expect(pageTitle('/eventos')).toBe('Eventos · One Shoot');
     expect(pageTitle('/eventos/3')).toBe('Evento · One Shoot');
+    expect(pageTitle('/calendario')).toBe('Calendario · One Shoot');
     expect(pageTitle('/privacidad')).toBe('Privacidad y condiciones · One Shoot');
   });
 

@@ -17,7 +17,21 @@ import type { Bag, BagDraw, BagItem, BagKind, DrawMode, Track, TrackItem } from 
 import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coverscape/shared';
 import type { Tables } from '@coverscape/shared';
+import type { Absence, RehearsalException, RehearsalRule } from '@coverscape/shared';
+import { isMemberColor } from '@coverscape/shared';
 import { drawOrder } from '@/features/bags/drawRules';
+import {
+  ABSENCE_MAX_SPAN,
+  ABSENCE_NOTE_MAX,
+  addDays,
+  daysBetween,
+  hhmm,
+  isDayKey,
+  isTime,
+  madridToday,
+  minutes,
+} from '@/features/calendar/calendarRules';
+import { ruleRunsOn } from '@/features/calendar/rehearsalRules';
 import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 import { cutChars, songYoutubeId, youtubeSongRow } from '@/features/bags/songRules';
 
@@ -34,7 +48,7 @@ export type ClipWithVideo = Clip & { video: ClipVideo | null };
 
 /** Only what the library cards and the add dialog read (file_name: «con archivo», F1); no audit columns. */
 const LIBRARY_COLUMNS =
-  'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at, file_name';
+  'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at, file_name, aspect_ratio';
 export type LibraryVideo = Pick<
   Video,
   | 'id'
@@ -47,6 +61,7 @@ export type LibraryVideo = Pick<
   | 'duration_seconds'
   | 'created_at'
   | 'file_name'
+  | 'aspect_ratio'
 >;
 export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
 
@@ -478,6 +493,7 @@ const demoBackend: Backend = {
         duration_seconds: null,
         thumbnail_url: null,
         youtube_id: null,
+        aspect_ratio: null,
         created_by: DEMO_USER_ID,
         archived_at: null,
         created_at: now(),
@@ -2383,3 +2399,293 @@ const demoStems: StemsBackend = {
 };
 
 export const stemsBackend: StemsBackend = IS_DEMO ? demoStems : supabaseStems;
+
+// ───────────────────────────── REQ-03 absences · REQ-04 rehearsals ─────────────────────────────
+
+/** A person the calendar can name: the live members plus archived ones that still have absences (greyed out). */
+export type CalendarMember = Pick<Member, 'id' | 'name' | 'color'> & { archived: boolean };
+export type NewAbsence = Pick<Absence, 'member_id' | 'starts_on' | 'ends_on' | 'kind' | 'at_time' | 'note'> & {
+  created_by_member: string | null;
+};
+/** The granted columns: dates, kind, time and note (the person and who marked it are fixed). */
+export type AbsencePatch = Pick<Absence, 'starts_on' | 'ends_on' | 'kind' | 'at_time' | 'note'>;
+export type NewRehearsalRule = Pick<RehearsalRule, 'weekday' | 'starts_at' | 'ends_at'>;
+export type NewRehearsalException =
+  | { kind: 'cancel'; on_date: string; rule_id: string }
+  | { kind: 'extra'; on_date: string; starts_at: string; ends_at: string };
+
+/**
+ * REQ-03 / REQ-04 · the calendar: absences, weekly rehearsal rules and their per-date exceptions. Shared by the
+ * group; deleting archives. Rules are never edited in place: `editRehearsalRule` and `endRehearsalRule` close the
+ * old rule yesterday (Madrid) in one RPC so past weeks keep their timetable.
+ */
+export interface CalendarBackend {
+  listCalendarMembers(): Promise<CalendarMember[]>;
+  /** Absences touching the days from `from` to `to` (both included). */
+  listAbsences(from: string, to: string): Promise<Absence[]>;
+  insertAbsence(row: NewAbsence): Promise<Absence>;
+  updateAbsence(id: string, patch: AbsencePatch): Promise<Absence>;
+  deleteAbsence(id: string): Promise<void>;
+  /** Every rule (ended ones too: past weeks are drawn from them). */
+  listRehearsalRules(): Promise<RehearsalRule[]>;
+  insertRehearsalRule(row: NewRehearsalRule): Promise<RehearsalRule>;
+  editRehearsalRule(id: string, row: NewRehearsalRule): Promise<RehearsalRule>;
+  endRehearsalRule(id: string): Promise<void>;
+  listRehearsalExceptions(from: string, to: string): Promise<RehearsalException[]>;
+  insertRehearsalException(row: NewRehearsalException): Promise<RehearsalException>;
+  deleteRehearsalException(id: string): Promise<void>;
+}
+
+const supabaseCalendar: CalendarBackend = {
+  async listCalendarMembers() {
+    const { data, error } = await supabase.rpc('calendar_members');
+    if (error) throw error;
+    return (data ?? []).map((m) => ({ ...m, color: isMemberColor(m.color) ? m.color : 'ai' }));
+  },
+  async listAbsences(from, to) {
+    const rows = await fetchAll<Tables<'absences'>>((start, end) =>
+      supabase
+        .from('absences')
+        .select('*')
+        .lte('starts_on', to)
+        .gte('ends_on', from)
+        .order('starts_on')
+        .order('id')
+        .range(start, end),
+    );
+    return rows as Absence[];
+  },
+  async insertAbsence(row) {
+    // crew_id comes from the database (the default group).
+    const { data, error } = await supabase.from('absences').insert(row).select().single();
+    if (error) throw error;
+    return data as Absence;
+  },
+  async updateAbsence(id, patch) {
+    const { data, error } = await supabase.from('absences').update(patch).eq('id', id).select().single();
+    if (error) throw error;
+    return data as Absence;
+  },
+  async deleteAbsence(id) {
+    const { error } = await supabase.from('absences').delete().eq('id', id);
+    if (error) throw error;
+  },
+  async listRehearsalRules() {
+    const { data, error } = await supabase.from('rehearsal_rules').select('*').order('weekday').order('starts_at');
+    if (error) throw error;
+    return data;
+  },
+  async insertRehearsalRule(row) {
+    const { data, error } = await supabase.from('rehearsal_rules').insert(row).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async editRehearsalRule(id, row) {
+    const { data, error } = await supabase
+      .rpc('edit_rehearsal_rule', { p_rule: id, p_weekday: row.weekday, p_starts: row.starts_at, p_ends: row.ends_at })
+      .single();
+    if (error) throw error;
+    return data as RehearsalRule;
+  },
+  async endRehearsalRule(id) {
+    const { error } = await supabase.rpc('end_rehearsal_rule', { p_rule: id });
+    if (error) throw error;
+  },
+  async listRehearsalExceptions(from, to) {
+    const { data, error } = await supabase
+      .from('rehearsal_exceptions')
+      .select('*')
+      .gte('on_date', from)
+      .lte('on_date', to)
+      .order('on_date');
+    if (error) throw error;
+    return data as RehearsalException[];
+  },
+  async insertRehearsalException(row) {
+    const insert: TablesInsert<'rehearsal_exceptions'> = { ...row };
+    const { data, error } = await supabase.from('rehearsal_exceptions').insert(insert).select().single();
+    if (error) throw error;
+    return data as RehearsalException;
+  },
+  async deleteRehearsalException(id) {
+    const { error } = await supabase.from('rehearsal_exceptions').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// Demo twin: the same rules as the database (range of at most 61 days, time only with arrives / leaves, note up to
+// 140, only live members, rules born today and edited from today, one cancellation per session on its weekday).
+
+type CalendarDemoDb = DemoDb & {
+  absences?: Absence[];
+  rehearsal_rules?: RehearsalRule[];
+  rehearsal_exceptions?: RehearsalException[];
+};
+
+const checkViolation = (constraint: string, table: string) =>
+  demoError(`new row for relation "${table}" violates check constraint "${constraint}"`, '23514');
+
+function checkDemoAbsence(row: AbsencePatch) {
+  if (!isDayKey(row.starts_on) || !isDayKey(row.ends_on)) throw checkViolation('absences_range_check', 'absences');
+  const span = daysBetween(row.starts_on, row.ends_on);
+  if (span < 0 || span > ABSENCE_MAX_SPAN) throw checkViolation('absences_range_check', 'absences');
+  if ((row.kind === 'all_day') !== (row.at_time == null)) throw checkViolation('absences_time_check', 'absences');
+  if (row.note != null && row.note.length > ABSENCE_NOTE_MAX) throw checkViolation('absences_note_check', 'absences');
+}
+
+const demoTime = (time: string) => `${hhmm(time)}:00`;
+
+function checkDemoTimes(starts: string, ends: string, table: string) {
+  if (!isTime(starts) || !isTime(ends) || minutes(ends) <= minutes(starts)) throw checkViolation(`${table}_times_check`, table);
+}
+
+const liveDemoRule = (db: CalendarDemoDb, id: string, today: string) =>
+  (db.rehearsal_rules ?? []).find((r) => r.id === id && isLive(r) && (r.valid_until == null || r.valid_until >= today));
+
+const demoCalendar: CalendarBackend = {
+  // The demo removes members outright, so there are no archived ones to name.
+  listCalendarMembers: () =>
+    query((db) =>
+      [...(db.members ?? [])]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((m) => ({ id: m.id, name: m.name, color: m.color, archived: false })),
+    ),
+  listAbsences: (from, to) =>
+    query((raw) =>
+      ((raw as CalendarDemoDb).absences ?? [])
+        .filter((a) => isLive(a) && a.starts_on <= to && a.ends_on >= from)
+        .sort((a, b) => a.starts_on.localeCompare(b.starts_on) || a.id.localeCompare(b.id)),
+    ),
+  insertAbsence: async (row) =>
+    mutate((raw) => {
+      const db = raw as CalendarDemoDb;
+      checkDemoAbsence(row);
+      if (!(db.members ?? []).some((m) => m.id === row.member_id)) throw demoError('absence_member_invalid');
+      const absence: Absence = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        member_id: row.member_id,
+        starts_on: row.starts_on,
+        ends_on: row.ends_on,
+        kind: row.kind,
+        at_time: row.at_time ? demoTime(row.at_time) : null,
+        note: row.note,
+        created_by_member:
+          row.created_by_member && (db.members ?? []).some((m) => m.id === row.created_by_member) ? row.created_by_member : null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.absences ??= []).push(absence);
+      return absence;
+    }),
+  updateAbsence: async (id, patch) =>
+    mutate((raw) => {
+      const absence = ((raw as CalendarDemoDb).absences ?? []).find((a) => a.id === id && isLive(a));
+      if (!absence) throw demoError('PGRST116 0 rows');
+      checkDemoAbsence(patch);
+      Object.assign(absence, { ...patch, at_time: patch.at_time ? demoTime(patch.at_time) : null });
+      return absence;
+    }),
+  deleteAbsence: async (id) =>
+    mutate((raw) => {
+      const absence = ((raw as CalendarDemoDb).absences ?? []).find((a) => a.id === id);
+      if (absence && isLive(absence)) absence.archived_at = now();
+    }),
+  listRehearsalRules: () =>
+    query((raw) =>
+      ((raw as CalendarDemoDb).rehearsal_rules ?? [])
+        .filter(isLive)
+        .sort((a, b) => a.weekday - b.weekday || a.starts_at.localeCompare(b.starts_at)),
+    ),
+  insertRehearsalRule: async (row) =>
+    mutate((raw) => {
+      const db = raw as CalendarDemoDb;
+      if (!Number.isInteger(row.weekday) || row.weekday < 1 || row.weekday > 7) {
+        throw checkViolation('rehearsal_rules_weekday_check', 'rehearsal_rules');
+      }
+      checkDemoTimes(row.starts_at, row.ends_at, 'rehearsal_rules');
+      const rule: RehearsalRule = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        weekday: row.weekday,
+        starts_at: demoTime(row.starts_at),
+        ends_at: demoTime(row.ends_at),
+        valid_from: madridToday(new Date()),
+        valid_until: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.rehearsal_rules ??= []).push(rule);
+      return rule;
+    }),
+  editRehearsalRule: async (id, row) =>
+    mutate((raw) => {
+      const db = raw as CalendarDemoDb;
+      const today = madridToday(new Date());
+      const old = liveDemoRule(db, id, today);
+      if (!old) throw demoError('rehearsal_rule_not_found');
+      checkDemoTimes(row.starts_at, row.ends_at, 'rehearsal_rules');
+      old.valid_until = addDays(today, -1);
+      const rule: RehearsalRule = {
+        id: crypto.randomUUID(),
+        crew_id: old.crew_id,
+        weekday: row.weekday,
+        starts_at: demoTime(row.starts_at),
+        ends_at: demoTime(row.ends_at),
+        valid_from: today,
+        valid_until: null,
+        created_at: now(),
+        archived_at: null,
+      };
+      db.rehearsal_rules!.push(rule);
+      if (row.weekday === old.weekday) {
+        for (const e of db.rehearsal_exceptions ?? []) {
+          if (e.rule_id === old.id && e.kind === 'cancel' && e.on_date >= today && isLive(e)) e.rule_id = rule.id;
+        }
+      }
+      return rule;
+    }),
+  endRehearsalRule: async (id) =>
+    mutate((raw) => {
+      const today = madridToday(new Date());
+      const rule = liveDemoRule(raw as CalendarDemoDb, id, today);
+      if (!rule) throw demoError('rehearsal_rule_not_found');
+      rule.valid_until = addDays(today, -1);
+    }),
+  listRehearsalExceptions: (from, to) =>
+    query((raw) => {
+      const db = raw as CalendarDemoDb;
+      const liveRules = new Set((db.rehearsal_rules ?? []).filter(isLive).map((r) => r.id));
+      return (db.rehearsal_exceptions ?? [])
+        .filter((e) => isLive(e) && e.on_date >= from && e.on_date <= to && (e.rule_id == null || liveRules.has(e.rule_id)))
+        .sort((a, b) => a.on_date.localeCompare(b.on_date));
+    }),
+  insertRehearsalException: async (row) =>
+    mutate((raw) => {
+      const db = raw as CalendarDemoDb;
+      if (!isDayKey(row.on_date)) throw demoError('invalid input syntax for type date', '22007');
+      const list = (db.rehearsal_exceptions ??= []);
+      const base = { id: crypto.randomUUID(), crew_id: db.crews[0]!.id, on_date: row.on_date, created_at: now(), archived_at: null };
+      let exception: RehearsalException;
+      if (row.kind === 'cancel') {
+        const rule = (db.rehearsal_rules ?? []).find((r) => r.id === row.rule_id && isLive(r));
+        if (!rule || !ruleRunsOn(rule, row.on_date)) throw demoError('rehearsal_cancel_invalid');
+        if (list.some((e) => isLive(e) && e.kind === 'cancel' && e.rule_id === row.rule_id && e.on_date === row.on_date)) {
+          throw demoError('duplicate key value violates unique constraint "rehearsal_exceptions_cancel_once_key"', '23505');
+        }
+        exception = { ...base, kind: 'cancel', rule_id: row.rule_id, starts_at: null, ends_at: null };
+      } else {
+        checkDemoTimes(row.starts_at, row.ends_at, 'rehearsal_exceptions');
+        exception = { ...base, kind: 'extra', rule_id: null, starts_at: demoTime(row.starts_at), ends_at: demoTime(row.ends_at) };
+      }
+      list.push(exception);
+      return exception;
+    }),
+  deleteRehearsalException: async (id) =>
+    mutate((raw) => {
+      const exception = ((raw as CalendarDemoDb).rehearsal_exceptions ?? []).find((e) => e.id === id);
+      if (exception && isLive(exception)) exception.archived_at = now();
+    }),
+};
+
+export const calendarBackend: CalendarBackend = IS_DEMO ? demoCalendar : supabaseCalendar;

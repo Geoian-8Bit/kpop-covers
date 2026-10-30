@@ -123,6 +123,7 @@ export function libraryRowsSnapshot(list: readonly VideoWithClipCount[]): VideoW
     duration_seconds: v.duration_seconds,
     created_at: v.created_at,
     file_name: v.file_name,
+    aspect_ratio: typeof v.aspect_ratio === 'number' ? v.aspect_ratio : null,
     clips: [{ count: num(v.clips?.[0]?.count) ? v.clips[0]!.count : 0 }],
   }));
 }
@@ -146,6 +147,8 @@ function libraryRow(v: unknown): VideoWithClipCount | null {
     duration_seconds,
     created_at,
     file_name,
+    // Older kept copies have no proportion: unknown.
+    aspect_ratio: typeof v.aspect_ratio === 'number' ? v.aspect_ratio : null,
     clips: [{ count }],
   };
 }
@@ -178,6 +181,7 @@ export function videoFromLibraryRow(row: VideoWithClipCount | undefined): Video 
     file_offset_seconds: null,
     storage_path: null,
     archived_at: null,
+    aspect_ratio: row.aspect_ratio ?? null,
     created_by: null,
     updated_at: row.created_at,
   };
