@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseYouTubeId, parseYouTubeStart, withYouTubeThumbQuality, youTubeThumbnail, youTubeWatchUrl } from './youtube';
+import {
+  isVerticalAspect,
+  isYouTubeShortsUrl,
+  parseYouTubeId,
+  parseYouTubeStart,
+  videoAspectRatio,
+  withYouTubeThumbQuality,
+  youTubeThumbnail,
+  youTubeWatchUrl,
+} from './youtube';
 
 describe('parseYouTubeId', () => {
   it.each([
@@ -78,5 +87,38 @@ describe('url builders', () => {
     expect(withYouTubeThumbQuality(poster, 'mqdefault')).toBe(poster);
     const other = 'https://example.com/vi/dQw4w9WgXcQ/hqdefault.jpg';
     expect(withYouTubeThumbQuality(other, 'mqdefault')).toBe(other);
+  });
+});
+
+describe('video aspect ratio', () => {
+  it('detects Shorts links only', () => {
+    expect(isYouTubeShortsUrl('https://www.youtube.com/shorts/dQw4w9WgXcQ')).toBe(true);
+    expect(isYouTubeShortsUrl('youtube.com/shorts/dQw4w9WgXcQ?feature=share')).toBe(true);
+    expect(isYouTubeShortsUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ')).toBe(false);
+    expect(isYouTubeShortsUrl('https://youtu.be/dQw4w9WgXcQ')).toBe(false);
+    expect(isYouTubeShortsUrl('')).toBe(false);
+  });
+
+  it('prefers the oEmbed size, then Shorts, then unknown', () => {
+    expect(videoAspectRatio({ width: 200, height: 113 })).toBeCloseTo(1.7699, 3);
+    expect(videoAspectRatio({ width: 113, height: 200 })).toBeCloseTo(0.565, 3);
+    expect(videoAspectRatio({ url: 'https://www.youtube.com/shorts/dQw4w9WgXcQ' })).toBe(9 / 16);
+    expect(videoAspectRatio({ width: 0, height: 0, url: 'https://www.youtube.com/shorts/dQw4w9WgXcQ' })).toBe(9 / 16);
+    expect(videoAspectRatio({ width: 200, height: 113, url: 'https://www.youtube.com/shorts/dQw4w9WgXcQ' })).toBeCloseTo(
+      1.7699,
+      3,
+    );
+    expect(videoAspectRatio({ url: 'https://youtu.be/dQw4w9WgXcQ' })).toBeNull();
+    expect(videoAspectRatio({ width: 'x', height: null })).toBeNull();
+    expect(videoAspectRatio({ width: 1, height: 100 })).toBeNull();
+  });
+
+  it('only a ratio under 1 is vertical', () => {
+    expect(isVerticalAspect(9 / 16)).toBe(true);
+    expect(isVerticalAspect(1)).toBe(false);
+    expect(isVerticalAspect(16 / 9)).toBe(false);
+    expect(isVerticalAspect(null)).toBe(false);
+    expect(isVerticalAspect(undefined)).toBe(false);
+    expect(isVerticalAspect(Number.NaN)).toBe(false);
   });
 });

@@ -36,6 +36,7 @@ const row = (over: Partial<VideoWithClipCount> = {}): VideoWithClipCount => ({
   duration_seconds: 180,
   created_at: '2026-10-01T00:00:00Z',
   file_name: null,
+  aspect_ratio: null,
   clips: [{ count: 3 }],
   ...over,
 });
@@ -45,6 +46,14 @@ describe('readSnapshot / writeSnapshot', () => {
     const store = memoryStore();
     expect(writeSnapshot('videos.c1', libraryRowsSnapshot([row()]), store)).toBe(true);
     expect(readSnapshot('videos.c1', (v) => parseLibrary(v, CREW), store)).toEqual([row()]);
+  });
+
+  it('keeps the video proportion, and reads an older copy without one as unknown', () => {
+    const store = memoryStore();
+    writeSnapshot('videos.c1', libraryRowsSnapshot([row({ aspect_ratio: 0.5625 })]), store);
+    expect(readSnapshot('videos.c1', (v) => parseLibrary(v, CREW), store)?.[0]?.aspect_ratio).toBe(0.5625);
+    const { aspect_ratio: _gone, ...old } = row();
+    expect(parseLibrary([old], CREW)?.[0]?.aspect_ratio).toBeNull();
   });
 
   it('skips (and removes) a snapshot that is too big', () => {

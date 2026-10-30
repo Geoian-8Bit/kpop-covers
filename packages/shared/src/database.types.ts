@@ -9,6 +9,70 @@ export type Database = {
   };
   public: {
     Tables: {
+      absences: {
+        Row: {
+          archived_at: string | null;
+          at_time: string | null;
+          created_at: string;
+          created_by_member: string | null;
+          crew_id: string;
+          ends_on: string;
+          id: string;
+          kind: string;
+          member_id: string;
+          note: string | null;
+          starts_on: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          at_time?: string | null;
+          created_at?: string;
+          created_by_member?: string | null;
+          crew_id?: string;
+          ends_on: string;
+          id?: string;
+          kind?: string;
+          member_id: string;
+          note?: string | null;
+          starts_on: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          at_time?: string | null;
+          created_at?: string;
+          created_by_member?: string | null;
+          crew_id?: string;
+          ends_on?: string;
+          id?: string;
+          kind?: string;
+          member_id?: string;
+          note?: string | null;
+          starts_on?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'absences_created_by_member_fkey';
+            columns: ['created_by_member'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'absences_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'absences_member_id_fkey';
+            columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'members';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       bag_draws: {
         Row: {
           bag_id: string;
@@ -817,6 +881,101 @@ export type Database = {
         };
         Relationships: [];
       };
+      rehearsal_exceptions: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          ends_at: string | null;
+          id: string;
+          kind: string;
+          on_date: string;
+          rule_id: string | null;
+          starts_at: string | null;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          ends_at?: string | null;
+          id?: string;
+          kind: string;
+          on_date: string;
+          rule_id?: string | null;
+          starts_at?: string | null;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          ends_at?: string | null;
+          id?: string;
+          kind?: string;
+          on_date?: string;
+          rule_id?: string | null;
+          starts_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'rehearsal_exceptions_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'rehearsal_exceptions_rule_id_fkey';
+            columns: ['rule_id'];
+            isOneToOne: false;
+            referencedRelation: 'rehearsal_rules';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      rehearsal_rules: {
+        Row: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          ends_at: string;
+          id: string;
+          starts_at: string;
+          valid_from: string;
+          valid_until: string | null;
+          weekday: number;
+        };
+        Insert: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          ends_at: string;
+          id?: string;
+          starts_at: string;
+          valid_from?: string;
+          valid_until?: string | null;
+          weekday: number;
+        };
+        Update: {
+          archived_at?: string | null;
+          created_at?: string;
+          crew_id?: string;
+          ends_at?: string;
+          id?: string;
+          starts_at?: string;
+          valid_from?: string;
+          valid_until?: string | null;
+          weekday?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'rehearsal_rules_crew_id_fkey';
+            columns: ['crew_id'];
+            isOneToOne: false;
+            referencedRelation: 'crews';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       take_reactions: {
         Row: {
           archived_at: string | null;
@@ -1158,6 +1317,7 @@ export type Database = {
           artist: string | null;
           created_at: string;
           archived_at: string | null;
+          aspect_ratio: number | null;
           created_by: string | null;
           crew_id: string;
           duration_seconds: number | null;
@@ -1177,6 +1337,7 @@ export type Database = {
           artist?: string | null;
           created_at?: string;
           archived_at?: string | null;
+          aspect_ratio?: number | null;
           created_by?: string | null;
           crew_id: string;
           duration_seconds?: number | null;
@@ -1196,6 +1357,7 @@ export type Database = {
           artist?: string | null;
           created_at?: string;
           archived_at?: string | null;
+          aspect_ratio?: number | null;
           created_by?: string | null;
           crew_id?: string;
           duration_seconds?: number | null;
@@ -1345,6 +1507,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      calendar_members: {
+        Args: never;
+        Returns: { archived: boolean; color: string; id: string; name: string }[];
+      };
       cast_vote: {
         Args: { p_member: string; p_options: string[]; p_poll: string };
         Returns: number;
@@ -1352,6 +1518,30 @@ export type Database = {
       close_poll: {
         Args: { p_poll: string; p_resolve?: string; p_winner?: string | null };
         Returns: Json;
+      };
+      edit_rehearsal_rule: {
+        Args: { p_ends: string; p_rule: string; p_starts: string; p_weekday: number };
+        Returns: {
+          archived_at: string | null;
+          created_at: string;
+          crew_id: string;
+          ends_at: string;
+          id: string;
+          starts_at: string;
+          valid_from: string;
+          valid_until: string | null;
+          weekday: number;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'rehearsal_rules';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      end_rehearsal_rule: {
+        Args: { p_rule: string };
+        Returns: undefined;
       };
       draw_from_bag: {
         Args: { p_bag: string; p_count?: number; p_member?: string | null; p_remove?: boolean | null };

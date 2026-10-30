@@ -31,6 +31,8 @@ const PollPage = lazy(() => import('@/features/wishes/PollPage').then((m) => ({ 
 // F16 events (countdown and repertoire).
 const EventsPage = lazy(() => import('@/features/events/EventsPage').then((m) => ({ default: m.EventsPage })));
 const EventPage = lazy(() => import('@/features/events/EventPage').then((m) => ({ default: m.EventPage })));
+// REQ-03 / REQ-04 calendar of absences and rehearsals.
+const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -156,6 +158,7 @@ export function App() {
                             ['/deseos/votacion/:pollId', <PollPage key="poll" />],
                             ['/eventos', <EventsPage key="events" />],
                             ['/eventos/:eventId', <EventPage key="event" />],
+                            ['/calendario', <CalendarPage key="calendar" />],
                           ] as const
                         ).map(([path, page]) => (
                           <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />

@@ -160,6 +160,8 @@ export interface CreateVideoInput {
   file?: File;
   duration?: number | null;
   poster?: string | null;
+  /** YouTube only: width / height when known (REQ-02). */
+  aspectRatio?: number | null;
 }
 
 export interface CreateVideoResult {
@@ -224,6 +226,7 @@ export function useCreateVideo() {
         source: 'youtube',
         youtube_id: input.youtubeId,
         thumbnail_url: youTubeThumbnail(input.youtubeId),
+        aspect_ratio: input.aspectRatio ?? null,
       });
       return { video, synced: true };
     },

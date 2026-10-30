@@ -188,7 +188,11 @@ function Hand({ api }: { api: QuickNavApi }) {
               )}
               <span
                 lang="es"
-                className="relative mt-auto w-full hyphens-auto rounded-[4px] bg-washi px-0.5 py-0.5 text-[11px] font-bold leading-[1.15] text-sumi-900 [overflow-wrap:anywhere]"
+                className={cn(
+                  'relative mt-auto w-full hyphens-auto rounded-[4px] bg-washi px-0.5 py-0.5 font-bold leading-[1.15] text-sumi-900 [overflow-wrap:anywhere]',
+                  // Seven cards on a phone are narrow: a touch smaller so «Biblioteca» or «Calendario» fit on one line.
+                  narrow ? 'text-[10px] tracking-[-0.03em]' : 'text-[11px]',
+                )}
               >
                 {entry.short}
               </span>

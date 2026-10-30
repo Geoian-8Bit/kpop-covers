@@ -1,3 +1,4 @@
+import { videoAspectRatio } from '@coverscape/shared';
 import { useEffect, useState } from 'react';
 
 /**
@@ -7,14 +8,19 @@ import { useEffect, useState } from 'react';
 export type YouTubeMetaState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ok'; title: string | null; author: string | null }
+  | { status: 'ok'; title: string | null; author: string | null; aspectRatio?: number | null }
   | { status: 'error'; message: string };
 
 /** One lookup. A failed network call is not an error: the link still works, only without a title. */
 export async function fetchYouTubeMeta(id: string, signal?: AbortSignal): Promise<YouTubeMetaState> {
   try {
     const res = await fetch(`/api/youtube-meta?id=${id}`, { signal });
-    const body = (await res.json().catch(() => ({}))) as { title?: string | null; author?: string | null };
+    const body = (await res.json().catch(() => ({}))) as {
+      title?: string | null;
+      author?: string | null;
+      width?: number | null;
+      height?: number | null;
+    };
     if (res.status === 422) {
       return {
         status: 'error',
@@ -22,7 +28,12 @@ export async function fetchYouTubeMeta(id: string, signal?: AbortSignal): Promis
       };
     }
     if (res.status === 404) return { status: 'error', message: 'No encontramos ese vídeo. ¿Es privado?' };
-    return { status: 'ok', title: body.title ?? null, author: body.author ?? null };
+    return {
+      status: 'ok',
+      title: body.title ?? null,
+      author: body.author ?? null,
+      aspectRatio: videoAspectRatio({ width: body.width, height: body.height }),
+    };
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
     return { status: 'ok', title: null, author: null };

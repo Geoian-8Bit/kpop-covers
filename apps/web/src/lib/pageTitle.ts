@@ -14,6 +14,7 @@ const PAGES: [RegExp, string][] = [
   [/^\/deseos\/?$/, 'Próxima cover'],
   [/^\/eventos\/?$/, 'Eventos'],
   [/^\/eventos\/[^/]+\/?$/, 'Evento'],
+  [/^\/calendario\/?$/, 'Calendario'],
   [/^\/privacidad\/?$/, 'Privacidad y condiciones'],
 ];
 

@@ -74,3 +74,18 @@ export function hasLinkedFile(video: Pick<Tables<'videos'>, 'source' | 'file_nam
 export function isClipColor(value: string): value is ClipColor {
   return (CLIP_COLORS as readonly string[]).includes(value);
 }
+
+/** REQ-03 · Who can't come: all day, or arrives / leaves at a time. One row per run of days. */
+export const ABSENCE_KINDS = ['all_day', 'arrives', 'leaves'] as const;
+export type AbsenceKind = (typeof ABSENCE_KINDS)[number];
+export type Absence = Omit<Tables<'absences'>, 'kind'> & { kind: AbsenceKind };
+
+export function isAbsenceKind(value: string): value is AbsenceKind {
+  return (ABSENCE_KINDS as readonly string[]).includes(value);
+}
+
+/** REQ-04 · A weekly rehearsal (ISO weekday, 1 = Monday; wall-clock times in Europe/Madrid). */
+export type RehearsalRule = Tables<'rehearsal_rules'>;
+/** REQ-04 · A per-date change: one session called off, or a one-off rehearsal. */
+export type RehearsalExceptionKind = 'cancel' | 'extra';
+export type RehearsalException = Omit<Tables<'rehearsal_exceptions'>, 'kind'> & { kind: RehearsalExceptionKind };
