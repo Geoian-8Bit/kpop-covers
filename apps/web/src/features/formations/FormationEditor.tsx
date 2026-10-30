@@ -1,4 +1,4 @@
-import type { FormationPositions, Video } from '@coverscape/shared';
+import type { FormationPath, FormationPositions, FormationProp, FormationPropKind, StagePoint, Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -18,6 +18,7 @@ import {
   RotateCw,
   Settings2,
   Shuffle,
+  Spline,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -64,19 +65,36 @@ import {
   formatMoment,
   formationAt,
   freeMoment,
+  keepPaths,
   NOTE_MAX,
   positionsAt,
+  propsSnapshot,
   rowPositions,
   snapPoint,
   sortKeyframes,
   TRANSITION_MAX,
   withDefaults,
+  withoutPaths,
   type Stage,
 } from './formationRules';
+import { clashRanges, findClashes, type Clash } from './clashRules';
 import { FormationTimeline } from './FormationTimeline';
+import { addPathPoint, convertPath, movePathPoint, PATH_LABELS, PATH_POINTS_MAX, removePathPoint, strokeToPath, type PathChoice } from './pathRules';
 import { PlanForm } from './PlanDialogs';
+import {
+  addPropFrom,
+  newProp,
+  patchProp,
+  PROP_KINDS,
+  PROP_LABEL_MAX,
+  PROP_LABELS,
+  PROP_ROTATE_STEP,
+  PROPS_MAX,
+  relabelProp,
+  removePropFrom,
+} from './propRules';
 import { RhythmPanel, RhythmUnderlay } from './RhythmPanel';
-import { PositionsList, StageView } from './StageView';
+import { PositionsList, PropShape, StageView } from './StageView';
 import { useFormationEditor, type SaveStatus } from './useFormationEditor';
 import { useWaveform } from './useWaveform';
 
@@ -226,6 +244,12 @@ function EditorBody({
   const [focusMember, setFocusMember] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  /** REQ-08 · «Recorridos» on: routes into the formation at the playhead, editable person by person. */
+  const [showPaths, setShowPaths] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
+  const [selectedHandle, setSelectedHandle] = useState<number | null>(null);
+  /** REQ-10 · The prop being moved, turned or removed. */
+  const [selectedProp, setSelectedProp] = useState<string | null>(null);
 
   const selectedId = usePlayer((s) => formationAt(list, s.time)?.id ?? null);
   const current = useMemo(() => list.find((f) => f.id === selectedId) ?? null, [list, selectedId]);
@@ -269,28 +293,82 @@ function EditorBody({
   );
 
   /**
-   * Changes the positions of the formation at the playhead; with none there, a new formation is made at this moment
-   * from where everybody is right now (REQ-06: the first drag on an empty plan makes the first formation).
+   * Edits the plan around the formation at the playhead; with none there, a new formation is made at this moment
+   * from where everybody (and every prop) is right now (REQ-06: the first drag on an empty plan makes the first one).
+   * `fn` gets the list (sorted) and the id of that formation.
    */
-  const editPositions = useCallback(
-    (fn: (positions: FormationPositions) => FormationPositions) => {
+  const editHere = useCallback(
+    (fn: (list: FormationInput[], id: string) => FormationInput[]) => {
       const now = usePlayer.getState().time;
-      const l = listRef.current;
+      const l = sortKeyframes(listRef.current);
       const here = formationAt(l, now);
       if (here) {
-        ed.commit(l.map((f) => (f.id === here.id ? { ...f, positions: fn(fullPositions(f)) } : f)));
+        ed.commit(fn(l, here.id));
         return;
       }
       const { at, shifted } = freeMoment(l, now);
-      const base = l.length ? positionsAt(sortKeyframes(l), now, memberIds, stage) : rowPositions(memberIds, stage);
+      const base = l.length ? positionsAt(l, now, memberIds, stage) : rowPositions(memberIds, stage);
       const rounded: FormationPositions = {};
       for (const [id, p] of Object.entries(base)) rounded[id] = snapPoint(p, stage, false);
-      ed.commit([...l, { id: crypto.randomUUID(), at, transition: DEFAULT_TRANSITION, positions: fn(rounded), note: null }]);
+      const made: FormationInput = { id: crypto.randomUUID(), at, transition: DEFAULT_TRANSITION, positions: rounded, note: null, props: propsSnapshot(l, now) };
+      ed.commit(fn(sortKeyframes([...l, made]), made.id));
       toast(shifted ? `Formación nueva en ${formatMoment(at)} (movida 0,1 s: ya había otra)` : `Formación nueva en ${formatMoment(at)}`, 'info');
       if (shifted || Math.abs(at - now) > 0.001) usePlayer.getState().seek(at);
     },
-    [ed, fullPositions, memberIds, stage, toast],
+    [ed, memberIds, stage, toast],
   );
+
+  /** Changes the positions of the formation at the playhead (REQ-08: everybody keeps the path into their place). */
+  const editPositions = useCallback(
+    (fn: (positions: FormationPositions) => FormationPositions) =>
+      editHere((l, id) =>
+        l.map((f) => {
+          if (f.id !== id) return f;
+          const before = fullPositions(f);
+          return { ...f, positions: keepPaths(before, fn(before)) };
+        }),
+      ),
+    [editHere, fullPositions],
+  );
+
+  /** REQ-10 · Changes the props of the formation at the playhead. */
+  const editProps = useCallback(
+    (fn: (props: FormationProp[]) => FormationProp[]) => editHere((l, id) => l.map((f) => (f.id === id ? { ...f, props: fn(f.props ?? []) } : f))),
+    [editHere],
+  );
+
+  function addProp(kind: FormationPropKind) {
+    pause();
+    const id = crypto.randomUUID();
+    editHere((l, here) => {
+      const f = l.find((x) => x.id === here);
+      if ((f?.props ?? []).length >= PROPS_MAX) {
+        toast(`Caben hasta ${PROPS_MAX} objetos por formación`, 'info');
+        return l;
+      }
+      return addPropFrom(l, here, newProp(kind, f?.props ?? [], stage, id));
+    });
+    setSelection([]);
+    setSelectedProp(id);
+  }
+
+  function removeProp() {
+    if (!selectedProp) return;
+    const id = selectedProp;
+    editHere((l, here) => removePropFrom(l, here, id));
+    setSelectedProp(null);
+    toast('Objeto quitado desde esta formación · puedes deshacerlo', 'info');
+  }
+
+  function turnProp(delta: number) {
+    if (!selectedProp) return;
+    const id = selectedProp;
+    pause();
+    editProps((props) => {
+      const p = props.find((x) => x.id === id);
+      return p ? patchProp(props, id, { rot: p.rot + delta }, stage) : props;
+    });
+  }
 
   function addHere() {
     const now = usePlayer.getState().time;
@@ -307,7 +385,11 @@ function EditorBody({
     if (!source) return;
     const now = usePlayer.getState().time;
     const { at, shifted } = duplicateMoment(list, source, now);
-    ed.commit([...list, { ...source, id: crypto.randomUUID(), at, positions: structuredClone(source.positions) }]);
+    // The copy lands elsewhere in time: the routes into the original don't apply to it (REQ-08).
+    ed.commit([
+      ...list,
+      { ...source, id: crypto.randomUUID(), at, positions: withoutPaths(source.positions), props: structuredClone(source.props ?? []) },
+    ]);
     usePlayer.getState().seek(at);
     toast(`Copia en ${formatMoment(at)}${shifted ? ' (movida 0,1 s: ya había otra)' : ''}`, 'info');
   }
@@ -329,7 +411,63 @@ function EditorBody({
     if (shifted) toast(`Ya había una formación ahí: queda en ${formatMoment(at)}`, 'info');
   }
 
+  // ── REQ-08 · Paths and clashes ──
+  const clashes = useMemo(() => findClashes(list, memberIds, stage), [list, memberIds, stage]);
+  const ranges = useMemo(() => clashRanges(clashes), [clashes]);
+  const pathIndex = current ? list.indexOf(current) : -1;
+  const pathMember = showPaths && pathIndex > 0 && selection.length === 1 ? selection[0]! : null;
+  const pathEnds = useMemo(() => {
+    if (!pathMember || pathIndex < 1) return null;
+    const from = withDefaults(list[pathIndex - 1]!.positions, memberIds, stage)[pathMember];
+    const to = withDefaults(list[pathIndex]!.positions, memberIds, stage)[pathMember];
+    return from && to ? { from, to, path: to.path } : null;
+  }, [pathMember, pathIndex, list, memberIds, stage]);
+
+  // A new person, formation or mode starts the path tools afresh.
+  useEffect(() => {
+    setDrawMode(false);
+    setSelectedHandle(null);
+  }, [pathMember, current?.id, showPaths]);
+
+  /** The route of the person being edited into the formation at the playhead (null: straight). */
+  function setPath(path: FormationPath | null) {
+    if (!current || !pathMember || !pathEnds) return;
+    const { to } = pathEnds;
+    const id = pathMember;
+    ed.commit(
+      list.map((f) =>
+        f.id === current.id ? { ...f, positions: { ...fullPositions(f), [id]: path ? { x: to.x, y: to.y, path } : { x: to.x, y: to.y } } } : f,
+      ),
+    );
+  }
+
+  function choosePath(choice: PathChoice) {
+    if (!pathEnds) return;
+    pause();
+    setSelectedHandle(null);
+    if (choice === 'free') {
+      setDrawMode(true);
+      return;
+    }
+    setDrawMode(false);
+    const next = convertPath(choice, pathEnds.from, pathEnds.to, pathEnds.path, stage);
+    if (next !== undefined) setPath(next);
+  }
+
+  function onStroke(points: StagePoint[]) {
+    const path = strokeToPath(points, stage);
+    setPath(path);
+    setDrawMode(false);
+    toast(path ? 'Recorrido dibujado' : 'Trazo muy corto: el recorrido queda recto', 'info');
+  }
+
+  function seekClash(c: Clash) {
+    pause();
+    usePlayer.getState().seek(c.start);
+  }
+
   function onSelect(ids: string[], additive: boolean) {
+    setSelectedProp(null);
     const add = additive || selectMode;
     setSelection((sel) => {
       if (!add) return ids.length === 1 && sel.length === 1 && sel[0] === ids[0] ? [] : ids;
@@ -417,8 +555,26 @@ function EditorBody({
               onDragStart={pause}
               onMove={(moved) => editPositions((p) => ({ ...p, ...moved }))}
               onSelect={onSelect}
+              clashes={clashes}
+              showPaths={showPaths}
+              pathIndex={pathIndex}
+              pathMember={pathMember}
+              selectedHandle={selectedHandle}
+              onSelectHandle={setSelectedHandle}
+              onMovePathPoint={(i, to) => {
+                if (pathEnds?.path) setPath(movePathPoint(pathEnds.path, i, to, stage));
+              }}
+              drawing={drawMode && pathMember != null}
+              onStroke={onStroke}
+              selectedProp={selectedProp}
+              onSelectProp={(id) => {
+                setSelectedProp(id);
+                if (id) setSelection([]);
+              }}
+              onMoveProp={(id, to) => editProps((props) => patchProp(props, id, to, stage))}
             />
           </div>
+          {clashes.length > 0 && <ClashNotice clashes={clashes} people={people} onSeek={seekClash} />}
           {list.length === 0 && (
             <div className="mt-2 flex justify-center">
               <Button size="sm" onClick={addHere} disabled={conflict}>
@@ -438,6 +594,7 @@ function EditorBody({
         list={list}
         selectedId={selectedId}
         onMoveMarker={moveMarker}
+        clashes={ranges}
         underlay={(span) => <RhythmUnderlay span={span} bpm={ed.plan.bpm} firstBeat={ed.plan.first_beat} wave={playsFile ? wave : null} />}
       />
       <FormationTransport />
@@ -521,6 +678,15 @@ function EditorBody({
           </button>
           <button
             type="button"
+            aria-pressed={showPaths}
+            onClick={() => setShowPaths((v) => !v)}
+            className={cn(tool, showPaths ? toolOn : toolIdle)}
+            title="Cómo llega cada persona a la formación de este momento"
+          >
+            <Spline className="size-4" /> Recorridos
+          </button>
+          <button
+            type="button"
             aria-pressed={selectMode}
             onClick={() => setSelectMode((v) => !v)}
             className={cn(tool, selectMode ? toolOn : toolIdle)}
@@ -548,6 +714,49 @@ function EditorBody({
             </select>
           </label>
         </div>
+
+        {/* REQ-08 · Paths */}
+        <AnimatePresence initial={false}>
+          {showPaths && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={snappy}
+              className="overflow-hidden"
+            >
+              <PathPanel
+                pathIndex={pathIndex}
+                memberName={pathMember ? (people.get(pathMember)?.name ?? 'Alguien que ya no está') : null}
+                path={pathEnds?.path}
+                drawMode={drawMode}
+                selectedHandle={selectedHandle}
+                disabled={conflict}
+                onChoose={choosePath}
+                onCancelDraw={() => setDrawMode(false)}
+                onAddPoint={() => pathEnds && setPath(addPathPoint(pathEnds.from, pathEnds.to, pathEnds.path, stage))}
+                onRemovePoint={() => {
+                  const path = pathEnds?.path;
+                  if (!path) return;
+                  setPath(removePathPoint(path, selectedHandle ?? path.points.length - 1));
+                  setSelectedHandle(null);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* REQ-10 · Props */}
+        <PropPanel
+          list={list}
+          selectedProp={selectedProp}
+          disabled={conflict}
+          onAdd={addProp}
+          onTurn={turnProp}
+          onRemove={removeProp}
+          onRelabel={(text) => selectedProp && ed.commit(relabelProp(list, selectedProp, text))}
+          onClose={() => setSelectedProp(null)}
+        />
 
         {/* REQ-07 · Selection and templates */}
         <div className="rounded-[12px] border border-line p-2.5">
@@ -651,6 +860,210 @@ function EditorBody({
 }
 
 const noop = () => undefined;
+
+const fmtMetres = (v: number) => v.toLocaleString('es-ES', { maximumFractionDigits: 1 });
+
+/** REQ-08 · The clashes in words, each one a jump to its moment. */
+function ClashNotice({ clashes, people, onSeek }: { clashes: Clash[]; people: Map<string, FormationMember>; onSeek: (c: Clash) => void }) {
+  const name = (id: string) => people.get(id)?.name.split(/\s+/)[0] ?? 'Alguien';
+  const shown = clashes.slice(0, 3);
+  return (
+    <div role="status" className="mt-2 rounded-[10px] border border-shu-500/50 bg-shu-700/20 px-2.5 py-2">
+      <p className="flex items-center gap-1.5 text-[13px] font-bold text-shu-300">
+        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+        {clashes.length === 1 ? 'Un choque' : `${clashes.length} choques`}: pasan a menos de 0,5 m
+      </p>
+      <ul className="mt-1 flex flex-wrap gap-1.5">
+        {shown.map((c, i) => (
+          <li key={`${c.formationId}-${c.a}-${c.b}-${i}`}>
+            <button
+              type="button"
+              onClick={() => onSeek(c)}
+              className="flex h-11 items-center gap-1 rounded-[8px] border border-shu-500/40 px-2.5 text-[12px] font-medium text-washi hover:border-shu-400"
+            >
+              {name(c.a)} y {name(c.b)} · {fmtMetres(c.distance)} m · {formatMoment(c.start)}
+            </button>
+          </li>
+        ))}
+        {clashes.length > shown.length && <li className="self-center text-[12px] text-washi-subtle">y {clashes.length - shown.length} más</li>}
+      </ul>
+    </div>
+  );
+}
+
+/** REQ-08 · How the chosen person arrives at the formation at the playhead. */
+function PathPanel({
+  pathIndex,
+  memberName,
+  path,
+  drawMode,
+  selectedHandle,
+  disabled,
+  onChoose,
+  onCancelDraw,
+  onAddPoint,
+  onRemovePoint,
+}: {
+  pathIndex: number;
+  memberName: string | null;
+  path: FormationPath | undefined;
+  drawMode: boolean;
+  selectedHandle: number | null;
+  disabled: boolean;
+  onChoose: (choice: PathChoice) => void;
+  onCancelDraw: () => void;
+  onAddPoint: () => void;
+  onRemovePoint: () => void;
+}) {
+  const choices: PathChoice[] = ['straight', 'curve', 'points', 'free'];
+  return (
+    <div className="rounded-[12px] border border-line p-2.5">
+      <p className="mb-2 text-[12px] font-medium text-washi-muted">
+        {pathIndex < 1
+          ? 'Ve a una formación que no sea la primera (toca su número) para ver cómo llega cada persona.'
+          : !memberName
+            ? `Toca a una persona para elegir cómo llega a la formación ${pathIndex + 1}.`
+            : `Recorrido de ${memberName} hasta la formación ${pathIndex + 1}`}
+      </p>
+      {memberName && pathIndex >= 1 && (
+        <div className="space-y-2">
+          <Segmented
+            label="Tipo de recorrido"
+            layoutId="path-kind"
+            size="sm"
+            value={drawMode ? 'free' : (path?.kind ?? 'straight')}
+            onChange={(v) => !disabled && onChoose(v)}
+            options={choices.map((c) => ({ value: c, label: PATH_LABELS[c] }))}
+          />
+          {drawMode && (
+            <p className="flex flex-wrap items-center gap-2 text-[13px] text-kin-200" aria-live="polite">
+              Dibuja con el dedo en el escenario el camino de {memberName}.
+              <button type="button" className={cn(tool, toolIdle)} onClick={onCancelDraw}>
+                Cancelar
+              </button>
+            </p>
+          )}
+          {!drawMode && path?.kind === 'curve' && <p className="text-[12px] text-washi-subtle">Arrastra el punto blanco para cambiar la curva.</p>}
+          {!drawMode && path?.kind === 'free' && <p className="text-[12px] text-washi-subtle">Elige «A mano» otra vez para volver a dibujarlo.</p>}
+          {!drawMode && path?.kind === 'points' && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" className={cn(tool, toolIdle)} disabled={disabled || path.points.length >= PATH_POINTS_MAX} onClick={onAddPoint}>
+                <Plus className="size-4" /> Añadir punto
+              </button>
+              <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onRemovePoint}>
+                <Trash2 className="size-4" /> {selectedHandle != null ? `Quitar punto ${selectedHandle + 1}` : 'Quitar el último punto'}
+              </button>
+              <span className="text-[12px] text-washi-subtle">Arrastra los puntos blancos; toca uno para elegirlo.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** REQ-10 · Props: add one to the formation at the playhead (it stays from there on), then turn, rename or remove it. */
+function PropPanel({
+  list,
+  selectedProp,
+  disabled,
+  onAdd,
+  onTurn,
+  onRemove,
+  onRelabel,
+  onClose,
+}: {
+  list: FormationInput[];
+  selectedProp: string | null;
+  disabled: boolean;
+  onAdd: (kind: FormationPropKind) => void;
+  onTurn: (delta: number) => void;
+  onRemove: () => void;
+  onRelabel: (text: string) => void;
+  onClose: () => void;
+}) {
+  const prop = useMemo(() => {
+    if (!selectedProp) return null;
+    for (const f of list) {
+      const p = (f.props ?? []).find((x) => x.id === selectedProp);
+      if (p) return p;
+    }
+    return null;
+  }, [list, selectedProp]);
+  return (
+    <div className="rounded-[12px] border border-line p-2.5">
+      <p className="mb-2 text-[12px] font-medium text-washi-muted">Atrezo · se queda en el escenario desde esta formación</p>
+      <div className="flex flex-wrap gap-1.5">
+        {PROP_KINDS.map((kind) => (
+          <motion.button
+            key={kind}
+            type="button"
+            disabled={disabled}
+            onClick={() => onAdd(kind)}
+            whileTap={disabled ? undefined : { scale: 0.9 }}
+            transition={jelly}
+            className={cn(tool, toolIdle)}
+            aria-label={`Añadir ${PROP_LABELS[kind].toLowerCase()}`}
+          >
+            <svg viewBox="-0.9 -0.9 1.8 1.8" className="size-5" aria-hidden>
+              <g transform={kind === 'bench' || kind === 'step' ? 'scale(0.9)' : 'scale(1.3)'}>
+                <PropShape kind={kind} />
+              </g>
+            </svg>
+            {PROP_LABELS[kind]}
+          </motion.button>
+        ))}
+      </div>
+      <AnimatePresence initial={false}>
+        {prop && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={snappy}
+            className="overflow-hidden"
+          >
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
+              <span className="mr-1 text-[13px] font-bold text-washi">{PROP_LABELS[prop.kind]}</span>
+              <IconTool label={`Girar ${PROP_ROTATE_STEP}° a la izquierda`} disabled={disabled} onClick={() => onTurn(-PROP_ROTATE_STEP)}>
+                <RotateCcw className="size-4" />
+              </IconTool>
+              <IconTool label={`Girar ${PROP_ROTATE_STEP}° a la derecha`} disabled={disabled} onClick={() => onTurn(PROP_ROTATE_STEP)}>
+                <RotateCw className="size-4" />
+              </IconTool>
+              <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onRemove}>
+                <Trash2 className="size-4" /> Quitar desde aquí
+              </button>
+              <button type="button" className={cn(tool, toolIdle)} onClick={onClose}>
+                <Check className="size-4" /> Listo
+              </button>
+              {prop.kind === 'mark' && (
+                <label className="flex w-full items-center gap-2 text-[13px] text-washi-muted">
+                  Texto
+                  <input
+                    key={`${prop.id}-${prop.label ?? ''}`}
+                    type="text"
+                    defaultValue={prop.label ?? ''}
+                    maxLength={PROP_LABEL_MAX}
+                    placeholder="Salida, foco, centro…"
+                    disabled={disabled}
+                    onBlur={(e) => {
+                      if (e.target.value.trim() !== (prop.label ?? '')) onRelabel(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    }}
+                    className="well h-11 min-w-0 flex-1 rounded-[10px] px-3 text-[14px] text-washi outline-none focus:border-kin-300/70"
+                  />
+                </label>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 function IconTool({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return (

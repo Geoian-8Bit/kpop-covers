@@ -19,8 +19,9 @@ import type { CrewEvent, EventSong, ReactionEmoji, TakeReaction } from '@coversc
 import type { Tables } from '@coverscape/shared';
 import type { Absence, CalendarChange, RehearsalException, RehearsalRule } from '@coverscape/shared';
 import { isMemberColor } from '@coverscape/shared';
-import type { Formation, FormationPlan, FormationPlanMember, FormationPositions, Json } from '@coverscape/shared';
+import type { Formation, FormationPlan, FormationPlanMember, FormationPositions, FormationProp, Json } from '@coverscape/shared';
 import { fitPositions, formationError, planNameError, roundTime, stageSizeError } from '@/features/formations/formationRules';
+import { fitProps, readProps } from '@/features/formations/propRules';
 import { drawOrder } from '@/features/bags/drawRules';
 import {
   ABSENCE_MAX_SPAN,
@@ -2923,6 +2924,8 @@ export interface FormationInput {
   transition: number;
   positions: FormationPositions;
   note: string | null;
+  /** REQ-10 · Always sent by this client (the server keeps a formation's props when the key is missing). */
+  props: FormationProp[];
 }
 /** A write against the plan's revision: done (with the new revision) or refused because somebody changed the plan. */
 export type RevisionResult<T = object> = ({ ok: true; revision: number } & T) | { ok: false; conflict: true; revision: number };
@@ -2948,6 +2951,7 @@ const toFormation = (row: Tables<'formations'>): Formation => ({
   at: Number(row.at),
   transition: Number(row.transition),
   positions: (row.positions ?? {}) as unknown as FormationPositions,
+  props: readProps(row.props),
 });
 const toPlan = (row: Tables<'formation_plans'>): FormationPlan => ({
   ...row,
@@ -3172,7 +3176,9 @@ const demoFormations: FormationsBackend = {
       if (members) demoSetParticipants(db, plan.id, members);
       Object.assign(plan, next, { revision: plan.revision + 1 });
       for (const f of db.formations ?? []) {
-        if (f.plan_id === plan.id && isLive(f)) f.positions = fitPositions(f.positions, { width: plan.stage_width, depth: plan.stage_depth });
+        if (f.plan_id !== plan.id || !isLive(f)) continue;
+        f.positions = fitPositions(f.positions, { width: plan.stage_width, depth: plan.stage_depth });
+        f.props = fitProps(f.props ?? [], { width: plan.stage_width, depth: plan.stage_depth });
       }
       return { ok: true, revision: plan.revision, plan: { ...plan } };
     }),
@@ -3218,7 +3224,15 @@ const demoFormations: FormationsBackend = {
       let row = list.find((f) => f.id === input.id);
       if (row && row.plan_id !== plan.id) throw demoError('formation_not_found');
       if (row) {
-        Object.assign(row, { at, transition: input.transition, positions: structuredClone(input.positions), note, archived_at: null });
+        Object.assign(row, {
+          at,
+          transition: input.transition,
+          positions: structuredClone(input.positions),
+          note,
+          // Like the server: no props sent keeps the formation's own.
+          props: structuredClone(input.props ?? row.props ?? []),
+          archived_at: null,
+        });
       } else {
         if (list.filter((f) => f.plan_id === plan.id && isLive(f)).length >= 300) throw demoError('formations_cap_reached');
         row = {
@@ -3229,7 +3243,7 @@ const demoFormations: FormationsBackend = {
           transition: input.transition,
           positions: structuredClone(input.positions),
           note,
-          props: [],
+          props: structuredClone(input.props ?? []),
           created_at: now(),
           archived_at: null,
         };

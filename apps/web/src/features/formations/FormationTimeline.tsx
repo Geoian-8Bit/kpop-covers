@@ -32,11 +32,14 @@ export function FormationTimeline({
   selectedId,
   onMoveMarker,
   underlay,
+  clashes = [],
 }: {
   list: FormationInput[];
   selectedId: string | null;
   onMoveMarker: (id: string, at: number) => void;
   underlay?: (span: number) => ReactNode;
+  /** REQ-08 · Stretches with a clash, in red over the transitions. */
+  clashes?: { start: number; end: number }[];
 }) {
   const duration = usePlayer((s) => s.duration);
   const loop = usePlayer((s) => s.loop);
@@ -193,6 +196,14 @@ export function FormationTimeline({
               />
             );
           })}
+          {clashes.map((c, i) => (
+            <div
+              key={`c-${i}`}
+              aria-hidden
+              className="absolute bottom-2 h-2.5 min-w-1.5 rounded-full bg-shu-500 shadow-[0_0_6px_rgb(226_103_77/0.6)]"
+              style={{ left: `${pct(c.start)}%`, width: `${Math.max(0, pct(c.end) - pct(c.start))}%` }}
+            />
+          ))}
           {list.map((f, i) => {
             const dragging = marker?.id === f.id && marker.moved;
             const at = dragging ? marker.at : f.at;
