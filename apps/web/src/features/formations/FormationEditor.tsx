@@ -2,10 +2,12 @@ import type { FormationPath, FormationPositions, FormationProp, FormationPropKin
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
+  Box,
   BoxSelect,
   Check,
   CloudOff,
   Copy,
+  Download,
   FlipHorizontal2,
   FlipVertical2,
   Ghost,
@@ -22,7 +24,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Button } from '@/components/ui/Button';
@@ -94,9 +96,15 @@ import {
   removePropFrom,
 } from './propRules';
 import { RhythmPanel, RhythmUnderlay } from './RhythmPanel';
+import { ExportDialog } from './export/ExportDialog';
+import type { PlanSnapshot } from './export/exportStill';
 import { PositionsList, PropShape, StageView } from './StageView';
 import { useFormationEditor, type SaveStatus } from './useFormationEditor';
 import { useWaveform } from './useWaveform';
+import { hasWebGL, NO_WEBGL } from './three/webgl';
+
+/** REQ-13 · The 3D view, with three.js, only for whoever opens it (its own chunk, not in the precache). */
+const Stage3D = lazy(() => import('./three/Stage3D'));
 
 const tool =
   'relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3 text-[13px] font-bold transition-colors disabled:opacity-40';
@@ -250,6 +258,11 @@ function EditorBody({
   const [selectedHandle, setSelectedHandle] = useState<number | null>(null);
   /** REQ-10 · The prop being moved, turned or removed. */
   const [selectedProp, setSelectedProp] = useState<string | null>(null);
+  /** REQ-11 / REQ-12 · «Exportar». */
+  const [exporting, setExporting] = useState(false);
+  /** REQ-13 · The 3D view in place of the 2D stage. */
+  const [view3d, setView3d] = useState(false);
+  const webgl = useMemo(() => hasWebGL(), []);
 
   const selectedId = usePlayer((s) => formationAt(list, s.time)?.id ?? null);
   const current = useMemo(() => list.find((f) => f.id === selectedId) ?? null, [list, selectedId]);
@@ -493,6 +506,17 @@ function EditorBody({
     return ok;
   }
 
+  /** What an export draws: the plan as it is now (unsaved edits included) and the view chosen on the stage. */
+  const snapshot = (): PlanSnapshot => ({
+    planName: ed.plan.name,
+    songTitle: video.title,
+    stage,
+    memberIds,
+    people,
+    list: sortKeyframes(listRef.current),
+    mirrored: usePlayer.getState().mirrored,
+  });
+
   const conflict = ed.status === 'conflict';
   const archivedHere = memberIds.filter((id) => people.get(id)?.archived).map((id) => people.get(id)!);
 
@@ -542,37 +566,43 @@ function EditorBody({
             </p>
           )}
           <div className="landscape:mx-auto landscape:max-w-[min(100%,calc((100dvh-120px)*1.3))]">
-            <StageView
-              stage={stage}
-              memberIds={memberIds}
-              people={people}
-              list={list}
-              snap={snap}
-              focusMember={focusMember}
-              ghost={ghost}
-              selection={selection}
-              selectMode={selectMode}
-              onDragStart={pause}
-              onMove={(moved) => editPositions((p) => ({ ...p, ...moved }))}
-              onSelect={onSelect}
-              clashes={clashes}
-              showPaths={showPaths}
-              pathIndex={pathIndex}
-              pathMember={pathMember}
-              selectedHandle={selectedHandle}
-              onSelectHandle={setSelectedHandle}
-              onMovePathPoint={(i, to) => {
-                if (pathEnds?.path) setPath(movePathPoint(pathEnds.path, i, to, stage));
-              }}
-              drawing={drawMode && pathMember != null}
-              onStroke={onStroke}
-              selectedProp={selectedProp}
-              onSelectProp={(id) => {
-                setSelectedProp(id);
-                if (id) setSelection([]);
-              }}
-              onMoveProp={(id, to) => editProps((props) => patchProp(props, id, to, stage))}
-            />
+            {view3d ? (
+              <Suspense fallback={<div className="skeleton aspect-[4/3] w-full rounded-[12px]" role="status" aria-label="Cargando la vista 3D" />}>
+                <Stage3D stage={stage} memberIds={memberIds} people={people} list={list} />
+              </Suspense>
+            ) : (
+              <StageView
+                stage={stage}
+                memberIds={memberIds}
+                people={people}
+                list={list}
+                snap={snap}
+                focusMember={focusMember}
+                ghost={ghost}
+                selection={selection}
+                selectMode={selectMode}
+                onDragStart={pause}
+                onMove={(moved) => editPositions((p) => ({ ...p, ...moved }))}
+                onSelect={onSelect}
+                clashes={clashes}
+                showPaths={showPaths}
+                pathIndex={pathIndex}
+                pathMember={pathMember}
+                selectedHandle={selectedHandle}
+                onSelectHandle={setSelectedHandle}
+                onMovePathPoint={(i, to) => {
+                  if (pathEnds?.path) setPath(movePathPoint(pathEnds.path, i, to, stage));
+                }}
+                drawing={drawMode && pathMember != null}
+                onStroke={onStroke}
+                selectedProp={selectedProp}
+                onSelectProp={(id) => {
+                  setSelectedProp(id);
+                  if (id) setSelection([]);
+                }}
+                onMoveProp={(id, to) => editProps((props) => patchProp(props, id, to, stage))}
+              />
+            )}
           </div>
           {clashes.length > 0 && <ClashNotice clashes={clashes} people={people} onSeek={seekClash} />}
           {list.length === 0 && (
@@ -611,6 +641,21 @@ function EditorBody({
           <button type="button" className={cn(tool, toolIdle)} onClick={removeCurrent} disabled={conflict || !current} aria-label="Borrar la formación de este momento">
             <Trash2 className="size-4" /> Borrar
           </button>
+          <button type="button" className={cn(tool, toolIdle)} onClick={() => setExporting(true)}>
+            <Download className="size-4" /> Exportar
+          </button>
+          <button
+            type="button"
+            aria-pressed={view3d}
+            disabled={!webgl}
+            title={webgl ? 'Ver el escenario en 3D (la vista 2D sigue siendo la de editar)' : NO_WEBGL}
+            onClick={() => setView3d((v) => !v)}
+            className={cn(tool, view3d ? toolOn : toolIdle)}
+          >
+            <Box className="size-4" /> 3D
+          </button>
+          {!webgl && <span className="text-[12px] text-washi-subtle">{NO_WEBGL}</span>}
+          {view3d && <span className="text-[12px] text-washi-subtle">Para mover a alguien, vuelve a la vista 2D.</span>}
           {current && (
             <label className="flex items-center gap-2 text-[13px] text-washi-muted">
               Transición
@@ -838,6 +883,8 @@ function EditorBody({
       </div>
 
       <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
+
+      <ExportDialog open={exporting} onClose={() => setExporting(false)} snapshot={snapshot} video={video} playsFile={playsFile} />
 
       <Dialog open={settings} onClose={() => setSettings(false)} title="Ajustes del plan" busy={savingPlan}>
         {settings && (
