@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  axisFraction,
   lockTarget,
   needsCssRotation,
   nextOrientationPref,
@@ -59,5 +60,17 @@ describe('vertical video on the stage', () => {
     expect(youtubeFrameRatio(null)).toBe(16 / 9);
     expect(youtubeFrameRatio(1.7778)).toBe(16 / 9);
     expect(youtubeFrameRatio(9 / 16)).toBe(9 / 16);
+  });
+});
+
+describe('pointer along a turned layer', () => {
+  const rect = { left: 10, top: 100, width: 40, height: 400 };
+  it('reads the horizontal axis normally', () => {
+    expect(axisFraction({ clientX: 30, clientY: 0 }, { left: 10, top: 0, width: 40, height: 10 }, false)).toBeCloseTo(0.5);
+  });
+  it('reads the screen vertical when the layer is turned 90°', () => {
+    expect(axisFraction({ clientX: 0, clientY: 200 }, rect, true)).toBeCloseTo(0.25);
+    expect(axisFraction({ clientX: 0, clientY: 900 }, rect, true)).toBe(1);
+    expect(axisFraction({ clientX: 0, clientY: 0 }, rect, true)).toBe(0);
   });
 });

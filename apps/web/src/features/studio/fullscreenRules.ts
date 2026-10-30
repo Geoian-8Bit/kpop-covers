@@ -56,3 +56,21 @@ export function stageIsVertical(opts: {
 export function youtubeFrameRatio(aspectRatio: number | null | undefined): number {
   return isVerticalAspect(aspectRatio) ? (aspectRatio as number) : 16 / 9;
 }
+
+/**
+ * Where a pointer falls along an element's own horizontal axis, 0–1. In the CSS-turned fullscreen (`turned`, a
+ * 90° clockwise turn) that axis runs down the screen, so the screen's vertical position is the one that counts.
+ */
+export function axisFraction(
+  point: { clientX: number; clientY: number },
+  rect: { left: number; top: number; width: number; height: number },
+  turned: boolean,
+): number {
+  const f = turned ? (point.clientY - rect.top) / rect.height : (point.clientX - rect.left) / rect.width;
+  return Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0;
+}
+
+/** The fullscreen layer is turned with CSS (marked `data-fs-turned` on the stage). */
+export function inTurnedLayer(el: Element | null | undefined): boolean {
+  return Boolean(el?.closest('[data-fs-turned]'));
+}
