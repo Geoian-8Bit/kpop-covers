@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { registerStems, type StemSources } from '@/features/voice/stems';
 import { pickStems } from '@/features/voice/voiceRules';
-import { stemsBackend, type VideoStems } from '@/lib/backend';
+import { stemsBackend, type VideoStems } from '@/lib/backend/stems';
 
 /** 18 · The separations (AI) of a song's file, shared by the group. */
 export const stemKeys = {

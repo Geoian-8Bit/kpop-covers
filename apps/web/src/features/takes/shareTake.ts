@@ -1,5 +1,6 @@
 import { formatBytes, pickMime, type Take } from '@coverscape/shared';
-import { backend, type UploadFailure } from '@/lib/backend';
+import { backend } from '@/lib/backend/core';
+import type { UploadFailure } from '@/lib/backend/types';
 import { formatMaxLength } from '@/features/studio/cloudCopyRules';
 import { FriendlyError } from '@/lib/supabase';
 import {

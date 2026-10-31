@@ -1,19 +1,18 @@
 import type { Bag, BagDraw, BagKind } from '@coverscape/shared';
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
-  backend,
   bagsBackend,
   type BagItemView,
   type BagPatch,
   type BagWithCount,
-  type ClipWithVideo,
   type NewBag,
   type NewBagItem,
-} from '@/lib/backend';
+} from '@/lib/backend/bags';
+import { backend, type ClipWithVideo } from '@/lib/backend/core';
 import { friendlyError } from '@/lib/supabase';
 import { useCreateVideo, videoKeys } from './videos';
 
-export type { BagItemView, BagWithCount, NewBag } from '@/lib/backend';
+export type { BagItemView, BagWithCount, NewBag } from '@/lib/backend/bags';
 
 /**
  * F13 · Bolsas para sortear: shared by the group. The draw happens on the server (atomic); here only the cache

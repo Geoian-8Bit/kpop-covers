@@ -105,7 +105,7 @@ import { NoteDialog, type NoteTarget } from './NoteDialog';
 import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
 import { CloudCopyStatus } from './CloudCopyStatus';
-import { cloudLimitBytes } from '@/lib/backend';
+import { cloudLimitBytes } from '@/lib/backend/mode';
 import { useYouTubeMeta } from '@/lib/youtubeMeta';
 import { useFileSource } from './fileSource';
 import type { TakeItem } from '@/data/takes';

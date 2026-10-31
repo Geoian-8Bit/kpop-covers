@@ -1,7 +1,7 @@
 import type { TakeReaction } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { applyToggle, type ToggleAction } from '@/features/reactions/reactionRules';
-import { eventsBackend } from '@/lib/backend';
+import { eventsBackend } from '@/lib/backend/events';
 import { friendlyError } from '@/lib/supabase';
 
 /**

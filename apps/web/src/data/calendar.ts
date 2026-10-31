@@ -9,11 +9,11 @@ import {
   type NewAbsence,
   type NewRehearsalException,
   type NewRehearsalRule,
-} from '@/lib/backend';
+} from '@/lib/backend/calendar';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 import { useIdentity } from './members';
 
-export type { CalendarMember } from '@/lib/backend';
+export type { CalendarMember } from '@/lib/backend/calendar';
 
 /** REQ-03 / REQ-04 · the calendar: absences, weekly rehearsals and their exceptions. Shared by the group. */
 export const calendarKeys = {

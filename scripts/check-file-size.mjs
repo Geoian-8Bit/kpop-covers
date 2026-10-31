@@ -27,7 +27,6 @@ const EXCEPTIONS = new Set([
   'apps/web/src/features/takes/TakesPanel.tsx',
   'apps/web/src/features/wishes/PollPage.tsx',
   'apps/web/src/features/wishes/WishesPage.tsx',
-  'apps/web/src/lib/backend.ts',
   'apps/web/src/player/store.ts',
   'packages/shared/src/recording.ts',
 ]);

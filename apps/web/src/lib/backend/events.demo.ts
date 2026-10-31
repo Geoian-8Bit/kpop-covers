@@ -1,0 +1,212 @@
+import type { CrewEvent, EventSong, TakeReaction } from '@coverscape/shared';
+import { demoError, isLive, mutate, now, query } from './demoDb';
+import type { DemoDb } from './demoDb';
+import type { EventSongView, EventsBackend, NewEvent } from './types';
+
+// Demo twin: the same rules as the database (name 1–80, place ≤ 120, a song once per event and only from the
+// library, positions 0–999, reactions only on shared takes, one of each per person or «sin nombre», known emoji).
+
+type EventsDemoDb = DemoDb & {
+  events?: CrewEvent[];
+  event_songs?: EventSong[];
+  take_reactions?: TakeReaction[];
+};
+
+const DEMO_EMOJIS = ['🔥', '👏', '💯', '😂'];
+
+function checkEventRow(row: Partial<NewEvent>) {
+  if (row.name != null && (row.name.trim().length < 1 || row.name.trim().length > 80)) {
+    throw demoError('new row for relation "events" violates check constraint "events_name_check"', '23514');
+  }
+  if (row.place != null && row.place.length > 120) {
+    throw demoError('new row for relation "events" violates check constraint "events_place_check"', '23514');
+  }
+  if (row.starts_at !== undefined && (row.starts_at == null || Number.isNaN(Date.parse(row.starts_at)))) {
+    throw demoError('invalid input syntax for type timestamp with time zone', '22007');
+  }
+}
+
+const liveEvent = (db: EventsDemoDb, id: string) => (db.events ?? []).find((e) => e.id === id && isLive(e));
+
+function demoSongView(db: EventsDemoDb, song: EventSong): EventSongView | null {
+  const video = db.videos.find((v) => v.id === song.video_id);
+  if (!video || !isLive(song) || !liveEvent(db, song.event_id)) return null;
+  return {
+    ...song,
+    video: {
+      id: video.id,
+      title: video.title,
+      artist: video.artist,
+      thumbnail_url: video.thumbnail_url,
+      source: video.source,
+      youtube_id: video.youtube_id,
+    },
+  };
+}
+
+export const demoEvents: EventsBackend = {
+  listEvents: () =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      return (db.events ?? [])
+        .filter(isLive)
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+        .map((event) => ({
+          ...event,
+          songs: (db.event_songs ?? []).filter((s) => s.event_id === event.id && demoSongView(db, s)).length,
+        }));
+    }),
+  getEvent: (id) => query((raw) => liveEvent(raw as EventsDemoDb, id) ?? null),
+  insertEvent: async (row) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      checkEventRow(row);
+      const event: CrewEvent = {
+        id: crypto.randomUUID(),
+        crew_id: db.crews[0]!.id,
+        name: row.name.trim(),
+        starts_at: new Date(row.starts_at).toISOString(),
+        place: row.place ?? null,
+        created_at: now(),
+        archived_at: null,
+      };
+      (db.events ??= []).push(event);
+      return event;
+    }),
+  updateEvent: async (id, patch) =>
+    mutate((raw) => {
+      const event = liveEvent(raw as EventsDemoDb, id);
+      if (!event) throw demoError('PGRST116 0 rows');
+      checkEventRow(patch);
+      Object.assign(
+        event,
+        patch,
+        patch.name != null ? { name: patch.name.trim() } : {},
+        patch.starts_at != null ? { starts_at: new Date(patch.starts_at).toISOString() } : {},
+      );
+      return event;
+    }),
+  deleteEvent: async (id) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      const event = liveEvent(db, id);
+      if (!event) return;
+      event.archived_at = now();
+      for (const s of db.event_songs ?? []) if (s.event_id === id && isLive(s)) s.archived_at = now();
+    }),
+  listEventSongs: (eventId) =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      return (db.event_songs ?? [])
+        .filter((s) => s.event_id === eventId)
+        .sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at))
+        .map((s) => demoSongView(db, s))
+        .filter((s): s is EventSongView => s != null);
+    }),
+  insertEventSongs: async (eventId, videoIds, positions) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      const event = liveEvent(db, eventId);
+      if (!event) throw demoError('event_not_found');
+      const songs = (db.event_songs ??= []);
+      const rows = videoIds.map((video_id, i): EventSong => {
+        if (!db.videos.some((v) => v.id === video_id)) throw demoError('event_song_invalid');
+        const position = positions[i] ?? i;
+        if (!(position >= 0 && position <= 999)) {
+          throw demoError(
+            'new row for relation "event_songs" violates check constraint "event_songs_position_check"',
+            '23514',
+          );
+        }
+        return {
+          id: crypto.randomUUID(),
+          crew_id: event.crew_id,
+          event_id: eventId,
+          video_id,
+          position,
+          created_at: now(),
+          archived_at: null,
+        };
+      });
+      // All or nothing, like one insert statement.
+      const taken = new Set(songs.filter((s) => s.event_id === eventId && isLive(s)).map((s) => s.video_id));
+      for (const row of rows) {
+        if (taken.has(row.video_id)) {
+          throw demoError('duplicate key value violates unique constraint "event_songs_once_key"', '23505');
+        }
+        taken.add(row.video_id);
+      }
+      songs.push(...rows);
+      return rows;
+    }),
+  deleteEventSong: async (id) =>
+    mutate((raw) => {
+      const song = (raw as EventsDemoDb).event_songs?.find((s) => s.id === id);
+      if (song && isLive(song)) song.archived_at = now();
+    }),
+  setEventSongPositions: async (patches) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      for (const { id, position } of patches) {
+        if (!(position >= 0 && position <= 999)) {
+          throw demoError(
+            'new row for relation "event_songs" violates check constraint "event_songs_position_check"',
+            '23514',
+          );
+        }
+        const song = db.event_songs?.find((s) => s.id === id && isLive(s));
+        if (song && !liveEvent(db, song.event_id)) throw demoError('event_not_found');
+        if (song) song.position = position;
+      }
+    }),
+  listReactions: (videoId) =>
+    query((raw) => {
+      const db = raw as EventsDemoDb;
+      const takes = new Set(
+        (db.takes ?? []).filter((t) => t.video_id === videoId && t.archived_at == null).map((t) => t.id),
+      );
+      return (db.take_reactions ?? [])
+        .filter((r) => isLive(r) && takes.has(r.take_id))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }),
+  addReaction: async (row) =>
+    mutate((raw) => {
+      const db = raw as EventsDemoDb;
+      if (!DEMO_EMOJIS.includes(row.emoji)) {
+        throw demoError(
+          'new row for relation "take_reactions" violates check constraint "take_reactions_emoji_check"',
+          '23514',
+        );
+      }
+      const take = (db.takes ?? []).find(
+        (t) => t.id === row.take_id && t.archived_at == null && t.shared_path != null,
+      );
+      if (!take) throw demoError('reaction_take_invalid');
+      const member =
+        row.member_id && (db.members ?? []).some((m) => m.id === row.member_id) ? row.member_id : null;
+      const reactions = (db.take_reactions ??= []);
+      if (
+        reactions.some(
+          (r) => isLive(r) && r.take_id === take.id && r.member_id === member && r.emoji === row.emoji,
+        )
+      ) {
+        throw demoError('duplicate key value violates unique constraint "take_reactions_once_key"', '23505');
+      }
+      const reaction: TakeReaction = {
+        id: crypto.randomUUID(),
+        crew_id: take.crew_id,
+        take_id: take.id,
+        member_id: member,
+        emoji: row.emoji,
+        created_at: now(),
+        archived_at: null,
+      };
+      reactions.push(reaction);
+      return reaction;
+    }),
+  removeReaction: async (id) =>
+    mutate((raw) => {
+      const reaction = (raw as EventsDemoDb).take_reactions?.find((r) => r.id === id);
+      if (reaction && isLive(reaction)) reaction.archived_at = now();
+    }),
+};

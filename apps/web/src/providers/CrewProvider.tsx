@@ -1,7 +1,8 @@
 import type { Crew, Profile } from '@coverscape/shared';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { backend, IS_DEMO } from '@/lib/backend';
+import { backend } from '@/lib/backend/core';
+import { IS_DEMO } from '@/lib/backend/mode';
 import { crewSnapshot, parseCrew, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { useAuth } from './AuthProvider';
 

@@ -109,10 +109,23 @@ const result = {
   },
   chunks,
 };
+
+// REQ-08 · The demo must not reach a production build: none of its exclusive strings may appear in any chunk.
+const DEMO_MARKERS = ['coverscape.demo.v1', 'DEMO0000', 'oneshoot.dev.cloudLimitMB'];
+const demoLeaks = [];
+for (const file of walk(path.join(dist, 'assets'))) {
+  if (!file.endsWith('.js')) continue;
+  const text = readFileSync(file, 'utf8');
+  for (const marker of DEMO_MARKERS)
+    if (text.includes(marker)) demoLeaks.push(`${path.basename(file)}: ${marker}`);
+}
+result.demoInBuild = demoLeaks;
 mkdirSync(path.dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify(result, null, 2));
 
 console.log(`M-01 critical path : ${result['M-01'].gzipKB} kB gzip (${critical.length} files)`);
 console.log(`M-02 entry chunk   : ${result['M-02'].gzipKB} kB gzip (${entry})`);
 console.log(`M-11 precache      : ${manifest.length} entries, ${result['M-11'].KB} kB`);
+console.log(`demo in build      : ${demoLeaks.length ? demoLeaks.join(', ') : 'none'}`);
 console.log(`JSON -> ${out}`);
+if (demoLeaks.length) process.exitCode = 1;

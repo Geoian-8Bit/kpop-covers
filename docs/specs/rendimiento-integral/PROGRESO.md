@@ -172,6 +172,43 @@ M-02 = 71,57 kB gzip; M-11 = 79 entradas, 2378,48 kB. Nota: los hash de los chun
 `pnpm check:unused` (knip) en la línea base: 115 exports y 37 tipos exportados sin uso, 3 dependencias o binarios no
 listados (vitest en la Edge Function, vercel y vite en scripts). Se resuelven en la fase 9.
 
+### Fases 1 y 3 (en paralelo)
+
+| Tarea | Rol | Modelo / esfuerzo | Reserva | Resultado |
+| --- | --- | --- | --- | --- |
+| F1 · backend por dominio (REQ-08 backend/demo, 27, 29 backend) | implementador backend | opus / medium | lib/backend.ts → lib/backend/**, data/** (importaciones) | hecho (ver «Fase 1» abajo) |
+| F3a · arranque (REQ-04, 06, 18 gcTime, 09 Splash) | implementador frontend | sonnet / medium | main.tsx, App.tsx, lib/routeLoaders.ts, lib/prefetch.ts, appUpdate.ts, components/splash.css | en curso |
+| F3b · fuentes, HTML, Workbox (REQ-05, 07, 08 manualChunks, 13) | implementador build | sonnet / medium | index.html, index.css (fuentes y @import), carpeta de fuentes, vite.config.ts, vercel.json | en curso |
+| F3c · shell (REQ-27 AppShell, 09 barras y Backdrop) | implementador frontend | sonnet / medium | components/AppShell.tsx → components/shell/**, Backdrop.tsx, lib/useDesktop.ts, QuickNav.tsx | en curso |
+
+Decisión: la Splash anima con un CSS propio (`components/splash.css`) en vez de `index.css`, para que la reserva de
+F3a no se solape con la de F3b (fuentes en `index.css`). REQ-10 y el `crossOrigin` de las miniaturas esperan al cierre
+de la fase 2.
+
+### Fase 1 · Backend por dominio — Hecha
+
+- `lib/backend.ts` (3272 líneas) → `lib/backend/` (`types`, `mode`, `upload`, `demoDb`, `shared` y, por dominio, fachada
+  `X.ts` + `X.supabase.ts` + `X.demo.ts` para core, bags, wishes, events, stems, calendar, push y formations; el mayor,
+  `bags.demo.ts`, 465 líneas). Movimiento puro por rangos de líneas, verificado antes de optimizar.
+- REQ-08: cada fachada es `IS_DEMO ? demoX : supabaseX` con `IS_DEMO` constante de build; Rollup elimina los `*.demo.ts`.
+  `pnpm perf:bundle` comprueba ahora en cada build que no aparece ninguna cadena exclusiva del demo
+  (`coverscape.demo.v1`, `DEMO0000`, `oneshoot.dev.cloudLimitMB`): «none». Descartado cargar las implementaciones de
+  Supabase con `import()`: retrasaría la primera llamada.
+- REQ-29 (backend): `must()` (lanza el mismo `res.error`, sin envolver) sustituye 94 de 96 `if (error) throw error`;
+  `as unknown as` en backend 17 → 0 (`toJson`/`fromJson` para jsonb).
+- Los `data/*.ts` y los importadores de fuera (providers, estudio, tomas, voz, formaciones, RPD) importan solo su
+  dominio (`@/lib/backend/<dominio>`, `/mode`, `/types`); el barril `index.ts` se mantiene para compatibilidad.
+- M-02 en build aislado (`git archive HEAD` + solo la fase 1): 71,72 → 69,63 kB gzip (−2,09). El criterio de −6 kB lo
+  verifica la fase 3 (con `manualChunks`).
+- Probar: suite completa de flujos y visual en los dos Chromium (542 pasados, 7 saltados; el único fallo visual —
+  popover «Pausa» del estudio— venía de la fase 3 y ya está corregido); la ruta de **Supabase** (que los e2e no tocan
+  porque corren en demo) se ejercitó con S-01 y S-02 sobre el build de producción contra el Supabase simulado: biblioteca
+  con datos y reproductor listo con YouTube y con vídeo subido (`evidencias/fase-1-backend/supabase-path.json`).
+- Revisión r1 (sonnet medium · opus medium · haiku medium): sin hallazgos ≥7. Arreglados los 5–6: importaciones por
+  dominio en vez del barril, mock del test de `routeLoaders`, comprobación automática del demo en el build.
+- Revisión r2: ver abajo. Pendientes de nota baja: códigos de comentario heredados («13 ·», «52 ·») en lugar de REQ-xx
+  (se mantienen: son los códigos del plan original); `const data = must(...); return data;` redundante en stems.
+
 ## Diferencias visuales y su justificación
 
 ## Sugerencias para el responsable (no implementadas)

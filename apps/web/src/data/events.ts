@@ -4,19 +4,19 @@ import { bagKeys } from '@/data/bags';
 import { optionsRow, trackKeys } from '@/data/tracks';
 import { appendPositions, chorusClips, uniqueName } from '@/features/events/eventRules';
 import { DEFAULT_ROUND_OPTIONS } from '@/features/rpd/roundRules';
+import { bagsBackend } from '@/lib/backend/bags';
 import {
-  bagsBackend,
   eventsBackend,
-  IS_DEMO,
   type EventPatch,
   type EventSongView,
   type EventWithCount,
   type NewEvent,
-} from '@/lib/backend';
+} from '@/lib/backend/events';
+import { IS_DEMO } from '@/lib/backend/mode';
 import { parseEvents, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 
-export type { EventSongView, EventWithCount } from '@/lib/backend';
+export type { EventSongView, EventWithCount } from '@/lib/backend/events';
 
 /** F16 · Events (name, date and time, place) and their repertoire. Shared by the group; deleting archives. */
 export const eventKeys = {

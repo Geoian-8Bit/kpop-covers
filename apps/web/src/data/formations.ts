@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formationsBackend, type FormationPlanPatch, type NewFormationPlan } from '@/lib/backend';
+import { formationsBackend, type FormationPlanPatch, type NewFormationPlan } from '@/lib/backend/formations';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 
 export type {
@@ -9,7 +9,7 @@ export type {
   FormationPlanPatch,
   FormationPlanSummary,
   RevisionResult,
-} from '@/lib/backend';
+} from '@/lib/backend/formations';
 
 /** REQ-06 · Formation plans of a song, shared by the group. */
 export const formationKeys = {

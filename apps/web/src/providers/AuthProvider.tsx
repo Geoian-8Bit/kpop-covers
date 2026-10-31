@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DEMO_USER_ID, IS_DEMO } from '@/lib/backend';
+import { DEMO_USER_ID, IS_DEMO } from '@/lib/backend/mode';
 import { supabase } from '@/lib/supabase';
 
 /** Local demo only (`VITE_DEMO=true` in dev): a fixed signed-in user, no login screen. */

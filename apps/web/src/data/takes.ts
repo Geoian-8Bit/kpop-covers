@@ -15,7 +15,7 @@ import {
   type SaveTakeInput,
   type TakeItem,
 } from '@/features/takes/takeRules';
-import { backend, type TakePatch } from '@/lib/backend';
+import { backend, type TakePatch } from '@/lib/backend/core';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
 
 /**

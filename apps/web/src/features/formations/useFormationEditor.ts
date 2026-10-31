@@ -2,7 +2,7 @@ import type { Formation, FormationPlan } from '@coverscape/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formationErrorMessage, formationKeys, type FormationInput, type FormationPlanFull, type FormationPlanPatch } from '@/data/formations';
-import { formationsBackend } from '@/lib/backend';
+import { formationsBackend } from '@/lib/backend/formations';
 import {
   diffKeyframes,
   fitPositions,

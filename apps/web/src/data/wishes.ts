@@ -1,15 +1,15 @@
 import type { Poll, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { bagsBackend } from '@/lib/backend/bags';
+import { backend } from '@/lib/backend/core';
 import {
-  backend,
-  bagsBackend,
   wishesBackend,
   type CloseResolve,
   type NewPoll,
   type NewWish,
   type PollPatch,
   type WishPatch,
-} from '@/lib/backend';
+} from '@/lib/backend/wishes';
 import { friendlyError } from '@/lib/supabase';
 import { bagKeys } from './bags';
 import { useCreateVideo, videoKeys } from './videos';

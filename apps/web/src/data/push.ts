@@ -7,7 +7,8 @@ import {
   type PushAvailability,
   type PushPermission,
 } from '@/features/calendar/pushRules';
-import { IS_DEMO, pushBackend, type PushKeys } from '@/lib/backend';
+import { IS_DEMO } from '@/lib/backend/mode';
+import { pushBackend, type PushKeys } from '@/lib/backend/push';
 import { useIdentity } from './members';
 
 /**

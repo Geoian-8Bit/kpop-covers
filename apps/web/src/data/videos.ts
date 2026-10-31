@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { videosBucketHasRoom } from '@/features/studio/cloudSpace';
 import {
   backend,
-  cloudLimitBytes,
   type UploadFailure,
   type UploadOptions,
   type UploadResult,
   type VideoWithClipCount,
-} from '@/lib/backend';
+} from '@/lib/backend/core';
+import { cloudLimitBytes } from '@/lib/backend/mode';
 import { deleteLocalVideo, purgeLocalVideos, saveLocalVideo } from '@/lib/localVideos';
 import { libraryRowsSnapshot, parseLibrary, readSnapshot, videoFromLibraryRow, writeSnapshot } from '@/lib/snapshot';
 import { FriendlyError } from '@/lib/supabase';

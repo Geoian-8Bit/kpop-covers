@@ -5,7 +5,7 @@ import { AlertTriangle, Check, CloudUpload, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { isStaleCopy } from '@/data/videos';
-import { cloudLimitBytes } from '@/lib/backend';
+import { cloudLimitBytes } from '@/lib/backend/mode';
 import { cn } from '@/lib/cn';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { snappy } from '@/lib/motion';

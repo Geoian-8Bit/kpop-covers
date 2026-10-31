@@ -1,6 +1,8 @@
 import { formatBytes, type Video } from '@coverscape/shared';
 import { isStaleCopy } from '@/data/videos';
-import { backend, stemsBackend, type UploadFailure, type VideoStems } from '@/lib/backend';
+import { backend } from '@/lib/backend/core';
+import { stemsBackend } from '@/lib/backend/stems';
+import type { UploadFailure, VideoStems } from '@/lib/backend/types';
 import { beginHeavyWork, heavyWorkBusy, untilHeavyWork, type HeavyWork } from '@/lib/heavyWork';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { FriendlyError } from '@/lib/supabase';

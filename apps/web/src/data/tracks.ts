@@ -6,10 +6,10 @@ import {
   type TrackOptionsRow,
   type TrackPatch,
   type TrackWithCount,
-} from '@/lib/backend';
+} from '@/lib/backend/bags';
 import type { RoundOptions } from '@/features/rpd/roundRules';
 
-export type { TrackItemView, TrackWithCount } from '@/lib/backend';
+export type { TrackItemView, TrackWithCount } from '@/lib/backend/bags';
 
 /** F14 · Pistas guardadas: Random Play Dance rounds kept by the group, in order. */
 export const trackKeys = {

@@ -30,7 +30,7 @@ import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { forgetStage } from '@/lib/stagePref';
-import { cloudLimitBytes } from '@/lib/backend';
+import { cloudLimitBytes } from '@/lib/backend/mode';
 import { CloudCopyStatus } from './CloudCopyStatus';
 import { cancelCloudCopy, clearCloudCopy, startCloudCopy } from './cloudCopyJob';
 import { estimateCopySeconds, formatEta } from './cloudCopyRules';

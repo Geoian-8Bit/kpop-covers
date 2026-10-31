@@ -1,11 +1,11 @@
 import type { Clip, ClipColor, TablesUpdate } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { backend, type ClipWithVideo } from '@/lib/backend';
+import { backend, type ClipWithVideo } from '@/lib/backend/core';
 import { parseQuickClips, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { invalidateAfterArchive, invalidateClipPickers } from './afterArchive';
 import { videoKeys, type VideoWithClipCount } from './videos';
 
-export type { ClipVideo, ClipWithVideo } from '@/lib/backend';
+export type { ClipVideo, ClipWithVideo } from '@/lib/backend/core';
 
 export const clipKeys = {
   forVideo: (videoId: string | undefined) => ['clips', videoId] as const,

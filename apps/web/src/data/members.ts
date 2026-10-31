@@ -1,7 +1,7 @@
 import type { Member, MemberColor } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
-import { backend } from '@/lib/backend';
+import { backend } from '@/lib/backend/core';
 import { invalidateAfterArchive } from './afterArchive';
 
 /**

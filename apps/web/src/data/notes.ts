@@ -1,6 +1,6 @@
 import type { Note } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { backend, type NotePatch } from '@/lib/backend';
+import { backend, type NotePatch } from '@/lib/backend/core';
 
 export const noteKeys = {
   forVideo: (videoId: string | undefined) => ['notes', videoId] as const,
