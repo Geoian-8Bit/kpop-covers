@@ -81,6 +81,8 @@ test('con un conflicto el escenario no se puede editar', async ({ page }) => {
   await mina.focus();
   await page.keyboard.press('ArrowRight');
   expect(await mina.boundingBox()).toEqual(at);
+  // The formation tools live in the «Formación» tab (a sheet over the dock on a phone held upright).
+  await page.getByRole('tab', { name: 'Formación' }).click();
   await expect(page.getByRole('button', { name: 'Añadir formación aquí' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Deshacer' })).toBeDisabled();
 

@@ -1,4 +1,4 @@
-import { addDays, hhmm, isoWeekday, isTime, minutes, WEEKDAYS_LONG } from './calendarRules';
+import { addDays, hhmm, isoWeekday, isTime, madridClock, madridToday, minutes, WEEKDAYS_LONG } from './calendarRules';
 
 /**
  * REQ-04 · Rehearsal sessions computed from weekly rules and per-date exceptions (covered by
@@ -87,6 +87,36 @@ export function sessionsBetween(
     });
   }
   return sessions.sort((a, b) => a.day.localeCompare(b.day) || a.starts.localeCompare(b.starts) || a.key.localeCompare(b.key));
+}
+
+/**
+ * Rehearsals still to come before an event: live sessions (weekly rules + extras − cancelled) from today to the
+ * event's day, Madrid wall-clock. Today's that already ended and the event day's that start at or after the event
+ * don't count. `null` when there is no timetable at all (the caller keeps counting days) or the event is over.
+ */
+export function rehearsalsLeft(
+  now: Date,
+  startsAt: Date | string,
+  rules: readonly RuleLike[],
+  exceptions: readonly ExceptionLike[],
+): { count: number; today: boolean } | null {
+  const start = typeof startsAt === 'string' ? new Date(startsAt) : startsAt;
+  if (Number.isNaN(start.getTime()) || start.getTime() <= now.getTime()) return null;
+  const today = madridToday(now);
+  const clock = madridClock(now).time;
+  const event = madridClock(start);
+  const hasSchedule = currentRules(rules, today).length > 0 || exceptions.some((e) => e.kind === 'extra' && e.on_date >= today);
+  if (!hasSchedule) return null;
+  let count = 0;
+  let todayLeft = false;
+  for (const s of sessionsBetween(today, event.day, rules, exceptions)) {
+    if (s.cancelled) continue;
+    if (s.day === today && minutes(s.ends) <= minutes(clock)) continue;
+    if (s.day === event.day && minutes(s.starts) >= minutes(event.time)) continue;
+    count++;
+    if (s.day === today) todayLeft = true;
+  }
+  return { count, today: todayLeft };
 }
 
 /** Sessions grouped by day. */

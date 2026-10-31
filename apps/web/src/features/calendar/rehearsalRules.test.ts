@@ -5,6 +5,7 @@ import {
   currentRules,
   overlappingRules,
   ruleLabel,
+  rehearsalsLeft,
   ruleRunsOn,
   sessionsBetween,
   sessionsByDay,
@@ -97,5 +98,56 @@ describe('rule list and labels', () => {
     expect(checkTimes('18:00', '20:00')).toEqual({ ok: true, starts: '18:00', ends: '20:00' });
     expect(checkTimes('20:00', '18:00').ok).toBe(false);
     expect(checkTimes('', '18:00').ok).toBe(false);
+  });
+});
+
+describe('rehearsalsLeft', () => {
+  const MON = new Date('2026-11-02T10:00:00Z');
+  const SAT_EVENT = '2026-11-14T19:00:00Z'; // Saturday 20:00 Madrid
+  const cancel = (ruleId: string, on: string): ExceptionLike => ({
+    id: `c-${ruleId}-${on}`,
+    on_date: on,
+    kind: 'cancel',
+    rule_id: ruleId,
+    starts_at: null,
+    ends_at: null,
+  });
+  const extra = (on: string): ExceptionLike => ({
+    id: `x-${on}`,
+    on_date: on,
+    kind: 'extra',
+    rule_id: null,
+    starts_at: '17:00:00',
+    ends_at: '19:00:00',
+  });
+
+  it('counts the weekly sessions between today and the event', () => {
+    expect(rehearsalsLeft(MON, SAT_EVENT, [WED, FRI], [])).toEqual({ count: 4, today: false });
+  });
+
+  it('drops cancelled ones and adds extra ones', () => {
+    expect(rehearsalsLeft(MON, SAT_EVENT, [WED, FRI], [cancel('fri', '2026-11-06')])?.count).toBe(3);
+    expect(rehearsalsLeft(MON, SAT_EVENT, [WED, FRI], [extra('2026-11-10')])?.count).toBe(5);
+  });
+
+  it('counts today only while the rehearsal has not ended', () => {
+    expect(rehearsalsLeft(new Date('2026-11-04T16:00:00Z'), SAT_EVENT, [WED], [])).toEqual({ count: 2, today: true });
+    expect(rehearsalsLeft(new Date('2026-11-04T20:00:00Z'), SAT_EVENT, [WED], [])).toEqual({ count: 1, today: false });
+  });
+
+  it('on the event day, counts only rehearsals that start before the event', () => {
+    const now = new Date('2026-11-09T10:00:00Z');
+    expect(rehearsalsLeft(now, '2026-11-11T18:00:00Z', [WED], [])?.count).toBe(1); // event 19:00, rehearsal 18:00
+    expect(rehearsalsLeft(now, '2026-11-11T16:00:00Z', [WED], [])?.count).toBe(0); // event 17:00
+  });
+
+  it('is null without any timetable, or once the event has started', () => {
+    expect(rehearsalsLeft(MON, SAT_EVENT, [], [])).toBeNull();
+    expect(rehearsalsLeft(MON, SAT_EVENT, [rule({ valid_until: '2026-10-20' })], [])).toBeNull();
+    expect(rehearsalsLeft(new Date('2026-11-15T10:00:00Z'), SAT_EVENT, [WED], [])).toBeNull();
+  });
+
+  it('a lone extra rehearsal is a timetable', () => {
+    expect(rehearsalsLeft(MON, SAT_EVENT, [], [extra('2026-11-10')])?.count).toBe(1);
   });
 });

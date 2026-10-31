@@ -1,6 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MapPin } from 'lucide-react';
+import { useRehearsalExceptions, useRehearsalRules } from '@/data/calendar';
+import { madridClock, madridToday } from '@/features/calendar/calendarRules';
+import { rehearsalsLeft } from '@/features/calendar/rehearsalRules';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
 import { instant } from './countdownBand';
@@ -13,6 +16,8 @@ import {
   eventDateLabel,
   ignitesFirstLantern,
   litLanterns,
+  rehearsalDetail,
+  rehearsalHeadline,
   type Countdown,
   type CountdownStage,
 } from './eventRules';
@@ -39,8 +44,14 @@ export interface EventCountdownProps {
 
 export function EventCountdown({ name, startsAt, place, now, compact, className }: EventCountdownProps) {
   const c = countdown(startsAt, now);
-  const detail = countdownDetail(c);
-  const headline = countdownHeadline(c);
+  // Rehearsals left before the event (no timetable → null → the usual calendar days).
+  const rules = useRehearsalRules();
+  const today = madridToday(now);
+  const eventDay = Number.isNaN(Date.parse(startsAt)) ? today : madridClock(startsAt).day;
+  const exceptions = useRehearsalExceptions(today, eventDay);
+  const left = rules.data && exceptions.data ? rehearsalsLeft(now, startsAt, rules.data, exceptions.data) : null;
+  const detail = (left && rehearsalDetail(c, left)) ?? countdownDetail(c);
+  const headline = (left && rehearsalHeadline(c, left)) ?? countdownHeadline(c);
   const stage = countdownStage(c);
 
   // Previous stage, kept the React way (state adjusted during render): whether Chōchin arrives lighting up.

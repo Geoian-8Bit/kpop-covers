@@ -88,7 +88,7 @@ export function DayDialog({
                   key={s.key}
                   className={cn('rounded-[12px] border px-3 py-2.5', s.cancelled ? 'border-line bg-sumi-900/40' : 'border-line-strong bg-sumi-900/70')}
                 >
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div className="flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-3">
                     <span className="min-w-0 flex-1">
                       <span className={cn('tabular whitespace-nowrap font-display text-[18px] font-bold', s.cancelled ? 'text-washi-subtle line-through' : 'text-washi')}>
                         {timeRange(s.starts, s.ends)}
@@ -99,8 +99,8 @@ export function DayDialog({
                       )}
                     </span>
                     {s.ruleId && !s.cancelled && (
-                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => cancelSession(s)}>
-                        <X aria-hidden className="size-4" /> Cancelar este ensayo
+                      <Button size="sm" variant="ghost" className="shrink-0 self-start" disabled={busy} onClick={() => cancelSession(s)}>
+                        <X aria-hidden className="size-4" /> Cancelar ensayo
                       </Button>
                     )}
                     {s.ruleId && s.cancelled && (

@@ -58,6 +58,43 @@ export function youtubeFrameRatio(aspectRatio: number | null | undefined): numbe
 }
 
 /**
+ * How much a vertical YouTube frame may grow past «fits whole» in fullscreen, cropping only its sides: 1.25 covers
+ * a 9:16 short on phones up to 20:9 (390×844 needs 1.22), so it fills the upright screen with no bands.
+ */
+export const VERTICAL_FILL_ZOOM = 1.25;
+
+/**
+ * The YouTube frame box in fullscreen (the stage is a size container). Horizontal or unknown: 16:9, the largest that
+ * fits. Vertical: as tall as the screen, its sides cropped up to VERTICAL_FILL_ZOOM, never its top or bottom (heads
+ * and feet stay); on a wide screen that leaves side bands, the minimum its shape asks for.
+ */
+export function youtubeFsBox(aspectRatio: number | null | undefined): { aspectRatio: string; width: string } {
+  const r = youtubeFrameRatio(aspectRatio);
+  if (!isVerticalAspect(aspectRatio)) return { aspectRatio: String(r), width: `min(100cqw, calc(100cqh * ${r}))` };
+  return { aspectRatio: String(r), width: `min(calc(100cqh * ${r}), calc(100cqw * ${VERTICAL_FILL_ZOOM}))` };
+}
+
+/** Outside fullscreen a vertical YouTube video keeps its own shape, centred and no taller than ~60 % of the screen. */
+export function youtubeInlineBox(aspectRatio: number | null | undefined): { aspectRatio: string; width: string } | null {
+  if (!isVerticalAspect(aspectRatio)) return null;
+  return { aspectRatio: String(aspectRatio), width: `min(100%, calc(60dvh * ${aspectRatio}))` };
+}
+
+/**
+ * Videos saved before REQ-02, from the search, or measured through /watch?v= (always 16:9) may be vertical while
+ * stored as unknown or horizontal: the studio asks oEmbed again for those. A stored vertical ratio is trusted.
+ */
+export function needsAspectProbe(video: { youtube_id: string | null; aspect_ratio: number | null | undefined }): boolean {
+  return Boolean(video.youtube_id) && !isVerticalAspect(video.aspect_ratio);
+}
+
+/** The ratio the stage uses: a fresh measurement when there is one, else the stored value. */
+export function resolveAspect(stored: number | null | undefined, probed: number | null | undefined): number | null {
+  if (typeof probed === 'number' && Number.isFinite(probed) && probed > 0) return probed;
+  return stored ?? null;
+}
+
+/**
  * Where a pointer falls along an element's own horizontal axis, 0–1. In the CSS-turned fullscreen (`turned`, a
  * 90° clockwise turn) that axis runs down the screen, so the screen's vertical position is the one that counts.
  */

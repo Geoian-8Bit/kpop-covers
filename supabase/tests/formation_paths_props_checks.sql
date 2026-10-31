@@ -1,4 +1,5 @@
--- Checks for 20261030140000_formation_paths_props.sql (REQ-08 paths inside positions, REQ-10 props).
+-- Checks for 20261030140000_formation_paths_props.sql (REQ-08 paths inside positions, REQ-10 props). Since
+-- 20261031100000_formation_curves.sql a curve takes 1 or 2 control points (formation_curves_checks.sql).
 -- Run the whole file in one go as postgres (SQL editor / MCP execute_sql, or `pnpm db:test`). Acts as `anon`,
 -- prints `PASS …`, raises `FAIL …` on the first problem, ends with ROLLBACK.
 
@@ -53,7 +54,7 @@ begin
   if (r ->> 'revision')::int <> 3 then raise exception 'FAIL a free path was not saved (%)', r; end if;
 
   foreach bad in array array[
-    '{"kind":"curve","points":[{"x":1,"y":1},{"x":2,"y":2}]}',
+    '{"kind":"curve","points":[{"x":1,"y":1},{"x":2,"y":2},{"x":3,"y":3}]}',
     '{"kind":"curve","points":[]}',
     '{"kind":"zigzag","points":[{"x":1,"y":1}]}',
     '{"kind":"points","points":[{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1},{"x":1,"y":1}]}',
@@ -74,7 +75,7 @@ begin
   if (select revision from public.formation_plans where id = v_plan) <> 3 then
     raise exception 'FAIL a refused path still bumped the revision';
   end if;
-  raise notice 'PASS paths: curve (1 point), points (1–8), free (1–40) inside the stage; anything else is formation_invalid';
+  raise notice 'PASS paths: curve (1–2 points, 20261031100000), points (1–8), free (1–40) inside the stage; anything else is formation_invalid';
 end $$;
 
 -- ───────────── Props ─────────────

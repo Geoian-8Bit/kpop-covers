@@ -646,15 +646,24 @@ export function StageView({
               />
             );
           })}
-          {editing?.path?.kind === 'curve' && (
-            <polyline
-              points={line([editing.from, editing.path.points[0]!, editing.to].map((p) => mirrorPoint(p, stage, mirrored)))}
-              fill="none"
-              stroke="var(--color-washi-subtle)"
-              strokeWidth={0.02}
-              strokeDasharray="0.06 0.06"
-            />
-          )}
+          {/* The arms of a curve: from each end to its control point (an S: one arm per end). */}
+          {editing?.path?.kind === 'curve' &&
+            (editing.path.points.length >= 2
+              ? [
+                  [editing.from, editing.path.points[0]!],
+                  [editing.path.points[1]!, editing.to],
+                ]
+              : [[editing.from, editing.path.points[0]!, editing.to]]
+            ).map((arm, i) => (
+              <polyline
+                key={i}
+                points={line(arm.map((p) => mirrorPoint(p, stage, mirrored)))}
+                fill="none"
+                stroke="var(--color-washi-subtle)"
+                strokeWidth={0.02}
+                strokeDasharray="0.06 0.06"
+              />
+            ))}
         </g>
       )}
 
