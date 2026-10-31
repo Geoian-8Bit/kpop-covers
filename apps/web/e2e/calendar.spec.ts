@@ -8,7 +8,9 @@ test('marcar una ausencia', async ({ page }) => {
   const guard = guardConsole(page);
   await seedDemo(page);
   await page.goto('/calendario');
-  await page.getByRole('button', { name: 'Marcar ausencia' }).first().click();
+  // Tap today's cell, then «Marcar ausencia» in the day detail.
+  await page.getByRole('gridcell').getByRole('button', { name: /hoy/ }).click();
+  await page.getByRole('button', { name: 'Marcar ausencia' }).click();
 
   const who = page.getByRole('dialog', { name: '¿Quién eres?' });
   await who.getByRole('radio', { name: 'Hana' }).click();
@@ -23,6 +25,8 @@ test('marcar una ausencia', async ({ page }) => {
   await expect(page.getByText('Nadie ha marcado ausencias este mes')).toBeHidden();
   // Today's cell (the form starts on today) now counts the absence.
   await expect(page.getByRole('gridcell', { name: /hoy, falta 1 persona/ })).toBeVisible();
+  // The day detail comes back after saving and holds the notice offer back until it is closed.
+  await page.getByRole('dialog', { name: / de \p{L}+$/u }).getByRole('button', { name: 'Cerrar' }).click();
   // REQ-05 · The first absence offers notices: «Ahora no» leaves everything as it was.
   const offer = page.getByRole('dialog', { name: /enterarte cuando alguien cambie el calendario/ });
   await offer.getByRole('button', { name: 'Ahora no' }).click();

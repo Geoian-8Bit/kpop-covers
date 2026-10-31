@@ -1,6 +1,6 @@
 import type { Absence, RehearsalRule } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, UserX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
@@ -134,18 +134,10 @@ export function CalendarPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-4xl rounded-[10px] sm:rounded-[12px]">
-        <header className="flex flex-wrap items-end justify-between gap-4 px-4 pb-5 pt-6 sm:px-9 sm:pt-8">
-          <div className="min-w-0">
-            <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">Calendario</h1>
-            <p className="mt-1 max-w-prose text-sm text-washi-subtle">Quién no puede venir, los ensayos de cada semana y los eventos.</p>
-          </div>
-          <Button onClick={() => markAbsence(today)}>
-            <UserX aria-hidden className="size-4.5" /> Marcar ausencia
-          </Button>
-        </header>
+        <h1 className="sr-only">Calendario</h1>
 
-        <section aria-labelledby="calendar-month" className="sep-t px-2 pb-6 pt-4 sm:px-6">
-          <div className="mb-3 flex items-center gap-1 px-1">
+        <section aria-labelledby="calendar-month" className="px-2 pb-3 pt-3 sm:px-6 sm:pb-6 sm:pt-5">
+          <div className="mb-2 flex items-center gap-1 px-1">
             <h2 id="calendar-month" aria-live="polite" className="min-w-0 flex-1 truncate font-display text-[22px] font-bold capitalize text-washi">
               {monthLabel(month)}
             </h2>
@@ -223,12 +215,7 @@ export function CalendarPage() {
                 </AnimatePresence>
               )}
               {!loading && !monthHasAbsences && (
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-3 px-2 text-center">
-                  <p className="text-sm text-washi-muted">Nadie ha marcado ausencias este mes</p>
-                  <Button size="sm" variant="secondary" onClick={() => markAbsence(today)}>
-                    <UserX aria-hidden className="size-4" /> Marcar ausencia
-                  </Button>
-                </div>
+                <p className="mt-3 px-2 text-center text-[13px] text-washi-muted">Nadie ha marcado ausencias este mes. Toca un día para marcar una.</p>
               )}
             </>
           )}
@@ -434,11 +421,11 @@ function RehearsalSchedule({
 }) {
   const current = currentRules(rules ?? [], today);
   return (
-    <section aria-labelledby="calendar-schedule" className="sep-t px-4 pb-8 pt-6 sm:px-9">
+    <section aria-labelledby="calendar-schedule" className="sep-t px-4 pb-6 pt-4 sm:px-9 sm:pt-6">
       <SectionTitle
         id="calendar-schedule"
         glyph="稽"
-        className="mb-4"
+        className="mb-3"
         aside={
           <Button size="sm" variant="secondary" onClick={onAdd}>
             <Plus aria-hidden className="size-4" /> Añadir

@@ -64,16 +64,17 @@ export function FormationsPanel({ video }: { video: Video }) {
   }
 
   return (
-    <aside className="flex flex-col p-5 sm:p-6">
-      <div className="flex items-center gap-3">
+    <aside className="@container flex flex-col p-5 sm:p-6">
+      {/* Narrow (a phone): the button under the title, full width; it never pushes past the edge. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5">
         <SectionTitle
-          className="flex-1"
+          className="w-full min-w-0 @md:w-auto @md:flex-1"
           glyph="陣"
           aside={<span className="tabular text-sm font-medium text-washi-subtle">{list.length}</span>}
         >
           Formaciones
         </SectionTitle>
-        <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
+        <Button size="sm" variant="secondary" className="h-11 w-full @md:h-9 @md:w-auto" onClick={() => setCreating(true)}>
           <Plus className="size-4" /> Nuevo plan
         </Button>
       </div>

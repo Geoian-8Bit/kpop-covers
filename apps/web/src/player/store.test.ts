@@ -109,3 +109,72 @@ describe('player store · covered by the recorder', () => {
     expect(usePlayer.getState().time).toBe(12);
   });
 });
+
+describe('player store · suspend (the same song reloads from another source)', () => {
+  beforeEach(() => {
+    usePlayer.getState().reset();
+    usePlayer.setState({ duration: 200 });
+  });
+
+  it('keeps playing and the moment across the reload', () => {
+    const engine = fakeEngine();
+    usePlayer.getState().attach(engine);
+    usePlayer.getState().seek(42);
+    usePlayer.getState().play();
+    usePlayer.getState().suspend(engine);
+    let s = usePlayer.getState();
+    expect(s.engine).toBeNull();
+    expect(s.playing).toBe(true);
+    expect(s.buffering).toBe(true);
+    engine.play.mockClear();
+    usePlayer.getState().attach(engine);
+    s = usePlayer.getState();
+    expect(engine.seek).toHaveBeenLastCalledWith(42);
+    expect(engine.play).toHaveBeenCalledTimes(1);
+    expect(s.time).toBe(42);
+  });
+
+  it('stays paused when it was paused, without a spinner', () => {
+    const engine = fakeEngine();
+    usePlayer.getState().attach(engine);
+    usePlayer.getState().suspend(engine);
+    expect(usePlayer.getState().buffering).toBe(false);
+    usePlayer.getState().attach(engine);
+    expect(engine.play).not.toHaveBeenCalled();
+  });
+
+  it('a pause during the reload wins', () => {
+    const engine = fakeEngine();
+    usePlayer.getState().attach(engine);
+    usePlayer.getState().play();
+    usePlayer.getState().suspend(engine);
+    usePlayer.getState().pause();
+    engine.play.mockClear();
+    usePlayer.getState().attach(engine);
+    expect(engine.play).not.toHaveBeenCalled();
+  });
+
+  it('ignores an engine that is not the current one', () => {
+    const a = fakeEngine();
+    const b = fakeEngine();
+    usePlayer.getState().attach(a);
+    usePlayer.getState().suspend(b);
+    expect(usePlayer.getState().engine).toBe(a);
+  });
+});
+
+describe('player store · a loop gap during a reload', () => {
+  it('keeps the countdown instead of playing on attach', () => {
+    usePlayer.getState().reset();
+    usePlayer.setState({ duration: 200 });
+    const engine = fakeEngine();
+    usePlayer.getState().attach(engine);
+    usePlayer.getState().play();
+    usePlayer.getState().suspend(engine);
+    usePlayer.setState({ countdownEndsAt: 123, playing: false });
+    engine.play.mockClear();
+    usePlayer.getState().attach(engine);
+    expect(engine.play).not.toHaveBeenCalled();
+    expect(usePlayer.getState().countdownEndsAt).toBe(123);
+  });
+});

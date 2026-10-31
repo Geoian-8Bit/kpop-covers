@@ -17,6 +17,8 @@ import {
   moonLitPath,
   moonPhase,
   nearestEvent,
+  rehearsalDetail,
+  rehearsalHeadline,
   splitEvents,
   toLocalInput,
   uniqueName,
@@ -325,5 +327,30 @@ describe('connections', () => {
   it('appends songs after the last position', () => {
     expect(appendPositions([], 2)).toEqual([0, 1]);
     expect(appendPositions([{ position: 0 }, { position: 4 }], 2)).toEqual([5, 6]);
+  });
+});
+
+describe('countdown in rehearsals', () => {
+  const days = (n: number) => ({ kind: 'days' as const, days: n, ms: n * 86_400_000 });
+  const hours = { kind: 'hours' as const, hours: 5, minutes: 0, ms: 5 * 3_600_000 };
+  const today = { kind: 'today' as const, started: false, hours: 2, minutes: 0, ms: 7_200_000 };
+
+  it('headline counts rehearsals', () => {
+    expect(rehearsalHeadline(days(9), { count: 3, today: false })).toBe('Faltan 3 ensayos');
+    expect(rehearsalHeadline(days(3), { count: 1, today: false })).toBe('Último ensayo');
+    expect(rehearsalHeadline(days(2), { count: 0, today: false })).toBe('Ya no hay más ensayos');
+    expect(rehearsalHeadline(hours, { count: 2, today: true })).toBe('Faltan 2 ensayos');
+  });
+
+  it('leaves the event day and the past to the day words', () => {
+    expect(rehearsalHeadline(today, { count: 1, today: true })).toBeNull();
+    expect(rehearsalDetail(today, { count: 1, today: true })).toBeNull();
+  });
+
+  it('detail: rehearsal today, else how far the event is', () => {
+    expect(rehearsalDetail(days(4), { count: 2, today: true })).toBe('Hoy hay ensayo');
+    expect(rehearsalDetail(days(4), { count: 2, today: false })).toBe('El evento es en 4 días');
+    expect(rehearsalDetail(days(1), { count: 0, today: false })).toBe('El evento es mañana');
+    expect(rehearsalDetail(hours, { count: 0, today: false })).toBe('Empieza en 5 h');
   });
 });

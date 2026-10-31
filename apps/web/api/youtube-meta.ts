@@ -22,13 +22,18 @@ export async function GET(request: Request): Promise<Response> {
   const id = new URL(request.url).searchParams.get('id') ?? '';
   if (!ID_RE.test(id)) return json({ error: 'invalid_id' }, 400);
 
-  const target = `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(
-    `https://www.youtube.com/watch?v=${id}`,
-  )}`;
+  // REQ-02 · Asked through the /shorts/ link, oEmbed reports the video's real frame (113×200 for a vertical short,
+  // 200×113 for a horizontal video). Through /watch?v= it always says 16:9, even for a short.
+  const oembed = (path: string) =>
+    fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/${path}`)}`, {
+      signal: AbortSignal.timeout(6000),
+    });
 
   let upstream: Response;
   try {
-    upstream = await fetch(target, { signal: AbortSignal.timeout(6000) });
+    upstream = await oembed(`shorts/${id}`);
+    // Should YouTube refuse the /shorts/ form for some video, the classic link still gives title and author.
+    if (!upstream.ok && upstream.status !== 401 && upstream.status !== 403) upstream = await oembed(`watch?v=${id}`);
   } catch (error) {
     console.error('[youtube-meta] oEmbed fetch failed', error);
     return json({ error: 'upstream_unreachable' }, 502);

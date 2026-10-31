@@ -9,6 +9,11 @@ import {
   showOrientationButton,
   stageIsVertical,
   youtubeFrameRatio,
+  youtubeFsBox,
+  youtubeInlineBox,
+  needsAspectProbe,
+  resolveAspect,
+  VERTICAL_FILL_ZOOM,
 } from './fullscreenRules';
 
 describe('fixed orientation', () => {
@@ -89,5 +94,45 @@ describe('layerPoint', () => {
     expect(layerPoint({ clientX: 100, clientY: 400 }, rect, true)).toEqual({ x: 400, y: 200 });
     // Moving down the screen moves along the box's width.
     expect(layerPoint({ clientX: 250, clientY: 100 }, rect, true)).toEqual({ x: 100, y: 50 });
+  });
+});
+
+describe('vertical YouTube box (REQ-02)', () => {
+  it('a horizontal or unknown video keeps the 16:9 contain box', () => {
+    expect(youtubeFsBox(null)).toEqual({ aspectRatio: String(16 / 9), width: `min(100cqw, calc(100cqh * ${16 / 9}))` });
+    expect(youtubeFsBox(1.77)).toEqual(youtubeFsBox(null));
+  });
+
+  it('a vertical video is as tall as the screen and crops only its sides', () => {
+    expect(youtubeFsBox(0.5625)).toEqual({
+      aspectRatio: '0.5625',
+      width: `min(calc(100cqh * 0.5625), calc(100cqw * ${VERTICAL_FILL_ZOOM}))`,
+    });
+  });
+
+  it('the zoom covers a 9:16 short on a 390×844 phone and on 20:9', () => {
+    expect((844 * (9 / 16)) / 390).toBeLessThanOrEqual(VERTICAL_FILL_ZOOM);
+    expect((20 * (9 / 16)) / 9).toBeLessThanOrEqual(VERTICAL_FILL_ZOOM);
+  });
+
+  it('outside fullscreen only a vertical video gets its own box', () => {
+    expect(youtubeInlineBox(null)).toBeNull();
+    expect(youtubeInlineBox(1.77)).toBeNull();
+    expect(youtubeInlineBox(0.5625)).toEqual({ aspectRatio: '0.5625', width: 'min(100%, calc(60dvh * 0.5625))' });
+  });
+
+  it('probes YouTube videos not stored as vertical', () => {
+    expect(needsAspectProbe({ youtube_id: 'abcdefghijk', aspect_ratio: null })).toBe(true);
+    expect(needsAspectProbe({ youtube_id: 'abcdefghijk', aspect_ratio: 1.7699 })).toBe(true);
+    expect(needsAspectProbe({ youtube_id: 'abcdefghijk', aspect_ratio: 0.565 })).toBe(false);
+    expect(needsAspectProbe({ youtube_id: null, aspect_ratio: null })).toBe(false);
+  });
+
+  it('a fresh measurement wins over the stored ratio', () => {
+    expect(resolveAspect(null, 0.565)).toBe(0.565);
+    expect(resolveAspect(1.7699, 0.565)).toBe(0.565);
+    expect(resolveAspect(1.7699, undefined)).toBe(1.7699);
+    expect(resolveAspect(undefined, null)).toBeNull();
+    expect(resolveAspect(0.5625, Number.NaN)).toBe(0.5625);
   });
 });

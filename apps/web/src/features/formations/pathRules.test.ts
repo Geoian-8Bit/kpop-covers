@@ -5,12 +5,18 @@ import {
   addPathPoint,
   convertPath,
   curvePath,
+  curveShape,
+  flipPath,
   FREE_POINTS_MAX,
+  pathPolyline,
   pathValid,
   pointOnPath,
   polylineLength,
   removePathPoint,
+  sCurvePath,
+  setCurveShape,
   simplifyStroke,
+  splineThrough,
   strokeToPath,
 } from './pathRules';
 
@@ -34,14 +40,53 @@ describe('pointOnPath', () => {
     expect(pointOnPath(from, to, { kind: 'curve', points: [{ x: 2, y: 4 }] }, 1)).toEqual(to);
   });
 
-  it('walks through several points by distance travelled', () => {
-    // 0,0 → 0,2 → 4,2 → 4,0: 8 m in all, half way is 4 m in: (2, 2).
+  it('walks a smooth line through several points, at an even pace', () => {
+    // 0,0 → 0,2 → 4,2 → 4,0: symmetric, so half way is the middle of the top stretch.
     const path = { kind: 'points' as const, points: [{ x: 0, y: 2 }, { x: 4, y: 2 }] };
     const mid = pointOnPath(from, to, path, 0.5);
+    expect(mid.x).toBeCloseTo(2, 1);
+    expect(mid.y).toBeGreaterThan(1.9);
+    expect(pointOnPath(from, to, path, 0)).toEqual(from);
+    expect(pointOnPath(from, to, path, 1)).toEqual(to);
+    // It passes through every point (no corner cut).
+    const line = pathPolyline(from, to, path);
+    for (const p of path.points) expect(line.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 1e-9)).toBe(true);
+    // No corner: consecutive stretches never turn more than ~35°.
+    for (let i = 2; i < line.length; i++) {
+      const a = Math.atan2(line[i - 1]!.y - line[i - 2]!.y, line[i - 1]!.x - line[i - 2]!.x);
+      const b = Math.atan2(line[i]!.y - line[i - 1]!.y, line[i]!.x - line[i - 1]!.x);
+      const turn = Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)));
+      expect(turn).toBeLessThan(0.6);
+    }
+  });
+
+  it('follows a cubic curve with two control points', () => {
+    const path = { kind: 'curve' as const, points: [{ x: 1, y: 3 }, { x: 3, y: -3 }] };
+    const mid = pointOnPath(from, to, path, 0.5);
+    // 0.125·0 + 0.375·1 + 0.375·3 + 0.125·4 = 2; y: 0.375·3 − 0.375·3 = 0
     expect(mid.x).toBeCloseTo(2);
-    expect(mid.y).toBeCloseTo(2);
-    const quarter = pointOnPath(from, to, path, 0.25);
-    expect(quarter).toEqual({ x: 0, y: 2 });
+    expect(mid.y).toBeCloseTo(0);
+    expect(pointOnPath(from, to, path, 0.25).y).toBeGreaterThan(0);
+    expect(pointOnPath(from, to, path, 0.75).y).toBeLessThan(0);
+    expect(pointOnPath(from, to, path, 1)).toEqual(to);
+  });
+});
+
+describe('splineThrough', () => {
+  it('keeps two points as they are and passes through all of them', () => {
+    expect(splineThrough([{ x: 0, y: 0 }, { x: 1, y: 1 }])).toEqual([{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+    const pts = [{ x: 0, y: 0 }, { x: 1, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 0 }];
+    const line = splineThrough(pts, 6);
+    expect(line).toHaveLength(3 * 6 + 1);
+    expect(line[0]).toEqual(pts[0]);
+    expect(line[6]).toEqual(pts[1]);
+    expect(line[12]).toEqual(pts[2]);
+    expect(line[18]).toEqual(pts[3]);
+  });
+
+  it('copes with repeated points', () => {
+    const line = splineThrough([{ x: 1, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }], 4);
+    expect(line.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true);
   });
 });
 
@@ -127,9 +172,33 @@ describe('path edits', () => {
     expect(convertPath('free', from, to, undefined, stage)).toBeUndefined();
   });
 
+  it('makes S bends, switches arc ↔ S and flips the bend', () => {
+    const s = sCurvePath(from, to, stage);
+    expect(s.kind).toBe('curve');
+    expect(s.points).toHaveLength(2);
+    expect(curveShape(s)).toBe('s');
+    // One control point each side of the line y = 1: it swings one way and then the other.
+    expect(Math.sign(s.points[0]!.y - 1)).toBe(-Math.sign(s.points[1]!.y - 1));
+    expect(pathValid(s, stage)).toBe(true);
+    const arc = setCurveShape('arc', from, to, s, stage);
+    expect(curveShape(arc)).toBe('arc');
+    expect(setCurveShape('arc', from, to, arc, stage)).toBe(arc);
+    expect(curveShape(setCurveShape('s', from, to, arc, stage))).toBe('s');
+    expect(curveShape(undefined)).toBeNull();
+    const a = { x: 1, y: 3 };
+    const b = { x: 5, y: 3 };
+    const c = curvePath(a, b, stage);
+    const flipped = flipPath(a, b, c, stage);
+    expect(flipped.points[0]!.x).toBeCloseTo(c.points[0]!.x);
+    expect(flipped.points[0]!.y - 3).toBeCloseTo(-(c.points[0]!.y - 3));
+    // An S into points keeps two points (the spline keeps the S).
+    expect(convertPath('points', from, to, s, stage)!.points).toHaveLength(2);
+  });
+
   it('validates like the server', () => {
     expect(pathValid({ kind: 'curve', points: [{ x: 1, y: 1 }] }, stage)).toBe(true);
-    expect(pathValid({ kind: 'curve', points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }, stage)).toBe(false);
+    expect(pathValid({ kind: 'curve', points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }, stage)).toBe(true);
+    expect(pathValid({ kind: 'curve', points: [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }] }, stage)).toBe(false);
     expect(pathValid({ kind: 'points', points: [] }, stage)).toBe(false);
     expect(pathValid({ kind: 'zigzag', points: [{ x: 1, y: 1 }] }, stage)).toBe(false);
     expect(pathValid({ kind: 'free', points: [{ x: 9, y: 1 }] }, stage)).toBe(false);
@@ -152,7 +221,11 @@ describe('path edits', () => {
       kf('f1', 0, { [A]: { x: 0, y: 0 } }),
       kf('f2', 10, { [A]: { x: 4, y: 0, path: { kind: 'points', points: [{ x: 2, y: 3 }] } } }),
     ];
-    expect(memberTrack(list, A, [A], stage)).toEqual([{ x: 0, y: 0 }, { x: 2, y: 3 }, { x: 4, y: 0 }]);
+    const track = memberTrack(list, A, [A], stage);
+    expect(track[0]).toEqual({ x: 0, y: 0 });
+    expect(track[track.length - 1]).toEqual({ x: 4, y: 0 });
+    expect(track.some((p) => Math.hypot(p.x - 2, p.y - 3) < 1e-9)).toBe(true);
+    expect(track.length).toBeGreaterThan(3);
   });
 });
 
@@ -173,6 +246,17 @@ describe('findClashes', () => {
     expect(clashingAt(clashes, 9)).toEqual(new Set([A, B]));
     expect(clashingAt(clashes, 5).size).toBe(0);
     expect(clashRanges(clashes)).toHaveLength(1);
+  });
+
+  it('clashes follow the real curve: an S that crosses the other is caught, one that goes round is not', () => {
+    const base = { [B]: { x: 4, y: 1.6 } };
+    const list = (path: { kind: 'curve'; points: { x: number; y: number }[] }) => [
+      kf('f1', 0, { [A]: { x: 1, y: 3 }, ...base }),
+      kf('f2', 10, { [A]: { x: 7, y: 3, path }, ...base }),
+    ];
+    // B stands still at (4, 1.6); an S sweeps through it, its mirror image stays well clear.
+    expect(findClashes(list({ kind: 'curve', points: [{ x: 3, y: -1 }, { x: 5, y: 3 }] }), [A, B], stage).length).toBeGreaterThan(0);
+    expect(findClashes(list({ kind: 'curve', points: [{ x: 3, y: 5.5 }, { x: 5, y: 5.5 }] }), [A, B], stage)).toHaveLength(0);
   });
 
   it('a curve around the other avoids the clash', () => {

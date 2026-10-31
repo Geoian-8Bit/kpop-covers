@@ -63,7 +63,10 @@ import {
   orientationButtonLabel,
   orientationLabel,
   showOrientationButton,
-  youtubeFrameRatio,
+  needsAspectProbe,
+  resolveAspect,
+  youtubeFsBox,
+  youtubeInlineBox,
   type OrientationPref,
 } from './fullscreenRules';
 import { Page } from '@/components/AppShell';
@@ -99,6 +102,7 @@ import { SaveClipDialog } from './SaveClipDialog';
 import { LinkFilePanel } from './LinkFilePanel';
 import { CloudCopyStatus } from './CloudCopyStatus';
 import { cloudLimitBytes } from '@/lib/backend';
+import { useYouTubeMeta } from '@/lib/youtubeMeta';
 import { useFileSource } from './fileSource';
 import type { TakeItem } from '@/data/takes';
 import { VoiceSplitControl } from '@/features/voice/VoiceSplitControl';
@@ -158,6 +162,9 @@ const SeparateVoiceButton = optionalPart(() =>
 const releaseTakeUrl = (url: string | null | undefined) => {
   if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
 };
+
+/** The stage's file source options (stable: no new object per render). */
+const STAGE_SOURCE = { cacheRemote: true } as const;
 
 /** Stable empty list, so the stage never re-renders for a new [] while notes load. */
 const NO_NOTES: Note[] = [];
@@ -763,9 +770,12 @@ function MediaStage({
   const stage = usePlayer((s) => s.stage);
   /** Uploaded videos play their file; a YouTube entry plays its linked file when «Archivo» is chosen (F1). */
   const playsFile = video.source === 'upload' || (stage === 'file' && hasLinkedFile(video));
-  const file = useFileSource(video, reloadKey, playsFile && !hold);
+  // A cloud file is also downloaded whole while it streams: the stage moves to it so loops stop asking a slow 4G.
+  const file = useFileSource(video, reloadKey, playsFile && !hold, STAGE_SOURCE);
   // 18 · The group's AI-separated tracks for this file, for «Sin voz» / «Voz» (never with YouTube).
   useStageStems(video, playsFile && !hold && file.status === 'ready' ? file.url : null);
+  // …and for its downloaded copy (the graph finds them by the element's src).
+  useStageStems(video, playsFile && !hold && file.status === 'ready' ? (file.cachedUrl ?? null) : null);
   const link = useLinkLocalFile();
   const upload = useUploadToCloud();
   /** Only on this device (the upload failed or was too big): offer to send it to the group from here. */
@@ -908,6 +918,10 @@ function MediaStage({
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen, orientation, cycleOrientation, rotated, showOrientation } = useFullscreen();
   const youtubeStage = !playsFile && Boolean(video.youtube_id);
+  // REQ-02 · A video stored as horizontal or unknown is asked again (oEmbed through /shorts/ tells a short apart).
+  const aspectProbe = useYouTubeMeta(youtubeStage && needsAspectProbe(video) ? video.youtube_id : null);
+  const aspect = resolveAspect(video.aspect_ratio, aspectProbe.status === 'ok' ? aspectProbe.aspectRatio : null);
+  const verticalYouTube = youtubeStage && isVerticalAspect(aspect);
   // 5 · The controls' visibility lives in its own small store: showing them never repaints this stage.
   useFsChromeDriver(fullscreen);
   const pointerType = useRef<string>('mouse');
@@ -1020,19 +1034,23 @@ function MediaStage({
         fullscreen &&
           '[container-type:size] ' +
           // The idle pointer hides over the video, never over a dialog (or its backdrop) open on top of it.
-          'fixed inset-0 z-[70] grid place-items-center bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
+          'fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
       )}
     >
       <div
         ref={boxRef}
-        // REQ-02 · Fullscreen: a file fills the screen (object-contain inside); YouTube takes the video's own shape,
-        // as large as fits (16:9 when horizontal or unknown, as before).
-        style={fullscreen && youtubeStage ? youtubeFsBoxStyle(video.aspect_ratio) : undefined}
+        // REQ-02 · Fullscreen: a file fills the screen (object-contain inside); YouTube takes the video's own shape:
+        // 16:9 as large as fits, or a vertical video as tall as the screen (sides cropped a little, see youtubeFsBox).
+        // Outside fullscreen a vertical video keeps its own shape too, centred.
+        style={youtubeStage ? (fullscreen ? youtubeFsBox(aspect) : (youtubeInlineBox(aspect) ?? undefined)) : undefined}
         className={cn(
           'relative overflow-hidden bg-black',
           fullscreen
             ? !youtubeStage && 'size-full'
-            : 'aspect-video w-full rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
+            : cn(
+                verticalYouTube ? 'mx-auto' : 'aspect-video w-full',
+                'rounded-[12px] shadow-[0_0_0_1px_rgb(243_236_223/0.16),0_0_0_5px_var(--color-sumi-850),0_0_0_6px_var(--color-rule),0_20px_40px_-24px_rgb(0_0_0/0.95)]',
+              ),
         )}
       >
         <motion.div
@@ -1042,12 +1060,13 @@ function MediaStage({
           transition={{ type: 'spring', stiffness: 260, damping: 18, mass: 0.9 }}
         >
           {hold ? null : !playsFile && video.youtube_id ? (
-            <YouTubeStage key={reloadKey} videoId={video.youtube_id} vertical={isVerticalAspect(video.aspect_ratio)} />
+            <YouTubeStage key={reloadKey} videoId={video.youtube_id} vertical={verticalYouTube} />
           ) : file.status === 'ready' ? (
             // F9 · Inside the mirror: the zoom follows the picture when it flips.
             <PlayerZoomLayer enabled={canZoom} box={box} media={media} live={zoomLive}>
               <FileStage
                 src={file.url}
+                localSrc={file.cachedUrl}
                 offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
               />
             </PlayerZoomLayer>
@@ -1381,12 +1400,6 @@ const ROTATED_STAGE_STYLE: CSSProperties = {
   transformOrigin: 'top left',
   transform: 'translateX(100dvw) rotate(90deg)',
 };
-
-/** A YouTube frame in fullscreen: its own shape (16:9 when horizontal or unknown), the largest that fits. */
-function youtubeFsBoxStyle(aspectRatio: number | null | undefined): CSSProperties {
-  const r = youtubeFrameRatio(aspectRatio);
-  return { aspectRatio: String(r), width: `min(100cqw, calc(100cqh * ${r}))` };
-}
 
 /**
  * 5 · The fullscreen controls layer. Only this wrapper follows the controls' visibility: its children are elements

@@ -122,6 +122,28 @@ export function countdownDetail(c: Countdown): string | null {
   return null;
 }
 
+/** Rehearsals between now and an event (from `rehearsalsLeft`): how many, and whether one is still to come today. */
+export interface RehearsalsLeft {
+  count: number;
+  today: boolean;
+}
+
+/** Headline counting rehearsals instead of days (only while the event is on a later day): «Faltan 3 ensayos». */
+export function rehearsalHeadline(c: Countdown, r: RehearsalsLeft): string | null {
+  if (c.kind !== 'days' && c.kind !== 'hours') return null;
+  if (r.count === 0) return 'Ya no hay más ensayos';
+  if (r.count === 1) return 'Último ensayo';
+  return `Faltan ${r.count} ensayos`;
+}
+
+/** The small line under it: a rehearsal today, else how far the event itself is. */
+export function rehearsalDetail(c: Countdown, r: RehearsalsLeft): string | null {
+  if (c.kind !== 'days' && c.kind !== 'hours') return null;
+  if (r.today) return 'Hoy hay ensayo';
+  if (c.kind === 'hours') return `Empieza en ${durationWords(c.hours, c.minutes)}`;
+  return c.days === 1 ? 'El evento es mañana' : `El evento es en ${c.days} días`;
+}
+
 export function durationWords(hours: number, minutes: number): string {
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours} h`;

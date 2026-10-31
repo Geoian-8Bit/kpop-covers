@@ -121,6 +121,14 @@ export function releaseMediaAudio(el: HTMLMediaElement): void {
   void graph.ctx.close().catch(() => undefined);
 }
 
+/**
+ * The element's sound is being taken straight from it (captureStream, not through Web Audio): a new source would
+ * end that track, and with it a recording's song.
+ */
+export function mediaCaptured(el: HTMLMediaElement): boolean {
+  return !elementGraphs.has(el) && audioTracks.get(el)?.readyState === 'live';
+}
+
 /** The element loads another file: forget what the mono check heard (the warning belongs to the old song). */
 export function resetMediaAudioAnalysis(el: HTMLMediaElement): void {
   elementGraphs.get(el)?.split.resetAnalysis();

@@ -68,6 +68,12 @@ interface PlayerState extends PlayerStatus {
 
   attach(engine: PlayerEngine): void;
   detach(engine: PlayerEngine): void;
+  /**
+   * The engine's media reloads the same song from another source (the cloud file's downloaded copy, a retry after a
+   * dead connection): off the clock until it attaches again, then back where the timeline is, and playing if it
+   * was. Unlike `detach`, the dancer's «playing» stays.
+   */
+  suspend(engine: PlayerEngine): void;
   reset(): void;
   sync(patch: Partial<PlayerStatus>): void;
 
@@ -260,12 +266,20 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     });
     if (playOnAttach) {
       playOnAttach = false;
-      get().play();
+      // A loop's gap that began while the media reloaded keeps its countdown (it plays when the count ends).
+      if (get().countdownEndsAt == null) get().play();
     }
   },
 
   detach(engine) {
     if (get().engine === engine) set({ engine: null, ready: false, playing: false, scrubbing: false });
+  },
+
+  suspend(engine) {
+    const { engine: current, playing, countdownEndsAt } = get();
+    if (current !== engine) return;
+    playOnAttach = playing && countdownEndsAt == null;
+    set({ engine: null, scrubbing: false, buffering: playOnAttach });
   },
 
   reset() {

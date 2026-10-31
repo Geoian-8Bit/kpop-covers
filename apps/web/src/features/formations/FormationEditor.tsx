@@ -20,16 +20,16 @@ import {
   RotateCw,
   Settings2,
   Shuffle,
-  Spline,
+  Timer,
   Trash2,
   Undo2,
+  X,
 } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
-import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { Page } from '@/components/AppShell';
 import {
@@ -43,6 +43,7 @@ import {
 import { useIdentity } from '@/data/members';
 import { FormationTransport } from '@/features/studio/Transport';
 import { useShortcuts } from '@/features/studio/useShortcuts';
+import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
 import { usePlayer } from '@/player/store';
@@ -66,6 +67,7 @@ import {
   duplicateMoment,
   formatMoment,
   formationAt,
+  nextIndex,
   freeMoment,
   keepPaths,
   NOTE_MAX,
@@ -81,16 +83,29 @@ import {
 } from './formationRules';
 import { clashRanges, findClashes, type Clash } from './clashRules';
 import { FormationTimeline } from './FormationTimeline';
-import { addPathPoint, convertPath, movePathPoint, PATH_LABELS, PATH_POINTS_MAX, removePathPoint, strokeToPath, type PathChoice } from './pathRules';
+import { addPathPoint, convertPath, flipPath, movePathPoint, removePathPoint, setCurveShape, strokeToPath, type PathChoice } from './pathRules';
+import {
+  ChoiceGroup,
+  Hint,
+  IconTool,
+  PanelHead,
+  PathTools,
+  PropTools,
+  ToolDock,
+  tool,
+  toolIdle,
+  toolOn,
+  toolPrimary,
+  useRevealStage,
+  useSheetRoom,
+  useWideLayout,
+  type ToolTab,
+} from './EditorTools';
 import { PlanForm } from './PlanDialogs';
 import {
   addPropFrom,
   newProp,
   patchProp,
-  PROP_KINDS,
-  PROP_LABEL_MAX,
-  PROP_LABELS,
-  PROP_ROTATE_STEP,
   PROPS_MAX,
   relabelProp,
   removePropFrom,
@@ -98,7 +113,7 @@ import {
 import { RhythmPanel, RhythmUnderlay } from './RhythmPanel';
 import { ExportDialog } from './export/ExportDialog';
 import type { PlanSnapshot } from './export/exportStill';
-import { PositionsList, PropShape, StageView } from './StageView';
+import { PositionsList, StageView } from './StageView';
 import { useFormationEditor, type SaveStatus } from './useFormationEditor';
 import { useWaveform } from './useWaveform';
 import { hasWebGL, NO_WEBGL } from './three/webgl';
@@ -106,12 +121,10 @@ import { hasWebGL, NO_WEBGL } from './three/webgl';
 /** REQ-13 · The 3D view, with three.js, only for whoever opens it (its own chunk, not in the precache). */
 const Stage3D = lazy(() => import('./three/Stage3D'));
 
-const tool =
-  'relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3 text-[13px] font-bold transition-colors disabled:opacity-40';
-const toolIdle = 'border-line-strong bg-sumi-800 text-washi-muted hover:border-washi/40 hover:text-washi';
-const toolOn = 'border-ai-400/60 bg-ai-600/50 text-ai-200';
 
 const NO_PEOPLE: FormationMember[] = [];
+/** The sheet sits on the dock: 56 px tabs + its 1 px rule + the home bar. */
+const DOCK_BOTTOM = 'calc(57px + env(safe-area-inset-bottom))';
 
 /**
  * REQ-06 · The formation editor: the song's player (`stage`, the studio's own) next to the stage of the plan, the
@@ -252,8 +265,20 @@ function EditorBody({
   const [focusMember, setFocusMember] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
-  /** REQ-08 · «Recorridos» on: routes into the formation at the playhead, editable person by person. */
-  const [showPaths, setShowPaths] = useState(false);
+  /**
+   * The open tool tab. Upright phone: null = sheet closed. Side layout: always one (null shows «Formación»).
+   * REQ-08 · «Recorridos» open: routes into the formation at the playhead, editable person by person.
+   */
+  const [tab, setTab] = useState<ToolTab | null>(null);
+  const wide = useWideLayout();
+  const shown: ToolTab | null = wide ? (tab ?? 'formation') : tab;
+  const showPaths = shown === 'paths';
+  const stageBoxRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const sheetOpen = !wide && tab != null;
+  const room = useSheetRoom(stageBoxRef, dockRef, sheetOpen);
+  useRevealStage(stageBoxRef, dockRef, sheetOpen);
+  useStickyBarPadding(dockRef, !wide);
   const [drawMode, setDrawMode] = useState(false);
   const [selectedHandle, setSelectedHandle] = useState<number | null>(null);
   /** REQ-10 · The prop being moved, turned or removed. */
@@ -481,6 +506,8 @@ function EditorBody({
 
   function onSelect(ids: string[], additive: boolean) {
     setSelectedProp(null);
+    // Contextual: choosing people brings their tools (in «Recorridos» a tap picks whose route to edit instead).
+    if (ids.length && shown !== 'paths') setTab('people');
     const add = additive || selectMode;
     setSelection((sel) => {
       if (!add) return ids.length === 1 && sel.length === 1 && sel[0] === ids[0] ? [] : ids;
@@ -520,6 +547,302 @@ function EditorBody({
   const conflict = ed.status === 'conflict';
   const archivedHere = memberIds.filter((id) => people.get(id)?.archived).map((id) => people.get(id)!);
 
+  // ── Tools: tabs, panel, and where they sit (REQ-06…13) ──
+  const currentIndex = current ? list.indexOf(current) : -1;
+  const nextAt = usePlayer((s) => nextIndex(list, s.time));
+  const prevTarget = currentIndex >= 0 ? currentIndex - 1 : active;
+  const goTo = (i: number) => {
+    const f = list[i];
+    if (!f) return;
+    pause();
+    usePlayer.getState().seek(f.at);
+  };
+
+  const panelBody = (which: ToolTab) => {
+    switch (which) {
+      case 'formation':
+        return (
+          <div className="space-y-2.5">
+            <div className="flex gap-1.5">
+              <motion.button
+                type="button"
+                onClick={addHere}
+                disabled={conflict}
+                whileTap={conflict ? undefined : { scale: 0.95 }}
+                transition={jelly}
+                className={cn(tool, toolPrimary, 'min-w-0 flex-1')}
+              >
+                <Plus className="size-4 shrink-0" aria-hidden /> <span className="truncate">Añadir formación aquí</span>
+              </motion.button>
+              <IconTool label="Duplicar la formación" onClick={duplicate} disabled={conflict || list.length === 0}>
+                <Copy className="size-4" />
+              </IconTool>
+              <IconTool label="Borrar la formación de este momento" onClick={removeCurrent} disabled={conflict || !current}>
+                <Trash2 className="size-4" />
+              </IconTool>
+            </div>
+            {current ? (
+              <>
+                <label className="flex items-center gap-2 text-[13px] text-washi-muted">
+                  <Timer className="size-4 shrink-0" aria-hidden />
+                  <span className="flex-1">Transición desde la anterior</span>
+                  <input
+                    key={`${current.id}-${current.transition}`}
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={TRANSITION_MAX}
+                    step={0.5}
+                    defaultValue={current.transition}
+                    disabled={conflict}
+                    onBlur={(e) => {
+                      const v = Math.min(TRANSITION_MAX, Math.max(0, Number(e.target.value.replace(',', '.')) || 0));
+                      if (v !== current.transition) patchCurrent({ transition: v });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    }}
+                    className="well tabular h-11 w-20 rounded-[10px] px-3 font-mono text-[15px] text-washi outline-none focus:border-kin-300/70"
+                  />
+                  s
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-washi-muted">
+                    Nota de la formación {currentIndex + 1} ({formatMoment(current.at)})
+                  </span>
+                  <textarea
+                    key={`${current.id}-${current.note ?? ''}`}
+                    defaultValue={current.note ?? ''}
+                    maxLength={NOTE_MAX}
+                    rows={2}
+                    disabled={conflict}
+                    placeholder="Giro a la derecha, entra Ana por el fondo…"
+                    onBlur={(e) => {
+                      const note = e.target.value.trim() || null;
+                      if (note !== (current.note ?? null)) patchCurrent({ note });
+                    }}
+                    className="well w-full resize-none rounded-[10px] px-3 py-2 text-[14px] text-washi outline-none focus:border-kin-300/70"
+                  />
+                </label>
+              </>
+            ) : (
+              <Hint>
+                {list.length
+                  ? 'Aquí no hay formación: añade una, salta a otra con las flechas o arrastra a alguien para crearla en este momento.'
+                  : 'Añade la primera formación, o arrastra a alguien en el escenario.'}
+              </Hint>
+            )}
+          </div>
+        );
+      case 'people':
+        return (
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-1.5">
+              <p className="min-w-0 flex-1 text-[12px] leading-snug text-washi-muted" aria-live="polite">
+                {selection.length
+                  ? `${selection.length} seleccionad${selection.length === 1 ? 'a' : 'as'}`
+                  : selectMode
+                    ? 'Toca a varias personas o arrastra un recuadro.'
+                    : 'Toca a alguien para elegirle; «Varias» para elegir a más.'}
+              </p>
+              {selection.length > 0 && (
+                <IconTool label="Quitar selección" onClick={() => setSelection([])}>
+                  <X className="size-4" />
+                </IconTool>
+              )}
+              <button
+                type="button"
+                aria-pressed={selectMode}
+                onClick={() => setSelectMode((v) => !v)}
+                className={cn(tool, selectMode ? toolOn : toolIdle)}
+                title="Toca a varias personas o arrastra un recuadro"
+              >
+                <BoxSelect className="size-4" aria-hidden /> Varias
+              </button>
+              <button type="button" aria-pressed={snap} onClick={() => setSnap((v) => !v)} className={cn(tool, snap ? toolOn : toolIdle)} title="Encajar en la rejilla">
+                <Grid3x3 className="size-4" aria-hidden /> Rejilla
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <IconTool label="Voltear horizontal" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => flipHorizontal(ids, p, stage))}>
+                <FlipHorizontal2 className="size-4" />
+              </IconTool>
+              <IconTool label="Voltear vertical" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => flipVertical(ids, p, stage))}>
+                <FlipVertical2 className="size-4" />
+              </IconTool>
+              <IconTool label={`Girar ${ROTATE_STEP}° a la izquierda`} disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => rotate(ids, p, stage, -ROTATE_STEP))}>
+                <RotateCcw className="size-4" />
+              </IconTool>
+              <IconTool label={`Girar ${ROTATE_STEP}° a la derecha`} disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => rotate(ids, p, stage, ROTATE_STEP))}>
+                <RotateCw className="size-4" />
+              </IconTool>
+              <IconTool label="Juntar" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => scale(ids, p, stage, 0.8))}>
+                <Minimize2 className="size-4" />
+              </IconTool>
+              <IconTool label="Separar" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => scale(ids, p, stage, 1.25))}>
+                <Maximize2 className="size-4" />
+              </IconTool>
+              <button
+                type="button"
+                className={cn(tool, toolIdle)}
+                disabled={selection.length !== 2 || conflict}
+                onClick={() => applySelection((ids, p) => swap(ids[0]!, ids[1]!, p))}
+              >
+                <Shuffle className="size-4" aria-hidden /> Intercambiar
+              </button>
+            </div>
+            <div>
+              <p className="mb-1.5 text-[12px] font-medium text-washi-muted">Plantillas {selection.length ? 'para la selección' : 'para todo el plan'}</p>
+              <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] landscape:mx-0 landscape:flex-wrap landscape:px-0 lg:mx-0 lg:flex-wrap lg:px-0">
+                {TEMPLATES.map((kind) => (
+                  <TemplateButton
+                    key={kind}
+                    kind={kind}
+                    disabled={!targets.length || conflict}
+                    onClick={() => {
+                      pause();
+                      editPositions((p) => applyTemplate(kind, targets, p, stage));
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      case 'paths':
+        return (
+          <div className="space-y-2.5">
+            <PathTools
+              pathIndex={pathIndex}
+              memberName={pathMember ? (people.get(pathMember)?.name ?? 'Alguien que ya no está') : null}
+              path={pathEnds?.path}
+              drawMode={drawMode}
+              selectedHandle={selectedHandle}
+              disabled={conflict}
+              onChoose={choosePath}
+              onShape={(shape) => {
+                if (!pathEnds) return;
+                pause();
+                setSelectedHandle(null);
+                setPath(setCurveShape(shape, pathEnds.from, pathEnds.to, pathEnds.path, stage));
+              }}
+              onFlip={() => pathEnds?.path && setPath(flipPath(pathEnds.from, pathEnds.to, pathEnds.path, stage))}
+              onCancelDraw={() => setDrawMode(false)}
+              onAddPoint={() => pathEnds && setPath(addPathPoint(pathEnds.from, pathEnds.to, pathEnds.path, stage))}
+              onRemovePoint={() => {
+                const path = pathEnds?.path;
+                if (!path) return;
+                setPath(removePathPoint(path, selectedHandle ?? path.points.length - 1));
+                setSelectedHandle(null);
+              }}
+            />
+            {clashes.length > 0 && <ClashNotice clashes={clashes} people={people} onSeek={seekClash} />}
+          </div>
+        );
+      case 'props':
+        return (
+          <PropTools
+            list={list}
+            selectedProp={selectedProp}
+            disabled={conflict}
+            onAdd={addProp}
+            onTurn={turnProp}
+            onRemove={removeProp}
+            onRelabel={(text) => selectedProp && ed.commit(relabelProp(list, selectedProp, text))}
+            onClose={() => setSelectedProp(null)}
+          />
+        );
+      case 'more':
+        return (
+          <div className="space-y-4">
+            <section className="space-y-2">
+              <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">Vista</h3>
+              <ChoiceGroup
+                label="Vista del escenario"
+                layoutId={`view-${ed.plan.id}`}
+                value={mirrored ? 'dancers' : 'audience'}
+                onChange={(v) => usePlayer.getState().setMirrored(v === 'dancers')}
+                options={[
+                  { value: 'audience', label: 'Desde el público' },
+                  { value: 'dancers', label: 'Desde los bailarines' },
+                ]}
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button type="button" aria-pressed={ghost} onClick={() => setGhost((v) => !v)} className={cn(tool, ghost ? toolOn : toolIdle)} title="La siguiente formación, en tenue">
+                  <Ghost className="size-4" aria-hidden /> Fantasma
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={view3d}
+                  disabled={!webgl}
+                  title={webgl ? 'Ver el escenario en 3D (la vista 2D sigue siendo la de editar)' : NO_WEBGL}
+                  onClick={() => setView3d((v) => !v)}
+                  className={cn(tool, view3d ? toolOn : toolIdle)}
+                >
+                  <Box className="size-4" aria-hidden /> 3D
+                </button>
+                <label className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-washi-muted">
+                  <span className="shrink-0">Mi recorrido</span>
+                  <select
+                    value={focusMember ?? ''}
+                    onChange={(e) => setFocusMember(e.target.value || null)}
+                    onFocus={() => {
+                      if (focusMember == null && myId && memberIds.includes(myId)) setFocusMember(myId);
+                    }}
+                    className="well h-11 min-w-0 flex-1 rounded-[10px] px-2 text-[14px] text-washi outline-none"
+                  >
+                    <option value="">Nadie</option>
+                    {memberIds.map((id) => (
+                      <option key={id} value={id}>
+                        {people.get(id)?.name ?? 'Alguien que ya no está'}
+                        {id === myId ? ' (tú)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {!webgl && <Hint>{NO_WEBGL}</Hint>}
+              {view3d && <Hint>Para mover a alguien, vuelve a la vista 2D.</Hint>}
+            </section>
+            <section className="space-y-2">
+              <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">Compartir</h3>
+              <button type="button" className={cn(tool, toolIdle, 'w-full')} onClick={() => setExporting(true)}>
+                <Download className="size-4" aria-hidden /> Exportar imagen, PDF o vídeo
+              </button>
+            </section>
+            <section className="space-y-2">
+              <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">Ritmo · cuentas de 8</h3>
+              <RhythmPanel
+                bpm={ed.plan.bpm}
+                firstBeat={ed.plan.first_beat}
+                hasFile={playsFile}
+                wave={wave}
+                onSave={(patch) => savePlan(patch)}
+                onSnap={() => {
+                  if (ed.plan.bpm == null) return;
+                  ed.commit(snapFormationsToBeats(list, ed.plan.bpm, ed.plan.first_beat ?? 0));
+                  toast('Formaciones ajustadas al tiempo', 'success');
+                }}
+              />
+            </section>
+          </div>
+        );
+    }
+  };
+
+  const panelHead = (which: ToolTab, onClose?: () => void) => (
+    <PanelHead
+      tab={which}
+      list={list}
+      currentIndex={currentIndex}
+      canPrev={prevTarget >= 0}
+      canNext={nextAt >= 0}
+      onPrev={() => goTo(prevTarget)}
+      onNext={() => goTo(nextAt)}
+      onClose={onClose}
+    />
+  );
+
   return (
     <>
       <EditorHeader back={back} title={ed.plan.name} subtitle={video.title} status={<SaveBadge status={ed.status} onRetry={ed.retry} />}>
@@ -557,15 +880,21 @@ function EditorBody({
         )}
       </AnimatePresence>
 
-      <div className="grid gap-3 p-3 sm:p-5 landscape:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] landscape:items-start lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="mx-auto w-[64%] landscape:w-full lg:w-full">{playerStage}</div>
-        <div className="relative">
-          {activeNote && (
-            <p className="mb-1.5 line-clamp-2 rounded-[8px] bg-ai-700/40 px-2.5 py-1.5 text-[13px] text-ai-200" aria-live="polite">
-              {activeNote}
-            </p>
-          )}
-          <div className="landscape:mx-auto landscape:max-w-[min(100%,calc((100dvh-120px)*1.3))]">
+      {/*
+        Upright phone: a column (player, stage, timeline) where the stage sticks under the top bar, and the tools in a
+        dock + sheet at the bottom. On its side or a big screen: the stage sticks on the left, the rest on the right.
+        A flex column (not a grid) upright: a sticky grid item could only move inside its own row.
+      */}
+      <div className="flex flex-col gap-3 px-3 pb-3 pt-3 sm:px-5 landscape:grid landscape:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] landscape:items-start landscape:gap-x-4 lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start lg:gap-x-5">
+        <div className="mx-auto w-[60%] max-w-[420px] landscape:col-start-2 landscape:row-start-1 landscape:w-full landscape:max-w-none lg:col-start-2 lg:row-start-1 lg:w-full lg:max-w-none">
+          {playerStage}
+        </div>
+
+        <div
+          ref={stageBoxRef}
+          className="sticky top-16 z-20 -mx-3 bg-sumi-850 px-3 py-1.5 shadow-[0_14px_18px_-16px_rgb(0_0_0/0.9)] sm:-mx-5 sm:px-5 landscape:col-start-1 landscape:row-span-4 landscape:row-start-1 landscape:mx-0 landscape:bg-transparent landscape:px-0 landscape:py-0 landscape:shadow-none lg:top-3 lg:col-start-1 lg:row-span-4 lg:row-start-1 lg:mx-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none"
+        >
+          <div className="relative mx-auto landscape:max-w-[min(100%,calc((100dvh-84px)*1.23))]">
             {view3d ? (
               <Suspense fallback={<div className="skeleton aspect-[4/3] w-full rounded-[12px]" role="status" aria-label="Cargando la vista 3D" />}>
                 <Stage3D stage={stage} memberIds={memberIds} people={people} list={list} />
@@ -598,293 +927,107 @@ function EditorBody({
                 selectedProp={selectedProp}
                 onSelectProp={(id) => {
                   setSelectedProp(id);
-                  if (id) setSelection([]);
+                  if (id) {
+                    setSelection([]);
+                    setTab('props');
+                  }
                 }}
                 onMoveProp={(id, to) => editProps((props) => patchProp(props, id, to, stage))}
                 locked={conflict}
               />
             )}
+            {/* Overlays: the note of the moment, the clashes (a jump to the first), the first formation. */}
+            {activeNote && (
+              <p
+                className="pointer-events-none absolute inset-x-2 bottom-1 line-clamp-1 rounded-[8px] bg-ai-700/85 px-2.5 py-1 text-center text-[12px] text-ai-100 shadow-[0_6px_14px_-8px_rgb(0_0_0/0.9)]"
+                aria-live="polite"
+              >
+                {activeNote}
+              </p>
+            )}
+            {clashes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  seekClash(clashes[0]!);
+                  setTab('paths');
+                }}
+                className="absolute right-1 top-0 flex h-11 items-center gap-1 rounded-[10px] px-2 text-[12px] font-bold text-shu-300 before:absolute before:inset-x-0 before:inset-y-1.5 before:-z-10 before:rounded-[8px] before:border before:border-shu-500/50 before:bg-sumi-900/90 before:content-[''] isolate"
+              >
+                <AlertTriangle className="size-4" aria-hidden />
+                {clashes.length === 1 ? '1 choque' : `${clashes.length} choques`}
+              </button>
+            )}
+            {list.length === 0 && (
+              <div className="absolute inset-x-0 bottom-[14%] flex justify-center">
+                <Button size="md" onClick={addHere} disabled={conflict}>
+                  <Plus className="size-4" /> Añade la primera formación
+                </Button>
+              </div>
+            )}
           </div>
-          {clashes.length > 0 && <ClashNotice clashes={clashes} people={people} onSeek={seekClash} />}
-          {list.length === 0 && (
-            <div className="mt-2 flex justify-center">
-              <Button size="sm" onClick={addHere} disabled={conflict}>
-                <Plus className="size-4" /> Añade la primera formación
-              </Button>
-            </div>
-          )}
+        </div>
+
+        <div className="-mx-3 min-w-0 sm:-mx-5 landscape:col-start-2 landscape:mx-0 lg:col-start-2 lg:mx-0">
+          <FormationTimeline
+            list={list}
+            selectedId={selectedId}
+            onMoveMarker={moveMarker}
+            clashes={ranges}
+            locked={conflict}
+            underlay={(span) => <RhythmUnderlay span={span} bpm={ed.plan.bpm} firstBeat={ed.plan.first_beat} wave={playsFile ? wave : null} />}
+          />
+          <FormationTransport />
           {archivedHere.length > 0 && (
-            <p className="mt-1 text-[12px] text-washi-subtle">
-              En gris: {archivedHere.map((p) => p.name).join(', ')} (ya no está en el grupo).
-            </p>
+            <p className="px-3 text-[12px] text-washi-subtle sm:px-5">En gris: {archivedHere.map((p) => p.name).join(', ')} (ya no está en el grupo).</p>
           )}
         </div>
-      </div>
 
-      <FormationTimeline
-        list={list}
-        selectedId={selectedId}
-        onMoveMarker={moveMarker}
-        clashes={ranges}
-        locked={conflict}
-        underlay={(span) => <RhythmUnderlay span={span} bpm={ed.plan.bpm} firstBeat={ed.plan.first_beat} wave={playsFile ? wave : null} />}
-      />
-      <FormationTransport />
-
-      {/* Formation tools */}
-      <div className="sep-t space-y-3 px-3 py-3 sm:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={addHere} disabled={conflict}>
-            <Plus className="size-4" /> Añadir formación aquí
-          </Button>
-          <button type="button" className={cn(tool, toolIdle)} onClick={duplicate} disabled={conflict || list.length === 0}>
-            <Copy className="size-4" /> Duplicar
-          </button>
-          <button type="button" className={cn(tool, toolIdle)} onClick={removeCurrent} disabled={conflict || !current} aria-label="Borrar la formación de este momento">
-            <Trash2 className="size-4" /> Borrar
-          </button>
-          <button type="button" className={cn(tool, toolIdle)} onClick={() => setExporting(true)}>
-            <Download className="size-4" /> Exportar
-          </button>
-          <button
-            type="button"
-            aria-pressed={view3d}
-            disabled={!webgl}
-            title={webgl ? 'Ver el escenario en 3D (la vista 2D sigue siendo la de editar)' : NO_WEBGL}
-            onClick={() => setView3d((v) => !v)}
-            className={cn(tool, view3d ? toolOn : toolIdle)}
-          >
-            <Box className="size-4" /> 3D
-          </button>
-          {!webgl && <span className="text-[12px] text-washi-subtle">{NO_WEBGL}</span>}
-          {view3d && <span className="text-[12px] text-washi-subtle">Para mover a alguien, vuelve a la vista 2D.</span>}
-          {current && (
-            <label className="flex items-center gap-2 text-[13px] text-washi-muted">
-              Transición
-              <input
-                key={`${current.id}-${current.transition}`}
-                type="number"
-                inputMode="decimal"
-                min={0}
-                max={TRANSITION_MAX}
-                step={0.5}
-                defaultValue={current.transition}
-                onBlur={(e) => {
-                  const v = Math.min(TRANSITION_MAX, Math.max(0, Number(e.target.value.replace(',', '.')) || 0));
-                  if (v !== current.transition) patchCurrent({ transition: v });
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-                className="well tabular h-11 w-20 rounded-[10px] px-3 font-mono text-[15px] text-washi outline-none focus:border-kin-300/70"
-              />
-              s
-            </label>
-          )}
-        </div>
-        {current ? (
-          <label className="block">
-            <span className="mb-1 block text-[12px] font-medium text-washi-muted">
-              Nota de la formación {list.indexOf(current) + 1} ({formatMoment(current.at)})
-            </span>
-            <textarea
-              key={`${current.id}-${current.note ?? ''}`}
-              defaultValue={current.note ?? ''}
-              maxLength={NOTE_MAX}
-              rows={2}
-              placeholder="Giro a la derecha, entra Ana por el fondo…"
-              onBlur={(e) => {
-                const note = e.target.value.trim() || null;
-                if (note !== (current.note ?? null)) patchCurrent({ note });
-              }}
-              className="well w-full resize-none rounded-[10px] px-3 py-2 text-[14px] text-washi outline-none focus:border-kin-300/70"
-            />
-          </label>
-        ) : (
-          list.length > 0 && <p className="text-[12px] text-washi-subtle">Toca un número de la línea de tiempo para editar esa formación, o arrastra a alguien para crear una aquí.</p>
+        {wide && shown && (
+          <section className="min-w-0 space-y-2 landscape:col-start-2 lg:col-start-2" aria-label="Herramientas">
+            <ToolDock tab={shown} wide onTab={(t) => setTab(t)} dockRef={dockRef} badges={{ paths: clashes.length > 0 }} />
+            <div id="tool-panel" role="tabpanel" aria-labelledby={`tool-tab-${shown}`} className="rounded-[12px] border border-line bg-sumi-900/60">
+              {panelHead(shown)}
+              <div className="px-3 pb-3">{panelBody(shown)}</div>
+            </div>
+          </section>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Segmented
-            label="Vista del escenario"
-            layoutId={`view-${ed.plan.id}`}
-            size="sm"
-            value={mirrored ? 'dancers' : 'audience'}
-            onChange={(v) => usePlayer.getState().setMirrored(v === 'dancers')}
-            options={[
-              { value: 'audience', label: 'Desde el público' },
-              { value: 'dancers', label: 'Desde los bailarines' },
-            ]}
-          />
-
-          <button type="button" aria-pressed={snap} onClick={() => setSnap((v) => !v)} className={cn(tool, snap ? toolOn : toolIdle)}>
-            <Grid3x3 className="size-4" /> Rejilla
-          </button>
-          <button type="button" aria-pressed={ghost} onClick={() => setGhost((v) => !v)} className={cn(tool, ghost ? toolOn : toolIdle)}>
-            <Ghost className="size-4" /> Fantasma
-          </button>
-          <button
-            type="button"
-            aria-pressed={showPaths}
-            onClick={() => setShowPaths((v) => !v)}
-            className={cn(tool, showPaths ? toolOn : toolIdle)}
-            title="Cómo llega cada persona a la formación de este momento"
-          >
-            <Spline className="size-4" /> Recorridos
-          </button>
-          <button
-            type="button"
-            aria-pressed={selectMode}
-            onClick={() => setSelectMode((v) => !v)}
-            className={cn(tool, selectMode ? toolOn : toolIdle)}
-            title="Toca a varias personas o arrastra un recuadro"
-          >
-            <BoxSelect className="size-4" /> Seleccionar
-          </button>
-          <label className="flex items-center gap-2 text-[13px] text-washi-muted">
-            Mi recorrido
-            <select
-              value={focusMember ?? ''}
-              onChange={(e) => setFocusMember(e.target.value || null)}
-              onFocus={() => {
-                if (focusMember == null && myId && memberIds.includes(myId)) setFocusMember(myId);
-              }}
-              className="well h-11 max-w-[11rem] rounded-[10px] px-2 text-[14px] text-washi outline-none"
-            >
-              <option value="">Nadie</option>
-              {memberIds.map((id) => (
-                <option key={id} value={id}>
-                  {people.get(id)?.name ?? 'Alguien que ya no está'}
-                  {id === myId ? ' (tú)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="-mx-3 sm:-mx-5 landscape:col-start-2 landscape:mx-0 lg:col-start-2 lg:mx-0">
+          <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
         </div>
 
-        {/* REQ-08 · Paths */}
-        <AnimatePresence initial={false}>
-          {showPaths && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={snappy}
-              className="overflow-hidden"
-            >
-              <PathPanel
-                pathIndex={pathIndex}
-                memberName={pathMember ? (people.get(pathMember)?.name ?? 'Alguien que ya no está') : null}
-                path={pathEnds?.path}
-                drawMode={drawMode}
-                selectedHandle={selectedHandle}
-                disabled={conflict}
-                onChoose={choosePath}
-                onCancelDraw={() => setDrawMode(false)}
-                onAddPoint={() => pathEnds && setPath(addPathPoint(pathEnds.from, pathEnds.to, pathEnds.path, stage))}
-                onRemovePoint={() => {
-                  const path = pathEnds?.path;
-                  if (!path) return;
-                  setPath(removePathPoint(path, selectedHandle ?? path.points.length - 1));
-                  setSelectedHandle(null);
-                }}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* REQ-10 · Props */}
-        <PropPanel
-          list={list}
-          selectedProp={selectedProp}
-          disabled={conflict}
-          onAdd={addProp}
-          onTurn={turnProp}
-          onRemove={removeProp}
-          onRelabel={(text) => selectedProp && ed.commit(relabelProp(list, selectedProp, text))}
-          onClose={() => setSelectedProp(null)}
-        />
-
-        {/* REQ-07 · Selection and templates */}
-        <div className="rounded-[12px] border border-line p-2.5">
-          <p className="mb-2 text-[12px] font-medium text-washi-muted">
-            {selection.length
-              ? `${selection.length} seleccionad${selection.length === 1 ? 'a' : 'as'} · `
-              : 'Sin selección · '}
-            {selection.length ? (
-              <button type="button" className="font-bold text-kin-300 underline-offset-2 hover:underline" onClick={() => setSelection([])}>
-                Quitar selección
-              </button>
-            ) : (
-              'Mayúsculas + clic, un recuadro o «Seleccionar» para elegir a varias personas.'
-            )}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <IconTool label="Voltear horizontal" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => flipHorizontal(ids, p, stage))}>
-              <FlipHorizontal2 className="size-4" />
-            </IconTool>
-            <IconTool label="Voltear vertical" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => flipVertical(ids, p, stage))}>
-              <FlipVertical2 className="size-4" />
-            </IconTool>
-            <IconTool label={`Girar ${ROTATE_STEP}° a la izquierda`} disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => rotate(ids, p, stage, -ROTATE_STEP))}>
-              <RotateCcw className="size-4" />
-            </IconTool>
-            <IconTool label={`Girar ${ROTATE_STEP}° a la derecha`} disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => rotate(ids, p, stage, ROTATE_STEP))}>
-              <RotateCw className="size-4" />
-            </IconTool>
-            <IconTool label="Juntar" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => scale(ids, p, stage, 0.8))}>
-              <Minimize2 className="size-4" />
-            </IconTool>
-            <IconTool label="Separar" disabled={!selection.length || conflict} onClick={() => applySelection((ids, p) => scale(ids, p, stage, 1.25))}>
-              <Maximize2 className="size-4" />
-            </IconTool>
-            <button
-              type="button"
-              className={cn(tool, toolIdle)}
-              disabled={selection.length !== 2 || conflict}
-              onClick={() => applySelection((ids, p) => swap(ids[0]!, ids[1]!, p))}
-            >
-              <Shuffle className="size-4" /> Intercambiar
-            </button>
-          </div>
-          <p className="mb-1.5 mt-3 text-[12px] font-medium text-washi-muted">
-            Plantillas {selection.length ? 'para la selección' : 'para todo el plan'}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {TEMPLATES.map((kind) => (
-              <TemplateButton
-                key={kind}
-                kind={kind}
-                disabled={!targets.length || conflict}
-                onClick={() => {
-                  pause();
-                  editPositions((p) => applyTemplate(kind, targets, p, stage));
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <details className="rounded-[12px] border border-line p-2.5">
-          <summary className="flex h-9 cursor-pointer items-center text-[13px] font-bold text-washi-muted hover:text-washi">Ritmo · cuentas de 8</summary>
-          <div className="pt-2">
-            <RhythmPanel
-              bpm={ed.plan.bpm}
-              firstBeat={ed.plan.first_beat}
-              hasFile={playsFile}
-              wave={wave}
-              onSave={(patch) => savePlan(patch)}
-              onSnap={() => {
-                if (ed.plan.bpm == null) return;
-                ed.commit(snapFormationsToBeats(list, ed.plan.bpm, ed.plan.first_beat ?? 0));
-                toast('Formaciones ajustadas al tiempo', 'success');
-              }}
-            />
-          </div>
-        </details>
+        {/* Upright: room to scroll the stage up to where it sticks, and for the end of the page above the dock/sheet. */}
+        {!wide && <div aria-hidden style={{ height: tab ? '62dvh' : 'calc(64px + env(safe-area-inset-bottom))' }} />}
       </div>
 
-      <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
+      {!wide && (
+        <>
+          <AnimatePresence>
+            {tab && (
+              <motion.section
+                key="sheet"
+                id="tool-panel"
+                role="tabpanel"
+                aria-labelledby={`tool-tab-${tab}`}
+                initial={{ y: 40, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 40, opacity: 0, transition: { duration: 0.14 } }}
+                transition={snappy}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setTab(null);
+                }}
+                style={{ bottom: DOCK_BOTTOM, maxHeight: room }}
+                className="fixed inset-x-0 z-30 mx-auto flex max-w-[560px] flex-col rounded-t-[16px] border border-b-0 border-line-strong bg-sumi-900 shadow-[0_-18px_36px_-18px_rgb(0_0_0/0.9)]"
+              >
+                <div className="sep-b shrink-0">{panelHead(tab, () => setTab(null))}</div>
+                <div className="min-h-0 overflow-y-auto overscroll-contain px-3 pb-3 pt-2.5">{panelBody(tab)}</div>
+              </motion.section>
+            )}
+          </AnimatePresence>
+          <ToolDock tab={tab} wide={false} onTab={(t) => setTab((open) => (open === t ? null : t))} dockRef={dockRef} badges={{ paths: clashes.length > 0 }} />
+        </>
+      )}
 
       <ExportDialog open={exporting} onClose={() => setExporting(false)} snapshot={snapshot} video={video} playsFile={playsFile} />
 
@@ -937,197 +1080,6 @@ function ClashNotice({ clashes, people, onSeek }: { clashes: Clash[]; people: Ma
         {clashes.length > shown.length && <li className="self-center text-[12px] text-washi-subtle">y {clashes.length - shown.length} más</li>}
       </ul>
     </div>
-  );
-}
-
-/** REQ-08 · How the chosen person arrives at the formation at the playhead. */
-function PathPanel({
-  pathIndex,
-  memberName,
-  path,
-  drawMode,
-  selectedHandle,
-  disabled,
-  onChoose,
-  onCancelDraw,
-  onAddPoint,
-  onRemovePoint,
-}: {
-  pathIndex: number;
-  memberName: string | null;
-  path: FormationPath | undefined;
-  drawMode: boolean;
-  selectedHandle: number | null;
-  disabled: boolean;
-  onChoose: (choice: PathChoice) => void;
-  onCancelDraw: () => void;
-  onAddPoint: () => void;
-  onRemovePoint: () => void;
-}) {
-  const choices: PathChoice[] = ['straight', 'curve', 'points', 'free'];
-  return (
-    <div className="rounded-[12px] border border-line p-2.5">
-      <p className="mb-2 text-[12px] font-medium text-washi-muted">
-        {pathIndex < 1
-          ? 'Ve a una formación que no sea la primera (toca su número) para ver cómo llega cada persona.'
-          : !memberName
-            ? `Toca a una persona para elegir cómo llega a la formación ${pathIndex + 1}.`
-            : `Recorrido de ${memberName} hasta la formación ${pathIndex + 1}`}
-      </p>
-      {memberName && pathIndex >= 1 && (
-        <div className="space-y-2">
-          <Segmented
-            label="Tipo de recorrido"
-            layoutId="path-kind"
-            size="sm"
-            value={drawMode ? 'free' : (path?.kind ?? 'straight')}
-            onChange={(v) => !disabled && onChoose(v)}
-            options={choices.map((c) => ({ value: c, label: PATH_LABELS[c] }))}
-          />
-          {drawMode && (
-            <p className="flex flex-wrap items-center gap-2 text-[13px] text-kin-200" aria-live="polite">
-              Dibuja con el dedo en el escenario el camino de {memberName}.
-              <button type="button" className={cn(tool, toolIdle)} onClick={onCancelDraw}>
-                Cancelar
-              </button>
-            </p>
-          )}
-          {!drawMode && path?.kind === 'curve' && <p className="text-[12px] text-washi-subtle">Arrastra el punto blanco para cambiar la curva.</p>}
-          {!drawMode && path?.kind === 'free' && <p className="text-[12px] text-washi-subtle">Elige «A mano» otra vez para volver a dibujarlo.</p>}
-          {!drawMode && path?.kind === 'points' && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button type="button" className={cn(tool, toolIdle)} disabled={disabled || path.points.length >= PATH_POINTS_MAX} onClick={onAddPoint}>
-                <Plus className="size-4" /> Añadir punto
-              </button>
-              <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onRemovePoint}>
-                <Trash2 className="size-4" /> {selectedHandle != null ? `Quitar punto ${selectedHandle + 1}` : 'Quitar el último punto'}
-              </button>
-              <span className="text-[12px] text-washi-subtle">Arrastra los puntos blancos; toca uno para elegirlo.</span>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** REQ-10 · Props: add one to the formation at the playhead (it stays from there on), then turn, rename or remove it. */
-function PropPanel({
-  list,
-  selectedProp,
-  disabled,
-  onAdd,
-  onTurn,
-  onRemove,
-  onRelabel,
-  onClose,
-}: {
-  list: FormationInput[];
-  selectedProp: string | null;
-  disabled: boolean;
-  onAdd: (kind: FormationPropKind) => void;
-  onTurn: (delta: number) => void;
-  onRemove: () => void;
-  onRelabel: (text: string) => void;
-  onClose: () => void;
-}) {
-  const prop = useMemo(() => {
-    if (!selectedProp) return null;
-    for (const f of list) {
-      const p = (f.props ?? []).find((x) => x.id === selectedProp);
-      if (p) return p;
-    }
-    return null;
-  }, [list, selectedProp]);
-  return (
-    <div className="rounded-[12px] border border-line p-2.5">
-      <p className="mb-2 text-[12px] font-medium text-washi-muted">Atrezo · se queda en el escenario desde esta formación</p>
-      <div className="flex flex-wrap gap-1.5">
-        {PROP_KINDS.map((kind) => (
-          <motion.button
-            key={kind}
-            type="button"
-            disabled={disabled}
-            onClick={() => onAdd(kind)}
-            whileTap={disabled ? undefined : { scale: 0.9 }}
-            transition={jelly}
-            className={cn(tool, toolIdle)}
-            aria-label={`Añadir ${PROP_LABELS[kind].toLowerCase()}`}
-          >
-            <svg viewBox="-0.9 -0.9 1.8 1.8" className="size-5" aria-hidden>
-              <g transform={kind === 'bench' || kind === 'step' ? 'scale(0.9)' : 'scale(1.3)'}>
-                <PropShape kind={kind} />
-              </g>
-            </svg>
-            {PROP_LABELS[kind]}
-          </motion.button>
-        ))}
-      </div>
-      <AnimatePresence initial={false}>
-        {prop && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={snappy}
-            className="overflow-hidden"
-          >
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-2.5">
-              <span className="mr-1 text-[13px] font-bold text-washi">{PROP_LABELS[prop.kind]}</span>
-              <IconTool label={`Girar ${PROP_ROTATE_STEP}° a la izquierda`} disabled={disabled} onClick={() => onTurn(-PROP_ROTATE_STEP)}>
-                <RotateCcw className="size-4" />
-              </IconTool>
-              <IconTool label={`Girar ${PROP_ROTATE_STEP}° a la derecha`} disabled={disabled} onClick={() => onTurn(PROP_ROTATE_STEP)}>
-                <RotateCw className="size-4" />
-              </IconTool>
-              <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onRemove}>
-                <Trash2 className="size-4" /> Quitar desde aquí
-              </button>
-              <button type="button" className={cn(tool, toolIdle)} onClick={onClose}>
-                <Check className="size-4" /> Listo
-              </button>
-              {prop.kind === 'mark' && (
-                <label className="flex w-full items-center gap-2 text-[13px] text-washi-muted">
-                  Texto
-                  <input
-                    key={`${prop.id}-${prop.label ?? ''}`}
-                    type="text"
-                    defaultValue={prop.label ?? ''}
-                    maxLength={PROP_LABEL_MAX}
-                    placeholder="Salida, foco, centro…"
-                    disabled={disabled}
-                    onBlur={(e) => {
-                      if (e.target.value.trim() !== (prop.label ?? '')) onRelabel(e.target.value);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                    }}
-                    className="well h-11 min-w-0 flex-1 rounded-[10px] px-3 text-[14px] text-washi outline-none focus:border-kin-300/70"
-                  />
-                </label>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function IconTool({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <motion.button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      whileTap={disabled ? undefined : { scale: 0.88 }}
-      transition={jelly}
-      className={cn(tool, toolIdle, 'w-11 justify-center px-0')}
-    >
-      {children}
-    </motion.button>
   );
 }
 
