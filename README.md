@@ -43,11 +43,25 @@ Supabase; nunca se incluye en la build de producción.
 > Si tu red intercepta TLS (antivirus/proxy) y `/api/youtube-meta` falla en local, arranca con
 > `NODE_OPTIONS=--use-system-ca pnpm dev`.
 
+## Otros comandos
+
+- `pnpm lint`: ESLint de todo el monorepo.
+- `pnpm typecheck` · `pnpm test`: tipos y tests unitarios (vitest, también `*.test.tsx` con jsdom).
+- `pnpm e2e`: pruebas de navegador con Playwright contra el demo (`pnpm e2e --project=mobile-375x812`); `pnpm test:e2e` es un alias.
+- `pnpm perf`: escenarios de rendimiento (`pnpm perf -- --grep S-03` para uno solo).
+- `pnpm perf:bundle`: compila con un Supabase falso y mide camino crítico, chunk de entrada y precache (build y JSON en la carpeta de evidencias, nunca en `apps/web/dist`; `--no-build` reutiliza el último build de medición).
+- `pnpm build:report`: lo mismo que `perf:bundle` con `ANALYZE=1` (Supabase falso, build en la carpeta de evidencias) y deja además el informe del visualizer allí.
+- `pnpm check:size`: falla si un fichero de `src` supera las 600 líneas y no está en la lista de excepciones.
+- `pnpm check:unused`: informe de código, ficheros y dependencias sin usar (knip).
+- `pnpm db:test` · `pnpm format`: comprobaciones SQL locales y Prettier.
+
+La carpeta de evidencias es `ONESHOOT_EVIDENCE_DIR` (por defecto `~/oneshoot-rendimiento-integral-tmp`), fuera del repo.
+
 ## Instalar como app (PWA)
 
 - **Android / Chrome / Edge (PC):** botón **Instalar app** en la barra lateral (o en el menú de la cuenta en móvil),
   o el icono de instalar de la barra de direcciones.
-- **iPhone / iPad:** Safari → Compartir → *Añadir a pantalla de inicio* (la app lo explica al tocar *Instalar app*).
+- **iPhone / iPad:** Safari → Compartir → _Añadir a pantalla de inicio_ (la app lo explica al tocar _Instalar app_).
 
 El service worker precachea solo la interfaz: abre al instante, pero sin conexión la biblioteca no carga (los datos del
 grupo están en Supabase). Cada despliegue se instala solo, pero espera a que salgas del estudio y no haya ningún

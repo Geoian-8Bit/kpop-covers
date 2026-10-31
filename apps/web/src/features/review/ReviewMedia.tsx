@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { Spinner } from '@/components/ui/Spinner';
+import { perfMark } from '@/lib/perfProbe';
 import { describeYouTubeError, loadYouTubeApi, YTState, type YTPlayer } from '@/lib/youtubeIframe';
 import { createMediaEngine, createYouTubeEngine, releaseMediaAudio, type PlayerEngine } from '@/player/engine';
 import { hasRange, msSinceReviewAlign, reviewOriginalRate, useReview } from '@/player/store';
@@ -127,7 +128,15 @@ export function TakeVideo({
       const s = review();
       if (s.playing && s.audio !== 'original') s.originalEngine?.play();
     };
-    const onReady = () => setLoading(false);
+    let readyMarked = false;
+    const onReady = () => {
+      setLoading(false);
+      // REQ-03 · The review is ready when the take has data to play.
+      if (!readyMarked) {
+        readyMarked = true;
+        perfMark('review-ready');
+      }
+    };
     const onError = () => {
       setLoading(false);
       review().sync({ takeError: 'No se pudo reproducir la toma en este navegador.' });

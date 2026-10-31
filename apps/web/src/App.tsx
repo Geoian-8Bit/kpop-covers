@@ -1,5 +1,6 @@
 import { motion, MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PerfProbe } from '@/lib/perfProbe';
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AppShell } from '@/components/AppShell';
@@ -17,22 +18,34 @@ import { ToastProvider } from '@/providers/ToastProvider';
 
 // Route-level splitting: the library is the landing page, the studio and legal pages load on demand.
 const StudioPage = lazy(() => loadStudioPage().then((m) => ({ default: m.StudioPage })));
-const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
-const SettingsPage = lazy(() => import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const PrivacyPage = lazy(() =>
+  import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })),
+);
+const SettingsPage = lazy(() =>
+  import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
 // F13 bags and F14 Random Play Dance: their own chunks, loaded when visited.
 const BagsPage = lazy(() => import('@/features/bags/BagsPage').then((m) => ({ default: m.BagsPage })));
 const BagPage = lazy(() => import('@/features/bags/BagPage').then((m) => ({ default: m.BagPage })));
 const RpdPage = lazy(() => import('@/features/rpd/RpdPage').then((m) => ({ default: m.RpdPage })));
 const TrackPage = lazy(() => import('@/features/rpd/TrackPage').then((m) => ({ default: m.TrackPage })));
-const RpdPlayPage = lazy(() => import('@/features/rpd/RpdPlayPage').then((m) => ({ default: m.RpdPlayPage })));
+const RpdPlayPage = lazy(() =>
+  import('@/features/rpd/RpdPlayPage').then((m) => ({ default: m.RpdPlayPage })),
+);
 // F12 wish list and F11 votes («Próxima cover»).
-const WishesPage = lazy(() => import('@/features/wishes/WishesPage').then((m) => ({ default: m.WishesPage })));
+const WishesPage = lazy(() =>
+  import('@/features/wishes/WishesPage').then((m) => ({ default: m.WishesPage })),
+);
 const PollPage = lazy(() => import('@/features/wishes/PollPage').then((m) => ({ default: m.PollPage })));
 // F16 events (countdown and repertoire).
-const EventsPage = lazy(() => import('@/features/events/EventsPage').then((m) => ({ default: m.EventsPage })));
+const EventsPage = lazy(() =>
+  import('@/features/events/EventsPage').then((m) => ({ default: m.EventsPage })),
+);
 const EventPage = lazy(() => import('@/features/events/EventPage').then((m) => ({ default: m.EventPage })));
 // REQ-03 / REQ-04 calendar of absences and rehearsals.
-const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+const CalendarPage = lazy(() =>
+  import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -135,7 +148,9 @@ export function App() {
                           path="/v/:videoId"
                           element={
                             <Suspense fallback={<Splash />}>
-                              <StudioPage />
+                              <PerfProbe id="StudioPage">
+                                <StudioPage />
+                              </PerfProbe>
                             </Suspense>
                           }
                         />
@@ -144,7 +159,9 @@ export function App() {
                           path="/v/:videoId/formaciones/:planId"
                           element={
                             <Suspense fallback={<Splash />}>
-                              <StudioPage />
+                              <PerfProbe id="StudioPage">
+                                <StudioPage />
+                              </PerfProbe>
                             </Suspense>
                           }
                         />
@@ -163,14 +180,23 @@ export function App() {
                             ['/rpd', <RpdPage key="rpd" />],
                             ['/rpd/pista/:trackId', <TrackPage key="track" />],
                             ['/rpd/jugar', <RpdPlayPage key="play" />],
-                            ['/deseos', <WishesPage key="wishes" />],
+                            [
+                              '/deseos',
+                              <PerfProbe key="wishes" id="WishesPage">
+                                <WishesPage />
+                              </PerfProbe>,
+                            ],
                             ['/deseos/votacion/:pollId', <PollPage key="poll" />],
                             ['/eventos', <EventsPage key="events" />],
                             ['/eventos/:eventId', <EventPage key="event" />],
                             ['/calendario', <CalendarPage key="calendar" />],
                           ] as const
                         ).map(([path, page]) => (
-                          <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />
+                          <Route
+                            key={path}
+                            path={path}
+                            element={<Suspense fallback={<Splash />}>{page}</Suspense>}
+                          />
                         ))}
                       </Route>
                       <Route

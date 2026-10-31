@@ -11,6 +11,7 @@ import {
   type Video,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
+import { PerfProbe, perfMark } from '@/lib/perfProbe';
 import {
   AlertTriangle,
   ChevronsLeft,
@@ -75,13 +76,7 @@ import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
 import { CLIP_SWATCH, useClips } from '@/data/clips';
 import { useNotes } from '@/data/notes';
-import {
-  isStaleCopy,
-  useLinkLocalFile,
-  useUpdateVideo,
-  useUploadToCloud,
-  useVideo,
-} from '@/data/videos';
+import { isStaleCopy, useLinkLocalFile, useUpdateVideo, useUploadToCloud, useVideo } from '@/data/videos';
 import { scheduleCountIn } from '@/lib/metronome';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
@@ -93,7 +88,16 @@ import { hasRange, usePlayer } from '@/player/store';
 import { useLoopController } from '@/player/useLoopController';
 import { YouTubeStage } from '@/player/YouTubeStage';
 import { useMediaBox } from '@/player/ZoomLayer';
-import { gestureZoom, isDoubleTap, isZoomed, keyZoom, NO_ZOOM, wheelZoom, type Pt, type Zoom } from '@/player/zoom';
+import {
+  gestureZoom,
+  isDoubleTap,
+  isZoomed,
+  keyZoom,
+  NO_ZOOM,
+  wheelZoom,
+  type Pt,
+  type Zoom,
+} from '@/player/zoom';
 import { useToast } from '@/providers/ToastProvider';
 import { FsPanArrows, PlayerZoomLayer, ZoomBadge, ZoomRow, zoomAvailability } from './ZoomControls';
 import { ClipList } from './ClipList';
@@ -119,7 +123,9 @@ import { useShortcuts } from './useShortcuts';
 import { useMenuFocus } from './useMenuFocus';
 
 /** F5 · The review screen, loaded when a take is first opened. */
-const ReviewScreen = lazy(() => import('@/features/review/ReviewScreen').then((m) => ({ default: m.ReviewScreen })));
+const ReviewScreen = lazy(() =>
+  import('@/features/review/ReviewScreen').then((m) => ({ default: m.ReviewScreen })),
+);
 /**
  * P4 · The recorder (camera, recorder, clap…) loads when «Grabar» is first hovered, focused or pressed, and is only
  * mounted while open: closing it unmounts it (it keeps nothing between sessions: every open starts afresh).
@@ -130,8 +136,12 @@ const warmRecordStudio = () => void loadRecordStudio().catch(() => undefined);
 /** P4 · «Tomas» loads when its tab is first opened. */
 const TakesPanel = lazy(() => import('@/features/takes/TakesPanel').then((m) => ({ default: m.TakesPanel })));
 /** REQ-06 · «Formaciones»: the tab's list and the editor load when first opened. */
-const FormationsPanel = lazy(() => import('@/features/formations/FormationsPanel').then((m) => ({ default: m.FormationsPanel })));
-const FormationEditor = lazy(() => import('@/features/formations/FormationEditor').then((m) => ({ default: m.FormationEditor })));
+const FormationsPanel = lazy(() =>
+  import('@/features/formations/FormationsPanel').then((m) => ({ default: m.FormationsPanel })),
+);
+const FormationEditor = lazy(() =>
+  import('@/features/formations/FormationEditor').then((m) => ({ default: m.FormationEditor })),
+);
 type SideTab = 'clips' | 'takes' | 'formations';
 /**
  * Global review 2 [3] · An extra part of the studio in a chunk of its own: if the chunk can't load (offline before the
@@ -297,10 +307,17 @@ export function StudioPage() {
   // F2: the first note (or take) without a name suggests «¿Quién eres?» once; the action goes on either way.
   const addNote = useCallback(() => {
     const at = usePlayer.getState().time;
-    askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () => setNoteTarget({ note: null, at }));
+    askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () =>
+      setNoteTarget({ note: null, at }),
+    );
   }, []);
   const openNote = useCallback((note: Note) => setNoteTarget({ note, at: note.at_seconds }), []);
-  useShortcuts({ onSave: openSave, onHelp: openHelp, onNote: addNote, enabled: !planId && !saving && !help && !noteTarget && !recording && !playingTake });
+  useShortcuts({
+    onSave: openSave,
+    onHelp: openHelp,
+    onNote: addNote,
+    enabled: !planId && !saving && !help && !noteTarget && !recording && !playingTake,
+  });
 
   /** A clip cut on a longer copy of the song may not fit this one: say so instead of a stray loop. */
   const applyClip = useCallback(
@@ -368,7 +385,9 @@ export function StudioPage() {
         ) : (
           <AlertTriangle className="mx-auto size-8 text-enji-300" />
         )}
-        <h1 className="mt-3 font-display text-3xl font-bold">{offline ? 'Sin conexión' : 'No pudimos cargar el vídeo'}</h1>
+        <h1 className="mt-3 font-display text-3xl font-bold">
+          {offline ? 'Sin conexión' : 'No pudimos cargar el vídeo'}
+        </h1>
         <p className="mt-2 text-washi-muted">
           {offline
             ? 'Conéctate a internet para abrir este vídeo. Se cargará solo en cuanto vuelva la conexión.'
@@ -409,7 +428,11 @@ export function StudioPage() {
     return (
       <Suspense
         fallback={
-          <div className="grid min-h-[70dvh] place-items-center" role="status" aria-label="Abriendo el editor de formaciones">
+          <div
+            className="grid min-h-[70dvh] place-items-center"
+            role="status"
+            aria-label="Abriendo el editor de formaciones"
+          >
             <Spinner className="size-9 text-washi-muted" />
           </div>
         }
@@ -438,64 +461,74 @@ export function StudioPage() {
       <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
         {/* Title bar (held still with the rest of the page, the stage aside, while the recorder covers it) */}
         <Dormant>
-        <div className="sep-b flex items-center gap-3 px-4 py-4 sm:px-6">
-          <Link
-            to="/"
-            aria-label="Volver a la biblioteca"
-            className="size-11 shrink-0 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] transition-transform hover:scale-105 active:scale-95"
-          >
-            <ButtonSkin kind="back" />
-          </Link>
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">
-              {current.title}
-            </h1>
-            <p className="truncate text-sm text-washi-muted">
-              {current.artist || 'Artista sin especificar'} ·{' '}
-              {current.source === 'youtube' ? 'YouTube' : current.file_name}
-            </p>
-          </div>
-          {current.source === 'youtube' && current.youtube_id && (
-            <a
-              href={youTubeWatchUrl(current.youtube_id)}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Abrir en YouTube"
-              className="hidden size-11 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted hover:text-washi sm:grid"
+          <div className="sep-b flex items-center gap-3 px-4 py-4 sm:px-6">
+            <Link
+              to="/"
+              aria-label="Volver a la biblioteca"
+              className="size-11 shrink-0 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] transition-transform hover:scale-105 active:scale-95"
             >
-              <ExternalLink className="size-4.5" />
-            </a>
-          )}
-          <Button
-            variant="secondary"
-            size="icon"
-            aria-label="Atajos de teclado"
-            onClick={openHelp}
-            className="max-sm:hidden"
-          >
-            <Keyboard className="size-5" />
-          </Button>
-          {current.source === 'youtube' && (
+              <ButtonSkin kind="back" />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">
+                {current.title}
+              </h1>
+              <p className="truncate text-sm text-washi-muted">
+                {current.artist || 'Artista sin especificar'} ·{' '}
+                {current.source === 'youtube' ? 'YouTube' : current.file_name}
+              </p>
+            </div>
+            {current.source === 'youtube' && current.youtube_id && (
+              <a
+                href={youTubeWatchUrl(current.youtube_id)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Abrir en YouTube"
+                className="hidden size-11 place-items-center rounded-[10px] border border-line-strong bg-sumi-800 text-washi-muted hover:text-washi sm:grid"
+              >
+                <ExternalLink className="size-4.5" />
+              </a>
+            )}
             <Button
-              size="sm"
               variant="secondary"
-              aria-label={hasLinkedFile(current) ? 'Archivo de este vídeo' : 'Añadir archivo de este vídeo'}
-              onClick={() => setLinking(true)}
+              size="icon"
+              aria-label="Atajos de teclado"
+              onClick={openHelp}
+              className="max-sm:hidden"
             >
-              <FileVideo className="size-4" />
-              <span className="max-sm:sr-only">{hasLinkedFile(current) ? 'Archivo' : 'Añadir archivo'}</span>
+              <Keyboard className="size-5" />
             </Button>
-          )}
-          <Button ref={recordButton} size="sm" aria-label="Grabar baile con la canción" onClick={() => askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () => setRecording(true))}
-            disabled={!ready}
-            onPointerEnter={warmRecordStudio}
-            onPointerDown={warmRecordStudio}
-            onFocus={warmRecordStudio}
-          >
-            <VideoIcon className="size-4" />
-            <span className="max-sm:sr-only">Grabar</span>
-          </Button>
-        </div>
+            {current.source === 'youtube' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                aria-label={hasLinkedFile(current) ? 'Archivo de este vídeo' : 'Añadir archivo de este vídeo'}
+                onClick={() => setLinking(true)}
+              >
+                <FileVideo className="size-4" />
+                <span className="max-sm:sr-only">
+                  {hasLinkedFile(current) ? 'Archivo' : 'Añadir archivo'}
+                </span>
+              </Button>
+            )}
+            <Button
+              ref={recordButton}
+              size="sm"
+              aria-label="Grabar baile con la canción"
+              onClick={() =>
+                askWho('Así tus tomas llevan tu nombre. Se recuerda en este dispositivo.', () =>
+                  setRecording(true),
+                )
+              }
+              disabled={!ready}
+              onPointerEnter={warmRecordStudio}
+              onPointerDown={warmRecordStudio}
+              onFocus={warmRecordStudio}
+            >
+              <VideoIcon className="size-4" />
+              <span className="max-sm:sr-only">Grabar</span>
+            </Button>
+          </div>
         </Dormant>
 
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -520,20 +553,26 @@ export function StudioPage() {
               />
             </div>
             <Dormant>
-            <Timeline
-              seed={current.id}
-              clips={clips.data ?? []}
-              onClipSelect={tapClipLine}
-              notes={songNoteList}
-              onNoteOpen={openNote}
-            />
-            <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
-            {hasLinkedFile(current) && <SourceRow video={current} copyLabel={copyLabel} />}
-            {/* 13 · Only on this device: send a lighter copy to the group (shows only when there's something to say). */}
-            <CloudCopyStatus video={current} variant="studio" announce={!linking} />
-            {/* 44 · On a phone only the save/clear line of a clip's zoom shows; zooming itself is the fingers' (ZoomControls). */}
-            <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
-            <VoiceRow video={current} />
+              <PerfProbe id="Timeline">
+                <Timeline
+                  seed={current.id}
+                  clips={clips.data ?? []}
+                  onClipSelect={tapClipLine}
+                  notes={songNoteList}
+                  onNoteOpen={openNote}
+                />
+              </PerfProbe>
+              <PerfProbe id="Transport">
+                <PlayerBar onSaveClip={openSave} onAddNote={addNote} />
+              </PerfProbe>
+              {hasLinkedFile(current) && <SourceRow video={current} copyLabel={copyLabel} />}
+              {/* 13 · Only on this device: send a lighter copy to the group (shows only when there's something to say). */}
+              <CloudCopyStatus video={current} variant="studio" announce={!linking} />
+              {/* 44 · On a phone only the save/clear line of a clip's zoom shows; zooming itself is the fingers' (ZoomControls). */}
+              <PerfProbe id="ZoomControls">
+                <ZoomRow video={current} clips={clips.data ?? []} onLink={() => setLinking(true)} />
+              </PerfProbe>
+              <VoiceRow video={current} />
             </Dormant>
           </div>
 
@@ -555,7 +594,11 @@ export function StudioPage() {
             {sideTab === 'formations' ? (
               <Suspense
                 fallback={
-                  <div className="grid place-items-center py-10" role="status" aria-label="Cargando formaciones">
+                  <div
+                    className="grid place-items-center py-10"
+                    role="status"
+                    aria-label="Cargando formaciones"
+                  >
                     <Spinner className="size-6 text-washi-muted" />
                   </div>
                 }
@@ -563,12 +606,14 @@ export function StudioPage() {
                 <FormationsPanel video={current} />
               </Suspense>
             ) : sideTab === 'clips' ? (
-              <ClipList
-                clips={clips.data ?? []}
-                loading={clips.isPending}
-                onApply={applyClip}
-                onNew={openSave}
-              />
+              <PerfProbe id="ClipList">
+                <ClipList
+                  clips={clips.data ?? []}
+                  loading={clips.isPending}
+                  onApply={applyClip}
+                  onNew={openSave}
+                />
+              </PerfProbe>
             ) : (
               <Suspense
                 fallback={
@@ -603,12 +648,18 @@ export function StudioPage() {
       {recording && (
         <Suspense
           fallback={
-            <div className="fixed inset-0 z-[90] grid place-items-center bg-sumi-950" role="status" aria-label="Abriendo la cámara">
+            <div
+              className="fixed inset-0 z-[90] grid place-items-center bg-sumi-950"
+              role="status"
+              aria-label="Abriendo la cámara"
+            >
               <Spinner className="size-9 text-washi-muted" />
             </div>
           }
         >
-          <RecordStudio open onClose={closeRecorder} video={current} />
+          <PerfProbe id="RecordStudio">
+            <RecordStudio open onClose={closeRecorder} video={current} />
+          </PerfProbe>
         </Suspense>
       )}
       {current.source === 'youtube' && (
@@ -626,22 +677,28 @@ export function StudioPage() {
       {playingTake && (
         <Suspense
           fallback={
-            <div className="fixed inset-0 z-[45] grid place-items-center bg-sumi-950" role="status" aria-label="Abriendo el repaso">
+            <div
+              className="fixed inset-0 z-[45] grid place-items-center bg-sumi-950"
+              role="status"
+              aria-label="Abriendo el repaso"
+            >
               <Spinner className="size-9 text-washi-muted" />
             </div>
           }
         >
-          <ReviewScreen
-            key={playingTake.take.id}
-            video={current}
-            take={playingTake.take}
-            url={playingTake.url}
-            clips={clips.data ?? []}
-            onClose={() => {
-              releaseTakeUrl(playingTake.url);
-              setPlayingTake(null);
-            }}
-          />
+          <PerfProbe id="ReviewScreen">
+            <ReviewScreen
+              key={playingTake.take.id}
+              video={current}
+              take={playingTake.take}
+              url={playingTake.url}
+              clips={clips.data ?? []}
+              onClose={() => {
+                releaseTakeUrl(playingTake.url);
+                setPlayingTake(null);
+              }}
+            />
+          </PerfProbe>
         </Suspense>
       )}
     </Page>
@@ -657,14 +714,10 @@ function VoiceRow({ video }: { video: Video }) {
   const { mode, available, monoLike, setMode } = useVoiceSplit();
   return (
     <div className="sep-t px-4 py-3 sm:px-5">
-      <p className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">Voz y música</p>
-      <VoiceSplitControl
-        mode={mode}
-        onChange={setMode}
-        available={available}
-        monoLike={monoLike}
-        compact
-      />
+      <p className="mb-1.5 text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">
+        Voz y música
+      </p>
+      <VoiceSplitControl mode={mode} onChange={setMode} available={available} monoLike={monoLike} compact />
       {/* Global review 2 [5] · Mounted while the song has a file, not only while its engine is on the stage: a
           separation running survives «YouTube», a resync or a media error (it hides itself when idle). */}
       {hasSeparableFile(video) && (
@@ -699,7 +752,10 @@ function SourceRow({ video, copyLabel }: { video: Video; copyLabel: string | nul
   };
   return (
     <div className="sep-t flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 sm:px-5">
-      <p id="source-row-title" className="text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle">
+      <p
+        id="source-row-title"
+        className="text-[12px] font-bold uppercase tracking-[0.12em] text-washi-subtle"
+      >
         Vídeo
       </p>
       <div
@@ -765,6 +821,10 @@ function MediaStage({
   const mirrored = usePlayer((s) => s.mirrored);
   const playing = usePlayer((s) => s.playing);
   const ready = usePlayer((s) => s.ready);
+  // REQ-03 · The engine is ready to play (YouTube onReady, or the file's metadata): once per video opened.
+  useEffect(() => {
+    if (ready) perfMark('player-ready');
+  }, [ready, video.id]);
   const error = usePlayer((s) => s.error);
   const [reloadKey, setReloadKey] = useState(0);
   const stage = usePlayer((s) => s.stage);
@@ -790,7 +850,9 @@ function MediaStage({
 
   async function sendToCloud() {
     if (file.status !== 'ready' || !file.local || upload.isPending) return;
-    const copy = new File([file.local], video.file_name ?? 'video.mp4', { type: file.local.type || 'video/mp4' });
+    const copy = new File([file.local], video.file_name ?? 'video.mp4', {
+      type: file.local.type || 'video/mp4',
+    });
     try {
       await upload.mutateAsync({ video, file: copy });
       toast('Subido a la nube: ya lo ve todo el grupo', 'success');
@@ -811,7 +873,10 @@ function MediaStage({
   const zoomPointers = useRef(new Map<number, Pt>());
   const zoomGesture = useRef<{ start: Zoom; from: Pt[]; moved: boolean } | null>(null);
   const swallowClickUntil = useRef(0);
-  const zoomTap = useRef<{ last: { at: number; x: number; y: number } | null; timer?: ReturnType<typeof setTimeout> }>({ last: null });
+  const zoomTap = useRef<{
+    last: { at: number; x: number; y: number } | null;
+    timer?: ReturnType<typeof setTimeout>;
+  }>({ last: null });
   const zoomResetAt = useRef(0);
   // [4] · The group's lighter copy (not the original) on the stage: the «Vídeo» row names it, with its real size.
   const copyLabel =
@@ -819,7 +884,11 @@ function MediaStage({
     !hold &&
     file.status === 'ready' &&
     !file.local &&
-    playsGroupCopy({ fromCloud: Boolean(video.storage_path), originalBytes: video.file_size, limitBytes: cloudLimitBytes() })
+    playsGroupCopy({
+      fromCloud: Boolean(video.storage_path),
+      originalBytes: video.file_size,
+      limitBytes: cloudLimitBytes(),
+    })
       ? groupCopyLabel(media)
       : null;
   useEffect(() => {
@@ -836,7 +905,11 @@ function MediaStage({
     return layerPoint(e, boxEl.getBoundingClientRect(), inTurnedLayer(boxEl));
   };
   const restartZoomGesture = (moved: boolean) => {
-    zoomGesture.current = { start: usePlayer.getState().zoom, from: [...zoomPointers.current.values()].slice(0, 2), moved };
+    zoomGesture.current = {
+      start: usePlayer.getState().zoom,
+      from: [...zoomPointers.current.values()].slice(0, 2),
+      moved,
+    };
   };
   function onZoomPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     pointerType.current = e.pointerType;
@@ -852,7 +925,8 @@ function MediaStage({
     if (to.length !== g.from.length) return;
     // One finger on the whole video is a tap (or the page scrolling), not a drag.
     if (to.length === 1 && !isZoomed(g.start)) return;
-    if (!g.moved && to.length === 1 && Math.hypot(to[0]!.x - g.from[0]!.x, to[0]!.y - g.from[0]!.y) < 6) return;
+    if (!g.moved && to.length === 1 && Math.hypot(to[0]!.x - g.from[0]!.x, to[0]!.y - g.from[0]!.y) < 6)
+      return;
     if (!g.moved) {
       g.moved = true;
       setZoomLive(true);
@@ -916,11 +990,15 @@ function MediaStage({
 
   const missing = playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
-  const { stageRef, fullscreen, toggleFullscreen, orientation, cycleOrientation, rotated, showOrientation } = useFullscreen();
+  const { stageRef, fullscreen, toggleFullscreen, orientation, cycleOrientation, rotated, showOrientation } =
+    useFullscreen();
   const youtubeStage = !playsFile && Boolean(video.youtube_id);
   // REQ-02 · A video stored as horizontal or unknown is asked again (oEmbed through /shorts/ tells a short apart).
   const aspectProbe = useYouTubeMeta(youtubeStage && needsAspectProbe(video) ? video.youtube_id : null);
-  const aspect = resolveAspect(video.aspect_ratio, aspectProbe.status === 'ok' ? aspectProbe.aspectRatio : null);
+  const aspect = resolveAspect(
+    video.aspect_ratio,
+    aspectProbe.status === 'ok' ? aspectProbe.aspectRatio : null,
+  );
   const verticalYouTube = youtubeStage && isVerticalAspect(aspect);
   // 5 · The controls' visibility lives in its own small store: showing them never repaints this stage.
   useFsChromeDriver(fullscreen);
@@ -1033,8 +1111,8 @@ function MediaStage({
       className={cn(
         fullscreen &&
           '[container-type:size] ' +
-          // The idle pointer hides over the video, never over a dialog (or its backdrop) open on top of it.
-          'fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
+            // The idle pointer hides over the video, never over a dialog (or its backdrop) open on top of it.
+            'fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-black [&[data-idle]]:cursor-none [&[data-idle]_*:not([data-overlay],[data-overlay]_*,[role=dialog],[role=dialog]_*)]:!cursor-none [&[data-idle]_:is([data-overlay],[role=dialog])]:cursor-auto',
       )}
     >
       <div
@@ -1042,7 +1120,13 @@ function MediaStage({
         // REQ-02 · Fullscreen: a file fills the screen (object-contain inside); YouTube takes the video's own shape:
         // 16:9 as large as fits, or a vertical video as tall as the screen (sides cropped a little, see youtubeFsBox).
         // Outside fullscreen a vertical video keeps its own shape too, centred.
-        style={youtubeStage ? (fullscreen ? youtubeFsBox(aspect) : (youtubeInlineBox(aspect) ?? undefined)) : undefined}
+        style={
+          youtubeStage
+            ? fullscreen
+              ? youtubeFsBox(aspect)
+              : (youtubeInlineBox(aspect) ?? undefined)
+            : undefined
+        }
         className={cn(
           'relative overflow-hidden bg-black',
           fullscreen
@@ -1063,13 +1147,15 @@ function MediaStage({
             <YouTubeStage key={reloadKey} videoId={video.youtube_id} vertical={verticalYouTube} />
           ) : file.status === 'ready' ? (
             // F9 · Inside the mirror: the zoom follows the picture when it flips.
-            <PlayerZoomLayer enabled={canZoom} box={box} media={media} live={zoomLive}>
-              <FileStage
-                src={file.url}
-                localSrc={file.cachedUrl}
-                offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
-              />
-            </PlayerZoomLayer>
+            <PerfProbe id="PlayerZoomLayer">
+              <PlayerZoomLayer enabled={canZoom} box={box} media={media} live={zoomLive}>
+                <FileStage
+                  src={file.url}
+                  localSrc={file.cachedUrl}
+                  offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
+                />
+              </PlayerZoomLayer>
+            </PerfProbe>
           ) : null}
         </motion.div>
 
@@ -1092,7 +1178,8 @@ function MediaStage({
           onClick={onStageClick}
           onDoubleClick={() => {
             // A double click on a zoomed video went back to the whole video (onStageClick), not to fullscreen.
-            if (pointerType.current === 'mouse' && performance.now() - zoomResetAt.current > 500) void toggleFullscreen();
+            if (pointerType.current === 'mouse' && performance.now() - zoomResetAt.current > 500)
+              void toggleFullscreen();
           }}
           disabled={!ready}
           className={cn(
@@ -1101,7 +1188,10 @@ function MediaStage({
           )}
         />
         {/* 4 · Over the video only what is needed, and only briefly: the zoom amount fades out after a moment. */}
-        <ZoomBadge visible={canZoom} className={fullscreen ? 'left-4 top-[max(16px,env(safe-area-inset-top))]' : 'bottom-3 left-3'} />
+        <ZoomBadge
+          visible={canZoom}
+          className={fullscreen ? 'left-4 top-[max(16px,env(safe-area-inset-top))]' : 'bottom-3 left-3'}
+        />
 
         <div
           className={cn(
@@ -1132,7 +1222,11 @@ function MediaStage({
               disabled={upload.isPending}
               className="pointer-events-auto relative flex items-center gap-1.5 rounded-[6px] bg-sumi-900/90 px-2 py-1 text-[12px] font-medium text-washi transition-colors before:absolute before:-inset-x-1 before:-inset-y-2.5 before:content-[''] disabled:opacity-60"
             >
-              {upload.isPending ? <Spinner className="size-3.5" label="Subiendo" /> : <CloudUpload className="size-3.5" />}
+              {upload.isPending ? (
+                <Spinner className="size-3.5" label="Subiendo" />
+              ) : (
+                <CloudUpload className="size-3.5" />
+              )}
               {upload.isPending ? 'Subiendo…' : 'Solo en este dispositivo · Subir a la nube'}
             </button>
           )}
@@ -1315,7 +1409,8 @@ function useFullscreen() {
   useEffect(() => {
     if (mode !== 'native') return;
     const target = lockTarget(orientation);
-    const api = screen.orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
+    const api = screen.orientation as
+      (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
     if (!target) {
       setLockHeld(false);
       try {
@@ -1407,7 +1502,13 @@ const ROTATED_STAGE_STYLE: CSSProperties = {
  * (`will-change`), so showing it is an opacity change on a ready layer, not a fresh paint over a playing video.
  * Hit areas inside carry `fs-hit` and only take touches while the layer shows.
  */
-function FsChromeLayer({ stageRef, children }: { stageRef: React.RefObject<HTMLDivElement | null>; children: ReactNode }) {
+function FsChromeLayer({
+  stageRef,
+  children,
+}: {
+  stageRef: React.RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
   const shown = useFsChrome((s) => s.shown || s.menu);
   const scrubbing = usePlayer((s) => s.scrubbing);
   const visible = shown || scrubbing;
@@ -1522,7 +1623,9 @@ function StageSpinner({ loading }: { loading: boolean }) {
 function FsTopBar({ video }: { video: Video }) {
   return (
     <div className="absolute inset-x-0 top-0 flex items-start gap-3 bg-[linear-gradient(to_bottom,rgb(0_0_0/0.7),transparent)] pb-10 pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[max(12px,env(safe-area-inset-top))] sm:pl-[max(24px,env(safe-area-inset-left))] sm:pr-[max(24px,env(safe-area-inset-right))]">
-      <p className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-washi sm:text-xl">{video.title}</p>
+      <p className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-washi sm:text-xl">
+        {video.title}
+      </p>
       {video.source === 'youtube' && video.youtube_id && (
         <a
           href={youTubeWatchUrl(video.youtube_id)}
@@ -1557,7 +1660,11 @@ function FsPlayButton() {
       transition={jelly}
       className="grid size-11 shrink-0 place-items-center rounded-full text-washi transition-colors hover:bg-washi/15 active:bg-washi/20"
     >
-      {active ? <Pause className="size-[22px] fill-current" /> : <Play className="size-[22px] fill-current" />}
+      {active ? (
+        <Pause className="size-[22px] fill-current" />
+      ) : (
+        <Play className="size-[22px] fill-current" />
+      )}
     </motion.button>
   );
 }
@@ -1646,7 +1753,8 @@ function FsProgress({ clips, onClipSelect }: { clips: Clip[]; onClipSelect: (cli
     // REQ-02 · Inside the CSS-turned layer the bar runs down the screen.
     return axisFraction(point, rect, inTurnedLayer(barRef.current));
   };
-  const scrubAt = (point: { clientX: number; clientY: number }) => usePlayer.getState().scrubTo(fractionAt(point) * duration);
+  const scrubAt = (point: { clientX: number; clientY: number }) =>
+    usePlayer.getState().scrubTo(fractionAt(point) * duration);
   const release = () => {
     if (!dragging.current) return;
     dragging.current = false;
@@ -2071,7 +2179,9 @@ function FsNoteBubble({ notes }: { notes: Note[] }) {
           transition={jelly}
           className="pointer-events-none absolute bottom-[calc(max(6px,env(safe-area-inset-bottom))+104px)] right-4 z-40 max-w-[min(340px,70vw)] rounded-[12px] bg-washi px-4 py-2.5 text-[15px] font-medium leading-snug text-sumi-900 shadow-[0_14px_30px_-12px_rgb(0_0_0/0.9)] sm:right-6"
         >
-          <span className="tabular mr-2 font-mono text-[12px] text-shu-500">{formatTime(shown.at_seconds)}</span>
+          <span className="tabular mr-2 font-mono text-[12px] text-shu-500">
+            {formatTime(shown.at_seconds)}
+          </span>
           {shown.body}
         </motion.div>
       )}

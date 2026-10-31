@@ -1,5 +1,6 @@
 import type { Member, Poll, Wish } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
+import { PerfProbe } from '@/lib/perfProbe';
 import { ArrowLeft, ChevronRight, Dices, Film, Library, Lock, Pencil, RotateCcw, Trash2, Vote } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -81,7 +82,11 @@ export function PollPage() {
       </Page>
     );
   }
-  return <PollView key={poll.id} poll={poll} polls={polls.data ?? []} />;
+  return (
+    <PerfProbe id="PollView">
+      <PollView key={poll.id} poll={poll} polls={polls.data ?? []} />
+    </PerfProbe>
+  );
 }
 
 function PollView({ poll, polls }: { poll: Poll; polls: Poll[] }) {

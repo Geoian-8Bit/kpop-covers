@@ -13,6 +13,7 @@ import {
   type Video,
 } from '@coverscape/shared';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { PerfProbe } from '@/lib/perfProbe';
 import { BookmarkPlus, FileVideo, TriangleAlert, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
@@ -888,13 +889,15 @@ export function ReviewScreen({
                     </Button>
                   </div>
                 )}
-                <ReviewTransport
-                  settingsOpen={settingsOpen}
-                  onSettings={() => setSettingsOpen((v) => !v)}
-                  onLoopMissing={loopMissing}
-                  settingsRef={settingsButtonRef}
-                  hideSettings={wide}
-                />
+                <PerfProbe id="ReviewControls">
+                  <ReviewTransport
+                    settingsOpen={settingsOpen}
+                    onSettings={() => setSettingsOpen((v) => !v)}
+                    onLoopMissing={loopMissing}
+                    settingsRef={settingsButtonRef}
+                    hideSettings={wide}
+                  />
+                </PerfProbe>
               </div>
             </footer>
           )}

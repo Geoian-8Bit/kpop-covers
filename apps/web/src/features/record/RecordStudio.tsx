@@ -20,6 +20,7 @@ import {
   type Video,
 } from '@coverscape/shared';
 import { useClips } from '@/data/clips';
+import { perfMark } from '@/lib/perfProbe';
 import {
   benchDone,
   forgetPace,
@@ -681,6 +682,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
     setQuickLight(null);
     // A camera opened afresh is on automatic colour already.
     wbReopenLater.current = false;
+  }, [view.status]);
+  // REQ-03 · The recorder has the camera's picture.
+  useEffect(() => {
+    if (view.status === 'ready') perfMark('camera-ready');
   }, [view.status]);
   // A tap's ring fades; a lock's ring stays.
   useEffect(() => {
@@ -1775,6 +1780,7 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
       })
       .then(() => {
         if (reviewTake.current !== disk) return;
+        perfMark('take-saved');
         disk.kept = true;
         setKept(true);
         setKeepMsg({ text: 'Guardada en «Tomas» de esta canción.', error: false });

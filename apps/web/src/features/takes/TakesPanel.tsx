@@ -1,5 +1,6 @@
 import { formatBytes, formatDuration, formatSpeed, formatTime, type Clip, type Member, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
+import { PerfProbe } from '@/lib/perfProbe';
 import {
   Cloud,
   CloudOff,
@@ -305,7 +306,9 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
         remove={(take) => remove.mutateAsync(take)}
       />
 
-      <ShareDialog take={shareTarget} onClose={() => setShareTarget(null)} />
+      <PerfProbe id="ShareDialog">
+        <ShareDialog take={shareTarget} onClose={() => setShareTarget(null)} />
+      </PerfProbe>
     </section>
   );
 }

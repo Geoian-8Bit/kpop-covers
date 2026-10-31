@@ -8,7 +8,7 @@ export default defineConfig({
   },
   test: {
     // REQ-05 · The Edge Function's pure rules are tested here too (no Deno needed).
-    include: ['src/**/*.test.ts', '../../supabase/functions/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', '../../supabase/functions/**/*.test.ts'],
     environment: 'node',
   },
 });

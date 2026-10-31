@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Plus, Search, WifiOff } from 'lucide-react';
+import { PerfProbe, perfMark } from '@/lib/perfProbe';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
@@ -65,6 +66,14 @@ export function LibraryPage() {
   }, [videos.data, deferredQuery, recent]);
 
   const total = videos.data?.length ?? 0;
+  // REQ-03 · First paint of the library with data (snapshot or fresh), once per load: after the commit, in a frame.
+  const paintedMarked = useRef(false);
+  const hasVideos = videos.data != null;
+  useEffect(() => {
+    if (!hasVideos || paintedMarked.current) return;
+    paintedMarked.current = true;
+    requestAnimationFrame(() => perfMark('library-painted'));
+  }, [hasVideos]);
   // A failed or paused (offline) first load is not an empty library: say so and offer a retry.
   const videosFailed = !videos.data && (videos.isError || videos.fetchStatus === 'paused');
   const quickFailed = !quick.data && (quick.isError || quick.fetchStatus === 'paused');
@@ -133,7 +142,9 @@ export function LibraryPage() {
               ))}
             </div>
           ) : (
-            <PinnedClips clips={quick.data ?? NO_CLIPS} />
+            <PerfProbe id="PinnedClips">
+              <PinnedClips clips={quick.data ?? NO_CLIPS} />
+            </PerfProbe>
           )}
         </section>
 

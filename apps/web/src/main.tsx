@@ -17,12 +17,15 @@ import { reloadBusy } from './lib/heavyWork';
 import { unlockAudio } from './lib/metronome';
 import { keepViewportFitted } from './lib/viewport';
 import { forgetRetiredData } from './lib/retiredData';
+import { perfMark } from './lib/perfProbe';
 import './index.css';
 
 // PWA ('prompt' mode): a new deploy installs in the background and waits. It is applied (fresh service worker
 // + one reload) only at a safe moment: outside the studio (/v/…), with no dialog open and nothing being saved, so a
 // rehearsal, a recording or an upload is never cut short. Installed apps also check for a new version every hour.
 // P2 · «Buscar actualización» (menu «⋯», Ajustes) does the same on demand; while it runs it owns the update.
+// REQ-03 · First mark of the measurement harness (kept in production: negligible cost).
+perfMark('app-start');
 keepViewportFitted();
 
 let updateWaiting = false;
@@ -76,7 +79,8 @@ setWaitingUpdateApplier(applyUpdate);
 window.addEventListener('vite:preloadError', () => {
   // Offline the chunk isn't stale, just out of reach: a reload wouldn't help.
   // Global review 2 [2] · Nor with the copy or the separation running: a reload would cut it short.
-  if (navigator.onLine && !document.querySelector('[role="dialog"]') && !reloadBusy()) recoverFromStaleChunks();
+  if (navigator.onLine && !document.querySelector('[role="dialog"]') && !reloadBusy())
+    recoverFromStaleChunks();
 });
 
 // Audio (metronome ticks) may only start after a user gesture: unlock on the first tap or key.

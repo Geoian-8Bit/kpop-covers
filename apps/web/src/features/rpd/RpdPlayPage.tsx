@@ -1,5 +1,6 @@
 import { youTubeWatchUrl, type Clip } from '@coverscape/shared';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { PerfProbe } from '@/lib/perfProbe';
 import { ArrowLeft, Play, RotateCcw, Save, Shuffle, Youtube } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -104,12 +105,14 @@ export function RpdPlayPage() {
     );
   }
   return (
-    <RoundRunner
-      key={`${draft.mix ?? 0}:${draft.clipIds.join(',')}`}
-      draft={draft}
-      all={clips.data}
-      fullscreen={fullscreen}
-    />
+    <PerfProbe id="RoundRunner">
+      <RoundRunner
+        key={`${draft.mix ?? 0}:${draft.clipIds.join(',')}`}
+        draft={draft}
+        all={clips.data}
+        fullscreen={fullscreen}
+      />
+    </PerfProbe>
   );
 }
 
