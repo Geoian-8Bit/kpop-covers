@@ -2,8 +2,7 @@
 import './lib/devSilence';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
-import { App } from './App';
+import { App, queryClient } from './App';
 import { recoverFromStaleChunks, setWaitingUpdateApplier } from './components/ErrorBoundaryRecovery';
 import {
   isManualCheckRunning,
@@ -14,10 +13,13 @@ import {
 } from './features/nav/version/appUpdate';
 import { reloadNeedsConfirm } from './features/nav/version/versionRules';
 import { reloadBusy } from './lib/heavyWork';
+import { whenIdle } from './lib/idle';
 import { unlockAudio } from './lib/metronome';
 import { keepViewportFitted } from './lib/viewport';
 import { forgetRetiredData } from './lib/retiredData';
 import { perfMark } from './lib/perfProbe';
+import { preloadRoute } from './lib/routeLoaders';
+import { startDeferredFonts } from './lib/fontsJa';
 import './index.css';
 
 // PWA ('prompt' mode): a new deploy installs in the background and waits. It is applied (fresh service worker
@@ -46,7 +48,8 @@ const applyUpdate = () => {
   if (!updateWaiting) return false;
   updateWaiting = false;
   clearInterval(updatePoll);
-  void updateSW(true);
+  // REQ-04 · Before the deferred registration there is no updateSW and no update can be waiting: nothing to do.
+  void updateSW?.(true);
   return true;
 };
 
@@ -54,21 +57,35 @@ const applyUpdateIfSafe = () => {
   if (updateWaiting && isSafeMoment()) applyUpdate();
 };
 
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    updateWaiting = true;
-    noteUpdateWaiting();
-    applyUpdateIfSafe();
-    // In-app navigation (pushState) fires no event: check now and then until the user leaves the studio.
-    if (updateWaiting && !updatePoll) updatePoll = setInterval(applyUpdateIfSafe, 2000);
-  },
-  onRegisteredSW(_url, registration) {
-    if (!registration) return;
-    noteRegistration(registration);
-    setInterval(() => void registration.update(), 60 * 60 * 1000);
-  },
-});
+// REQ-04 · Registered after `load`, once the phone is idle: the precache download (~84 files) no longer competes
+// with the critical JS, Supabase and the LCP thumbnail. `virtual:pwa-register` (workbox-window) is imported at that
+// same moment so it stays out of the entry chunk. Everything it wires up is unchanged.
+let updateSW: ((reloadPage?: boolean) => Promise<void>) | undefined;
+const registerServiceWorker = () => {
+  void import('virtual:pwa-register')
+    .then(({ registerSW }) => {
+      updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+          updateWaiting = true;
+          noteUpdateWaiting();
+          applyUpdateIfSafe();
+          // In-app navigation (pushState) fires no event: check now and then until the user leaves the studio.
+          if (updateWaiting && !updatePoll) updatePoll = setInterval(applyUpdateIfSafe, 2000);
+        },
+        onRegisteredSW(_url, registration) {
+          if (!registration) return;
+          noteRegistration(registration);
+          setInterval(() => void registration.update(), 60 * 60 * 1000);
+        },
+      });
+    })
+    // A failed import (offline, a replaced chunk) just skips the registration; the next visit tries again.
+    .catch(() => undefined);
+};
+const registerWhenIdle = () => whenIdle(registerServiceWorker, { timeout: 3000, fallbackMs: 3000 });
+if (document.readyState === 'complete') registerWhenIdle();
+else window.addEventListener('load', registerWhenIdle, { once: true });
 window.addEventListener('popstate', applyUpdateIfSafe);
 setUpdateApplier(applyUpdate);
 
@@ -104,8 +121,15 @@ window.addEventListener(
   { once: true },
 );
 
+// REQ-06 · A deep link starts its route chunk (and, in the studio, the YouTube API and the group) before React
+// mounts, not after RequireCrew has the group. Not awaited: rendering starts at once.
+preloadRoute(window.location.pathname, queryClient);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+
+// REQ-07 · REQ-10 · The deferred font slices (see lib/fontsJa.ts).
+startDeferredFonts(queryClient);

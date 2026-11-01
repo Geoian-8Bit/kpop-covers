@@ -73,10 +73,19 @@ export function PerfProbe({ id, children }: { id: string; children: ReactNode })
   );
 }
 
+/** REQ-03 · Prefix of every user-timing mark this app sets. */
+export const MARK_PREFIX = 'oneshoot:';
+/**
+ * REQ-10 · Marks the startup logic waits for (see startupSettled.ts). One shared constant per mark, used by the screen
+ * that sets it and by the code that waits for it: a rename cannot leave the wait hanging until its 10 s deadline.
+ */
+export const MARK_LIBRARY_PAINTED = 'library-painted';
+export const MARK_PLAYER_READY = 'player-ready';
+
 /** REQ-03 · Named user-timing mark, invisible to the user; kept in production (negligible cost). */
 export function perfMark(name: string) {
   try {
-    performance.mark(`oneshoot:${name}`);
+    performance.mark(`${MARK_PREFIX}${name}`);
   } catch {
     /* no User Timing */
   }

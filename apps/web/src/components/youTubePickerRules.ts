@@ -48,9 +48,17 @@ export function searchQueryOf(text: string): string | null {
   return input.kind === 'search' ? input.query : null;
 }
 
-/** Lower-cased so every spelling of the same search hits Vercel's edge cache instead of the daily quota. */
+/**
+ * REQ-19 · The server's `canonicalQuery`, letter for letter (trimmed, single spaces, lower case; a unit test holds
+ * both to the same inputs): a query the server would rewrite is answered with a 308 redirect, one more round trip.
+ */
+export function canonicalQuery(text: string): string {
+  return text.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Canonical so every spelling of the same search hits Vercel's edge cache instead of the daily quota. */
 export function searchUrl(query: string): string {
-  return `/api/youtube-search?q=${encodeURIComponent(query.toLowerCase())}`;
+  return `/api/youtube-search?q=${encodeURIComponent(canonicalQuery(query))}`;
 }
 
 /**

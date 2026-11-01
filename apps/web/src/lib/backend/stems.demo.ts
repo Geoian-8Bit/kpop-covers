@@ -108,5 +108,5 @@ export const demoStems: StemsBackend = {
       const stems = (raw as StemsDemoDb).video_stems?.find((s) => s.id === id && isLive(s));
       if (stems) stems.archived_at = now();
     }),
-  signedStemUrl: (path) => demoCloudUrl(path),
+  signedStemUrls: (paths) => Promise.all(paths.map((path) => demoCloudUrl(path))),
 };

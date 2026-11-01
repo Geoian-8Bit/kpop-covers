@@ -71,7 +71,12 @@ export async function stubOutside(context: BrowserContext): Promise<void> {
         /(^|\.)(ytimg\.com|youtube\.com)$/.test(url.hostname) &&
         /\.(jpg|jpeg|png|webp)$/i.test(url.pathname)
       )
-        return route.fulfill({ status: 200, contentType: 'image/png', body: THUMB });
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/png',
+          headers: { 'access-control-allow-origin': '*' }, // REQ-13 · the real host answers CORS
+          body: THUMB,
+        });
       if (url.hostname === 'www.youtube.com' && url.pathname === '/iframe_api')
         return route.fulfill({ status: 200, contentType: 'text/javascript', body: FAKE_YT });
       if (url.hostname === 'fonts.googleapis.com')

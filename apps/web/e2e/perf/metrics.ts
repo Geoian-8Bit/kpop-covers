@@ -12,7 +12,7 @@ export function pageProbes(): void {
   type W = Window & { __perf?: unknown; __frames?: unknown };
   const w = window as W;
   const state = {
-    lcp: null as { time: number; size: number; tag: string; url: string } | null,
+    lcp: null as { time: number; size: number; tag: string; url: string; text?: string } | null,
     loaf: [] as { start: number; duration: number; blocking: number }[],
   };
   try {
@@ -22,7 +22,14 @@ export function pageProbes(): void {
         url: string;
         element?: Element;
       })[])
-        state.lcp = { time: e.startTime, size: e.size, tag: e.element?.tagName ?? '', url: e.url ?? '' };
+        state.lcp = {
+          time: e.startTime,
+          size: e.size,
+          tag: e.element?.tagName ?? '',
+          url: e.url ?? '',
+          // Diagnosis: every LCP candidate in order, «time:size:tag:first characters».
+          text: `${state.lcp?.text ? `${state.lcp.text} || ` : ''}${Math.round(e.startTime)}:${e.size}:${e.element?.tagName ?? ''}:${e.element?.textContent?.slice(0, 30) ?? ''}`,
+        };
     }).observe({ type: 'largest-contentful-paint', buffered: true });
   } catch {
     /* not supported: LCP stays null and is reported as such */
@@ -69,6 +76,7 @@ export interface Lcp {
   size: number;
   tag: string;
   url: string;
+  text?: string;
 }
 
 export async function readLcp(page: Page): Promise<Lcp | null> {

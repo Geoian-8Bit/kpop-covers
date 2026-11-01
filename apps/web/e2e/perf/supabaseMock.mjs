@@ -24,13 +24,15 @@
 //   RPC      storage_usage calendar_members formation_members draw_from_bag close_poll cast_vote
 //            archive_calendar_row edit_rehearsal_rule end_rehearsal_rule save_push_subscription
 //            delete_push_subscription create_formation_plan update_formation_plan duplicate_formation_plan
-//            save_formation delete_formation
+//            save_formation delete_formation poll_votes_signature set_track_positions set_event_song_positions
+//   Generated videos.poster_inline / list_thumbnail_url / poster_rev (REQ-14), notes.has_sketch (REQ-17):
+//            computed on load and after every write; writing them is refused (428C9) like Postgres does
 //   Storage  POST /object/sign/<bucket>/<path>, POST /object/sign/<bucket> (batch), GET /object/(sign|public|
 //            authenticated)?/<bucket>/<path> (bytes, Range), POST/PUT /object/<bucket>/<path> (upload)
 // Rows with archived_at are hidden everywhere, like the RLS policies.
 
 import http from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -206,9 +208,42 @@ function orderBy(rows, spec) {
 
 const live = (row) => !row.archived_at;
 
+const md5 = (s) => createHash('md5').update(s).digest('hex');
+const isInline = (url) => typeof url === 'string' && url.startsWith('data:');
+
+// REQ-14 / REQ-17 · Same expressions as the generated columns of 20261031110000_video_list_columns.sql and
+// 20261031120000_notes_has_sketch.sql, so list bytes measured here match the real ones.
+const GENERATED = {
+  videos: (r) => ({
+    poster_inline: isInline(r.thumbnail_url),
+    list_thumbnail_url: isInline(r.thumbnail_url) ? null : (r.thumbnail_url ?? null),
+    poster_rev: isInline(r.thumbnail_url) ? md5(r.thumbnail_url) : null,
+  }),
+  notes: (r) => ({ has_sketch: r.sketch != null }),
+};
+
+/** Recomputes the generated columns of a stored row (on load and after each write). */
+function generate(tableName, row) {
+  const fn = GENERATED[tableName];
+  if (fn) Object.assign(row, fn(row));
+  return row;
+}
+
+/** Postgres refuses a client value for a generated column; so does the mock. */
+function refuseGenerated(tableName, body) {
+  const fn = GENERATED[tableName];
+  if (!fn || !body) return;
+  const cols = Object.keys(fn({}));
+  for (const row of Array.isArray(body) ? body : [body]) {
+    const col = cols.find((c) => c in row);
+    if (col) throw pgError(400, '428C9', `column "${col}" can only be updated to DEFAULT`);
+  }
+}
+
 function createDb(data) {
   const tables = structuredClone(data);
   for (const t of EMPTY_TABLES) tables[t] ??= [];
+  for (const t of Object.keys(GENERATED)) for (const r of tables[t] ?? []) generate(t, r);
   return tables;
 }
 
@@ -299,8 +334,8 @@ function insertRows(db, tableName, body, prefer) {
   const merge = /resolution=merge-duplicates/.test(prefer);
   return list.map((raw) => {
     const existing = merge && raw.id ? table.find((r) => r.id === raw.id) : undefined;
-    if (existing) return Object.assign(existing, raw);
-    const row = applyDefaults(db, tableName, raw);
+    if (existing) return generate(tableName, Object.assign(existing, raw));
+    const row = generate(tableName, applyDefaults(db, tableName, raw));
     table.push(row);
     return row;
   });
@@ -319,6 +354,29 @@ function revisionGuard(db, planId, expected) {
   if (!plan) throw pgError(404, 'P0002', 'plan not found');
   return plan.revision === expected ? { plan } : { plan, conflict: { ok: false, revision: plan.revision } };
 }
+
+/** All-or-nothing reorder of `table` rows of one container: position = index in `ids` (0-based). */
+function setPositions(db, table, key, parentId, ids, parentTable, errorName) {
+  const invalid = () => pgError(400, 'P0001', errorName);
+  const list = Array.isArray(ids) ? ids : [];
+  if (!list.length || new Set(list).size !== list.length) throw invalid();
+  if (!db[parentTable].some((p) => p.id === parentId && live(p))) throw invalid();
+  const rows = list.map((id) => db[table].find((r) => r.id === id && r[key] === parentId && live(r)));
+  if (rows.some((r) => !r)) throw invalid();
+  if (list.length > 1000) {
+    throw pgError(
+      400,
+      '23514',
+      `new row for relation "${table}" violates check constraint "${table}_position_check"`,
+    );
+  }
+  rows.forEach((r, i) => {
+    r.position = i;
+  });
+}
+
+/** RPC that return a scalar: PostgREST answers 200 with `null`, not 204. */
+const SCALAR_RPCS = new Set(['poll_votes_signature']);
 
 const RPCS = {
   storage_usage(db) {
@@ -382,17 +440,47 @@ const RPCS = {
       if (v.poll_id === a.p_poll && v.member_id === a.p_member && live(v)) v.archived_at = now();
     }
     const ids = a.p_options ?? [];
+    // Like cast_vote(): only ranking polls store a rank (it feeds poll_votes_signature).
+    const ranking = db.polls.find((p) => p.id === a.p_poll)?.vote_type === 'ranking';
     ids.forEach((optionId, i) =>
       db.poll_votes.push(
         applyDefaults(db, 'poll_votes', {
           poll_id: a.p_poll,
           option_id: optionId,
           member_id: a.p_member,
-          rank: i + 1,
+          rank: ranking ? i + 1 : null,
         }),
       ),
     );
     return ids.length;
+  },
+  // REQ-19.4 · md5 of the live ballots of a live poll, ordered by option then member; null without votes.
+  poll_votes_signature(db, a) {
+    if (!db.polls.some((p) => p.id === a.p_poll && live(p))) return null;
+    const votes = db.poll_votes
+      .filter((v) => live(v) && v.poll_id === a.p_poll)
+      .sort((x, y) =>
+        x.option_id === y.option_id
+          ? x.member_id < y.member_id
+            ? -1
+            : x.member_id > y.member_id
+              ? 1
+              : 0
+          : x.option_id < y.option_id
+            ? -1
+            : 1,
+      );
+    if (!votes.length) return null;
+    return md5(votes.map((v) => `${v.option_id}:${v.member_id}:${v.rank ?? ''}`).join(','));
+  },
+  // REQ-20 · Same rules as the RPC: a live container, a non-empty list without repeats, every id a live item of it.
+  set_track_positions(db, a) {
+    setPositions(db, 'track_items', 'track_id', a.p_track, a.p_ids, 'tracks', 'track_positions_invalid');
+    return null;
+  },
+  set_event_song_positions(db, a) {
+    setPositions(db, 'event_songs', 'event_id', a.p_event, a.p_ids, 'events', 'event_song_positions_invalid');
+    return null;
   },
   archive_calendar_row(db, a) {
     const row = tableOf(db, a.p_table).find((r) => r.id === a.p_id);
@@ -610,6 +698,7 @@ export async function startMock({ port = 54329, host = '127.0.0.1', latency = 0,
             ? Object.fromEntries(url.searchParams)
             : JSON.parse((await readBody(req)).toString() || '{}');
         let result = fn(db, raw);
+        if (SCALAR_RPCS.has(m[1])) return send(200, result ?? null);
         if (result === null || result === undefined) return send(204, undefined);
         if (single && Array.isArray(result)) {
           if (result.length !== 1)
@@ -644,6 +733,7 @@ export async function startMock({ port = 54329, host = '127.0.0.1', latency = 0,
         const wantRep = /return=representation/.test(prefer);
         let rows;
         let status = 200;
+        refuseGenerated(table, body);
         if (method === 'POST') {
           rows = insertRows(db, table, body, prefer);
           status = 201;
@@ -651,7 +741,7 @@ export async function startMock({ port = 54329, host = '127.0.0.1', latency = 0,
           const { page } = runQuery(db, table, new URLSearchParams([...p].filter(([k]) => k !== 'select')));
           rows = page;
           const patch = method === 'PATCH' ? body : { archived_at: now() }; // DELETE = archive, as the trigger does
-          for (const r of rows) Object.assign(r, patch);
+          for (const r of rows) generate(table, Object.assign(r, patch));
         }
         if (!wantRep) return send(204, undefined);
         const out = writeResponse(db, table, rows, p, { single });

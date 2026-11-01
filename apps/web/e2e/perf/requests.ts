@@ -15,7 +15,7 @@ export interface Entry {
   end: number;
   /** Bytes on the wire (headers + body). */
   transfer: number;
-  /** Bytes of the decoded body, read only for the /rest/v1/videos list (M-06). */
+  /** Bytes of the decoded body, read only for the /rest/v1/videos queries (M-06). */
   body?: number;
   failed?: boolean;
 }
@@ -107,15 +107,33 @@ export interface RequestSummary {
   /** Longest waterfall of API calls (REST + RPC + Storage) and of everything. */
   apiSerialDepth: number;
   serialDepth: number;
-  /** M-06 · decoded bytes of the videos list response (the largest, when there are several). */
+  /** M-06 · decoded bytes of the library list response (the videos query that carries `clips(count)`). */
   videosListBytes: number | null;
+  /** REQ-14 · decoded bytes of the missing-posters query (`id, poster_rev, thumbnail_url`), apart from M-06. */
+  postersBytes: number | null;
+  /** REQ-14 · decoded bytes of the poster revisions query (`id, poster_rev`, no image). */
+  posterRevsBytes: number | null;
   /** Compact waterfall for the evidence: «METHOD path start-end transfer status». */
   waterfall: string[];
+  /** Diagnosis only (PERF_WATERFALL_ALL=1): every request in the same compact form. */
+  allWaterfall?: string[];
 }
 
 export function summarizeRequests(entries: Entry[], apiOrigin: string): RequestSummary {
   const api = entries.filter((e) => e.url.startsWith(apiOrigin));
-  const lists = entries.filter((e) => e.body !== undefined).map((e) => e.body!);
+  // The videos table answers three queries now (REQ-14): the list, the poster revisions and the missing posters.
+  // M-06 is the list alone; the posters are measured apart so their weight is not hidden nor mixed into it.
+  const videoBodies = (test: (select: string) => boolean) =>
+    entries
+      .filter(
+        (e) =>
+          e.body !== undefined && test(decodeURIComponent(new URL(e.url).searchParams.get('select') ?? '')),
+      )
+      .map((e) => e.body!);
+  const sumOrNull = (list: number[]) => (list.length ? list.reduce((s, n) => s + n, 0) : null);
+  const lists = videoBodies((s) => s.includes('clips(count)'));
+  const posters = videoBodies((s) => /poster_rev,s*thumbnail_url/.test(s));
+  const revs = videoBodies((s) => /^id,s*poster_rev$/.test(s.trim()));
   return {
     requests: entries.length,
     api: api.length,
@@ -126,9 +144,18 @@ export function summarizeRequests(entries: Entry[], apiOrigin: string): RequestS
     apiSerialDepth: serialDepth(api),
     serialDepth: serialDepth(entries),
     videosListBytes: lists.length ? Math.max(...lists) : null,
+    postersBytes: sumOrNull(posters),
+    posterRevsBytes: sumOrNull(revs),
     waterfall: api.map(
       (e) =>
         `${e.method} ${e.path.replace(/^\/(rest|storage)\/v1\//, '').slice(0, 110)} ${e.start}-${e.end}ms ${e.transfer}B ${e.status}`,
     ),
+    // Diagnosis only: with PERF_WATERFALL_ALL=1 the evidence also lists every request (assets included).
+    allWaterfall: process.env.PERF_WATERFALL_ALL
+      ? entries.map(
+          (e) =>
+            `${e.method} ${e.type} ${e.path.slice(0, 90)} ${e.start}-${e.end}ms ${e.transfer}B ${e.status}`,
+        )
+      : undefined,
   };
 }

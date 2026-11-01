@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 
 export interface TieCandidate {
   id: string;
@@ -75,7 +76,7 @@ export function TieDraw({
                 on ? 'border-kin-300 bg-kin-400/15 shadow-[0_0_24px_-6px_var(--color-kin-300)]' : 'border-line',
               )}
             >
-              {c.thumbnail && <img src={c.thumbnail} alt="" className="aspect-video w-20 shrink-0 rounded-[6px] object-cover" />}
+              {c.thumbnail && <img src={c.thumbnail} crossOrigin={thumbCors(c.thumbnail)} alt="" className="aspect-video w-20 shrink-0 rounded-[6px] object-cover" />}
               <span className="min-w-0 flex-1 truncate font-bold text-washi">{c.title}</span>
               {on && landed && (
                 <motion.span

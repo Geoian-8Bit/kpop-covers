@@ -11,7 +11,7 @@ import {
   type Video,
 } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { PerfProbe, perfMark } from '@/lib/perfProbe';
+import { MARK_PLAYER_READY, PerfProbe, perfMark } from '@/lib/perfProbe';
 import {
   AlertTriangle,
   ChevronsLeft,
@@ -449,6 +449,7 @@ export function StudioPage() {
               onClipSelect={tapClipLine}
               hold={stageHeld}
               onCopyLabel={setCopyLabel}
+              placeholder={video.isPlaceholderData}
             />
           }
         />
@@ -550,6 +551,7 @@ export function StudioPage() {
                 onClipSelect={tapClipLine}
                 hold={stageHeld}
                 onCopyLabel={setCopyLabel}
+                placeholder={video.isPlaceholderData}
               />
             </div>
             <Dormant>
@@ -664,7 +666,9 @@ export function StudioPage() {
       )}
       {current.source === 'youtube' && (
         <LinkFilePanel
-          open={linking}
+          // REQ-16 · A linked entry's placeholder row never feeds the panel's writes (P3): it opens with the real
+          // row. An entry without a file opened from its row before, and still does.
+          open={linking && (fresh || !hasLinkedFile(current))}
           onClose={() => {
             setLinking(false);
             setIncomingFile(null);
@@ -806,6 +810,7 @@ function MediaStage({
   onClipSelect,
   hold = false,
   onCopyLabel,
+  placeholder = false,
 }: {
   video: Video;
   clips: Clip[];
@@ -815,6 +820,11 @@ function MediaStage({
   hold?: boolean;
   /** [4] · Tells the page when the file on the stage is the group's lighter copy (its «Vídeo» row says so). */
   onCopyLabel?: (label: string | null) => void;
+  /**
+   * REQ-16 · `video` is still the library's row (P3): the file plays from it, but nothing that writes is offered
+   * («Subir a la nube», «Vincular archivo») and «not here» isn't concluded until the real row says so.
+   */
+  placeholder?: boolean;
 }) {
   // 5 · Only what the stage itself needs: buffering, speed and the controls' visibility live in small components,
   // so none of them repaints the stage (and the players inside it).
@@ -823,7 +833,7 @@ function MediaStage({
   const ready = usePlayer((s) => s.ready);
   // REQ-03 · The engine is ready to play (YouTube onReady, or the file's metadata): once per video opened.
   useEffect(() => {
-    if (ready) perfMark('player-ready');
+    if (ready) perfMark(MARK_PLAYER_READY);
   }, [ready, video.id]);
   const error = usePlayer((s) => s.error);
   const [reloadKey, setReloadKey] = useState(0);
@@ -842,6 +852,7 @@ function MediaStage({
   // Uploaded videos only: a YouTube entry's file reaches the cloud through the link panel (described and synced).
   // 13 · Too big for the cloud: the «Nube del grupo» row below offers a lighter copy instead.
   const localOnly =
+    !placeholder &&
     video.source === 'upload' &&
     !video.storage_path &&
     file.status === 'ready' &&
@@ -988,7 +999,7 @@ function MediaStage({
     };
   }, [canZoom, boxEl]);
 
-  const missing = playsFile && file.status === 'missing';
+  const missing = !placeholder && playsFile && file.status === 'missing';
   const loading = !ready && !error && !missing;
   const { stageRef, fullscreen, toggleFullscreen, orientation, cycleOrientation, rotated, showOrientation } =
     useFullscreen();

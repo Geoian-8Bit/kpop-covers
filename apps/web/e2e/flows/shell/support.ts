@@ -28,7 +28,12 @@ const THUMB = (() => {
 /** Every YouTube thumbnail answers with the same flat picture. */
 export async function stubThumbnails(page: Page): Promise<void> {
   await page.route(/\/\/(i|img)\.ytimg\.com\//, (route) =>
-    route.fulfill({ status: 200, contentType: 'image/png', body: THUMB }),
+    route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      headers: { 'access-control-allow-origin': '*' }, // REQ-13 · the real host answers CORS
+      body: THUMB,
+    }),
   );
 }
 

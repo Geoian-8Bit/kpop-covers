@@ -2,6 +2,7 @@ import type { Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape
 import { demoError, isLive, mutate, now, query } from './demoDb';
 import type { DemoDb } from './demoDb';
 import { NEW_POLL_RULES } from './shared';
+import { pollVotesSignature } from './pollSignature';
 import type { CloseResult, WishesBackend } from './types';
 
 // Demo twin: the same rules as the database (one live entry per video, «Me apunto» once, close once with a winner
@@ -164,6 +165,13 @@ export const demoWishes: WishesBackend = {
       const wanted = new Set(pollIds);
       const live = new Set((db.polls ?? []).filter((p) => isLive(p) && wanted.has(p.id)).map((p) => p.id));
       return (db.poll_votes ?? []).filter((v) => isLive(v) && live.has(v.poll_id));
+    }),
+  pollVotesSignature: (pollId) =>
+    query((raw) => {
+      const db = raw as WishesDemoDb;
+      // RLS-like: nothing of a poll that is gone.
+      if (!(db.polls ?? []).some((p) => p.id === pollId && isLive(p))) return null;
+      return pollVotesSignature((db.poll_votes ?? []).filter((v) => isLive(v) && v.poll_id === pollId));
     }),
   closePoll: async (pollId, resolve, winnerWishId = null) =>
     mutate((raw): CloseResult => {

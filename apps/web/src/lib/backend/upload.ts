@@ -34,7 +34,8 @@ export async function uploadWithProgress(
     xhr.setRequestHeader('authorization', `Bearer ${token}`);
     xhr.setRequestHeader('apikey', key);
     xhr.setRequestHeader('x-upsert', 'false');
-    xhr.setRequestHeader('cache-control', 'max-age=3600');
+    // REQ-15 · Names are never reused, so a file can be cached for a year.
+    xhr.setRequestHeader('cache-control', 'max-age=31536000');
     xhr.setRequestHeader('content-type', file.type || 'video/mp4');
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) options.onProgress?.(Math.min(1, e.loaded / e.total));

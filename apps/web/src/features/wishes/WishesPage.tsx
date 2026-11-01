@@ -1,7 +1,7 @@
-import type { Member, Poll, PollOption, Wish, WishInterest } from '@coverscape/shared';
+import type { Member, Poll, PollOption, PollVote, Wish, WishInterest } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronRight, Library, ListChecks, Pencil, Plus, Search, Trash2, Vote, X } from 'lucide-react';
-import { lazy, Suspense, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
@@ -25,6 +25,7 @@ import { BagIcon } from '@/features/bags/BagIcon';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped, jelly, snappy } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { ActionMenu } from './ActionMenu';
@@ -221,6 +222,7 @@ function OpenPolls({
                       <img
                         key={o.id}
                         src={w.thumbnail_url}
+                        crossOrigin={thumbCors(w.thumbnail_url)}
                         alt=""
                         loading="lazy"
                         className="aspect-video w-12 rounded-[5px] object-cover ring-2 ring-sumi-900"
@@ -268,7 +270,16 @@ function WishList({
     () => (polls.data ?? []).filter((p) => isPollClosed(p, now)).map((p) => p.id),
     [polls.data, now],
   );
-  const votes = usePollVotes(closedIds, { enabled: closedIds.length > 0 });
+  // REQ-19 · The same download the vote list uses (every poll's ballots, once); the closed ones are picked by select.
+  const allPollIds = useMemo(() => (polls.data ?? []).map((p) => p.id), [polls.data]);
+  const pickClosed = useCallback(
+    (all: PollVote[]) => {
+      const closed = new Set(closedIds);
+      return all.filter((v) => closed.has(v.poll_id));
+    },
+    [closedIds],
+  );
+  const votes = usePollVotes(allPollIds, { enabled: closedIds.length > 0, select: pickClosed });
   const members = useMembers();
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -513,7 +524,7 @@ function WishCard({
   ].filter(Boolean);
 
   const thumb = wish.thumbnail_url && (
-    <img src={wish.thumbnail_url} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
+    <img src={wish.thumbnail_url} crossOrigin={thumbCors(wish.thumbnail_url)} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
   );
   const count = members.data ? shown.length : interested.length;
 
@@ -851,6 +862,7 @@ function PollList({ onCreate }: { onCreate: () => void }) {
                             <img
                               key={o.id}
                               src={w.thumbnail_url}
+                              crossOrigin={thumbCors(w.thumbnail_url)}
                               alt=""
                               loading="lazy"
                               className="aspect-video w-12 rounded-[5px] object-cover ring-2 ring-sumi-900"

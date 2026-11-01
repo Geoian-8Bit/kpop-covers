@@ -22,13 +22,14 @@ import {
   useReorderEventSongs,
   type EventSongView,
 } from '@/data/events';
-import { useVideos } from '@/data/videos';
+import { useJoinedPoster, useVideos } from '@/data/videos';
 import { BagIcon } from '@/features/bags/BagIcon';
 import { SongPickList } from '@/features/bags/Pickers';
 import { positionPatches, reorder } from '@/features/rpd/roundRules';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
 import { useAnnouncer } from '@/lib/reorderA11y';
+import { thumbCors } from '@/lib/thumbCors';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { EventCountdown } from './EventCountdown';
@@ -40,6 +41,8 @@ import { useNow } from './useNow';
 export function EventPage() {
   const { eventId } = useParams();
   const event = useEvent(eventId);
+  // REQ-18 · The repertoire loads in parallel with the event (same key as EventDetail's own call).
+  useEventSongs(eventId);
   if (event.isPending) {
     return (
       <Page className="grid min-h-[60dvh] place-items-center">
@@ -338,6 +341,9 @@ function SongRow({
 }) {
   const controls = useDragControls();
   const title = song.video?.title ?? 'No disponible';
+  // REQ-14 · An uploaded song's poster comes from the poster query, combined by id.
+  const { activeCrew } = useCrew();
+  const poster = useJoinedPoster(song.video, activeCrew?.id);
   return (
     <Reorder.Item
       value={song}
@@ -370,7 +376,7 @@ function SongRow({
         onClick={guardNav}
         className="group flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-[8px] pr-1 hover:bg-washi/[0.04]"
       >
-        <Thumb url={song.video?.thumbnail_url ?? null} />
+        <Thumb url={poster} />
         <span className="min-w-0">
           <span className="block truncate text-[15px] font-bold text-washi group-hover:underline">{title}</span>
           <span className="block truncate text-[12px] text-washi-muted">{song.video?.artist || 'Artista sin especificar'}</span>
@@ -395,7 +401,7 @@ function SongRow({
 
 function Thumb({ url }: { url: string | null }) {
   return url ? (
-    <img src={url} alt="" loading="lazy" className="hidden aspect-video w-14 shrink-0 rounded-[6px] object-cover sm:block" />
+    <img src={url} crossOrigin={thumbCors(url)} alt="" loading="lazy" className="hidden aspect-video w-14 shrink-0 rounded-[6px] object-cover sm:block" />
   ) : (
     <span aria-hidden className="hidden aspect-video w-14 shrink-0 place-items-center rounded-[6px] bg-sumi-800 text-washi-subtle sm:grid">
       <Music className="size-4" />

@@ -1,6 +1,7 @@
 import { drawOrder } from '@/features/bags/drawRules';
 import { cutChars, songYoutubeId, youtubeSongRow } from '@/features/bags/songRules';
 import type { Bag, BagDraw, BagItem, Clip, Track, TrackItem, Wish } from '@coverscape/shared';
+import { withGenerated } from './core.demo';
 import { demoError, mutate, now, query } from './demoDb';
 import type { DemoDb } from './demoDb';
 import type { BagItemView, BagsBackend, ClipWithVideo, NewBagItem } from './types';
@@ -43,9 +44,11 @@ function demoItemView(db: BagsDemoDb, item: BagItem): BagItemView | null {
           id: video.id,
           title: video.title,
           artist: video.artist,
-          thumbnail_url: video.thumbnail_url,
+          thumbnail_url: withGenerated(video).list_thumbnail_url,
           source: video.source,
           youtube_id: video.youtube_id,
+          poster_inline: withGenerated(video).poster_inline,
+          poster_rev: withGenerated(video).poster_rev,
         }
       : null,
     clip:
@@ -152,6 +155,15 @@ export const demoBags: BagsBackend = {
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .map((i) => demoItemView(db, i))
         .filter((i): i is BagItemView => i != null);
+    }),
+  listBagsHolding: (ref) =>
+    query((raw) => {
+      const db = raw as BagsDemoDb;
+      const [column, value] = Object.entries(ref)[0] as [keyof BagItem, string];
+      const liveBags = new Set((db.bags ?? []).map((b) => b.id));
+      return (db.bag_items ?? [])
+        .filter((i) => i.archived_at == null && liveBags.has(i.bag_id) && i[column] === value)
+        .map((i) => i.bag_id);
     }),
   insertBagItem: async (asked) =>
     mutate((raw) => {
@@ -357,6 +369,23 @@ export const demoBags: BagsBackend = {
         .map((c) => demoClipWithVideo(db, c))
         .filter((c): c is ClipWithVideo => c != null);
     }),
+  listPlayableVideos: (ids) =>
+    query((raw) => {
+      const wanted = new Set(ids);
+      return (raw as BagsDemoDb).videos
+        .filter((v) => wanted.has(v.id) && v.archived_at == null)
+        .map(({ id, source, youtube_id, storage_path, file_name, file_size, file_offset_seconds }) => ({
+          id,
+          source,
+          youtube_id,
+          storage_path,
+          file_name,
+          file_size,
+          file_offset_seconds,
+        }));
+    }),
+  // The demo's cloud files are signed one by one from IndexedDB, there is no signature to batch.
+  signVideoFiles: async () => undefined,
   listTracks: () =>
     query((raw) => {
       const db = raw as BagsDemoDb;
@@ -454,12 +483,25 @@ export const demoBags: BagsBackend = {
       const db = raw as BagsDemoDb;
       db.track_items = (db.track_items ?? []).filter((i) => i.id !== id);
     }),
-  setTrackPositions: async (patches) =>
+  setTrackPositions: async (trackId, ids) =>
     mutate((raw) => {
       const db = raw as BagsDemoDb;
-      for (const { id, position } of patches) {
-        const item = db.track_items?.find((i) => i.id === id);
-        if (item) item.position = position;
+      // REQ-20 · Same rules as set_track_positions: a live track, a non-empty list without repeats, every id one of
+      // its items; nothing is written unless all of it holds.
+      const mine = (db.track_items ?? []).filter((i) => i.track_id === trackId && i.archived_at == null);
+      const track = (db.tracks ?? []).find((t) => t.id === trackId && t.archived_at == null);
+      if (
+        !track ||
+        !ids.length ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => !mine.some((i) => i.id === id))
+      ) {
+        throw demoError('track_positions_invalid');
       }
+      if (ids.length > 1000) throw demoError('track_items_position_check', '23514');
+      ids.forEach((id, position) => {
+        const item = mine.find((i) => i.id === id);
+        if (item) item.position = position;
+      });
     }),
 };

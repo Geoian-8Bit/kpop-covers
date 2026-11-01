@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Plus, Search, WifiOff } from 'lucide-react';
-import { PerfProbe, perfMark } from '@/lib/perfProbe';
+import { MARK_LIBRARY_PAINTED, PerfProbe, perfMark } from '@/lib/perfProbe';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Page, useShell } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
@@ -19,6 +19,9 @@ import { useToast } from '@/providers/ToastProvider';
 import { NextEventBanner } from '@/features/events/NextEventBanner';
 import { PinnedClips } from './PinnedClips';
 import { VideoCard, VideoCardSkeleton } from './VideoCard';
+
+// REQ-10 · Read by public/lcp-preload.js; keep both in sync.
+const LCP_THUMB_KEY = 'oneshoot.lcpThumb.v1';
 
 /** Stable empty list, so the memoised row doesn't re-render on every keystroke while clips load or fail. */
 const NO_CLIPS: ClipWithVideo[] = [];
@@ -53,9 +56,6 @@ export function LibraryPage() {
   const [filtering, setFiltering] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
-  // Opening a video is the next step: warm the studio chunk and the YouTube API while the phone is idle.
-  useEffect(() => prefetchStudio(), []);
-
   // Read once per visit: the video you opened last leads the library (it becomes the big card).
   const [recent] = useState(readRecent);
   const filtered = useMemo(() => {
@@ -72,8 +72,24 @@ export function LibraryPage() {
   useEffect(() => {
     if (!hasVideos || paintedMarked.current) return;
     paintedMarked.current = true;
-    requestAnimationFrame(() => perfMark('library-painted'));
+    requestAnimationFrame(() => perfMark(MARK_LIBRARY_PAINTED));
   }, [hasVideos]);
+  // Opening a video is the next step: warm the studio chunk and the YouTube API while the phone is idle. REQ-10 · Once
+  // the cards are on screen: in a cold start that download no longer shares the bandwidth with the list's posters.
+  useEffect(() => (hasVideos ? prefetchStudio() : undefined), [hasVideos]);
+  // REQ-10 · The featured thumbnail is the LCP image. Remember its URL so public/lcp-preload.js can start its download
+  // on the next visit, before the entry JS has run. A poster stored inline (data:) or no thumbnail forgets it.
+  const featuredThumb = hasVideos && !deferredQuery ? (filtered[0]?.thumbnail_url ?? null) : undefined;
+  useEffect(() => {
+    if (featuredThumb === undefined) return; // loading or searching: not the usual big card
+    try {
+      if (featuredThumb && /^https?:\/\//i.test(featuredThumb))
+        localStorage.setItem(LCP_THUMB_KEY, featuredThumb);
+      else localStorage.removeItem(LCP_THUMB_KEY);
+    } catch {
+      // Blocked storage: the preload is only an optimisation.
+    }
+  }, [featuredThumb]);
   // A failed or paused (offline) first load is not an empty library: say so and offer a retry.
   const videosFailed = !videos.data && (videos.isError || videos.fetchStatus === 'paused');
   const quickFailed = !quick.data && (quick.isError || quick.fetchStatus === 'paused');
@@ -187,7 +203,9 @@ export function LibraryPage() {
                 ))}
               </AnimatePresence>
               {filtered.length === 0 && (
-                <p className="col-span-full py-10 text-center text-washi-muted">Nada coincide con “{query}”.</p>
+                <p className="col-span-full py-10 text-center text-washi-muted">
+                  Nada coincide con “{query}”.
+                </p>
               )}
             </motion.div>
           )}
@@ -234,7 +252,10 @@ function LoadError({
   const offline = query.fetchStatus === 'paused' || !navigator.onLine;
   const Icon = offline ? WifiOff : AlertTriangle;
   return (
-    <div role="alert" className={cn('flex flex-col items-center text-center', compact ? 'py-4' : 'px-6 py-14')}>
+    <div
+      role="alert"
+      className={cn('flex flex-col items-center text-center', compact ? 'py-4' : 'px-6 py-14')}
+    >
       <Icon className={cn('size-8', offline ? 'text-washi-muted' : 'text-enji-300')} />
       <p className={cn('mt-3 font-display font-bold', compact ? 'text-lg' : 'text-2xl')}>
         {offline ? 'Sin conexión' : `No pudimos cargar ${what}`}
@@ -242,7 +263,13 @@ function LoadError({
       <p className="mt-1.5 max-w-[46ch] text-sm text-washi-muted">
         {offline ? 'Se cargará en cuanto vuelva la conexión.' : 'Revisa la conexión e inténtalo de nuevo.'}
       </p>
-      <Button size={compact ? 'sm' : 'md'} variant="secondary" className="mt-4" loading={query.isFetching} onClick={() => void query.refetch()}>
+      <Button
+        size={compact ? 'sm' : 'md'}
+        variant="secondary"
+        className="mt-4"
+        loading={query.isFetching}
+        onClick={() => void query.refetch()}
+      >
         Reintentar
       </Button>
     </div>
@@ -251,12 +278,19 @@ function LoadError({
 
 function EmptyLibrary({ onAdd }: { onAdd: () => void }) {
   return (
-    <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex flex-col items-center px-6 py-14 text-center">
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="flex flex-col items-center px-6 py-14 text-center"
+    >
       <Seal glyph="舞" size={72} stamp />
-      <h3 className="mt-6 font-display text-[28px] font-bold leading-tight">Empieza con vuestra próxima cover</h3>
+      <h3 className="mt-6 font-display text-[28px] font-bold leading-tight">
+        Empieza con vuestra próxima cover
+      </h3>
       <p className="mt-3 max-w-[46ch] text-washi-muted">
-        Pega el enlace del dance practice o sube el vídeo. Luego marca las partes difíciles y guárdalas como clips para todo
-        el grupo.
+        Pega el enlace del dance practice o sube el vídeo. Luego marca las partes difíciles y guárdalas como
+        clips para todo el grupo.
       </p>
       <Button size="lg" className="mt-7" onClick={onAdd}>
         <Plus className="size-5" /> Añadir el primer vídeo

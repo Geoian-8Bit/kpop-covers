@@ -1,0 +1,19 @@
+/* REQ-09 · The splash seal, moved from a `motion` animate (JS on every frame, while the main thread parses the app)
+   to CSS keyframes with the same values. 1.4 s, the same easeInOut curve, forever. The global reduced-motion rule
+   in index.css still holds the seal still, as before. */
+.splash-seal {
+  /* Resting pose (also the one that stays with reduced motion, where the animation is cut short). */
+  transform: scale(1) rotate(-4deg);
+  will-change: transform;
+  animation: splash-seal 1.4s cubic-bezier(0.42, 0, 0.58, 1) infinite;
+}
+
+@keyframes splash-seal {
+  0%,
+  100% {
+    transform: scale(1) rotate(-4deg);
+  }
+  50% {
+    transform: scale(0.92) rotate(-8deg);
+  }
+}

@@ -1,12 +1,51 @@
 import type { Clip, Member, Take, Video } from '@coverscape/shared';
 import { TAKE_BUCKET, VIDEO_BUCKET, supabase } from '../supabase';
 import { must } from './shared';
-import type { Backend, ClipWithVideo, VideoWithClipCount } from './types';
+import { SIGN_SECONDS, memoSigned } from './signedUrls';
+import type { Backend, ClipWithVideo, VideoPoster, VideoPosterRev, VideoWithClipCount } from './types';
 import { isDuplicate, uploadFailure, uploadWithProgress } from './upload';
 
-/** Only what the library cards and the add dialog read (file_name: «con archivo», F1); no audit columns. */
+/**
+ * Only what the library cards and the add dialog read (file_name: «con archivo», F1); no audit columns.
+ * REQ-14 · No inline poster (`list_thumbnail_url` is null for one; the poster query brings it, combined by id).
+ * REQ-16 · Plus the file's small columns (~150 B a row), so the studio opens an uploaded video from this row.
+ */
 const LIBRARY_COLUMNS =
-  'id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at, file_name, aspect_ratio';
+  'id, crew_id, title, artist, source, youtube_id, thumbnail_url:list_thumbnail_url, poster_inline, poster_rev, ' +
+  'duration_seconds, created_at, file_name, aspect_ratio, storage_path, file_size, file_offset_seconds, ' +
+  'file_duration_seconds, updated_at';
+
+/**
+ * REQ-16 · The full row, column by column (a new column never travels by surprise). REQ-14 · Without the inline
+ * poster (`thumbnail_url` is `list_thumbnail_url`, as in the list): nothing that reads this row (`getVideo`: the
+ * studio, the file checks) shows it; cards and joined rows combine it from the poster query. Writes still answer
+ * with the whole row, so the poster map follows them (`rememberPoster`).
+ */
+const VIDEO_COLUMNS =
+  'id, crew_id, title, artist, source, youtube_id, thumbnail_url:list_thumbnail_url, list_thumbnail_url, ' +
+  'poster_inline, poster_rev, duration_seconds, created_at, created_by, updated_at, archived_at, file_name, ' +
+  'file_size, storage_path, file_offset_seconds, file_duration_seconds, aspect_ratio';
+
+/** REQ-17 · A note as listed: everything but the drawing (`has_sketch` says whether it has one). */
+// One literal (not joined) so supabase-js can type the row from it.
+const NOTE_LIST_COLUMNS =
+  'id, crew_id, video_id, at_seconds, body, author_member_id, take_id, take_seconds, category, for_member_id, status, has_sketch, created_at, created_by, updated_at, archived_at';
+
+/** REQ-15 · One signature per file and window: the same URL keeps the browser's HTTP cache of the file usable. */
+async function signed(bucket: string, path: string): Promise<string | null> {
+  try {
+    return await memoSigned(`${bucket}/${path}`, async () => {
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGN_SECONDS);
+      if (error) throw error;
+      return { url: data.signedUrl, expiresAt: Date.now() + SIGN_SECONDS * 1000 };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** New files are never overwritten (each name is unique), so they can be cached for a year (REQ-15). */
+const CACHE_SECONDS = '31536000';
 
 export const supabaseBackend: Backend = {
   async joinGroup() {
@@ -26,8 +65,41 @@ export const supabaseBackend: Backend = {
     );
     return data as VideoWithClipCount[];
   },
+  async listPosterRevs(crewId) {
+    const data = must(
+      await supabase.from('videos').select('id, poster_rev').eq('crew_id', crewId).eq('poster_inline', true),
+    );
+    return data.filter((r): r is VideoPosterRev => r.poster_rev != null);
+  },
+  async listPosters(ids) {
+    // In batches of 100 ids, so a first visit to a big library never builds an over-long URL.
+    const batches: string[][] = [];
+    for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));
+    const answers = await Promise.all(
+      batches.map(async (batch) =>
+        must(
+          await supabase
+            .from('videos')
+            .select('id, poster_rev, thumbnail_url')
+            .in('id', batch)
+            .eq('poster_inline', true),
+        ),
+      ),
+    );
+    return answers.flat().filter((r): r is VideoPoster => r.poster_rev != null && r.thumbnail_url != null);
+  },
+  async listCrewPosters(crewId) {
+    const data = must(
+      await supabase
+        .from('videos')
+        .select('id, poster_rev, thumbnail_url')
+        .eq('crew_id', crewId)
+        .eq('poster_inline', true),
+    );
+    return data.filter((r): r is VideoPoster => r.poster_rev != null && r.thumbnail_url != null);
+  },
   async getVideo(id) {
-    const data = must(await supabase.from('videos').select('*').eq('id', id).maybeSingle());
+    const data = must(await supabase.from('videos').select(VIDEO_COLUMNS).eq('id', id).maybeSingle());
     return data as Video | null;
   },
   async insertVideo(row) {
@@ -71,7 +143,15 @@ export const supabaseBackend: Backend = {
     must(await supabase.from('clips').delete().eq('id', id));
   },
   async listNotes(videoId) {
-    return must(await supabase.from('notes').select('*').eq('video_id', videoId).order('at_seconds'));
+    return must(
+      await supabase.from('notes').select(NOTE_LIST_COLUMNS).eq('video_id', videoId).order('at_seconds'),
+    );
+  },
+  async listNoteSketches(videoId) {
+    const data = must(
+      await supabase.from('notes').select('id, sketch').eq('video_id', videoId).eq('has_sketch', true),
+    );
+    return data.filter((r): r is { id: string; sketch: string } => r.sketch != null);
   },
   async insertNote(row) {
     return must(await supabase.from('notes').insert(row).select().single());
@@ -87,17 +167,14 @@ export const supabaseBackend: Backend = {
     // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
     const { error } = await supabase.storage
       .from(VIDEO_BUCKET)
-      .upload(path, file, { contentType: file.type || 'video/mp4' });
+      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS });
     if (!error) return { ok: true, path };
     console.error('[uploadFile]', error);
     // 409: the file is already there (an earlier try got through; the row just didn't get its path).
     if (isDuplicate(error)) return { ok: false, reason: 'exists' };
     return { ok: false, reason: uploadFailure(error) };
   },
-  async signedUrl(path) {
-    const { data, error } = await supabase.storage.from(VIDEO_BUCKET).createSignedUrl(path, 6 * 60 * 60);
-    return error ? null : data.signedUrl;
-  },
+  signedUrl: (path) => signed(VIDEO_BUCKET, path),
   async listMembers() {
     const data = must(await supabase.from('members').select('*').order('created_at'));
     return data as Member[];
@@ -149,7 +226,7 @@ export const supabaseBackend: Backend = {
   async uploadTakeFile(path, file) {
     const { error } = await supabase.storage
       .from(TAKE_BUCKET)
-      .upload(path, file, { contentType: file.type || 'video/mp4' });
+      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS });
     if (!error) return { ok: true, path };
     console.error('[uploadTakeFile]', error);
     const e = error as { status?: number; statusCode?: string; message?: string };
@@ -158,10 +235,7 @@ export const supabaseBackend: Backend = {
     }
     return { ok: false, reason: uploadFailure(error) };
   },
-  async signedTakeUrl(path) {
-    const { data, error } = await supabase.storage.from(TAKE_BUCKET).createSignedUrl(path, 6 * 60 * 60);
-    return error ? null : data.signedUrl;
-  },
+  signedTakeUrl: (path) => signed(TAKE_BUCKET, path),
   async storageUsage() {
     const data = must(await supabase.rpc('storage_usage'));
     const usage = (data ?? {}) as { takes?: number; total?: number };

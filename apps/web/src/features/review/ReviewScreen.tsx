@@ -21,7 +21,14 @@ import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { askWho, currentMemberId, useMe, useMembers } from '@/data/members';
-import { useCreateNote, useDeleteNote, useNotes, useUpdateNote } from '@/data/notes';
+import {
+  isSketchPending,
+  useCreateNote,
+  useDeleteNote,
+  useNoteSketches,
+  useNotes,
+  useUpdateNote,
+} from '@/data/notes';
 import { useUpdateTakeReview, type TakeItem, type TakeReviewPatch } from '@/data/takes';
 import { useFileSource } from '@/features/studio/fileSource';
 import { SaveClipDialog, type ClipDraft } from '@/features/studio/SaveClipDialog';
@@ -252,7 +259,11 @@ export function ReviewScreen({
   // ── Notes of this take ──
   const notes = useMemo(() => takeNotes(notesQuery.data ?? [], take.id), [notesQuery.data, take.id]);
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
-  const openNote = openNoteId ? (notes.find((n) => n.id === openNoteId) ?? null) : null;
+  // REQ-17 · Notes carry their drawing combined by id; one opened before its drawing arrived waits for it (no
+  // indicator) and opens with it.
+  const noteSketches = useNoteSketches(video.id);
+  const foundNote = openNoteId ? (notes.find((n) => n.id === openNoteId) ?? null) : null;
+  const openNote = foundNote && !isSketchPending(foundNote, noteSketches) ? foundNote : null;
   const [sketchShown, setSketchShown] = useState(true);
   // P1 · A boolean of the clock, not the clock: the screen repaints when the take reaches or leaves the note's
   // moment, not 60 times a second.

@@ -1,6 +1,7 @@
 // REQ-03 · Unit tests of the simulated Supabase: select/alias/embeds, filters, shaping, writes, RPC, storage, CORS.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { startMock } from './supabaseMock.mjs';
 
 let mock;
@@ -298,4 +299,127 @@ test('unknown table is 404 with a PostgREST error body', async () => {
   const res = await get('nope?select=*');
   assert.equal(res.status, 404);
   assert.equal((await res.json()).code, '42P01');
+});
+
+const rpcRaw = (fn, args) =>
+  fetch(`${base}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(args ?? {}),
+  });
+const writeJson = (p, method, body) =>
+  get(p, {
+    method,
+    headers: { 'content-type': 'application/json', prefer: 'return=representation' },
+    body: JSON.stringify(body),
+  });
+
+test('REQ-14/17 generated columns: computed on load and after writes, never writable', async () => {
+  for (const v of await json('videos?select=thumbnail_url,poster_inline,list_thumbnail_url,poster_rev')) {
+    const inline = typeof v.thumbnail_url === 'string' && v.thumbnail_url.startsWith('data:');
+    assert.equal(v.poster_inline, inline);
+    assert.equal(v.list_thumbnail_url, inline ? null : v.thumbnail_url);
+    assert.equal(v.poster_rev === null, !inline);
+  }
+  const poster = 'data:image/jpeg;base64,QUJDRA==';
+  const [up] = await (
+    await writeJson('videos', 'POST', {
+      title: 'Prueba subido',
+      source: 'upload',
+      file_name: 'a.mp4',
+      thumbnail_url: poster,
+    })
+  ).json();
+  assert.equal(up.poster_inline, true);
+  assert.equal(up.list_thumbnail_url, null);
+  assert.equal(up.poster_rev, createHash('md5').update(poster).digest('hex'));
+  const yt = 'https://i.ytimg.com/vi/zzMockPost1/hqdefault.jpg';
+  const [patched] = await (await writeJson(`videos?id=eq.${up.id}`, 'PATCH', { thumbnail_url: yt })).json();
+  assert.deepEqual(
+    [patched.poster_inline, patched.list_thumbnail_url, patched.poster_rev],
+    [false, yt, null],
+  );
+  const inlineOnly = await json('videos?select=id&poster_inline=is.true');
+  assert.ok(!inlineOnly.some((r) => r.id === up.id));
+  const refused = await writeJson(`videos?id=eq.${up.id}`, 'PATCH', { poster_rev: 'x' });
+  assert.equal(refused.status, 400);
+  assert.equal((await refused.json()).code, '428C9');
+
+  const videoId = (await json('videos?select=id&limit=1'))[0].id;
+  const [note] = await (
+    await writeJson('notes', 'POST', { video_id: videoId, at_seconds: 1, body: 'n', sketch: poster })
+  ).json();
+  assert.equal(note.has_sketch, true);
+  const [cleared] = await (await writeJson(`notes?id=eq.${note.id}`, 'PATCH', { sketch: null })).json();
+  assert.equal(cleared.has_sketch, false);
+  assert.equal(
+    (await writeJson('notes', 'POST', { video_id: videoId, at_seconds: 2, body: 'n', has_sketch: true }))
+      .status,
+    400,
+  );
+});
+
+test('REQ-19.4 poll_votes_signature: changes on vote, change and withdrawal; null without votes', async () => {
+  // A fresh ranking poll with two options, so the expected md5 is known.
+  const [poll] = await (
+    await writeJson('polls', 'POST', { title: 'Prueba firma', vote_type: 'ranking' })
+  ).json();
+  const wishes = await json('wishes?select=id&limit=2');
+  const opts = await (
+    await writeJson(
+      'poll_options',
+      'POST',
+      wishes.map((w) => ({ poll_id: poll.id, wish_id: w.id })),
+    )
+  ).json();
+  const [member] = await json('members?select=id&limit=1');
+  const sig = async () => {
+    const res = await rpcRaw('poll_votes_signature', { p_poll: poll.id });
+    assert.equal(res.status, 200);
+    return res.json();
+  };
+  await rpcRaw('cast_vote', { p_poll: poll.id, p_member: member.id, p_options: [opts[0].id] });
+  const s1 = await sig();
+  assert.equal(s1, createHash('md5').update(`${opts[0].id}:${member.id}:1`).digest('hex'));
+  assert.equal(await sig(), s1, 'stable while nothing changes');
+  await rpcRaw('cast_vote', { p_poll: poll.id, p_member: member.id, p_options: [opts.at(-1).id] });
+  const s2 = await sig();
+  assert.notEqual(s2, s1);
+  await rpcRaw('cast_vote', { p_poll: poll.id, p_member: member.id, p_options: [] });
+  assert.notEqual(await sig(), s2);
+  for (const v of mock.db.poll_votes.filter((x) => x.poll_id === poll.id))
+    v.archived_at ??= new Date().toISOString();
+  assert.equal(await sig(), null);
+  const unknown = await rpcRaw('poll_votes_signature', { p_poll: '00000000-0000-4000-8000-000000000000' });
+  assert.equal(await unknown.json(), null);
+});
+
+test('REQ-20 set_track_positions / set_event_song_positions: order by index, invalid lists change nothing', async () => {
+  for (const [fn, table, key, parent, errorName] of [
+    ['set_track_positions', 'track_items', 'track_id', 'p_track', 'track_positions_invalid'],
+    ['set_event_song_positions', 'event_songs', 'event_id', 'p_event', 'event_song_positions_invalid'],
+  ]) {
+    const byParent = Object.groupBy(await json(`${table}?select=id,${key},position`), (r) => r[key]);
+    const [parentId, items] = Object.entries(byParent).find(([, rows]) => rows.length >= 2);
+    const other = (await json(`${table}?select=id&${key}=neq.${parentId}&limit=1`))[0];
+    const ids = items.map((r) => r.id).reverse();
+    const ok = await rpcRaw(fn, { [parent]: parentId, p_ids: ids });
+    assert.equal(ok.status, 204, fn);
+    const after = await json(`${table}?select=id&${key}=eq.${parentId}&order=position`);
+    assert.deepEqual(
+      after.map((r) => r.id),
+      ids,
+    );
+    const snapshot = JSON.stringify(after);
+    const badLists = [[], [ids[0], ids[0]], other ? [ids[0], other.id] : ['nope']];
+    for (const bad of badLists) {
+      const res = await rpcRaw(fn, { [parent]: parentId, p_ids: bad });
+      assert.equal(res.status, 400);
+      assert.equal((await res.json()).message, errorName);
+    }
+    assert.equal(
+      JSON.stringify(await json(`${table}?select=id&${key}=eq.${parentId}&order=position`)),
+      snapshot,
+    );
+  }
 });

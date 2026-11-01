@@ -1,12 +1,13 @@
 import { motion } from 'motion/react';
 import { ChevronRight, MapPin, Plus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { useEvents, type EventWithCount } from '@/data/events';
+import { prefetchEvent, useEvents, type EventWithCount } from '@/data/events';
 import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped } from '@/lib/motion';
@@ -103,11 +104,14 @@ export function EventsPage() {
 function EventCard({ event, index, now, past }: { event: EventWithCount; index: number; now: Date; past?: boolean }) {
   const date = new Date(event.starts_at);
   const c = countdown(event.starts_at, now);
+  const queryClient = useQueryClient();
   return (
     <motion.li variants={cardIn} custom={index}>
       <Link
         to={`/eventos/${event.id}`}
         onClick={guardNav}
+        // REQ-18 · A real press warms the repertoire (a scroll sweeping over cards warms none).
+        onPointerDown={() => prefetchEvent(queryClient, event.id)}
         className={cn(
           'group flex min-h-[84px] items-center gap-4 rounded-[12px] border border-line bg-sumi-900/60 px-3.5 py-3 transition-colors hover:border-line-strong hover:bg-washi/[0.04] active:scale-[0.99]',
           past && 'opacity-70',

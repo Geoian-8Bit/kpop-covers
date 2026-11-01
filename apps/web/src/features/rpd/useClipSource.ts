@@ -1,6 +1,7 @@
-import { hasLinkedFile, type Video } from '@coverscape/shared';
+import { hasLinkedFile } from '@coverscape/shared';
 import { useEffect, useState } from 'react';
-import { isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
+import { forgetVideoUrl, isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
+import type { PlayableVideo } from '@/lib/backend/bags';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 
 /**
@@ -18,13 +19,12 @@ export type ClipSource =
   | { status: 'file'; url: string; offset: number }
   | { status: 'missing' };
 
-type Playable = Pick<
-  Video,
-  'id' | 'source' | 'youtube_id' | 'storage_path' | 'file_name' | 'file_size' | 'file_offset_seconds'
->;
+type Playable = PlayableVideo;
 
 const cache = new Map<string, Promise<ClipSource>>();
 const objectUrls = new Set<string>();
+/** REQ-15 · The cloud path behind each signed URL handed out this round (the signature is remembered for hours). */
+const signedPaths = new Map<string, string>();
 
 function cacheKey(video: Playable): string {
   return [
@@ -45,6 +45,8 @@ async function resolveSource(video: Playable): Promise<{ source: ClipSource; las
   const wantsFile = video.source === 'upload' || hasLinkedFile(video);
   if (!wantsFile) return { source: fallback, lasting: true };
   const offset = video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0;
+  // REQ-15 · The signature starts together with the device lookup (it is dropped if a copy is there).
+  const signing = video.storage_path ? signedVideoUrl(video.storage_path).catch(() => null) : null;
   try {
     const blob = await loadLocalVideo(video.id);
     const stale = blob != null && isStaleCopy(video);
@@ -57,9 +59,12 @@ async function resolveSource(video: Playable): Promise<{ source: ClipSource; las
       objectUrls.add(url);
       return { source: { status: 'file', url, offset }, lasting: true };
     }
-    if (!video.storage_path) return { source: fallback, lasting: true };
-    const url = await signedVideoUrl(video.storage_path);
-    if (url) return { source: { status: 'file', url, offset }, lasting: true };
+    if (!signing) return { source: fallback, lasting: true };
+    const url = await signing;
+    if (url) {
+      signedPaths.set(url, video.storage_path!);
+      return { source: { status: 'file', url, offset }, lasting: true };
+    }
   } catch {
     /* fall back below */
   }
@@ -81,9 +86,19 @@ export function clipSourceFor(video: Playable): Promise<ClipSource> {
   return pending;
 }
 
+/**
+ * REQ-15 · The song's file failed to play from `url`: if it was a remembered signature, forget it, so the next
+ * round signs again (each round signed afresh before). This round keeps its source, as it did.
+ */
+export function forgetFailedClipSource(url: string): void {
+  const path = signedPaths.get(url);
+  if (path) forgetVideoUrl(path);
+}
+
 /** The round screen closed: forget the resolved sources and free the device copies' URLs. */
 export function releaseClipSources(): void {
   cache.clear();
+  signedPaths.clear();
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls.clear();
 }

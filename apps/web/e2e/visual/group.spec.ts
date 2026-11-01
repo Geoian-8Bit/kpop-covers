@@ -23,7 +23,7 @@ async function stubThumbnails(page: Page) {
   const png = new PNG({ width: 160, height: 90 });
   for (let i = 0; i < png.data.length; i += 4) png.data.set([58, 58, 74, 255], i);
   const body = PNG.sync.write(png);
-  await page.route(/ytimg\.com|ggpht\.com/, (route) => route.fulfill({ contentType: 'image/png', body }));
+  await page.route(/ytimg\.com|ggpht\.com/, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body }));
 }
 
 /**

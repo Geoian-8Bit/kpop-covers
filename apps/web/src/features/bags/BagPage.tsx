@@ -42,6 +42,8 @@ import { MemberSeal } from '@/features/members/MembersUI';
 import { newDraft, setRoundDraft } from '@/features/rpd/roundDraft';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
+import { useJoinedPoster } from '@/data/videos';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { AddItemsDialog } from './AddItemsDialog';
@@ -96,6 +98,9 @@ export function shownFor(
 export function BagPage() {
   const { bagId } = useParams();
   const bags = useBags();
+  // REQ-18 · The items and the history start loading with the list, not after it (same keys as BagView's own calls).
+  useBagItems(bagId);
+  useBagDraws(bagId);
   const bag = bags.data?.find((b) => b.id === bagId);
 
   if (bags.isPending) {
@@ -716,6 +721,9 @@ function BagLists({
 }
 
 function ItemThumb({ item }: { item: BagItemView }) {
+  // REQ-14 · An uploaded song's poster comes from the poster query, combined by id.
+  const { activeCrew } = useCrew();
+  const videoPoster = useJoinedPoster(item.video, activeCrew?.id);
   if (item.member) return <MemberSeal member={item.member} />;
   if (item.clip) {
     return (
@@ -725,13 +733,13 @@ function ItemThumb({ item }: { item: BagItemView }) {
       />
     );
   }
-  const src = item.video?.thumbnail_url ?? item.wish?.thumbnail_url ?? item.thumbnail_url;
+  const src = videoPoster ?? item.wish?.thumbnail_url ?? item.thumbnail_url;
   return (
     <span
       aria-hidden
       className="relative aspect-video w-14 shrink-0 overflow-hidden rounded-[6px] bg-sumi-950"
     >
-      {src && <img src={src} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
+      {src && <img src={src} crossOrigin={thumbCors(src)} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />}
     </span>
   );
 }

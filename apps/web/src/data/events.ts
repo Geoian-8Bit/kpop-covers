@@ -1,7 +1,7 @@
 import type { CrewEvent } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { bagKeys } from '@/data/bags';
-import { optionsRow, trackKeys } from '@/data/tracks';
+import { bagKeys } from '@/data/bagKeys';
+import { optionsRow, trackKeys } from '@/data/trackKeys';
 import { appendPositions, chorusClips, uniqueName } from '@/features/events/eventRules';
 import { DEFAULT_ROUND_OPTIONS } from '@/features/rpd/roundRules';
 import { bagsBackend } from '@/lib/backend/bags';
@@ -15,6 +15,7 @@ import {
 import { IS_DEMO } from '@/lib/backend/mode';
 import { parseEvents, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
+import { writePositions } from './positionsRetry';
 
 export type { EventSongView, EventWithCount } from '@/lib/backend/events';
 
@@ -75,6 +76,11 @@ export function useEventSongs(id: string | undefined) {
     enabled: Boolean(id),
     queryFn: () => eventsBackend.listEventSongs(id!),
   });
+}
+
+/** REQ-18 · A press on an event's card: its repertoire starts loading (a cached one isn't fetched again). */
+export function prefetchEvent(queryClient: QueryClient, id: string): void {
+  void queryClient.prefetchQuery({ queryKey: eventKeys.songs(id), queryFn: () => eventsBackend.listEventSongs(id) });
 }
 
 export function useCreateEvent() {
@@ -154,8 +160,22 @@ export function useReorderEventSongs() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ['event-reorder'],
-    mutationFn: ({ patches }: { eventId: string; ordered: EventSongView[]; patches: { id: string; position: number }[] }) =>
-      eventsBackend.setEventSongPositions(patches),
+    // REQ-20 · One RPC with the whole list in its new order (it was one request per song that moved); a song
+    // archived meanwhile on another phone is left out and the rest is ordered, as before (`writePositions`).
+    mutationFn: ({
+      eventId,
+      ordered,
+    }: {
+      eventId: string;
+      ordered: EventSongView[];
+      patches: { id: string; position: number }[];
+    }) =>
+      writePositions(
+        ordered.map((song) => song.id),
+        (ids) => eventsBackend.setEventSongPositions(eventId, ids),
+        async () => (await eventsBackend.listEventSongs(eventId)).map((song) => song.id),
+        'event_song_positions_invalid',
+      ),
     onMutate: async ({ eventId, ordered }) => {
       const key = eventKeys.songs(eventId);
       await queryClient.cancelQueries({ queryKey: key });
@@ -194,7 +214,10 @@ export function useCreateCandidatesBag() {
       }
       return bag;
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: bagKeys.all }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: bagKeys.all });
+      void queryClient.invalidateQueries({ queryKey: bagKeys.holdingAll });
+    },
   });
 }
 

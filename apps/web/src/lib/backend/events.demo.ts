@@ -1,4 +1,5 @@
 import type { CrewEvent, EventSong, TakeReaction } from '@coverscape/shared';
+import { withGenerated } from './core.demo';
 import { demoError, isLive, mutate, now, query } from './demoDb';
 import type { DemoDb } from './demoDb';
 import type { EventSongView, EventsBackend, NewEvent } from './types';
@@ -37,9 +38,11 @@ function demoSongView(db: EventsDemoDb, song: EventSong): EventSongView | null {
       id: video.id,
       title: video.title,
       artist: video.artist,
-      thumbnail_url: video.thumbnail_url,
+      thumbnail_url: withGenerated(video).list_thumbnail_url,
       source: video.source,
       youtube_id: video.youtube_id,
+      poster_inline: withGenerated(video).poster_inline,
+      poster_rev: withGenerated(video).poster_rev,
     },
   };
 }
@@ -144,20 +147,27 @@ export const demoEvents: EventsBackend = {
       const song = (raw as EventsDemoDb).event_songs?.find((s) => s.id === id);
       if (song && isLive(song)) song.archived_at = now();
     }),
-  setEventSongPositions: async (patches) =>
+  setEventSongPositions: async (eventId, ids) =>
     mutate((raw) => {
       const db = raw as EventsDemoDb;
-      for (const { id, position } of patches) {
-        if (!(position >= 0 && position <= 999)) {
-          throw demoError(
-            'new row for relation "event_songs" violates check constraint "event_songs_position_check"',
-            '23514',
-          );
-        }
-        const song = db.event_songs?.find((s) => s.id === id && isLive(s));
-        if (song && !liveEvent(db, song.event_id)) throw demoError('event_not_found');
-        if (song) song.position = position;
+      // REQ-20 · Same rules as set_event_song_positions: a live event, a non-empty list without repeats, every id one
+      // of its live songs; nothing is written unless all of it holds. Same order of checks and the same error for
+      // all of them (an archived event too), as the RPC raises.
+      const mine = (db.event_songs ?? []).filter((s) => s.event_id === eventId && isLive(s));
+      if (!ids.length || new Set(ids).size !== ids.length || !liveEvent(db, eventId)) {
+        throw demoError('event_song_positions_invalid');
       }
+      if (ids.some((id) => !mine.some((s) => s.id === id))) throw demoError('event_song_positions_invalid');
+      if (ids.length > 1000) {
+        throw demoError(
+          'new row for relation "event_songs" violates check constraint "event_songs_position_check"',
+          '23514',
+        );
+      }
+      ids.forEach((id, position) => {
+        const song = mine.find((s) => s.id === id);
+        if (song) song.position = position;
+      });
     }),
   listReactions: (videoId) =>
     query((raw) => {

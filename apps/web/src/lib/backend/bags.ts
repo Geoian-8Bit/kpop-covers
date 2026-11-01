@@ -7,6 +7,7 @@ import type { BagsBackend } from './types';
 export const bagsBackend: BagsBackend = IS_DEMO ? demoBags : supabaseBags;
 
 export type {
+  BagHoldingRef,
   BagItemClip,
   BagItemMember,
   BagItemVideo,
@@ -17,6 +18,7 @@ export type {
   BagWithCount,
   NewBag,
   NewBagItem,
+  PlayableVideo,
   TrackItemView,
   TrackOptionsRow,
   TrackPatch,

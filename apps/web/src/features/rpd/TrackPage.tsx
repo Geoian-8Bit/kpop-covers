@@ -50,6 +50,8 @@ import { SaveTrackDialog } from './SaveTrackDialog';
 export function TrackPage() {
   const { trackId } = useParams();
   const track = useTrack(trackId);
+  // REQ-18 · The clips load in parallel with the track (same key as TrackEditor's own call).
+  useTrackItems(trackId);
   if (track.isPending) {
     return (
       <Page className="grid min-h-[60dvh] place-items-center">
@@ -113,10 +115,9 @@ function TrackEditor({ track }: { track: Track }) {
   }
 
   function commit(next: TrackItemView[]) {
-    const patches = positionPatches(next);
-    if (!patches.length) return;
+    if (!positionPatches(next).length) return;
     reorderMut.mutate(
-      { trackId: track.id, ordered: next, patches },
+      { trackId: track.id, ordered: next },
       { onError: (err) => toast(bagError(err), 'error') },
     );
   }

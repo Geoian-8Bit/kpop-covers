@@ -4,12 +4,25 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { currentMemberId, useMembers } from '@/data/members';
-import { useCreateNote, useDeleteNote, useUpdateNote } from '@/data/notes';
+import {
+  isSketchPending,
+  useCreateNote,
+  useDeleteNote,
+  useNoteSketches,
+  useUpdateNote,
+  withSketch,
+} from '@/data/notes';
 import { categoryLabel, isValidSketch, noteStatus } from '@/features/review/reviewRules';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 
-const IDEAS = ['Limpiar este paso', 'Brazos más arriba', 'Ir a tempo', 'Cambio de formación', 'Mirar a cámara'];
+const IDEAS = [
+  'Limpiar este paso',
+  'Brazos más arriba',
+  'Ir a tempo',
+  'Cambio de formación',
+  'Mirar a cámara',
+];
 
 export interface NoteTarget {
   /** Existing note to read or edit, or null for a new one. */
@@ -19,7 +32,15 @@ export interface NoteTarget {
 }
 
 /** Write, read, edit or delete a note pinned to a moment of the song. */
-export function NoteDialog({ target, onClose, video }: { target: NoteTarget | null; onClose: () => void; video: Video }) {
+export function NoteDialog({
+  target,
+  onClose,
+  video,
+}: {
+  target: NoteTarget | null;
+  onClose: () => void;
+  video: Video;
+}) {
   const create = useCreateNote();
   const update = useUpdateNote();
   const members = useMembers();
@@ -34,6 +55,11 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
   if (target) lastTarget.current = target;
   const shown = target ?? lastTarget.current;
   const note = shown?.note ?? null;
+  // REQ-17 · The drawing comes from the drawings query (combined by id); a note opened before it arrived waits for
+  // it, with no indicator, and opens with the drawing.
+  const sketches = useNoteSketches(video.id);
+  const waiting = isSketchPending(target?.note, sketches);
+  const sketch = note ? withSketch(note, sketches.data).sketch : null;
   const busy = create.isPending || update.isPending || remove.isPending;
 
   /** Delete armed: a second tap within a few seconds confirms. */
@@ -107,7 +133,7 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
 
   return (
     <Dialog
-      open={target != null}
+      open={target != null && !waiting}
       onClose={onClose}
       busy={busy}
       title={note ? 'Nota' : 'Nueva nota'}
@@ -152,9 +178,9 @@ export function NoteDialog({ target, onClose, video }: { target: NoteTarget | nu
                   {noteStatus(note) === 'done' ? 'Resuelta' : 'Pendiente'}
                 </span>
               </p>
-              {isValidSketch(note.sketch) && (
+              {isValidSketch(sketch) && (
                 <img
-                  src={note.sketch}
+                  src={sketch}
                   alt="Dibujo sobre el fotograma de la toma"
                   className="mt-2 w-full max-w-[320px] rounded-[8px] border border-line"
                 />

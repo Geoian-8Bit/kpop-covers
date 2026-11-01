@@ -2,11 +2,8 @@ import type { Crew, Profile } from '@coverscape/shared';
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { backend } from '@/lib/backend/core';
-import { IS_DEMO } from '@/lib/backend/mode';
-import { crewSnapshot, parseCrew, readSnapshot, writeSnapshot } from '@/lib/snapshot';
+import { groupQueryOptions } from '@/lib/groupQuery';
 import { useAuth } from './AuthProvider';
-
-const GROUP_SNAPSHOT = IS_DEMO ? 'group.demo' : 'group';
 
 /**
  * The app has a single shared group and no login: everyone reads and writes inside it
@@ -26,19 +23,8 @@ const GroupContext = createContext<GroupContextValue | null>(null);
 export function CrewProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
-  // P2 · A repeat visit paints the shell at once from the group kept on this device (no Splash), and still asks the
-  // server right away: the kept copy counts as already stale (updated at 0), a fresh answer never goes stale.
-  const groupQuery = useQuery({
-    queryKey: ['group'],
-    staleTime: (query) => (query.state.dataUpdatedAt === 0 ? 0 : Infinity),
-    initialData: () => readSnapshot(GROUP_SNAPSHOT, parseCrew),
-    initialDataUpdatedAt: 0,
-    queryFn: async (): Promise<Crew> => {
-      const crew = await backend.joinGroup();
-      writeSnapshot(GROUP_SNAPSHOT, crewSnapshot(crew));
-      return crew;
-    },
-  });
+  // P2 · Options (kept copy, stale rule, fetch) live in lib/groupQuery.ts, shared with the cold-start preload.
+  const groupQuery = useQuery(groupQueryOptions);
 
   const profileQuery = useQuery({
     queryKey: ['profile', user?.id],

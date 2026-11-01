@@ -4,7 +4,6 @@ import { testVideo } from '../support/testVideo';
 import { atWidths, FRAME_TIMES, motionFrames, snap, type SnapOptions } from '../support/visual';
 import {
   freeze,
-  openApp,
   openStill,
   rest,
   settle,
@@ -14,7 +13,7 @@ import {
 } from '../flows/shell/support';
 
 // REQ-02 · Shell · visual references (phase 0, spec 3.4): library, quick-access row, settings, «¿Quién eres?»,
-// privacy, calendar, the shell at the three widths and across `lg` (64rem), plus the animation frames of the splash,
+// privacy, calendar, the shell at the three widths and across `lg` (64rem), plus the animation frames of
 // the hanging quick-access items and the Hanafuda menu. Everything runs on a faked clock (nothing moves unless the
 // test advances it) with YouTube thumbnails replaced by a flat picture, so captures depend on neither speed nor
 // network. The shell has no YouTube iframe; the only mask is the dev build's date, which changes with every server
@@ -293,25 +292,6 @@ test.describe('shell', () => {
 // ── Animation frames ──────────────────────────────────────────────────────────────────────────
 
 test.describe('fotogramas', () => {
-  test('splash (motion) al esperar una ruta perezosa', async ({ page }) => {
-    const guard = guardConsole(page);
-    // The settings chunk is held back, so the route's Suspense fallback (the splash) stays on screen.
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    await page.route(/\/src\/features\/settings\/SettingsPage\.tsx/, async (route) => {
-      await gate;
-      await route.continue();
-    });
-    await openApp(page, '/ajustes', { clock: 'install' });
-    const splash = page.getByRole('status', { name: 'Cargando' });
-    await tickUntilVisible(page, splash);
-    await settle(page);
-    await freeze(page);
-    await motionFrames(page, 'splash', async () => {}, [0, 350, 700, 1050, 1400]);
-    release();
-    guard.check();
-  });
-
   test('colgantes de los accesos rápidos tras desplazar la fila', async ({ page }) => {
     const guard = guardConsole(page);
     // The row only overflows on a phone; the hanging items are the same component everywhere.

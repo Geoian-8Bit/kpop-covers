@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Seal } from '@/components/Seal';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, inkReveal, jelly, soft } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 
 /**
  * F11 · the winner's reveal when a vote closes («Hanabi»): paper fireworks rise and burst over a night sky; the
@@ -186,6 +187,7 @@ function Hanabi({ winner, reduce }: SceneProps) {
         {winner.thumbnail && (
           <motion.img
             src={winner.thumbnail}
+            crossOrigin={thumbCors(winner.thumbnail)}
             alt=""
             initial={reduce ? false : { opacity: 0, y: -40, rotate: -4 }}
             animate={{ opacity: 1, y: 0, rotate: -1.5 }}

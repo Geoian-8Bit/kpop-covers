@@ -13,7 +13,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { bagsOfKind, useAllClips, useBagItems, useBags } from '@/data/bags';
 import { CLIP_SWATCH } from '@/data/clips';
-import { trackKeys, useTracks, type TrackWithCount } from '@/data/tracks';
+import { prefetchTrack, trackKeys, useTracks, type TrackWithCount } from '@/data/tracks';
 import { useVideos } from '@/data/videos';
 import { BagIcon } from '@/features/bags/BagIcon';
 import { countLabel } from '@/features/bags/drawRules';
@@ -456,6 +456,8 @@ function TrackList() {
               <Link
                 to={`/rpd/pista/${track.id}`}
                 onClick={guardNav}
+                // REQ-18 · A real press warms the track's clips (a scroll sweeping over rows warms none).
+                onPointerDown={() => prefetchTrack(queryClient, track.id)}
                 className="group flex min-h-11 min-w-0 flex-1 items-center gap-3"
               >
                 <span className="min-w-0 flex-1">

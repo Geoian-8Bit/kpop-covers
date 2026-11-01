@@ -26,6 +26,7 @@ import { BagIcon } from '@/features/bags/BagIcon';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped, jelly, soft } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { ActionMenu } from './ActionMenu';
@@ -466,7 +467,7 @@ function Results({
                 {i + 1}
               </span>
               {wish?.thumbnail_url && (
-                <img src={wish.thumbnail_url} alt="" loading="lazy" className="aspect-video w-14 shrink-0 rounded-[5px] object-cover" />
+                <img src={wish.thumbnail_url} crossOrigin={thumbCors(wish.thumbnail_url)} alt="" loading="lazy" className="aspect-video w-14 shrink-0 rounded-[5px] object-cover" />
               )}
               <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-washi">
                 {wish?.title ?? 'Ya no está en la lista'}

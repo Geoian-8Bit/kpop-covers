@@ -81,6 +81,36 @@ function analyzePlugins(command: string): Plugin[] {
   ];
 }
 
+/**
+ * REQ-05 · Early connection to the Supabase origin, the head of the critical request chain (the first data request
+ * would otherwise pay DNS + TCP + TLS). Injected here instead of with %VITE_SUPABASE_URL% in index.html so that a
+ * build without the variable emits no tag at all (an empty or broken href would be worse than none). The process
+ * environment wins over .env files, as it does for the app's own import.meta.env.
+ */
+function supabasePreconnect(mode: string): Plugin {
+  const raw = process.env.VITE_SUPABASE_URL || loadEnv(mode, process.cwd(), 'VITE_').VITE_SUPABASE_URL;
+  let origin: string | null = null;
+  try {
+    origin = raw ? new URL(raw).origin : null;
+  } catch {
+    origin = null; // not a URL: no tag
+  }
+  return {
+    name: 'one-shoot-supabase-preconnect',
+    apply: 'build', // a dev server has nothing to gain, and in demo mode must not open the real project's connection
+    transformIndexHtml: () =>
+      origin
+        ? [
+            {
+              tag: 'link',
+              attrs: { rel: 'preconnect', href: origin, crossorigin: '' },
+              injectTo: 'head-prepend',
+            },
+          ]
+        : [],
+  };
+}
+
 /** Sample results so the search UI works locally without a YouTube API key. */
 const MOCK_SEARCH = [
   ['dQw4w9WgXcQ', 'Rick Astley - Never Gonna Give You Up (Official Video)', 'Rick Astley', 213],
@@ -139,6 +169,7 @@ export default defineConfig(({ mode, command }) => {
       ...analyzePlugins(command),
       tailwindcss(),
       devApi(),
+      supabasePreconnect(mode),
       versionFile(appVersion, builtAt),
       // Installable app: manifest + service worker that precaches the shell so it opens instantly and offline.
       VitePWA({
@@ -198,20 +229,9 @@ export default defineConfig(({ mode, command }) => {
               },
             },
             {
-              // The fonts' CSS is linked without crossorigin, so it comes back opaque (status 0): it has to be
-              // allowed explicitly or it is never cached. Revalidated in the background, so an opaque error can't
-              // stick.
-              urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'fonts',
-                cacheableResponse: { statuses: [0, 200] },
-                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365, purgeOnQuotaError: true },
-              },
-            },
-            {
-              // The font files themselves (CORS, status 200; hashed URLs that never change). The Japanese faces
-              // come in many unicode-range slices, hence the room.
+              // REQ-07 · Only the Japanese slices still come from gstatic (the Latin faces and the UI's kanji are in the
+              // precache; Google's stylesheet is gone). CORS, status 200; versioned URLs that never change. They come
+              // in many unicode-range slices, hence the room.
               urlPattern: ({ url }) => url.origin === 'https://fonts.gstatic.com',
               handler: 'CacheFirst',
               options: {
@@ -222,13 +242,15 @@ export default defineConfig(({ mode, command }) => {
             },
             {
               urlPattern: ({ url }) => url.origin === 'https://i.ytimg.com',
-              handler: 'StaleWhileRevalidate',
-              // Cross-origin thumbnails are opaque: browsers bill each one as several MB of quota (the same quota
-              // the device copies of videos use), so keep a bounded set and drop them first when space runs out.
+              handler: 'CacheFirst',
+              // REQ-13 · The <img>s ask with CORS (crossOrigin="anonymous"; i.ytimg.com answers ACAO: *), so these are
+              // plain 200 responses and not opaque ones, which browsers bill as several MB of quota each. Thumbnails
+              // of a given id never change: no background revalidation per visit. New cache name: the old 'thumbnails'
+              // holds opaque responses that a CORS request cannot use (it is left as it is, never deleted).
               // P11 · 150: a whole library plus quick access and wishes (40 evicted thumbnails on every visit).
               options: {
-                cacheName: 'thumbnails',
-                cacheableResponse: { statuses: [0, 200] },
+                cacheName: 'thumbnails-cors',
+                cacheableResponse: { statuses: [200] },
                 expiration: { maxEntries: 150, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
               },
             },
@@ -246,6 +268,9 @@ export default defineConfig(({ mode, command }) => {
     worker: { format: 'es' },
     build: {
       target: 'es2022',
+      // REQ-07 · Fonts stay files: inlined as base64 they would bloat the render-blocking CSS (base64 does not
+      // compress) and could not be cached apart. Everything else keeps Vite's default limit.
+      assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
       rollupOptions: {
         output: {
           // Function form so transitive deps (react-dom → scheduler, motion → framer-motion, @supabase/*) follow
@@ -258,7 +283,9 @@ export default defineConfig(({ mode, command }) => {
             if (/^(motion|framer-motion|motion-dom|motion-utils)\//.test(pkg)) return 'motion';
             if (pkg.startsWith('@supabase/')) return 'supabase';
             if (pkg.startsWith('@tanstack/')) return 'query';
-            if (pkg.startsWith('lucide-react/')) return 'icons';
+            // REQ-08 · tailwind-merge (behind `cn`, used by every screen) is a large share of the entry chunk and almost
+            // never changes: its own chunk loads in parallel and stays cached across deploys, which only touch app code.
+            if (pkg.startsWith('tailwind-merge/')) return 'tailwind-merge';
             // zustand is shared with @react-three/fiber: left unassigned, Rollup would put it in the lazy 3D chunk and the
             // entry would import (and preload) that chunk. Its `traditional` build is only the 3D renderer's.
             if (/^zustand\/esm\/(?!traditional)/.test(pkg)) return 'react';

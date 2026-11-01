@@ -12,6 +12,7 @@ import { useCreatePoll, useUpdatePoll, useWishInterest, useWishes, wishError } f
 import { navigateFromLayer } from '@/lib/backLayers';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 import { useToast } from '@/providers/ToastProvider';
 import { VOTE_TYPE_COPY } from './pollRules';
 import { interestByWish, liveWishes, sortByInterest } from './wishRules';
@@ -262,7 +263,7 @@ function CandidateRow({
           {checked && <Check className="size-4" strokeWidth={3} />}
         </span>
         {wish.thumbnail_url && (
-          <img src={wish.thumbnail_url} alt="" loading="lazy" className="aspect-video w-16 shrink-0 rounded-[6px] object-cover" />
+          <img src={wish.thumbnail_url} crossOrigin={thumbCors(wish.thumbnail_url)} alt="" loading="lazy" className="aspect-video w-16 shrink-0 rounded-[6px] object-cover" />
         )}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[14px] font-bold text-washi">{wish.title}</span>

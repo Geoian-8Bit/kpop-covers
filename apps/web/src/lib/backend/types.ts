@@ -40,6 +40,11 @@ import type {
 export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
 export type ClipWithVideo = Clip & { video: ClipVideo | null };
 
+/**
+ * REQ-14 · A library row: `thumbnail_url` is `list_thumbnail_url` (null for an uploaded video's inline poster, which
+ * comes from the poster query, combined by id). REQ-16 · It also carries the small file columns, so the studio can
+ * open an uploaded or linked video from it.
+ */
 export type LibraryVideo = Pick<
   Video,
   | 'id'
@@ -53,8 +58,23 @@ export type LibraryVideo = Pick<
   | 'created_at'
   | 'file_name'
   | 'aspect_ratio'
+  | 'poster_inline'
+  | 'poster_rev'
+  | 'storage_path'
+  | 'file_size'
+  | 'file_offset_seconds'
+  | 'file_duration_seconds'
+  | 'updated_at'
 >;
 export type VideoWithClipCount = LibraryVideo & { clips: { count: number }[] };
+
+/** REQ-14 · An uploaded video's inline poster and its revision (`md5` of the data URL). */
+export type VideoPoster = { id: string; poster_rev: string; thumbnail_url: string };
+export type VideoPosterRev = Pick<VideoPoster, 'id' | 'poster_rev'>;
+
+/** REQ-17 · A note as listed: no `sketch` (only `has_sketch`); a written note's answer does carry it. */
+export type ListedNote = Omit<Note, 'sketch'> & { sketch?: string | null };
+export type NoteSketch = { id: string; sketch: string };
 
 /** Why a file stayed on this device instead of reaching the group's cloud. */
 /** 'exists': a file with that name is already there (a take's earlier upload that went through). */
@@ -96,6 +116,12 @@ export interface Backend {
   joinGroup(): Promise<Crew>;
   getProfile(userId: string): Promise<Profile | null>;
   listVideos(crewId: string): Promise<VideoWithClipCount[]>;
+  /** REQ-14 · Which inline posters the group has now (id + revision; no image). */
+  listPosterRevs(crewId: string): Promise<VideoPosterRev[]>;
+  /** REQ-14 · The inline posters of these videos (only the ones this device is missing). */
+  listPosters(ids: string[]): Promise<VideoPoster[]>;
+  /** REQ-14 · Every inline poster of the group in one request (a device that keeps none: the first visit). */
+  listCrewPosters(crewId: string): Promise<VideoPoster[]>;
   getVideo(id: string): Promise<Video | null>;
   insertVideo(row: TablesInsert<'videos'> & { id: string }): Promise<Video>;
   updateVideo(id: string, patch: TablesUpdate<'videos'>): Promise<Video>;
@@ -105,7 +131,9 @@ export interface Backend {
   insertClip(row: TablesInsert<'clips'>): Promise<Clip>;
   updateClip(id: string, patch: TablesUpdate<'clips'>): Promise<Clip>;
   deleteClip(id: string): Promise<void>;
-  listNotes(videoId: string): Promise<Note[]>;
+  listNotes(videoId: string): Promise<ListedNote[]>;
+  /** REQ-17 · The drawings of a video's notes that have one. */
+  listNoteSketches(videoId: string): Promise<NoteSketch[]>;
   insertNote(row: TablesInsert<'notes'>): Promise<Note>;
   updateNote(id: string, patch: NotePatch): Promise<Note>;
   deleteNote(id: string): Promise<void>;
@@ -142,7 +170,11 @@ export interface Backend {
 }
 
 export type BagWithCount = Bag & { items: number };
-export type BagItemVideo = Pick<Video, 'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id'>;
+/** REQ-14 · `thumbnail_url` is `list_thumbnail_url` here (null for an inline poster, which comes by id). */
+export type BagItemVideo = Pick<
+  Video,
+  'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id' | 'poster_inline' | 'poster_rev'
+>;
 export type BagItemClip = Pick<
   Clip,
   'id' | 'name' | 'video_id' | 'start_seconds' | 'end_seconds' | 'speed' | 'mirrored' | 'color'
@@ -188,12 +220,23 @@ export type TrackPatch = Partial<
  * bags (name, draw_mode, no_repeat), bag_items (removed_at), bag_draws (removed), tracks (name and options),
  * track_items (position). Deleting archives. The draw itself happens on the server (`draw_from_bag`).
  */
+/** What «Añadir a una bolsa» looks for in the bags: a library song, a wish or a clip. */
+export type BagHoldingRef = { video_id: string } | { wish_id: string } | { clip_id: string };
+
+/** REQ-19 · What a round needs to play a song: no poster, no audit columns. */
+export type PlayableVideo = Pick<
+  Video,
+  'id' | 'source' | 'youtube_id' | 'storage_path' | 'file_name' | 'file_size' | 'file_offset_seconds'
+>;
+
 export interface BagsBackend {
   listBags(): Promise<BagWithCount[]>;
   insertBag(row: NewBag): Promise<Bag>;
   updateBag(id: string, patch: BagPatch): Promise<Bag>;
   deleteBag(id: string): Promise<void>;
   listBagItems(bagId: string): Promise<BagItemView[]>;
+  /** REQ-19 · The bags (ids) that already hold this song, wish or clip: one `bag_items select bag_id` query. */
+  listBagsHolding(ref: BagHoldingRef): Promise<string[]>;
   insertBagItem(row: NewBagItem): Promise<BagItem>;
   deleteBagItem(id: string): Promise<void>;
   /** Takes an item out of the bag (or puts it back). */
@@ -224,6 +267,10 @@ export interface BagsBackend {
   linkYoutubeSongs(youtubeId: string, videoId: string): Promise<string[]>;
   /** Every live clip of the group with its song (pickers, rounds). */
   listAllClips(): Promise<ClipWithVideo[]>;
+  /** REQ-19 · The playable columns of several songs in one request (a round's songs). */
+  listPlayableVideos(ids: string[]): Promise<PlayableVideo[]>;
+  /** REQ-19 · One batch signature for several files; the URLs go to the signed-URL memory (REQ-15). */
+  signVideoFiles(paths: string[]): Promise<void>;
   listTracks(): Promise<TrackWithCount[]>;
   getTrack(id: string): Promise<Track | null>;
   listTrackItems(trackId: string): Promise<TrackItemView[]>;
@@ -232,7 +279,8 @@ export interface BagsBackend {
   deleteTrack(id: string): Promise<void>;
   insertTrackItems(trackId: string, clipIds: string[], fromPosition: number): Promise<TrackItem[]>;
   deleteTrackItem(id: string): Promise<void>;
-  setTrackPositions(patches: { id: string; position: number }[]): Promise<void>;
+  /** REQ-20 · One atomic write: `ids` is the whole track in its new order (position = index). */
+  setTrackPositions(trackId: string, ids: string[]): Promise<void>;
 }
 
 /** What the app may change on a wish (the database grants exactly these columns). */
@@ -280,6 +328,8 @@ export interface WishesBackend {
   listPollOptions(): Promise<PollOption[]>;
   /** Live votes of these polls only (a poll's page asks for its own; the list for the closed ones it shows). */
   listPollVotes(pollIds: string[]): Promise<PollVote[]>;
+  /** REQ-19 · A light fingerprint (md5) of a poll's live ballots, null without votes: changes with any vote. */
+  pollVotesSignature(pollId: string): Promise<string | null>;
   /**
    * Closes on the server with the votes as they are at that moment (`close_poll`): 'auto' closes with a clear
    * winner (or none if nobody voted) and answers 'tie' without closing; 'pick' closes with one of the tied leaders;
@@ -295,9 +345,10 @@ export interface WishesBackend {
 }
 
 export type EventWithCount = CrewEvent & { songs: number };
+/** REQ-14 · `thumbnail_url` is `list_thumbnail_url` here (null for an inline poster, which comes by id). */
 export type EventSongVideo = Pick<
   Video,
-  'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id'
+  'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id' | 'poster_inline' | 'poster_rev'
 >;
 /** A song of the repertoire with its video (a song archived from the library never comes back). */
 export type EventSongView = EventSong & { video: EventSongVideo | null };
@@ -320,7 +371,8 @@ export interface EventsBackend {
   listEventSongs(eventId: string): Promise<EventSongView[]>;
   insertEventSongs(eventId: string, videoIds: string[], positions: number[]): Promise<EventSong[]>;
   deleteEventSong(id: string): Promise<void>;
-  setEventSongPositions(patches: { id: string; position: number }[]): Promise<void>;
+  /** REQ-20 · One atomic write: `ids` is the whole repertoire in its new order (position = index). */
+  setEventSongPositions(eventId: string, ids: string[]): Promise<void>;
   /** The reactions on the takes of one song, oldest first. */
   listReactions(videoId: string): Promise<TakeReaction[]>;
   addReaction(row: NewReaction): Promise<TakeReaction>;
@@ -355,7 +407,8 @@ export interface StemsBackend {
   uploadStemFile(path: string, file: Blob): Promise<UploadResult>;
   completeStems(id: string, paths: { vocals_path: string; instrumental_path: string }): Promise<VideoStems>;
   deleteStems(id: string): Promise<void>;
-  signedStemUrl(path: string): Promise<string | null>;
+  /** REQ-15 · Both tracks of a separation in one signature request (null for one that couldn't be signed). */
+  signedStemUrls(paths: string[]): Promise<(string | null)[]>;
 }
 
 /** A person the calendar can name: the live members plus archived ones that still have absences (greyed out). */

@@ -37,6 +37,13 @@ const row = (over: Partial<VideoWithClipCount> = {}): VideoWithClipCount => ({
   created_at: '2026-10-01T00:00:00Z',
   file_name: null,
   aspect_ratio: null,
+  poster_inline: false,
+  poster_rev: null,
+  storage_path: null,
+  file_size: null,
+  file_offset_seconds: null,
+  file_duration_seconds: null,
+  updated_at: '2026-10-01T00:00:00Z',
   clips: [{ count: 3 }],
   ...over,
 });
@@ -87,7 +94,13 @@ describe('readSnapshot / writeSnapshot', () => {
 });
 
 describe('the group', () => {
-  const crew: Crew = { id: 'c1', name: 'Crew', invite_code: 'SECRET01', created_by: null, created_at: '2026-01-01' };
+  const crew: Crew = {
+    id: 'c1',
+    name: 'Crew',
+    invite_code: 'SECRET01',
+    created_by: null,
+    created_at: '2026-01-01',
+  };
 
   it('keeps no invite code and reads back a valid group', () => {
     const kept = crewSnapshot(crew);
@@ -107,16 +120,37 @@ describe('the group', () => {
 describe('the library', () => {
   it('leaves inline posters out', () => {
     expect(stripInlineThumbnail('data:image/webp;base64,AAAA')).toBeNull();
-    expect(stripInlineThumbnail('https://i.ytimg.com/vi/x/hqdefault.jpg')).toBe('https://i.ytimg.com/vi/x/hqdefault.jpg');
+    expect(stripInlineThumbnail('https://i.ytimg.com/vi/x/hqdefault.jpg')).toBe(
+      'https://i.ytimg.com/vi/x/hqdefault.jpg',
+    );
     expect(stripInlineThumbnail(null)).toBeNull();
-    const kept = libraryRowsSnapshot([row({ source: 'upload', thumbnail_url: `data:image/webp;base64,${'A'.repeat(40_000)}` })]);
+    const kept = libraryRowsSnapshot([
+      row({ source: 'upload', thumbnail_url: `data:image/webp;base64,${'A'.repeat(40_000)}` }),
+    ]);
     expect(kept[0]!.thumbnail_url).toBeNull();
     expect(JSON.stringify(kept).length).toBeLessThan(1000);
   });
 
   it('keeps only the card columns', () => {
-    const extra = { ...row(), storage_path: 'c1/v1.mp4' } as VideoWithClipCount;
-    expect(Object.keys(libraryRowsSnapshot([extra])[0]!)).not.toContain('storage_path');
+    const extra = row({ storage_path: 'c1/v1.mp4', file_size: 1000, updated_at: '2026-10-02T00:00:00Z' });
+    const kept = Object.keys(libraryRowsSnapshot([extra])[0]!);
+    expect(kept).not.toContain('storage_path');
+    expect(kept).not.toContain('file_size');
+    expect(kept).not.toContain('updated_at');
+  });
+
+  it('keeps the poster revision so the poster combines by id (REQ-14)', () => {
+    const store = memoryStore();
+    const up = row({
+      source: 'upload',
+      youtube_id: null,
+      thumbnail_url: null,
+      poster_inline: true,
+      poster_rev: 'abc',
+    });
+    writeSnapshot('videos.c1', libraryRowsSnapshot([up]), store);
+    const back = readSnapshot('videos.c1', (v) => parseLibrary(v, CREW), store)?.[0];
+    expect(back).toMatchObject({ poster_inline: true, poster_rev: 'abc', storage_path: null });
   });
 
   it('drops the whole list for one bad row or another group', () => {
@@ -157,7 +191,16 @@ describe('quick access and events', () => {
   });
 
   it('checks events field by field', () => {
-    const event = { id: 'e1', crew_id: CREW, name: 'Festival', place: null, starts_at: '2026-11-01', created_at: '2026-10-01', archived_at: null, songs: 4 };
+    const event = {
+      id: 'e1',
+      crew_id: CREW,
+      name: 'Festival',
+      place: null,
+      starts_at: '2026-11-01',
+      created_at: '2026-10-01',
+      archived_at: null,
+      songs: 4,
+    };
     expect(parseEvents([event])).toEqual([event]);
     expect(parseEvents([{ ...event, songs: '4' }])).toBeNull();
     expect(parseEvents([{ ...event, starts_at: null }])).toBeNull();
@@ -167,13 +210,45 @@ describe('quick access and events', () => {
 describe('videoFromLibraryRow (P3 placeholder)', () => {
   it('opens a YouTube entry without a file from its library row', () => {
     const video = videoFromLibraryRow(row());
-    expect(video).toMatchObject({ id: 'v1', youtube_id: 'WPdWvnAAurg', file_name: null, storage_path: null, file_offset_seconds: null });
+    expect(video).toMatchObject({
+      id: 'v1',
+      youtube_id: 'WPdWvnAAurg',
+      file_name: null,
+      storage_path: null,
+      file_offset_seconds: null,
+    });
+  });
+
+  it('opens uploaded and linked videos too, with their file columns (REQ-16)', () => {
+    const up = row({
+      source: 'upload',
+      youtube_id: null,
+      file_name: 'a.mp4',
+      storage_path: 'c1/v1.mp4',
+      file_size: 9,
+      poster_inline: true,
+      poster_rev: 'r',
+      thumbnail_url: 'data:image/jpeg;base64,AA',
+    });
+    expect(videoFromLibraryRow(up)).toMatchObject({
+      storage_path: 'c1/v1.mp4',
+      file_size: 9,
+      file_name: 'a.mp4',
+      thumbnail_url: 'data:image/jpeg;base64,AA',
+      list_thumbnail_url: null,
+      poster_inline: true,
+    });
+    const linked = row({ file_name: 'b.mp4', file_offset_seconds: 1.5, file_duration_seconds: 200 });
+    expect(videoFromLibraryRow(linked)).toMatchObject({
+      youtube_id: 'WPdWvnAAurg',
+      file_offset_seconds: 1.5,
+      file_duration_seconds: 200,
+    });
   });
 
   it('waits for the real row otherwise', () => {
     expect(videoFromLibraryRow(undefined)).toBeUndefined();
-    expect(videoFromLibraryRow(row({ file_name: 'take.mp4' }))).toBeUndefined();
-    expect(videoFromLibraryRow(row({ source: 'upload', youtube_id: null }))).toBeUndefined();
-    expect(videoFromLibraryRow(row({ youtube_id: null }))).toBeUndefined();
+    const { storage_path: _p, updated_at: _u, ...old } = row();
+    expect(videoFromLibraryRow(old as VideoWithClipCount)).toBeUndefined();
   });
 });

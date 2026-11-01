@@ -1,13 +1,19 @@
 import type { Bag, BagDraw, Track } from '@coverscape/shared';
-import { supabase } from '../supabase';
+import { VIDEO_BUCKET, supabase } from '../supabase';
 import { fetchAll, must } from './shared';
-import type { BagItemView, BagsBackend, ClipWithVideo, TrackItemView } from './types';
+import { SIGN_BATCH, SIGN_SECONDS, peekSigned, seedSigned } from './signedUrls';
+import type { BagItemView, BagsBackend, ClipWithVideo, PlayableVideo, TrackItemView } from './types';
 
 const CLIP_VIDEO_COLUMNS = 'id, title, artist, source, youtube_id';
 const BAG_ITEM_SELECT =
-  `*, video:videos(id, title, artist, thumbnail_url, source, youtube_id), ` +
+  `*, video:videos(id, title, artist, thumbnail_url:list_thumbnail_url, source, youtube_id, poster_inline, poster_rev), ` +
   `clip:clips(id, name, video_id, start_seconds, end_seconds, speed, mirrored, color, video:videos(${CLIP_VIDEO_COLUMNS})), ` +
   `member:members(id, name, color), wish:wishes(id, title, artist, thumbnail_url, youtube_id, added_video_id)`;
+
+/** REQ-19 · A round plays files and YouTube ids: these columns and no poster. */
+const PLAYABLE_COLUMNS = 'id, source, youtube_id, storage_path, file_name, file_size, file_offset_seconds';
+/** Ids per request, so a long round never builds an over-long URL. */
+const BATCH = 100;
 
 export const supabaseBags: BagsBackend = {
   async listBags() {
@@ -46,6 +52,17 @@ export const supabaseBags: BagsBackend = {
         .order('id')
         .range(from, to),
     );
+  },
+  async listBagsHolding(ref) {
+    // REQ-19 · RLS already limits it to the group's live items in live bags.
+    const [column, value] = Object.entries(ref)[0] as [string, string];
+    const data = must(
+      await supabase
+        .from('bag_items')
+        .select('bag_id')
+        .eq(column as 'video_id', value),
+    );
+    return data.map((row) => row.bag_id);
   },
   async insertBagItem(row) {
     return must(await supabase.from('bag_items').insert(row).select().single());
@@ -113,21 +130,21 @@ export const supabaseBags: BagsBackend = {
       .in('bag_id', bagIds);
     if (holdingError) throw holdingError;
     const holds = new Set(holding.map((h) => h.bag_id));
-    let failure: unknown = null;
-    for (const song of songs) {
-      try {
-        if (holds.has(song.bag_id)) await supabaseBags.deleteBagItem(song.id);
-        else await supabaseBags.linkBagItemVideo(song.id, videoId);
-      } catch (linkError) {
-        // The video went into that bag meanwhile: the YouTube copy just leaves it.
-        if ((linkError as { code?: string }).code === '23505') {
-          await supabaseBags.deleteBagItem(song.id).catch((e: unknown) => (failure ??= e));
-        } else {
-          failure ??= linkError;
+    // REQ-19 · One request per song, all at once; every one runs to its end, then the first failure (if any) is thrown.
+    const outcomes = await Promise.allSettled(
+      songs.map(async (song) => {
+        try {
+          if (holds.has(song.bag_id)) await supabaseBags.deleteBagItem(song.id);
+          else await supabaseBags.linkBagItemVideo(song.id, videoId);
+        } catch (linkError) {
+          // The video went into that bag meanwhile: the YouTube copy just leaves it.
+          if ((linkError as { code?: string }).code === '23505') await supabaseBags.deleteBagItem(song.id);
+          else throw linkError;
         }
-      }
-    }
-    if (failure) throw failure;
+      }),
+    );
+    const failed = outcomes.find((o): o is PromiseRejectedResult => o.status === 'rejected');
+    if (failed) throw failed.reason;
     return bagIds;
   },
   async listAllClips() {
@@ -139,6 +156,37 @@ export const supabaseBags: BagsBackend = {
         .order('id')
         .range(from, to),
     );
+  },
+  async listPlayableVideos(ids) {
+    const unique = [...new Set(ids)];
+    const rows: PlayableVideo[] = [];
+    for (let i = 0; i < unique.length; i += BATCH) {
+      const data = must(
+        await supabase
+          .from('videos')
+          .select(PLAYABLE_COLUMNS)
+          .in('id', unique.slice(i, i + BATCH)),
+      );
+      rows.push(...(data as PlayableVideo[]));
+    }
+    return rows;
+  },
+  async signVideoFiles(paths) {
+    // REQ-15 · Only the files the memory doesn't hold: a URL still reused (or being signed) keeps its cache key.
+    const unique = [...new Set(paths)].filter((path) => !peekSigned(`${VIDEO_BUCKET}/${path}`));
+    for (let i = 0; i < unique.length; i += SIGN_BATCH) {
+      const { data, error } = await supabase.storage
+        .from(VIDEO_BUCKET)
+        .createSignedUrls(unique.slice(i, i + SIGN_BATCH), SIGN_SECONDS);
+      if (error) throw error;
+      const expiresAt = Date.now() + SIGN_SECONDS * 1000;
+      for (const entry of data) {
+        // A file that failed to sign is left to the single signature, which reports it as today.
+        if (entry.path && entry.signedUrl && !entry.error) {
+          seedSigned(`${VIDEO_BUCKET}/${entry.path}`, entry.signedUrl, expiresAt);
+        }
+      }
+    }
   },
   async listTracks() {
     const data = must(
@@ -200,11 +248,8 @@ export const supabaseBags: BagsBackend = {
   async deleteTrackItem(id) {
     must(await supabase.from('track_items').delete().eq('id', id));
   },
-  async setTrackPositions(patches) {
-    const results = await Promise.all(
-      patches.map(({ id, position }) => supabase.from('track_items').update({ position }).eq('id', id)),
-    );
-    const failed = results.find((r) => r.error);
-    if (failed?.error) throw failed.error;
+  async setTrackPositions(trackId, ids) {
+    // REQ-20 · One call, all or nothing (it was one PATCH per item).
+    must(await supabase.rpc('set_track_positions', { p_track: trackId, p_ids: ids }));
   },
 };

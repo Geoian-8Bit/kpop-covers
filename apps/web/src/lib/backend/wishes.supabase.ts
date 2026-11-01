@@ -62,6 +62,9 @@ export const supabaseWishes: WishesBackend = {
         .range(from, to),
     );
   },
+  async pollVotesSignature(pollId) {
+    return must(await supabase.rpc('poll_votes_signature', { p_poll: pollId })) ?? null;
+  },
   async closePoll(pollId, resolve, winnerWishId = null) {
     const data = must(
       await supabase.rpc('close_poll', { p_poll: pollId, p_resolve: resolve, p_winner: winnerWishId }),

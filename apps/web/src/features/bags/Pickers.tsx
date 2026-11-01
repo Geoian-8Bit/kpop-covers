@@ -8,6 +8,7 @@ import type { ClipWithVideo } from '@/lib/backend';
 import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
+import { thumbCors } from '@/lib/thumbCors';
 
 /**
  * Lists to pick from (songs, clips, people): each row is a toggle button, 44 px or more, with a search above when
@@ -123,6 +124,7 @@ export function SongPickList({
               {v.thumbnail_url && (
                 <img
                   src={v.thumbnail_url}
+                  crossOrigin={thumbCors(v.thumbnail_url)}
                   alt=""
                   loading="lazy"
                   className="absolute inset-0 size-full object-cover"

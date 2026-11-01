@@ -4,7 +4,44 @@ import { demoCloudBytes, demoCloudUrl, saveDemoCloudFile } from '../localVideos'
 import { mutate, now, query, readDb } from './demoDb';
 import type { DemoDb } from './demoDb';
 import { DEMO_USER_ID, cloudLimitBytes } from './mode';
-import type { Backend } from './types';
+import type { Backend, ListedNote } from './types';
+
+/**
+ * REQ-14 · Demo twin of the generated poster columns (the database's `md5` is a revision only: any stable hash of
+ * the data URL serves, so a 53-bit string hash stands in for it).
+ */
+function posterRev(url: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
+
+/** The row as the database answers it, with its generated columns (kept rows predate them). */
+export function withGenerated(v: Video): Video {
+  const inline = v.thumbnail_url?.startsWith('data:') ?? false;
+  return {
+    ...v,
+    poster_inline: inline,
+    list_thumbnail_url: inline ? null : v.thumbnail_url,
+    poster_rev: inline ? posterRev(v.thumbnail_url!) : null,
+  };
+}
+
+/** REQ-17 · Demo twin of `notes.has_sketch`. */
+const noteRow = (n: Note): Note => ({ ...n, has_sketch: n.sketch != null });
+
+/** REQ-17 · A note as listed: no drawing. */
+function listedNote(n: Note): ListedNote {
+  const { sketch: _sketch, ...rest } = noteRow(n);
+  return rest;
+}
 
 export const demoBackend: Backend = {
   joinGroup: () => query((db) => db.crews[0]!),
@@ -14,9 +51,64 @@ export const demoBackend: Backend = {
       db.videos
         .filter((v) => v.crew_id === crewId)
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .map((v) => ({ ...v, clips: [{ count: db.clips.filter((c) => c.video_id === v.id).length }] })),
+        .map((v) => {
+          // REQ-14 · Same columns as the real list: the inline poster stays out (`thumbnail_url:list_thumbnail_url`).
+          const row = withGenerated(v);
+          return {
+            id: row.id,
+            crew_id: row.crew_id,
+            title: row.title,
+            artist: row.artist,
+            source: row.source,
+            youtube_id: row.youtube_id,
+            thumbnail_url: row.list_thumbnail_url,
+            poster_inline: row.poster_inline,
+            poster_rev: row.poster_rev,
+            duration_seconds: row.duration_seconds,
+            created_at: row.created_at,
+            file_name: row.file_name,
+            aspect_ratio: row.aspect_ratio ?? null,
+            storage_path: row.storage_path,
+            file_size: row.file_size,
+            file_offset_seconds: row.file_offset_seconds ?? null,
+            file_duration_seconds: row.file_duration_seconds ?? null,
+            updated_at: row.updated_at,
+            clips: [{ count: db.clips.filter((c) => c.video_id === v.id).length }],
+          };
+        }),
     ),
-  getVideo: (id) => query((db) => db.videos.find((v) => v.id === id) ?? null),
+  listPosterRevs: (crewId) =>
+    query((db) =>
+      db.videos
+        .filter((v) => v.crew_id === crewId)
+        .map(withGenerated)
+        .filter((v) => v.poster_inline && v.poster_rev)
+        .map((v) => ({ id: v.id, poster_rev: v.poster_rev! })),
+    ),
+  listPosters: (ids) =>
+    query((db) =>
+      db.videos
+        .filter((v) => ids.includes(v.id))
+        .map(withGenerated)
+        .filter((v) => v.poster_inline && v.poster_rev && v.thumbnail_url)
+        .map((v) => ({ id: v.id, poster_rev: v.poster_rev!, thumbnail_url: v.thumbnail_url! })),
+    ),
+  listCrewPosters: (crewId) =>
+    query((db) =>
+      db.videos
+        .filter((v) => v.crew_id === crewId)
+        .map(withGenerated)
+        .filter((v) => v.poster_inline && v.poster_rev && v.thumbnail_url)
+        .map((v) => ({ id: v.id, poster_rev: v.poster_rev!, thumbnail_url: v.thumbnail_url! })),
+    ),
+  getVideo: (id) =>
+    query((db) => {
+      const video = db.videos.find((v) => v.id === id);
+      if (!video) return null;
+      // REQ-14 · As the real `getVideo`: the row without its inline poster (`thumbnail_url:list_thumbnail_url`).
+      const row = withGenerated(video);
+      return { ...row, thumbnail_url: row.list_thumbnail_url };
+    }),
   insertVideo: (row) =>
     mutate((db) => {
       const video = {
@@ -35,14 +127,14 @@ export const demoBackend: Backend = {
         ...row,
       } as Video;
       db.videos.push(video);
-      return video;
+      return withGenerated(video);
     }),
   updateVideo: (id, patch) =>
     mutate((db) => {
       const video = db.videos.find((v) => v.id === id);
       if (!video) throw new Error('not found');
       Object.assign(video, patch, { updated_at: now() });
-      return video;
+      return withGenerated(video);
     }),
   deleteVideo: (video) =>
     mutate((db) => {
@@ -105,7 +197,16 @@ export const demoBackend: Backend = {
     }),
   listNotes: (videoId) =>
     query((db) =>
-      (db.notes ?? []).filter((n) => n.video_id === videoId).sort((a, b) => a.at_seconds - b.at_seconds),
+      (db.notes ?? [])
+        .filter((n) => n.video_id === videoId)
+        .sort((a, b) => a.at_seconds - b.at_seconds)
+        .map(listedNote),
+    ),
+  listNoteSketches: (videoId) =>
+    query((db) =>
+      (db.notes ?? [])
+        .filter((n) => n.video_id === videoId && n.sketch != null)
+        .map((n) => ({ id: n.id, sketch: n.sketch! })),
     ),
   insertNote: (row) =>
     mutate((db) => {
@@ -122,19 +223,20 @@ export const demoBackend: Backend = {
         for_member_id: null,
         status: 'open',
         sketch: null,
+        has_sketch: false,
         ...row,
         author_member_id: row.author_member_id ?? null,
         crew_id: video?.crew_id ?? row.crew_id,
       };
       (db.notes ??= []).push(note);
-      return note;
+      return noteRow(note);
     }),
   updateNote: (id, patch) =>
     mutate((db) => {
       const note = db.notes?.find((n) => n.id === id);
       if (!note) throw new Error('not found');
       Object.assign(note, patch, { updated_at: now() });
-      return note;
+      return noteRow(note);
     }),
   deleteNote: (id) =>
     mutate((db) => {

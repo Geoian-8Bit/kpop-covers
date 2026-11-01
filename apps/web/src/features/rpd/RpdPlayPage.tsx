@@ -1,4 +1,5 @@
 import { youTubeWatchUrl, type Clip } from '@coverscape/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PerfProbe } from '@/lib/perfProbe';
 import { ArrowLeft, Play, RotateCcw, Save, Shuffle, Youtube } from 'lucide-react';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAllClips } from '@/data/bags';
-import { useVideo } from '@/data/videos';
+import { prefetchRound, useRoundVideo } from '@/data/tracks';
 import { clipTone } from '@/features/bags/tones';
 import type { ClipWithVideo } from '@/lib/backend';
 import { cn } from '@/lib/cn';
@@ -51,7 +52,7 @@ import {
 import { barLayout, escapeInFullscreen, fullscreenStep, stageTap, type FullscreenMode } from './fullscreenRules';
 import { roundChrome, useLandscape, useRoundChromeDriver } from './roundChrome';
 import { SaveTrackDialog } from './SaveTrackDialog';
-import { releaseClipSources, useClipSource, type ClipSource } from './useClipSource';
+import { forgetFailedClipSource, releaseClipSources, useClipSource, type ClipSource } from './useClipSource';
 import { useHistorySettled, WAIT_MS } from './useHistorySettled';
 
 interface Entry {
@@ -273,6 +274,7 @@ function RoundRunner({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const options = draft.options;
   const byId = useMemo(() => new Map(all.map((c) => [c.id, c])), [all]);
   const entries = useMemo<Entry[]>(
@@ -306,6 +308,14 @@ function RoundRunner({
     rootRef.current?.querySelector<HTMLElement>('[data-fs-toggle]')?.focus({ preventScroll: true });
   }, [fsKey]);
 
+  // REQ-19 · The whole round's songs and files in one request each, before the first song asks for its own.
+  useLayoutEffect(() => {
+    void prefetchRound(
+      queryClient,
+      draft.clipIds.flatMap((id) => byId.get(id)?.video_id ?? []),
+    );
+  }, [queryClient, draft.clipIds, byId]);
+
   useLoopController();
   const prefMirror = useRef(true);
   useLayoutEffect(() => {
@@ -320,7 +330,7 @@ function RoundRunner({
 
   const current = state.index >= 0 ? entries[state.index] : undefined;
   const clip = current?.clip ?? null;
-  const video = useVideo(clip?.video_id);
+  const video = useRoundVideo(clip?.video_id);
   const source = useClipSource(video.data);
   const nextIndex =
     state.phase === 'idle'
@@ -329,7 +339,7 @@ function RoundRunner({
         ? followingPlayable(available, state.index)
         : -1;
   const nextClip = nextIndex >= 0 ? entries[nextIndex]?.clip : null;
-  const nextVideo = useVideo(nextClip?.video_id);
+  const nextVideo = useRoundVideo(nextClip?.video_id);
   const nextSource = useClipSource(nextVideo.data);
 
   // ── The stage: which media is mounted, and when its engine is really this media's ──
@@ -421,6 +431,11 @@ function RoundRunner({
 
   // ── Problems: a song that can't play, or a clip outside its video → skip it ──
   const playerError = usePlayer((s) => s.error);
+  // REQ-15 · A file that failed to play from a remembered signature: the next round signs it again.
+  const failedUrl = playerError && source.status === 'file' ? source.url : null;
+  useEffect(() => {
+    if (failedUrl) forgetFailedClipSource(failedUrl);
+  }, [failedUrl]);
   // A failed background refetch keeps the song it already had (isError with data): that one still plays.
   const missing =
     clip != null &&

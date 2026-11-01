@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { canonicalQuery as serverCanonicalQuery } from '../../api/youtube-search';
 import {
+  canonicalQuery,
   nextResultIndex,
   readPickerInput,
   resultsShown,
@@ -99,5 +101,25 @@ describe('resultsShown', () => {
     const failed = { status: 'error' as const, query: 'illit', message: 'x', limit: false };
     expect(resultsShown(failed, 'illit')).toBe(true);
     expect(resultsShown(failed, 'ive')).toBe(false);
+  });
+});
+
+describe('canonicalQuery (REQ-19)', () => {
+  // The client must write the query exactly as the server would: otherwise every such search costs a 308 redirect.
+  it.each([
+    '',
+    'ILLIT Magnetic',
+    '  ILLIT   Magnetic  ',
+    'aespa & NewJeans',
+    'Mixed   ÁÉÍ  Ñandú',
+    ' nbsp around ',
+    'İstanbul ǅ ẞ',
+    'あいう  カタカナ',
+  ])('normalises %j like the server', (input) => {
+    expect(canonicalQuery(input)).toBe(serverCanonicalQuery(input));
+  });
+
+  it('is what searchUrl sends', () => {
+    expect(searchUrl('  ILLIT   Magnetic ')).toBe('/api/youtube-search?q=illit%20magnetic');
   });
 });

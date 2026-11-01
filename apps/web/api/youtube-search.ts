@@ -202,5 +202,5 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
 
-  return json({ items }, 200, { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=86400' });
+  return json({ items }, 200, { 'Cache-Control': 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400' });
 }

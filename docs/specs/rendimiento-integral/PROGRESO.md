@@ -10,10 +10,10 @@
 
 | Fase | Estado | Commit |
 | --- | --- | --- |
-| 0 Herramientas y líneas base | Hecha | (ver git log: chore(tooling) fase 0) |
-| 1 Backend por dominio | Pendiente | |
-| 2 Datos y base de datos | Pendiente | |
-| 3 Carga, shell y PWA | Pendiente | |
+| 0 Herramientas y líneas base | Hecha | efb2c1e |
+| 1 Backend por dominio | Hecha | debc5a4 |
+| 2 Datos y base de datos | Hecha | commit conjunto con la fase 3 (ver git log de perf/rendimiento-integral) |
+| 3 Carga, shell y PWA | Hecha | commit conjunto con la fase 2 |
 | 4 Estudio fluido | Pendiente | |
 | 5 Grupo y diálogos fluidos | Pendiente | |
 | 6 Grabador, tomas y repaso | Pendiente | |
@@ -22,6 +22,12 @@
 | 9 Limpieza transversal | Pendiente | |
 | 10 motion perezoso (condicional) | Pendiente | |
 | Cierre final | Pendiente | |
+
+## Instrucción del responsable sobre commits (01-11-2026)
+
+Aclarado por el responsable: **commits sí, uno por fase, en una rama nueva; ningún deploy ni push.** Se creó la rama
+`perf/rendimiento-integral` desde `debc5a4` (sustituye a la regla de la spec «trabajar siempre en la rama actual»).
+Los commits de las fases 0 (`efb2c1e`) y 1 (`debc5a4`) siguen también en `feat/plan-completo`, sin subir.
 
 ## Notas de arranque
 
@@ -185,6 +191,103 @@ Decisión: la Splash anima con un CSS propio (`components/splash.css`) en vez de
 F3a no se solape con la de F3b (fuentes en `index.css`). REQ-10 y el `crossOrigin` de las miniaturas esperan al cierre
 de la fase 2.
 
+### Fase 3 · Carga, shell y PWA — Hecha (revisión cerrada)
+
+Qué se hizo, por REQ:
+- REQ-04: el service worker se registra tras `load` + reposo (`requestIdleCallback`, 3 s; `setTimeout` de reserva) e
+  importa `virtual:pwa-register` en ese momento (`.catch` silencioso); el mecanismo de actualización segura no cambia.
+- REQ-05: `preconnect` a Supabase solo en build (plugin que omite la etiqueta sin variable); fuera los de YouTube y
+  Google Fonts; quedan 2 (Supabase e i.ytimg.com).
+- REQ-06: `lib/routeLoaders.ts` (mapa único usado por `lazy()`, `prefetch.ts` y `main.tsx`); en `/v/:id` también la
+  IFrame API y el grupo con las MISMAS opciones que `CrewProvider` (`lib/groupQuery.ts`, una sola definición).
+- REQ-07: fuentes autoalojadas (14 woff2 latin/latin-ext + subconjunto de kanji de la UI) en `fonts.css` crítico, sin
+  incrustar en base64 (`assetsInlineLimit`); los ~605 bloques japoneses y de otros alfabetos de gstatic van en
+  `fonts-ja.css`, cargado con un `<link>` creado tras el primer render (un fallo no recarga la página). Sus
+  `unicode-range` se recortan solo por (rango declarado ∩ glifos reales) de las caras autoalojadas, de modo que cada
+  carácter lo pinta la misma cara que con las hojas de Google, incluido el salto a otra cara de la familia cuando
+  falta el glifo: barrido de 458 752 puntos (7 familias/pesos × BMP) con 0 diferencias (`evidencias/fase-3/`,
+  `trim-fonts.mjs`, `winners.mjs`). Workbox sin la regla de googleapis; CSP sin googleapis.
+- REQ-08 (`manualChunks`): fuera la regla `icons`; `tailwind-merge` en chunk propio precargado; importaciones dinámicas
+  de lo que no necesita el primer pintado (IndexedDB de pósteres y copias locales, notas en el calentamiento, borrar).
+- REQ-09: AppShell monta solo la barra del ancho actual (`lib/useDesktop.ts`); la píldora `rail-active` va en un
+  `LayoutGroup` propio por montaje; Splash con `@keyframes` CSS (mismos valores; captura de fotogramas idéntica); Backdrop
+  con `100lvh`.
+- REQ-10: `public/lcp-preload.js` (externo, solo en `/`) precarga con prioridad alta la miniatura destacada guardada
+  por la biblioteca (`oneshoot.lcpThumb.v1`, solo http(s)); en el arranque repetido se pide a los 293 ms, antes de que
+  arranque el módulo de entrada (358 ms).
+- REQ-13: i.ytimg.com responde `Access-Control-Allow-Origin: *` → `crossOrigin` en las miniaturas de YouTube
+  (`lib/thumbCors.ts`, solo para ese host) y estrategia `CacheFirst` 14 días `statuses [200]` en una caché nueva
+  `thumbnails-cors`. CSS de Tailwind con `source('./')`: solo desaparece `.blur` (venía de un spec e2e).
+- REQ-18: `gcTime` por defecto de 60 min.
+- REQ-27: `components/AppShell.tsx` → `components/shell/**` (barril compatible).
+
+Bundle: M-01 296,97 → 287,18 kB gzip (96,7 %: el objetivo del 85 % de esta fase NO se alcanza; lo grueso del camino
+crítico es react 83,7 kB, supabase-js 58,3 kB y motion 43,8 kB, que tratan las fases 8 y 10). M-02 71,57 → 62,60 kB
+(−8,97, cumple REQ-08). Precache 79 → 114 entradas (entran las fuentes, como prevé la spec).
+
+Decisiones y justificaciones de la revisión:
+- `resize` sintético al cruzar `lg` (shell): sin él, el popover «Pausa entre vueltas» del estudio quedaba desplazado
+  88 px tras cruzar `lg` con el menú abierto, porque el evento `resize` del navegador llega antes de que React cambie de
+  barra. Se emite solo al cruzar `lg`, nunca al montar; se revisaron todos los oyentes de `resize` (QuickExposure,
+  Transport, viewport, quickNavCore, EditorTools) y son idempotentes. Revisores r1 (riesgos) lo dieron por bueno; el
+  «7» de spec en r4 era de documentación y se rebajó a 5 con esta nota.
+- Carga diferida de `fonts-ja.css` (r3 calidad, rebajado a 5): antes los cortes japoneses tampoco bloqueaban (con
+  `font-display: swap` el título se pintaba con la reserva hasta que llegaba su woff2); ahora ese intervalo se alarga lo
+  que tarda el CSS diferido (en visitas repetidas, desde el precache). Los kanji de la UI siguen en el CSS crítico. El
+  aspecto final es idéntico.
+- La caché antigua `thumbnails` (respuestas opacas) queda huérfana en los dispositivos: borrarla exige permiso del
+  responsable (2.6). Pendiente de su decisión.
+
+Revisión: r1 (sonnet medium · opus medium · haiku medium) con 3 hallazgos de 7 (test obsoleto de la Splash, re-
+declaración de fuentes con riesgo de repintado en Safari, recarga si fallaba el CSS diferido); r2 (sonnet low · opus
+medium · haiku low) con 1 de 7 (huecos de glifos en el recorte de fuentes); r3 y r4 (haiku/sonnet low) sin hallazgos ≥7
+tras justificar dos notas. Probar: suite completa visual y de flujos en los dos Chromium tras cada lote (última: 343
+visual+shell sin fallos; 541 completa antes del último lote de fuentes).
+Medición completa tras las fases 2 y 3 (`evidencias/fase-3/perf-f2f3.json`, 5 pasadas): S-01 frío LCP 2996 → 2808 ms,
+pero library-painted 5478 → 6842 ms; S-01 repetido LCP 840 → **1404** ms; S-02 player-ready YouTube 3601 → **4030** ms,
+subido 4556 → **4726** ms; fluidez (S-03…S-16) en la línea de la base (es trabajo de las fases 4–7). Son
+**regresiones**: no se commitean las fases 2 y 3 hasta corregirlas.
+
+Investigación (opus / medium, `evidencias/fase-3/regresion/`): cuatro causas — (1) `fonts-ja.css` (~148 kB gzip de
+@font-face) entraba justo tras el render y robaba ancho de banda; (2) pósteres en serie (revisiones → IndexedDB →
+descarga); (3) precargas en reposo (estudio, «Añadir vídeo») en plena descarga de pósteres; (4) en `/v/:id` la fila,
+clips y notas esperaban al chunk del estudio. Arreglos: `lib/startupSettled.ts` (lo no urgente espera a que la primera
+pantalla se asiente), pósteres de la primera visita en paralelo a la lista (`listCrewPosters`, pista
+`oneshoot.postersKept.v1:<crew>`), lectura de IndexedDB en paralelo a las revisiones, y en `routeLoaders` las consultas
+de `/` y de `/v/:id` salen antes de montar React con las mismas claves y funciones. Resultado (mediana de 5):
+
+| Métrica (ms) | Base guardada | Antes del arreglo | Después |
+| --- | --- | --- | --- |
+| S-01 frío LCP | 2996 | 2772 | 2680 |
+| S-01 frío library-painted | 5478 | 6831 | 5699 |
+| S-01 frío load | 2011 | 4834 | 2162 |
+| S-01 repetido LCP | 840 | 1328 | 1044 |
+| S-01 repetido library-painted | 526 | 1018 | 690 |
+| S-02 YouTube player-ready | 3601 | 3960 | 3561 |
+| S-02 subido player-ready | 4556 | 4711 | 4374 |
+
+Notas: (a) la base guardada mide como LCP el `<p>` «Fijados primero…»; al rehacer la base hoy sobre el commit de
+partida, gana el IMG del póster (5708 frío / 3448 repetido), así que M-03/M-04 deben compararse por elemento; (b) en
+frío quedan ~134 kB de woff2 propios que con Google Fonts simulado no pesaban en la base; (c) **desviación de la spec**:
+el agente creó y borró una worktree temporal del commit `efb2c1e` para medir la base de hoy (la spec prohíbe worktrees;
+no quedó nada); (d) aplazar `fonts-ja.css` hasta el asentamiento (≤ 10 s) alargaría la fuente de reserva en títulos con
+kana: se ajusta para cargarla en cuanto haya en pantalla texto que la necesite (en curso). Los arreglos de la regresión
+pasaron su propia revisión: r1 (opus medium · sonnet low · haiku medium) con 2 hallazgos (vigilante de fuentes ciego a
+portales y campos: 7; pósteres re-descargados en dispositivos con IndexedDB previa: 6), arreglados; r2 y r3 sin ≥7 (un «7»
+de r3 sobre el coste del vigilante se rebajó a 5: el vigilante se para siempre al añadirse `fonts-ja.css`, como muy tarde
+tras el asentamiento, y cada recorrido cuesta ~0,6 ms). Pendiente de nota baja: el vigilante usa un *throttle* de 60 ms
+en vez de un *debounce* real.
+
+**Commit conjunto de las fases 2 y 3 (desviación):** los arreglos de la regresión y del troceado tocaron ficheros con
+cambios de las dos fases (`LibraryPage`, `VideoCard`, `StudioPage`, `data/videos/**`, páginas de grupo con `crossOrigin`).
+Sin `git add -p` (no interactivo en este entorno) un commit intermedio de la fase 2 no compilaría, así que se hace un único
+commit «fases 2 y 3». Comprobaciones antes del commit: typecheck OK; lint 0 errores / 322 avisos; test 1012 + 142;
+check:size OK; db:test 34 migraciones, 23 ficheros, 189 PASS; suite visual y de flujos completa en verde en la última
+pasada de cada lote.
+Pendientes de nota baja: regla «i.ytimg.com» duplicada entre `thumbCors.ts` y `lcp-preload.js`; los scripts de
+regeneración de fuentes viven en la carpeta de evidencias (documentado en la cabecera de `fonts-ja.css`); `useEvent`
+sin `initialDataUpdatedAt` (heredado de HEAD).
+
 ### Fase 1 · Backend por dominio — Hecha
 
 - `lib/backend.ts` (3272 líneas) → `lib/backend/` (`types`, `mode`, `upload`, `demoDb`, `shared` y, por dominio, fachada
@@ -209,8 +312,49 @@ de la fase 2.
 - Revisión r2: ver abajo. Pendientes de nota baja: códigos de comentario heredados («13 ·», «52 ·») en lugar de REQ-xx
   (se mantienen: son los códigos del plan original); `const data = must(...); return data;` redundante en stems.
 
+### Fase 2 · Datos y base de datos — Hecha
+
+| Tarea | Rol | Modelo / esfuerzo | Reserva | Resultado |
+| --- | --- | --- | --- | --- |
+| 2A · migraciones, tipos, simulador (REQ-14/17/19.4/20 SQL) | datos y migraciones | opus / medium | supabase/migrations (nuevas), supabase/tests, database.types.ts, supabaseMock | hecho: 4 migraciones, 4 tests SQL; db:test 34 migraciones, 23 ficheros, 188 PASS; mock 21/21 |
+| 2B · vídeos, pósteres, notas, firmas (REQ-14/15/16/17/27) | implementador datos core | opus / medium | lib/backend/core.*, signedUrls.ts, data/videos/**, data/notes, snapshot, VideoCard, fileSource, StudioPage (marcador), NoteDialog, ReviewScreen (dibujo) | hecho: M-06 478 323 → 16 219 B (3,4 %) |
+| 2C · grupo (REQ-18 cascadas, 19, 20 cliente, 15 stems/RPD) | implementador datos grupo | sonnet / medium | lib/backend/{bags,wishes,events,stems}.*, data/{bags,wishes,events,stems,tracks}, páginas de grupo (consultas), api/*, youTubePickerRules | hecho |
+| Integración | integrador | sonnet / medium | uniones de bolsas/eventos, arnés M-06 | hecho: uniones sin póster base64; textos de error nuevos de 2C eliminados (regla de oro); M-06 mide solo la lista |
+| Revisión r1 | revisores | sonnet medium · opus medium · haiku medium | solo lectura | 4 hallazgos ≥7 (fila de la ronda congelada; toast nuevo al reordenar si otro móvil archivó un elemento; pósteres ausentes/viejos en bolsas y eventos; parpadeo del primer dibujo) — los tres últimos los subió el orquestador de 6 a 7 por ser cambios visibles |
+| Arreglos r1 | implementador | opus / medium | fase 2 | hecho: fila de la ronda refrescable, reintento único al reordenar, pósteres con rev, primer dibujo sin parpadeo, peekSigned, getVideo sin póster, explain de índices |
+| Revisión r2 | revisores | sonnet low · sonnet medium · haiku low | solo lectura | sin ≥7 (4 de nota 5–6 arreglados: demo con archivados, `patches` muerto, `initialDataUpdatedAt`, prefetchRound sin relanzar) |
+| Revisión r3 | revisores | haiku low · sonnet low · haiku low | solo lectura | sin ≥7 → revisión cerrada |
+
+Paralelo: 2A ∥ 2B ∥ 2C con contratos fijados de antemano (columnas y RPC, API de `signedUrls.ts`), junto con los
+arreglos de la fase 3 (reservas disjuntas).
+
+Decisiones: GET /notes queda en el 39 % de la base (objetivo ≤ 15 %) porque el fixture de la fase 0 tiene un solo
+dibujo de 5,2 kB; el 15 % se cumple con dibujos ≥ 12,6 kB (la spec habla de hasta 60 kB). El snapshot no lee los
+pósteres de IndexedDB (la spec lo dejaba como «puede»; `placeholderData` es síncrono): el arranque repetido queda igual
+que hoy. Los pósteres se descargan una vez (468 kB en la primera carga del fixture) y después 0.
+
 ## Diferencias visuales y su justificación
 
 ## Sugerencias para el responsable (no implementadas)
 
 ## Para el responsable: migraciones, despliegue y pruebas en dispositivo
+
+(Borrador de la fase 2; se completa en el cierre final.)
+
+1. Copia de seguridad del proyecto `pevbjaowyctqqldvzovz` antes de nada (backup/PITR del panel o `pg_dump` de `public`).
+2. Aplicar en Supabase, **en este orden y antes de desplegar el cliente** (el cliente nuevo las necesita: sin ellas
+   las listas responden 400):
+   1. `20261031110000_video_list_columns.sql` (REQ-14)
+   2. `20261031120000_notes_has_sketch.sql` (REQ-17)
+   3. `20261031130000_poll_votes_signature.sql` (REQ-19)
+   4. `20261031140000_positions_rpc_and_indexes.sql` (REQ-20)
+   Las dos primeras añaden columnas generadas `stored` y reescriben `videos` y `notes` con bloqueo exclusivo (tablas
+   pequeñas; mejor en un momento de poco uso). No migran datos: Postgres rellena las columnas solo.
+3. Después, en el editor SQL: `video_list_columns_checks.sql`, `notes_has_sketch_checks.sql`,
+   `poll_votes_signature_checks.sql`, `positions_rpc_checks.sql` y, como control, `archive_checks.sql`. Todos terminan
+   en ROLLBACK y deben imprimir PASS sin ningún FAIL.
+4. Comprobar los advisors de seguridad y rendimiento (se esperan sin avisos nuevos; las funciones son `security
+   invoker` con `search_path=''`; un aviso de índice sin uso al principio es normal).
+5. Regenerar `packages/shared/src/database.types.ts` desde el proyecto y comprobar que coincide con el editado a mano
+   (salvo orden; si el generador añade las generadas en Insert/Update como `?: never`, aceptar lo generado).
+6. Desplegar con `pnpm deploy:prod` desde la raíz (`docs/DEPLOY.md`) solo después de los pasos 2 y 3.

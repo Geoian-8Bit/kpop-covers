@@ -3,7 +3,8 @@ import { supabase } from '../supabase';
 import { fetchAll, must } from './shared';
 import type { EventSongView, EventsBackend } from './types';
 
-const EVENT_SONG_SELECT = '*, video:videos(id, title, artist, thumbnail_url, source, youtube_id)';
+const EVENT_SONG_SELECT =
+  '*, video:videos(id, title, artist, thumbnail_url:list_thumbnail_url, source, youtube_id, poster_inline, poster_rev)';
 
 export const supabaseEvents: EventsBackend = {
   async listEvents() {
@@ -59,12 +60,9 @@ export const supabaseEvents: EventsBackend = {
   async deleteEventSong(id) {
     must(await supabase.from('event_songs').delete().eq('id', id));
   },
-  async setEventSongPositions(patches) {
-    const results = await Promise.all(
-      patches.map(({ id, position }) => supabase.from('event_songs').update({ position }).eq('id', id)),
-    );
-    const failed = results.find((r) => r.error);
-    if (failed?.error) throw failed.error;
+  async setEventSongPositions(eventId, ids) {
+    // REQ-20 · One call, all or nothing (it was one PATCH per song).
+    must(await supabase.rpc('set_event_song_positions', { p_event: eventId, p_ids: ids }));
   },
   async listReactions(videoId) {
     const rows = await fetchAll<TakeReaction & { take: unknown }>((from, to) =>
