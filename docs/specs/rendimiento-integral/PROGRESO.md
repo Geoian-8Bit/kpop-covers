@@ -333,6 +333,112 @@ dibujo de 5,2 kB; el 15 % se cumple con dibujos ≥ 12,6 kB (la spec habla de ha
 pósteres de IndexedDB (la spec lo dejaba como «puede»; `placeholderData` es síncrono): el arranque repetido queda igual
 que hoy. Los pósteres se descargan una vez (468 kB en la primera carga del fixture) y después 0.
 
+### Fases 4, 5, 7 y 8 (en paralelo) — Hechas
+
+Revisiones cerradas: F4 (r1 con un 7; r2 y r3 limpias), F5 (r1 con tres 7 visibles; r2 con «7» que eran descartes sin
+documentar —documentados—; r3 limpia), F7 (r1 con tres 7; r2 y r3 limpias), F8 (r1–r3 con 7; r4 y r5 limpias). Suite
+completa tras las cuatro fases: 538 pasados, 0 fallos, 3 inestables que pasan al reintentar, 7 saltados (WebKit).
+
+Medición tras las fases 4, 5, 7 y 8 (`evidencias/f4578/perf.json`, máquina libre, 5 pasadas):
+
+| Escenario | Base | Ahora | Objetivo | Cumple |
+| --- | --- | --- | --- | --- |
+| S-03 Paint/s | 113 | 26,2 | ≤ 30 % (34) | sí |
+| S-03 Timeline commits/10 s | 1 | 1 | 0 | no (1 commit al cargar `duration`) |
+| S-04 PlayerZoomLayer commits/s | 42,3 | 0,9 | 0 en el gesto | sí (los 0,9 son las entradas/salidas de `live`) |
+| S-04 fotograma p95 | 55,5 ms | 29,9 ms | ≤ 20 ms | no |
+| S-10 RoundRunner commits/s | 5,9 | 2,0 | ≤ 2 | sí |
+| S-15 LoAF | 3 | 0 | −70 % | sí |
+| S-16 LoAF | 1 | 0 | −70 % | sí |
+| S-02 YouTube player-ready | 3601 | 3367 ms (93 %) | ≤ 85 % | no |
+| S-02 subido player-ready | 4556 | 4150 ms (91 %) | ≤ 75 % | no |
+| S-01 repetido LCP | 840 (`<p>`) / 3448 (IMG, base rehecha) | 1404 | ≤ 80 % | depende del elemento (ver nota de la fase 3) |
+| S-07/S-08 Paint/s | 120 / 102 | — / 86 | ≤ 50 % | no en S-08 (lo que queda son listas, pestañas y el documento tras cerrar) |
+| S-11 / S-14 fotogramas > 50 ms | 1 / 30 | 16 / 37 | ≤ 20 ms p95 | no — son las pantallas de la fase 6 |
+
+### Fases 4, 5, 7 y 8 — tabla de reservas
+
+| Fase | Rol | Modelo / esfuerzo | Reserva |
+| --- | --- | --- | --- |
+| 4 Estudio fluido (REQ-21, 27 estudio/store, 28 bucle y reinicio) | implementador frontend | opus / medium | player/**, features/studio/** salvo F7 y fileSource.ts, shell (solo will-change) |
+| 5 Grupo y diálogos (REQ-22, 21.6 biblioteca, 27 grupo) | implementador frontend | opus / medium | features/{rpd,bags,wishes,events,library,nav,members,settings}/**, ui/Dialog, YouTubePicker, lib/hanging |
+| 7 Workers (REQ-26, 27 cloudCopy, 28 MP4) | implementador audio/vídeo | opus / medium | voice/separate/**, SeparateVoiceButton, studio/{cloudCopy*,mp4Mux*,CloudCopyStatus,audioAlign*}, lib/heavyWork*, lib/mp4/**, workers, vite.config (workers) |
+| 8 Supabase ligero (REQ-11) | implementador backend | opus / medium | lib/supabase.ts, AuthProvider, CrewProvider, lib/backend/**, package.json/lockfile de apps/web |
+
+Paralelo según el grafo 7.2 (F2 y F3 cerradas); la fase 6 espera a la 4.
+
+Interrupción: el 01-11 los cuatro agentes se cortaron por el límite semanal de la API; se reanudaron el 04-11 desde su
+transcripción (el trabajo estaba en el árbol).
+
+**Fase 7 (revisión cerrada).** `lib/mp4/boxes.ts` compartido (bytes idénticos, huellas fijas tomadas de d3776f7);
+codificación AAC y empaquetado MP4 de la separación y de la copia en workers (`stemEncoder.worker.ts`,
+`cloudCopy/sound.worker.ts`, `createAudioWorker`), con tramos de ~4 s copiados y confirmados uno a uno (el pico extra es
+un tramo); recurso a la página si no hay Worker/AudioEncoder, si el worker rechaza la configuración o si muere (el sonido
+se recodifica en la página con el original); cola de peticiones, cancelación con terminate y plazos por respuesta;
+progreso del modelo ≤ 4/s con `Uint8Array` reservado; `cloudCopy.ts` → `cloudCopy/{media,sound,picture,index}`.
+Decisión: las muestras de VÍDEO de la copia se transfieren (no se copian) para no subir el pico de memoria (REQ-26); si
+el worker muere con ellas, la copia termina con el FriendlyError de siempre (caso raro, no recuperable). Revisión: r1
+(opus · sonnet · haiku) con 3 hallazgos de 7 subidos de «6» por ser cambios funcionales (fallo donde HEAD funcionaba,
+worker inutilizado, cuelgue sin cancelar); r2 sin ≥7 (recodificación tras muerte del worker y cola, arreglados); r3 sin
+≥7 (un «7» sobre copia de canales completos resultó falso: `sliceSource` copia tramos). Medición pendiente con la
+máquina libre (S-16 sin LoAF; S-15 ruidoso).
+
+**Fase 8.** Cliente PostgREST directo + storage-js perezoso en chunk propio: chunk de Supabase 58,5 → 11,9 kB gzip;
+M-01 289 → 241,5 kB (81 % de la base). **Premisa de la spec incorrecta:** la política `profiles_select` es solo para
+`authenticated`, así que sin refresco de token las sesiones antiguas (tokens de ~1 h) verían su email en vez de su
+nombre; se implementa un refresco mínimo con `fetch` equivalente al de supabase-js 2.117.3 (margen 90 s como
+`EXPIRY_MARGIN_MS`, mismo formato de sesión, 4xx → se borra la sesión, red/5xx → se conserva con enfriamiento de 60 s,
+`navigator.locks` con el nombre `lock:sb-<ref>-auth-token` y reserva sin locks); solo se muestra una sesión con token
+válido (como `getSession()` de auth-js cuando el refresco falla); `signOut` borra al momento y revoca en segundo plano con
+`POST /auth/v1/logout?scope=global` como auth-js; un fallo al cargar storage-js no dispara la recarga de página
+(`createPreloadErrorGuard`); signIn/signUp y `loading` quitados (0 usos). Revisión: r1 (opus · sonnet · haiku) con 1
+hallazgo de 7 (nombre → email sin refresco) y dos 5–6; r2 con un 7 (sesión caducada sin refrescar visible; arreglado por
+el orquestador con `shownSession()`); r3 con dos 7 (logout sin revocar, refresco sin lock entre pestañas); r4 y r5 sin
+≥7 → revisión cerrada. Captura del bloque de usuario con sesión antigua vigente y caducada+refrescada idéntica a la
+referencia generada sobre 5566bed (`evidencias/f8/`).
+
+Commits de las fases 7 y 8: aplazados hasta que terminen las fases 4 y 5, para medir con la máquina libre y comprobar el
+árbol completo antes de cada commit.
+
+**Fase 5.** Hecho: revelado de la votación con pétalos, estelas y núcleos en HTML (caja que reproduce el
+`xMidYMid slice`, animaciones CSS con los mismos tiempos y curvas; estelas con tapones redondos y cuerpo por fotogramas
+cada 10 ms, misma geometría que HEAD); bombo en su propio SVG girado por CSS con paradas por el muelle `soft`; colgantes
+con IntersectionObserver (los ocultos ni hacen tic ni reciben impulsos; se repiten al volver a verse: `replayHidden`);
+cuenta previa que solo re-renderiza al cambiar lo visible (RoundRunner 5,8 → 1,9 commits/s); WishCard con `memo` y
+`useClosingNow`; Hanafuda con `elementFromPoint` agrupado en rAF; divisiones de RpdPlayPage, BagPage, WishesPage,
+PollPage y PinnedClips (todos ≤ 561 líneas). S-07 Paint/s 105 → 37 (máquina cargada; p95 pendiente de medir libre).
+**Descartados (regla de oro):**
+- REQ-22.1 `will-change` en el panel de los diálogos solo mientras anima: con él (escrito por motion o directamente en el
+  nodo), el texto de los diálogos altos con posición fraccionaria acaba desplazado ~0,25 px tras la animación (captura
+  «panel vincular archivo» fuera de tolerancia, bisección: con el `Dialog.tsx` de HEAD pasa; con los callbacks sin
+  `will-change` pasa). Se deja `Dialog.tsx` como en HEAD.
+- REQ-22.6 barras de resultados con `translateX`: con un ancho final menor que el diámetro del extremo redondo (≈ 8 px)
+  la barra trasladada y recortada se ve como una lente, no como una píldora, también en los primeros fotogramas del
+  muelle. Siguen animando `width` como en HEAD.
+- REQ-21.6 `will-change` en el botón de borrar de VideoCard: en reposo está a `scale-75`, y una capa `will-change` se
+  rasteriza a esa escala (icono borroso al pasar el ratón) y crea una capa por tarjeta. VideoCard como en HEAD.
+- REQ-22.9 faroles de la cuenta atrás: ya animan solo `rotate` y `opacity`, pero dentro de un SVG con `drop-shadow`;
+  sacarlos a capas propias arriesga un cambio visible. Sin cambios.
+**Desviaciones justificadas:**
+- REQ-22.3 bombo: origen de giro 50 % 50 % en vez del 47,62 % que dice la spec, porque motion sobrescribía
+  `transform-origin` con el centro de la caja y las referencias de la fase 0 giran así (con 47,62 % salía 10 px
+  desplazado).
+- REQ-22.5 cuenta previa: se conserva el intervalo de 80 ms (con el render solo al cambiar lo visible) en vez de un
+  `setTimeout` al siguiente cambio de segundo: con temporizadores encadenados fallaban 4 de 8 flujos e2e de la cuenta
+  previa (el reloj llega tarde); el intervalo da los mismos números y tics en el mismo instante (16/16) y cumple el
+  objetivo de commits (≤ 2/s). Al reanudar se sincroniza el reloj: no aparece un «3» de más.
+- Las divisiones de TrackPage, RpdPage, EventPage, MembersUI, quickNavCore y YouTubePicker (todas < 600 líneas) pasan a
+  la fase 9.
+- Arnés: `e2e/visual/group.spec.ts` descarta 2 números del `Math.random` sembrado (`SEED_BURN`) porque supabase-js
+  consumía dos al cargar en el demo y el cliente nuevo ninguno; probado de 0 a 16, solo 2 reproduce las referencias. En
+  la app el orden de los sorteos es aleatorio igual que antes.
+
+**Fase 4.** Estudio dividido (ningún fichero > 600; StudioPage 579), marea de la ola en el compositor (S-03 Paint/s
+113 → 29), pellizco sin re-render de la capa (0 commits de PlayerZoomLayer durante el gesto). Revisión r1: 1 hallazgo de
+7 (un clic quieto en el sello A/B podía mover el tramo por un movimiento pendiente del cursor) y varios 5–6 para cumplir
+M-08/M-09; arreglos en curso. El orquestador restauró a HEAD cinco ficheros de `player/` que solo tenían formato
+(comprobado: Prettier aplicado a HEAD = fichero de trabajo).
+
 ## Diferencias visuales y su justificación
 
 ## Sugerencias para el responsable (no implementadas)

@@ -23,7 +23,9 @@ async function stubThumbnails(page: Page) {
   const png = new PNG({ width: 160, height: 90 });
   for (let i = 0; i < png.data.length; i += 4) png.data.set([58, 58, 74, 255], i);
   const body = PNG.sync.write(png);
-  await page.route(/ytimg\.com|ggpht\.com/, (route) => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body }));
+  await page.route(/ytimg\.com|ggpht\.com/, (route) =>
+    route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body }),
+  );
 }
 
 /**
@@ -31,8 +33,16 @@ async function stubThumbnails(page: Page) {
  * requestAnimationFrame and performance.now: those follow the fake clock, while WAAPI animations run on the
  * browser's real timeline and would make every frame depend on how long the screenshot took.
  */
+/**
+ * REQ-11 · The phase-0 references were taken while @supabase/supabase-js still loaded in the demo, and its client took
+ * two numbers from Math.random at start-up. The lighter client takes none, so two are drawn here to keep every seeded
+ * shuffle and draw exactly as in the references (checked: 0–16 tried, only 2 matches). The app's shuffles are random
+ * for users anyway; only this harness needs the sequence to line up.
+ */
+const SEED_BURN = 2;
+
 async function stubRandom(page: Page) {
-  await page.addInitScript(() => {
+  await page.addInitScript((burn: number) => {
     delete (Element.prototype as { animate?: unknown }).animate;
     let a = 20261020;
     Math.random = () => {
@@ -42,7 +52,8 @@ async function stubRandom(page: Page) {
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-  });
+    for (let i = 0; i < burn; i++) Math.random();
+  }, SEED_BURN);
 }
 
 /** Lets the page render and every entrance animation finish: the fake clock moves 250 ms at a time. */

@@ -201,3 +201,38 @@ export class Rope {
     return d;
   }
 }
+
+/* ─────────────────────────── Bodies off screen ─────────────────────────── */
+
+/** REQ-22 · An impulse that reached a body while it was off screen, with its time (performance.now, ms). */
+export interface PendingImpulse {
+  at: number;
+  impulse: number;
+}
+
+/** Longest stretch replayed: any swing has settled well before (the damping halves it in under a second). */
+const MAX_REPLAY_MS = 12_000;
+
+/**
+ * REQ-22 · Replays the time a body spent off screen, from `fromMs` to `toMs`, in frames of at most 1/60 s, applying
+ * each pending impulse (in time order) once its moment comes, so it comes back into view swinging as it would have.
+ * Impulses older than the replayed window all land at its start.
+ */
+export function replayHidden(
+  fromMs: number,
+  toMs: number,
+  pending: readonly PendingImpulse[],
+  apply: (impulse: number) => void,
+  step: (dt: number) => void,
+): void {
+  let t = Math.max(fromMs, toMs - MAX_REPLAY_MS);
+  let i = 0;
+  for (;;) {
+    while (i < pending.length && pending[i]!.at <= t) apply(pending[i++]!.impulse);
+    if (t >= toMs) break;
+    const ms = Math.min(1000 / 60, toMs - t);
+    step(ms / 1000);
+    t += ms;
+  }
+  while (i < pending.length) apply(pending[i++]!.impulse);
+}

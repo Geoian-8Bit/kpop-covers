@@ -10,7 +10,6 @@ const DIRS = ['apps/web/src', 'packages/shared/src'];
 
 // Files that exceed the limit today (baseline). Remove each one as it drops under 600 lines.
 const EXCEPTIONS = new Set([
-  'apps/web/src/features/bags/BagPage.tsx',
   'apps/web/src/features/formations/FormationEditor.tsx',
   'apps/web/src/features/formations/StageView.tsx',
   'apps/web/src/features/record/RecordStudio.tsx',
@@ -19,15 +18,7 @@ const EXCEPTIONS = new Set([
   'apps/web/src/features/review/ReviewMedia.tsx',
   'apps/web/src/features/review/ReviewScreen.tsx',
   'apps/web/src/features/review/reviewRules.ts',
-  'apps/web/src/features/rpd/RpdPlayPage.tsx',
-  'apps/web/src/features/studio/StudioPage.tsx',
-  'apps/web/src/features/studio/Timeline.tsx',
-  'apps/web/src/features/studio/Transport.tsx',
-  'apps/web/src/features/studio/cloudCopy.ts',
   'apps/web/src/features/takes/TakesPanel.tsx',
-  'apps/web/src/features/wishes/PollPage.tsx',
-  'apps/web/src/features/wishes/WishesPage.tsx',
-  'apps/web/src/player/store.ts',
   'packages/shared/src/recording.ts',
 ]);
 

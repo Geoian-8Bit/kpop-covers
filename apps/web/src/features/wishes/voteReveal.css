@@ -1,0 +1,178 @@
+/*
+ * REQ-22 · What moves in the winner reveal (VoteReveal.tsx), as HTML over the night sky: scraps, trails and cores.
+ *
+ * `.vote-petals` sits exactly over the SVG sky (same box) and `.vote-petals-box` reproduces its
+ * `preserveAspectRatio="xMidYMid slice"`: the sky is 200 px tall, so the 360×200 viewBox is scaled by
+ * max(width / 360, 1) and centred both ways. `--u` is one viewBox unit in px, so every scrap keeps the
+ * geometry it had as a <rect x=-5 y=-2.2 width=10 height=4.4 rx=0.8> moved by motion.
+ *
+ * The animation is the motion one it replaces: 2 s from the burst's delay, keyframes at 0 / 30 / 70 / 100 %, and
+ * easeOutExpo (cubic-bezier(0.16, 1, 0.3, 1)) on every segment, as motion applies a single `ease` per segment.
+ * Only transform and opacity animate, so the compositor moves the scraps without repainting.
+ */
+.vote-petals {
+  container-type: inline-size;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vote-petals-box {
+  --u: calc(max(100cqw, 360px) / 360);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100cqw, 360px);
+  aspect-ratio: 360 / 200;
+  translate: -50% -50%;
+}
+
+.vote-petal {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(10 * var(--u));
+  height: calc(4.4 * var(--u));
+  margin-left: calc(-5 * var(--u));
+  margin-top: calc(-2.2 * var(--u));
+  border-radius: calc(0.8 * var(--u));
+  opacity: 0;
+  animation: vote-petal 2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes vote-petal {
+  0% {
+    opacity: 0;
+    transform: translate(calc(var(--bx) * var(--u)), calc(var(--by) * var(--u))) rotate(0deg) scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: translate(calc((var(--bx) + var(--dx)) * var(--u)), calc((var(--by) + var(--dy)) * var(--u)))
+      rotate(calc(var(--r) * 1deg)) scale(1);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translate(
+        calc((var(--bx) + var(--dx) * 1.06) * var(--u)),
+        calc((var(--by) + var(--dy) + 30) * var(--u))
+      )
+      rotate(calc(var(--r) * 1.6deg)) scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc((var(--bx) + var(--dx) * 1.1) * var(--u)),
+        calc((var(--by) + var(--dy) + 70) * var(--u))
+      )
+      rotate(calc(var(--r) * 2.4deg)) scale(0.8);
+  }
+}
+
+/*
+ * The rising trails (geometry in voteTrails.ts). The group carries the fade (0 → 1 → 0, easeOut per segment, in
+ * step with y1); each end is a round cap (a 1.4-unit circle) on its own curve, as motion moved y1 and y2; the body
+ * between them (`.vote-trail-body`, 1 unit tall, scaled from its top) runs on the sampled keyframes that
+ * VoteReveal.tsx puts in a <style>. Only transforms and opacity: the compositor moves them.
+ */
+.vote-trail {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation: vote-trail-fade 0.5s cubic-bezier(0, 0, 0.58, 1) both;
+}
+
+.vote-trail-body,
+.vote-trail-cap {
+  position: absolute;
+  top: 0;
+  left: calc((var(--bx) - 0.7) * var(--u));
+  width: calc(1.4 * var(--u));
+  animation-delay: inherit;
+  animation-fill-mode: both;
+}
+
+.vote-trail-body {
+  height: var(--u);
+  transform-origin: top;
+  animation-duration: 0.5s;
+  animation-timing-function: linear;
+}
+
+.vote-trail-cap {
+  height: calc(1.4 * var(--u));
+  margin-top: calc(-0.7 * var(--u));
+  border-radius: 50%;
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0, 0, 0.58, 1);
+}
+
+.vote-trail-y1 {
+  animation-name: vote-trail-y1;
+}
+
+.vote-trail-y2 {
+  animation-name: vote-trail-y2;
+}
+
+@keyframes vote-trail-fade {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes vote-trail-y1 {
+  0% {
+    transform: translateY(calc(200 * var(--u)));
+  }
+  50% {
+    transform: translateY(calc((var(--by) + 26) * var(--u)));
+  }
+  100% {
+    transform: translateY(calc(var(--by) * var(--u)));
+  }
+}
+
+@keyframes vote-trail-y2 {
+  from {
+    transform: translateY(calc(200 * var(--u)));
+  }
+  to {
+    transform: translateY(calc(var(--by) * var(--u)));
+  }
+}
+
+/*
+ * The bursts' bright cores: a 14-unit circle at the burst that grows to 1.4× and vanishes while it flashes to 0.9,
+ * 0.45 s from the burst's delay, keyframes at 0 / 50 / 100 % with motion's default easeInOut
+ * (cubic-bezier(0.42, 0, 0.58, 1)) on each segment.
+ */
+.vote-core {
+  position: absolute;
+  left: calc((var(--bx) - 14) * var(--u));
+  top: calc((var(--by) - 14) * var(--u));
+  width: calc(28 * var(--u));
+  height: calc(28 * var(--u));
+  border-radius: 50%;
+  opacity: 0;
+  animation: vote-core 0.45s cubic-bezier(0.42, 0, 0.58, 1) both;
+}
+
+@keyframes vote-core {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+}

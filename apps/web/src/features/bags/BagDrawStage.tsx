@@ -1,8 +1,16 @@
-import { AnimatePresence, motion, useReducedMotion, type Transition } from 'motion/react';
-import type { ReactNode } from 'react';
+import {
+  animate,
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  type Transition,
+} from 'motion/react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
 import { TONE, type DrawShown } from './tones';
+import './fukubiki.css';
 
 /**
  * F13 · «Sacar»: the short draw animation, «Fukubiki»: the garagara drum of a festival raffle spins and drops a ball
@@ -90,10 +98,52 @@ const BALL_TRANSITION: Transition = {
   y: { ...jelly, delay: BALL_DELAY },
 };
 
+/** One turn of the spinning drum. */
+const SPIN_MS = 550;
+
+/**
+ * REQ-22 · The drum: its own <svg> (same viewBox) in a box turned with CSS, instead of a motion `rotate` on an SVG
+ * group that repainted the whole scene every frame. The spin is a CSS animation (`fukubiki.css`, one turn every
+ * 550 ms, linear, from 0°) on the inner box, which the compositor runs on its own; the stops (22,5° at rest,
+ * 202,5° once the ball drops) stay the `soft` spring on the outer box, starting from the angle and the speed the
+ * spin had, as motion did when the keyframes gave way to the spring. With reduced motion there is no spin and the
+ * stop is instant (MotionConfig skips transform animations; this does the same).
+ */
+function useDrumTurn(phase: DrawPhase, spinning: boolean, reduce: boolean) {
+  const angle = useMotionValue(phase === 'reveal' ? 202.5 : 22.5);
+  const spin = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = spin.current;
+    if (!el) return;
+    if (spinning) {
+      // The keyframes started from 0°: the drum jumps there and turns.
+      angle.jump(0);
+      el.classList.add('fukubiki-spin');
+      return;
+    }
+    let velocity = 0;
+    if (el.classList.contains('fukubiki-spin')) {
+      const elapsed = Number(el.getAnimations()[0]?.currentTime ?? 0);
+      el.classList.remove('fukubiki-spin');
+      angle.jump(((elapsed % SPIN_MS) / SPIN_MS) * 360);
+      velocity = 360 / (SPIN_MS / 1000);
+    }
+    const target = phase === 'reveal' ? 202.5 : 22.5;
+    if (reduce) {
+      angle.jump(target);
+      return;
+    }
+    const controls = animate(angle, target, { ...soft, velocity });
+    return () => controls.stop();
+  }, [angle, phase, spinning, reduce]);
+  return { angle, spin };
+}
+
 function Fukubiki({ phase, result }: SceneProps) {
   const reduce = useReducedMotion();
   const spinning = phase === 'shaking' && !reduce;
   const showBall = phase === 'reveal' && result != null;
+  const { angle, spin } = useDrumTurn(phase, spinning, Boolean(reduce));
   return (
     <div className="relative mx-auto aspect-[10/7] w-full max-w-[300px] sm:max-w-[340px]">
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="absolute inset-0 block size-full" aria-hidden>
@@ -114,49 +164,48 @@ function Fukubiki({ phase, result }: SceneProps) {
         </text>
         {/* Tray: its back, behind the ball */}
         <path d="M200 183 h52 l-2 4 h-48 z" className="fill-kiji-700" />
-        {/* Drum */}
-        <motion.g
-          style={{ transformBox: 'view-box', transformOrigin: '150px 100px' }}
-          initial={false}
-          animate={spinning ? { rotate: [0, 360] } : { rotate: phase === 'reveal' ? 202.5 : 22.5 }}
-          transition={spinning ? { duration: 0.55, repeat: Infinity, ease: 'linear' } : soft}
-        >
-          <g transform="translate(150 100)">
-            <polygon points={OCTAGON} className="fill-enji-500 stroke-kin-400" strokeWidth="2.5" />
-            <polygon
-              points={OCTAGON_IN}
-              fill="none"
-              className="stroke-kin-300"
-              strokeOpacity="0.5"
-              strokeWidth="1"
-            />
-            {Array.from({ length: 8 }, (_, i) => (
-              <line
-                key={i}
-                x1="0"
-                y1="0"
-                x2={(52 * Math.cos((Math.PI / 4) * i)).toFixed(1)}
-                y2={(52 * Math.sin((Math.PI / 4) * i)).toFixed(1)}
-                className="stroke-enji-700"
+      </svg>
+      {/* Drum: over the stand and the tray's back, under the ball and the tray's front, as before. */}
+      <motion.div aria-hidden className="fukubiki-drum" style={{ rotate: angle }}>
+        <div ref={spin} className="fukubiki-drum">
+          <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="absolute inset-0 block size-full">
+            <g transform="translate(150 100)">
+              <polygon points={OCTAGON} className="fill-enji-500 stroke-kin-400" strokeWidth="2.5" />
+              <polygon
+                points={OCTAGON_IN}
+                fill="none"
+                className="stroke-kin-300"
+                strokeOpacity="0.5"
                 strokeWidth="1"
               />
-            ))}
-            <circle r="9" className="fill-kin-400" />
-            <circle r="4" className="fill-kiji-900" />
-            {/* Crank */}
-            <line
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="-80"
-              className="stroke-kiji-700"
-              strokeWidth="4"
-              strokeLinecap="round"
-            />
-            <circle cy="-80" r="6" className="fill-kiji-400" />
-          </g>
-        </motion.g>
-      </svg>
+              {Array.from({ length: 8 }, (_, i) => (
+                <line
+                  key={i}
+                  x1="0"
+                  y1="0"
+                  x2={(52 * Math.cos((Math.PI / 4) * i)).toFixed(1)}
+                  y2={(52 * Math.sin((Math.PI / 4) * i)).toFixed(1)}
+                  className="stroke-enji-700"
+                  strokeWidth="1"
+                />
+              ))}
+              <circle r="9" className="fill-kin-400" />
+              <circle r="4" className="fill-kiji-900" />
+              {/* Crank */}
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="-80"
+                className="stroke-kiji-700"
+                strokeWidth="4"
+                strokeLinecap="round"
+              />
+              <circle cy="-80" r="6" className="fill-kiji-400" />
+            </g>
+          </svg>
+        </div>
+      </motion.div>
 
       {/* The ball: an HTML layer, so its way out is a compositor transform (no SVG repaint per frame). */}
       <AnimatePresence>

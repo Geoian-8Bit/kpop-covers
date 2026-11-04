@@ -1,9 +1,11 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { Seal } from '@/components/Seal';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, inkReveal, jelly, soft } from '@/lib/motion';
 import { thumbCors } from '@/lib/thumbCors';
+import './voteReveal.css';
+import { trailKeyframes } from './voteTrails';
 
 /**
  * F11 · the winner's reveal when a vote closes («Hanabi»): paper fireworks rise and burst over a night sky; the
@@ -86,7 +88,9 @@ function WinnerText({ winner, delay, reduce }: SceneProps & { delay: number }) {
 
 // ───────────── Hanabi ─────────────
 
-const PETAL_TONES = ['fill-shu-500', 'fill-kin-400', 'fill-sakura', 'fill-ai-300', 'fill-fuji', 'fill-washi'] as const;
+// REQ-22 · The paper scraps are HTML spans (`voteReveal.css`) instead of SVG rects animated by motion: a CSS animation
+// of transform and opacity runs on the compositor, where 100 rects × 5 values per frame repainted the whole SVG.
+const PETAL_TONES = ['bg-shu-500', 'bg-kin-400', 'bg-sakura', 'bg-ai-300', 'bg-fuji', 'bg-washi'] as const;
 const BURSTS = [
   { x: 92, y: 74, tone: 0, delay: 0.15 },
   { x: 262, y: 62, tone: 1, delay: 0.55 },
@@ -94,8 +98,24 @@ const BURSTS = [
   { x: 58, y: 40, tone: 3, delay: 1.3 },
   { x: 304, y: 104, tone: 4, delay: 1.55 },
 ];
+const SKY = 'absolute inset-x-0 top-0 h-[200px] w-full';
+/** The trails' bodies, sampled from both ends' curves (voteTrails.ts); built once. */
+const TRAIL_KEYFRAMES = trailKeyframes(BURSTS.map((burst) => burst.y));
+
+/**
+ * Its own layer for the seal and the thumbnail while their entrance spring runs (and only then: at rest they are
+ * rasterised crisp again), so they don't repaint the page under them every frame.
+ */
+function layerOn(el: HTMLElement | null) {
+  if (el) el.style.willChange = 'transform';
+}
+function layerOff(el: HTMLElement | null) {
+  if (el) el.style.willChange = '';
+}
 
 function Hanabi({ winner, reduce }: SceneProps) {
+  const seal = useRef<HTMLDivElement>(null);
+  const thumb = useRef<HTMLImageElement>(null);
   // Each burst: paper scraps flung out in a ring, then drifting down as they fade (fixed per mount).
   const petals = useMemo(
     () =>
@@ -117,81 +137,95 @@ function Hanabi({ winner, reduce }: SceneProps) {
   );
   return (
     <div className="relative min-h-[300px] bg-gradient-to-b from-ai-900 via-sumi-950 to-sumi-950">
-      <svg viewBox="0 0 360 200" className="absolute inset-x-0 top-0 h-[200px] w-full" aria-hidden preserveAspectRatio="xMidYMid slice">
+      <svg viewBox="0 0 360 200" className={SKY} aria-hidden preserveAspectRatio="xMidYMid slice">
         {/* Stars */}
         {[...Array(18)].map((_, i) => (
-          <circle key={i} cx={(i * 71) % 360} cy={(i * 37) % 120} r={i % 4 === 0 ? 1.1 : 0.6} className="fill-washi-subtle" opacity={0.5} />
+          <circle
+            key={i}
+            cx={(i * 71) % 360}
+            cy={(i * 37) % 120}
+            r={i % 4 === 0 ? 1.1 : 0.6}
+            className="fill-washi-subtle"
+            opacity={0.5}
+          />
         ))}
-        {!reduce &&
-          BURSTS.map((burst, b) => (
-            <motion.line
-              key={`trail-${b}`}
-              x1={burst.x}
-              x2={burst.x}
-              y1={200}
-              y2={200}
-              className="stroke-kin-300"
-              strokeWidth={1.4}
-              strokeLinecap="round"
-              initial={{ y2: 200, y1: 200, opacity: 0 }}
-              animate={{ y2: [200, burst.y], y1: [200, burst.y + 26, burst.y], opacity: [0, 1, 0] }}
-              transition={{ duration: 0.5, delay: burst.delay - 0.45 < 0 ? 0 : burst.delay - 0.45, ease: 'easeOut' }}
-            />
-          ))}
-        {petals.map((p) =>
-          reduce ? null : (
-            <motion.rect
-              key={p.key}
-              x={-5}
-              y={-2.2}
-              width={10}
-              height={4.4}
-              rx={0.8}
-              className={p.tone}
-              initial={{ x: p.burst.x, y: p.burst.y, opacity: 0, rotate: 0, scale: 0.3 }}
-              animate={{
-                x: [p.burst.x, p.burst.x + p.dx, p.burst.x + p.dx * 1.06, p.burst.x + p.dx * 1.1],
-                y: [p.burst.y, p.burst.y + p.dy, p.burst.y + p.dy + 30, p.burst.y + p.dy + 70],
-                opacity: [0, 1, 0.9, 0],
-                rotate: [0, p.rotate, p.rotate * 1.6, p.rotate * 2.4],
-                scale: [0.3, 1, 0.95, 0.8],
-              }}
-              transition={{ duration: 2, delay: p.burst.delay, ease: easeOutExpo, times: [0, 0.3, 0.7, 1] }}
-            />
-          ),
-        )}
-        {/* The bursts' bright cores */}
-        {!reduce &&
-          BURSTS.map((burst, b) => (
-            <motion.circle
-              key={`core-${b}`}
-              cx={burst.x}
-              cy={burst.y}
-              r={14}
-              className="fill-kin-200"
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: [0, 1.4, 0], opacity: [0, 0.9, 0] }}
-              transition={{ duration: 0.45, delay: burst.delay }}
-              style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-            />
-          ))}
       </svg>
+      {/* REQ-22 · Everything that moves over the sky is HTML in the viewBox's own units (`voteReveal.css`), in the old
+          SVG order: the rising trails, then the scraps, then the bursts' bright cores on top. */}
+      {!reduce && (
+        <div aria-hidden className={cn(SKY, 'vote-petals')}>
+          <style>{TRAIL_KEYFRAMES}</style>
+          <div className="vote-petals-box">
+            {BURSTS.map((burst, b) => (
+              <span
+                key={`trail-${b}`}
+                className="vote-trail"
+                style={
+                  {
+                    '--bx': burst.x,
+                    '--by': burst.y,
+                    animationDelay: `${burst.delay - 0.45 < 0 ? 0 : burst.delay - 0.45}s`,
+                  } as CSSProperties
+                }
+              >
+                <span
+                  className="vote-trail-body bg-kin-300"
+                  style={{ animationName: `vote-trail-body-${b}` }}
+                />
+                <span className="vote-trail-cap vote-trail-y1 bg-kin-300" />
+                <span className="vote-trail-cap vote-trail-y2 bg-kin-300" />
+              </span>
+            ))}
+            {petals.map((p) => (
+              <span
+                key={p.key}
+                className={cn('vote-petal', p.tone)}
+                style={
+                  {
+                    '--bx': p.burst.x,
+                    '--by': p.burst.y,
+                    '--dx': p.dx,
+                    '--dy': p.dy,
+                    '--r': p.rotate,
+                    animationDelay: `${p.burst.delay}s`,
+                  } as CSSProperties
+                }
+              />
+            ))}
+            {BURSTS.map((burst, b) => (
+              <span
+                key={`core-${b}`}
+                className="vote-core bg-kin-200"
+                style={
+                  { '--bx': burst.x, '--by': burst.y, animationDelay: `${burst.delay}s` } as CSSProperties
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
       <div className="relative flex min-h-[300px] flex-col items-center justify-end gap-3 px-5 pb-6 pt-24 text-center">
         <motion.div
+          ref={seal}
           initial={reduce ? false : { scale: 1.8, rotate: -16, opacity: 0 }}
           animate={{ scale: 1, rotate: -6, opacity: 1 }}
           transition={{ ...jelly, delay: reduce ? 0 : 1.9 }}
+          onAnimationStart={() => layerOn(seal.current)}
+          onAnimationComplete={() => layerOff(seal.current)}
         >
           <Seal glyph="当選" size={52} />
         </motion.div>
         {winner.thumbnail && (
           <motion.img
+            ref={thumb}
             src={winner.thumbnail}
             crossOrigin={thumbCors(winner.thumbnail)}
             alt=""
             initial={reduce ? false : { opacity: 0, y: -40, rotate: -4 }}
             animate={{ opacity: 1, y: 0, rotate: -1.5 }}
             transition={{ ...soft, delay: reduce ? 0 : 1.75 }}
+            onAnimationStart={() => layerOn(thumb.current)}
+            onAnimationComplete={() => layerOff(thumb.current)}
             className="aspect-video w-36 rounded-[8px] object-cover shadow-[0_10px_24px_-10px_rgb(0_0_0/0.9)] ring-2 ring-washi/80"
           />
         )}

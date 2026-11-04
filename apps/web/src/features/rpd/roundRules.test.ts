@@ -13,6 +13,7 @@ import {
   isLayerEntry,
   leadIn,
   leadStatus,
+  leadShown,
   leaveFallback,
   leaveRoundBy,
   liveClipIds,
@@ -405,5 +406,19 @@ describe('round keys and history', () => {
     expect(leaveFallback('back', true)).toBe('replace');
     // Even that didn't change the page: undo «leaving» so «Salir», the keys and the guard work again.
     expect(leaveFallback('replace', true)).toBe('reset');
+  });
+});
+
+describe('leadShown (REQ-22)', () => {
+  const lead = { pauseMs: 2000, countdownMs: 3000 };
+  it('changes only when the lead-in shows something else: the seconds of the pause, the 3-2-1 and the go', () => {
+    const keys = [0, 999, 1000, 1999, 2000, 2999, 3000, 4999, 5000].map((t) => leadShown(leadStatus(t, lead)));
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[1]).not.toBe(keys[2]);
+    expect(keys[2]).toBe(keys[3]);
+    expect(keys[3]).not.toBe(keys[4]);
+    expect(keys[4]).toBe(keys[5]);
+    expect(keys[5]).not.toBe(keys[6]);
+    expect(keys[7]).not.toBe(keys[8]);
   });
 });

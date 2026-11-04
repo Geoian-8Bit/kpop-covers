@@ -492,3 +492,8 @@ export function roundLeadStatus(state: RoundState, now: number): LeadStatus | nu
   const at = state.pausedAt ?? now;
   return leadStatus(at - state.leadStart, state.lead);
 }
+
+/** REQ-22 · What the lead-in puts on screen (phase, 3-2-1, seconds left): equal keys draw the same. */
+export function leadShown(status: LeadStatus): string {
+  return `${status.phase}:${status.count ?? ''}:${Math.ceil(status.remainingMs / 1000)}`;
+}

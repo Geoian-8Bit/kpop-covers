@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, snappy, soft } from '@/lib/motion';
 import { handLayout } from './navRules';
@@ -49,9 +49,34 @@ function Hand({ api }: { api: QuickNavApi }) {
   const [lifted, setLiftedState] = useState<number | null>(null);
   const liftedRef = useRef<number | null>(null);
   const setLifted = (index: number | null) => {
+    // REQ-22 · Only a different card re-renders the hand.
+    if (liftedRef.current === index) return;
     liftedRef.current = index;
     setLiftedState(index);
   };
+  /**
+   * REQ-22 · The thumb's moves, one hit test per frame: pointermove fires several times a frame on phones and every
+   * `elementFromPoint` forces a layout. The last position wins; a release or a cancel settles what is pending first.
+   */
+  const pendingAt = useRef<{ x: number; y: number } | null>(null);
+  const hitFrame = useRef(0);
+  const flushHit = () => {
+    cancelAnimationFrame(hitFrame.current);
+    hitFrame.current = 0;
+    const at = pendingAt.current;
+    pendingAt.current = null;
+    if (at) setLifted(cardAt(at.x, at.y));
+  };
+  const liftAt = (x: number, y: number) => {
+    pendingAt.current = { x, y };
+    if (!hitFrame.current) hitFrame.current = requestAnimationFrame(flushHit);
+  };
+  const dropHit = () => {
+    cancelAnimationFrame(hitFrame.current);
+    hitFrame.current = 0;
+    pendingAt.current = null;
+  };
+  useEffect(() => dropHit, []);
   const [flying, setFlying] = useState<number | null>(null);
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const reduce = api.reduce;
@@ -65,13 +90,14 @@ function Hand({ api }: { api: QuickNavApi }) {
   const onPointerDown = (e: ReactPointerEvent) => {
     if (flying != null) return;
     drag.current = { x: e.clientX, y: e.clientY, moved: false };
+    dropHit();
     setLifted(cardAt(e.clientX, e.clientY));
   };
   const onPointerMove = (e: ReactPointerEvent) => {
     if (flying != null) return;
     const d = drag.current;
     if (!d) {
-      if (e.pointerType === 'mouse') setLifted(cardAt(e.clientX, e.clientY));
+      if (e.pointerType === 'mouse') liftAt(e.clientX, e.clientY);
       return;
     }
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) {
@@ -79,9 +105,10 @@ function Hand({ api }: { api: QuickNavApi }) {
       // From here the hand follows the thumb and the release picks (no click fires on a card).
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
-    if (d.moved) setLifted(cardAt(e.clientX, e.clientY));
+    if (d.moved) liftAt(e.clientX, e.clientY);
   };
   const onPointerUp = () => {
+    flushHit();
     const d = drag.current;
     drag.current = null;
     if (!d || flying != null) return;
@@ -113,10 +140,14 @@ function Hand({ api }: { api: QuickNavApi }) {
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
         drag.current = null;
+        dropHit();
         setLifted(null);
       }}
       onPointerLeave={(e) => {
-        if (e.pointerType === 'mouse' && !drag.current) setLifted(null);
+        if (e.pointerType === 'mouse' && !drag.current) {
+          dropHit();
+          setLifted(null);
+        }
       }}
     >
       {api.entries.map((entry, i) => {

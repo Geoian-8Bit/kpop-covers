@@ -22,7 +22,7 @@ export function scoreLabel(type: VoteType, score: number): string {
   return `${score} ${score === 1 ? one : many}`;
 }
 
-type PollTiming = Pick<Poll, 'closed_at' | 'closes_at'>;
+export type PollTiming = Pick<Poll, 'closed_at' | 'closes_at'>;
 
 /** Closed by hand (closed_at) or because its time has come (closes_at in the past). */
 export function isPollClosed(poll: PollTiming, now: number = Date.now()): boolean {

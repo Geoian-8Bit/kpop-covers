@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Maximize2, Minimize2, Pause, Play, RotateCcw, Save, SkipForward, Square } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
@@ -26,7 +27,8 @@ const STACK = 'h-auto flex-col gap-1 whitespace-normal text-center leading-tight
  * Two tiers. The big three (Pausa/Seguir, Repetir, Saltar), readable from a step away; under them, a quieter tray
  * with Terminar, Pantalla completa and Guardar como pista. Every target is 48 px or more.
  */
-export function RoundControls({
+// REQ-22 · memo: the round re-renders once a second in the lead-in; the controls only when their own props change.
+export const RoundControls = memo(function RoundControls({
   paused,
   onTogglePause,
   onRepeat,
@@ -128,7 +130,7 @@ export function RoundControls({
       </div>
     </div>
   );
-}
+});
 
 // 54 · Full screen upright: five equal targets (≥ 48 px), icon over a short label. «Guardar como pista» waits for
 // the end of the round.
