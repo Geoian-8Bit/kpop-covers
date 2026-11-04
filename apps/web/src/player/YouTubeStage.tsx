@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'react';
 import { describeYouTubeError, loadYouTubeApi, YTState, type YTPlayer } from '@/lib/youtubeIframe';
 import { useToast } from '@/providers/ToastProvider';
 import { createYouTubeEngine } from './engine';
-import { hasRange, usePlayer } from './store';
+import { restartOnEnded } from './restartOnEnded';
+import { usePlayer } from './store';
 
 /**
  * Streams the original YouTube video through the IFrame API (no download needed).
@@ -40,7 +41,8 @@ export function YouTubeStage({ videoId, vertical = false }: { videoId: string; v
 
     // Blocked embeds or a dead connection never fire onReady: say so instead of spinning forever.
     const stalled = setTimeout(() => {
-      if (!disposed && !engine) sync({ error: 'YouTube no responde. Revisa la conexión y vuelve a intentarlo.' });
+      if (!disposed && !engine)
+        sync({ error: 'YouTube no responde. Revisa la conexión y vuelve a intentarlo.' });
     }, 20000);
 
     loadYouTubeApi()
@@ -100,17 +102,7 @@ export function YouTubeStage({ videoId, vertical = false }: { videoId: string; v
               else if (state === YTState.PAUSED || state === YTState.CUED || state === YTState.UNSTARTED)
                 sync({ playing: false, buffering: false });
               else if (state === YTState.ENDED) {
-                // Same as the loop controller: a gap pauses the video, or it would play on under the countdown.
-                const { loop, gap, loopAll, gapAll } = usePlayer.getState();
-                const restartAt = loop.enabled && hasRange(loop) ? loop.start : loopAll ? 0 : null;
-                if (restartAt != null && engine) {
-                  const wait = loop.enabled && hasRange(loop) ? gap : gapAll;
-                  engine.seek(restartAt);
-                  if (wait > 0) {
-                    engine.pause();
-                    usePlayer.setState({ time: restartAt, countdownEndsAt: performance.now() + wait * 1000, playing: false });
-                  } else engine.play();
-                } else sync({ playing: false, buffering: false });
+                if (!engine || !restartOnEnded(engine)) sync({ playing: false, buffering: false });
               }
             },
             onError: (event) => {

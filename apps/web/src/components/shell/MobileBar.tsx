@@ -64,7 +64,8 @@ export function MobileBar({ onAdd }: { onAdd: () => void }) {
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.88, rotate: 8 }}
             transition={jelly}
-            className="size-11 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)]"
+            // REQ-21 · Own layer: the spring scales it without re-rasterising the drop-shadow every frame.
+            className="size-11 drop-shadow-[0_6px_10px_rgb(0_0_0/0.5)] will-change-transform"
           >
             <ButtonSkin kind="add" />
           </motion.button>
