@@ -9,7 +9,15 @@ import * as ort from 'onnxruntime-web/webgpu';
 // Served from our own domain (Vite emits it under /assets/, not precached: the precache only takes js/css/…).
 import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
 import { DEMUCS_SPEC, demucsSpec, energyDb, specShape, twoStems, type ResidualStats } from './dsp';
-import { clearModelCache, expectedFileBytes, fetchModelFile, isManifest, MODELS, type ModelDescriptor } from './model';
+import {
+  clearModelCache,
+  expectedFileBytes,
+  fetchModelFile,
+  isManifest,
+  MODELS,
+  throttledModelProgress,
+  type ModelDescriptor,
+} from './model';
 import type { PageMessage, RunRequest, SeparationErrorCode, WorkerMessage } from './protocol';
 import {
   accumulate,
@@ -67,23 +75,11 @@ interface Runner {
 async function loadModel(kind: EngineKind): Promise<Runner> {
   const model: ModelDescriptor = MODELS[kind];
   const total = model.bytes;
-  const done = new Map<string, number>();
-  const report = () => {
-    let loaded = 0;
-    for (const v of done.values()) loaded += v;
-    post({ type: 'progress', phase: 'model', loaded: Math.min(loaded, total), total });
-  };
+  // REQ-26 · At most ~4 progress messages a second, whatever the network's piece size.
+  const report = throttledModelProgress(total, (loaded) => post({ type: 'progress', phase: 'model', loaded, total }));
   const file = async (url: string, expected: number | undefined = expectedFileBytes(model, url)) => {
     try {
-      return await fetchModelFile(
-        url,
-        (read) => {
-          done.set(url, read);
-          report();
-        },
-        undefined,
-        expected,
-      );
+      return await fetchModelFile(url, (read) => report(url, read), undefined, expected);
     } catch (error) {
       throw new SeparationErrorWithCause('model-download', error);
     }
