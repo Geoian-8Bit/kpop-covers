@@ -1,4 +1,4 @@
-import { VIDEO_BUCKET, supabase } from '../supabase';
+import { VIDEO_BUCKET, supabase, withStorage } from '../supabase';
 import { must } from './shared';
 import { SIGN_BATCH, SIGN_SECONDS, memoSigned } from './signedUrls';
 import type { StemsBackend } from './types';
@@ -23,9 +23,11 @@ export const supabaseStems: StemsBackend = {
     return data;
   },
   async uploadStemFile(path, file) {
-    const { error } = await supabase.storage
-      .from(VIDEO_BUCKET)
-      .upload(path, file, { contentType: file.type || 'audio/mp4', cacheControl: '31536000' });
+    const { error } = await withStorage((storage) =>
+      storage
+        .from(VIDEO_BUCKET)
+        .upload(path, file, { contentType: file.type || 'audio/mp4', cacheControl: '31536000' }),
+    );
     if (!error) return { ok: true, path };
     console.error('[uploadStemFile]', error);
     const e = error as { status?: number; statusCode?: string; message?: string };
@@ -54,9 +56,9 @@ export const supabaseStems: StemsBackend = {
         await Promise.resolve();
         const signed = new Map<string, string>();
         for (let i = 0; i < missing.length; i += SIGN_BATCH) {
-          const { data, error } = await supabase.storage
-            .from(VIDEO_BUCKET)
-            .createSignedUrls(missing.slice(i, i + SIGN_BATCH), SIGN_SECONDS);
+          const { data, error } = await withStorage((storage) =>
+            storage.from(VIDEO_BUCKET).createSignedUrls(missing.slice(i, i + SIGN_BATCH), SIGN_SECONDS),
+          );
           if (error) throw error;
           for (const entry of data) {
             if (entry.path && entry.signedUrl && !entry.error) signed.set(entry.path, entry.signedUrl);

@@ -29,6 +29,9 @@
 //            computed on load and after every write; writing them is refused (428C9) like Postgres does
 //   Storage  POST /object/sign/<bucket>/<path>, POST /object/sign/<bucket> (batch), GET /object/(sign|public|
 //            authenticated)?/<bucket>/<path> (bytes, Range), POST/PUT /object/<bucket>/<path> (upload)
+//   Auth     POST /auth/v1/token?grant_type=refresh_token (REQ-11 refresh of a login-era session, used only by the
+//            F8 legacy-session evidence): refresh_token «invalid» → 400 invalid_grant, any other → a new session
+//            (JWT valid 1 h) for the user of that capture
 // Rows with archived_at are hidden everywhere, like the RLS policies.
 
 import http from 'node:http';
@@ -684,6 +687,37 @@ export async function startMock({ port = 54329, host = '127.0.0.1', latency = 0,
       const single = accept.includes('application/vnd.pgrst.object+json');
 
       let m;
+      if (url.pathname === '/auth/v1/token' && method === 'POST') {
+        const { refresh_token: refreshToken } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        if (
+          url.searchParams.get('grant_type') !== 'refresh_token' ||
+          !refreshToken ||
+          refreshToken === 'invalid'
+        )
+          return send(400, {
+            error: 'invalid_grant',
+            error_description: 'Invalid Refresh Token: Refresh Token Not Found',
+          });
+        const exp = Math.floor(Date.now() / 1000) + 3600;
+        const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+        const id = '00000000-0000-4000-8000-000000000001';
+        return send(200, {
+          access_token: `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: id, role: 'authenticated', exp })}.mock`,
+          token_type: 'bearer',
+          expires_in: 3600,
+          expires_at: exp,
+          refresh_token: `${refreshToken}-next`,
+          user: {
+            id,
+            aud: 'authenticated',
+            role: 'authenticated',
+            email: 'ana@example.com',
+            app_metadata: {},
+            user_metadata: {},
+            created_at: '2026-03-24T16:00:00Z',
+          },
+        });
+      }
       if ((m = /^\/rest\/v1\/rpc\/([\w]+)$/.exec(url.pathname))) {
         const fn = RPCS[m[1]];
         if (!fn)

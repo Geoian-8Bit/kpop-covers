@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { bearerToken } from '../supabase';
 import type { UploadFailure, UploadOptions, UploadResult } from './types';
 
 export const isDuplicate = (error: unknown) => {
@@ -11,7 +11,7 @@ export const isDuplicate = (error: unknown) => {
 
 /**
  * One upload to Storage's REST endpoint with XMLHttpRequest, which (unlike fetch) reports the bytes sent. Same
- * request supabase-js makes (POST, no upsert), with the session's token or the public key.
+ * request supabase-js makes (POST, no upsert), with the old session's token (while valid) or the public key.
  */
 export async function uploadWithProgress(
   bucket: string,
@@ -22,7 +22,9 @@ export async function uploadWithProgress(
   const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/+$/, '');
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
   if (!base || !key) return { ok: false, reason: 'unavailable' };
-  const token = (await supabase.auth.getSession().catch(() => null))?.data.session?.access_token ?? key;
+  // REQ-11 · The old session's JWT while it's valid (refreshed first if about to expire), else the publishable key
+  // (same rule as every request).
+  const token = await bearerToken();
   const url = `${base}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
   if (options.signal?.aborted) throw new DOMException('Subida cancelada', 'AbortError');
   return new Promise<UploadResult>((resolve, reject) => {

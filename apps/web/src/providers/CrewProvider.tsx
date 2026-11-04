@@ -42,7 +42,7 @@ export function CrewProvider({ children }: { children: ReactNode }) {
       error: groupQuery.isError && !groupQuery.data,
       retry: () => void refetch(),
     }),
-    [groupQuery.data, groupQuery.isPending, groupQuery.isError, profileQuery.data, user, refetch],
+    [groupQuery.data, groupQuery.isPending, groupQuery.isError, profileQuery.data, refetch],
   );
 
   return <GroupContext.Provider value={value}>{children}</GroupContext.Provider>;

@@ -15,7 +15,8 @@
   "dependencies": {
     "@coverscape/shared": "workspace:*",
     "@react-three/fiber": "9.8.2",
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/postgrest-js": "^2.117.3",
+    "@supabase/storage-js": "^2.117.3",
     "@tanstack/react-query": "^5.87.4",
     "clsx": "^2.1.1",
     "idb-keyval": "^6.2.2",

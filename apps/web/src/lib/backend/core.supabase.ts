@@ -1,5 +1,5 @@
 import type { Clip, Member, Take, Video } from '@coverscape/shared';
-import { TAKE_BUCKET, VIDEO_BUCKET, supabase } from '../supabase';
+import { TAKE_BUCKET, VIDEO_BUCKET, supabase, withStorage } from '../supabase';
 import { must } from './shared';
 import { SIGN_SECONDS, memoSigned } from './signedUrls';
 import type { Backend, ClipWithVideo, VideoPoster, VideoPosterRev, VideoWithClipCount } from './types';
@@ -27,7 +27,7 @@ const VIDEO_COLUMNS =
   'file_size, storage_path, file_offset_seconds, file_duration_seconds, aspect_ratio';
 
 /** REQ-17 · A note as listed: everything but the drawing (`has_sketch` says whether it has one). */
-// One literal (not joined) so supabase-js can type the row from it.
+// One literal (not joined) so postgrest-js can type the row from it.
 const NOTE_LIST_COLUMNS =
   'id, crew_id, video_id, at_seconds, body, author_member_id, take_id, take_seconds, category, for_member_id, status, has_sketch, created_at, created_by, updated_at, archived_at';
 
@@ -35,7 +35,9 @@ const NOTE_LIST_COLUMNS =
 async function signed(bucket: string, path: string): Promise<string | null> {
   try {
     return await memoSigned(`${bucket}/${path}`, async () => {
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGN_SECONDS);
+      const { data, error } = await withStorage((storage) =>
+        storage.from(bucket).createSignedUrl(path, SIGN_SECONDS),
+      );
       if (error) throw error;
       return { url: data.signedUrl, expiresAt: Date.now() + SIGN_SECONDS * 1000 };
     });
@@ -165,9 +167,11 @@ export const supabaseBackend: Backend = {
   async uploadFile(path, file, options) {
     if (options?.onProgress || options?.signal) return uploadWithProgress(VIDEO_BUCKET, path, file, options);
     // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
-    const { error } = await supabase.storage
-      .from(VIDEO_BUCKET)
-      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS });
+    const { error } = await withStorage((storage) =>
+      storage
+        .from(VIDEO_BUCKET)
+        .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
+    );
     if (!error) return { ok: true, path };
     console.error('[uploadFile]', error);
     // 409: the file is already there (an earlier try got through; the row just didn't get its path).
@@ -224,9 +228,11 @@ export const supabaseBackend: Backend = {
     must(await supabase.from('takes').delete().eq('id', id));
   },
   async uploadTakeFile(path, file) {
-    const { error } = await supabase.storage
-      .from(TAKE_BUCKET)
-      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS });
+    const { error } = await withStorage((storage) =>
+      storage
+        .from(TAKE_BUCKET)
+        .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
+    );
     if (!error) return { ok: true, path };
     console.error('[uploadTakeFile]', error);
     const e = error as { status?: number; statusCode?: string; message?: string };

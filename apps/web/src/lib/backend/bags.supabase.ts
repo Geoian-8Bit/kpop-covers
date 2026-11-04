@@ -1,5 +1,5 @@
 import type { Bag, BagDraw, Track } from '@coverscape/shared';
-import { VIDEO_BUCKET, supabase } from '../supabase';
+import { VIDEO_BUCKET, supabase, withStorage } from '../supabase';
 import { fetchAll, must } from './shared';
 import { SIGN_BATCH, SIGN_SECONDS, peekSigned, seedSigned } from './signedUrls';
 import type { BagItemView, BagsBackend, ClipWithVideo, PlayableVideo, TrackItemView } from './types';
@@ -175,9 +175,9 @@ export const supabaseBags: BagsBackend = {
     // REQ-15 · Only the files the memory doesn't hold: a URL still reused (or being signed) keeps its cache key.
     const unique = [...new Set(paths)].filter((path) => !peekSigned(`${VIDEO_BUCKET}/${path}`));
     for (let i = 0; i < unique.length; i += SIGN_BATCH) {
-      const { data, error } = await supabase.storage
-        .from(VIDEO_BUCKET)
-        .createSignedUrls(unique.slice(i, i + SIGN_BATCH), SIGN_SECONDS);
+      const { data, error } = await withStorage((storage) =>
+        storage.from(VIDEO_BUCKET).createSignedUrls(unique.slice(i, i + SIGN_BATCH), SIGN_SECONDS),
+      );
       if (error) throw error;
       const expiresAt = Date.now() + SIGN_SECONDS * 1000;
       for (const entry of data) {

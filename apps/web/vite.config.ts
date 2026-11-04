@@ -208,6 +208,9 @@ export default defineConfig(({ mode, command }) => {
           // REQ-11 · Likewise jspdf's optional extras (html2canvas, canvg, dompurify), which the PDF export never asks for.
           globIgnores: [
             '**/stemSeparator.worker-*.js',
+            // REQ-26 · Likewise the workers that encode the separated tracks and the copy's sound.
+            '**/stemEncoder.worker-*.js',
+            '**/sound.worker-*.js',
             '**/three3d-*.js',
             '**/Stage3D-*.js',
             '**/pdf-extras-*.js',
@@ -281,7 +284,9 @@ export default defineConfig(({ mode, command }) => {
             if (/^(react|react-dom|react-router|scheduler|cookie|set-cookie-parser)\//.test(pkg))
               return 'react';
             if (/^(motion|framer-motion|motion-dom|motion-utils)\//.test(pkg)) return 'motion';
-            if (pkg.startsWith('@supabase/')) return 'supabase';
+            // REQ-11 · storage-js is loaded with import() only when a file is signed or uploaded: it keeps its own lazy
+            // chunk instead of riding in the critical «supabase» one with postgrest-js.
+            if (pkg.startsWith('@supabase/') && !pkg.startsWith('@supabase/storage-js/')) return 'supabase';
             if (pkg.startsWith('@tanstack/')) return 'query';
             // REQ-08 · tailwind-merge (behind `cn`, used by every screen) is a large share of the entry chunk and almost
             // never changes: its own chunk loads in parallel and stays cached across deploys, which only touch app code.
