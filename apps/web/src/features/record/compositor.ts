@@ -198,6 +198,8 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
   let delivered = 0;
   let presentedAt: number | null = null;
   let track: FrameTrack | null = null;
+  /** Unhooks the capture track's `ended` listener on dispose (a live listener keeps the stream, and us, alive). */
+  let trackAbort: AbortController | null = null;
   /** 43 · Ring of capture → draw delays (nothing allocated per frame). */
   const drawLags = new Float32Array(DRAW_LAGS);
   let drawLagCount = 0;
@@ -398,9 +400,15 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
       const t = probe.getVideoTracks()[0] as FrameTrack | undefined;
       if (t && typeof t.requestFrame === 'function') {
         track = t;
-        t.addEventListener('ended', () => {
-          if (track === t) track = null;
-        });
+        trackAbort?.abort();
+        trackAbort = new AbortController();
+        t.addEventListener(
+          'ended',
+          () => {
+            if (track === t) track = null;
+          },
+          { signal: trackAbort.signal },
+        );
         return probe;
       }
       probe.getTracks().forEach((x) => x.stop());
@@ -412,6 +420,8 @@ export function createCompositor(source: HTMLVideoElement): Compositor {
       disposed = true;
       clearInterval(watchdog);
       unschedule();
+      trackAbort?.abort();
+      trackAbort = null;
       track = null;
     },
   };

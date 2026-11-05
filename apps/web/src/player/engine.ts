@@ -118,6 +118,12 @@ export function releaseMediaAudio(el: HTMLMediaElement): void {
   elementGraphs.delete(el);
   audioTracks.delete(el);
   graph.split.dispose();
+  // The recordable stream's tracks outlive a closed context unless stopped, and each keeps the graph (and its
+  // context) reachable through `graphOfTrack`: stop and forget them (long-use leak).
+  for (const t of graph.tap.getTracks()) {
+    graphOfTrack.delete(t);
+    t.stop();
+  }
   void graph.ctx.close().catch(() => undefined);
 }
 

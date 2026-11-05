@@ -121,7 +121,16 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
     digitalAllowed.current = allowed;
   }, []);
 
+  /**
+   * One controller per camera session: its signal unhooks the track's `ended` listener when the stream is let go.
+   * Stopping a track keeps its listeners, and Blink keeps a MediaStream with listeners alive: the closure (the hook's
+   * scope) then pinned the whole recorder subtree on every open (long-use leak).
+   */
+  const streamAbort = useRef<AbortController | null>(null);
+
   const stopStream = () => {
+    streamAbort.current?.abort();
+    streamAbort.current = null;
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   };
@@ -166,6 +175,8 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       }
       compositor.current?.setFps(mode.fps);
       stream.current = next;
+      const abort = new AbortController();
+      streamAbort.current = abort;
       const video = source.current;
       if (video) {
         video.srcObject = next;
@@ -221,13 +232,17 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
         wantFps: want.fps,
         paceCapped: want.capped,
       }));
-      t?.addEventListener('ended', () => {
-        // Another app took the camera, or the system stopped it: stop the take there, offer to try again.
-        if (id === session.current && stream.current === next) {
-          setView((v) => ({ ...v, status: 'error', error: 'La cámara se ha cortado.' }));
-          onLostRef.current();
-        }
-      });
+      t?.addEventListener(
+        'ended',
+        () => {
+          // Another app took the camera, or the system stopped it: stop the take there, offer to try again.
+          if (id === session.current && stream.current === next) {
+            setView((v) => ({ ...v, status: 'error', error: 'La cámara se ha cortado.' }));
+            onLostRef.current();
+          }
+        },
+        { signal: abort.signal },
+      );
       if (facing === 'environment' && !backCams.current.length) {
         void listBackLenses().then((cams) => {
           if (id !== session.current) return;
