@@ -19,7 +19,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import type { FormationInput } from '@/data/formations';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
@@ -74,7 +74,7 @@ export function useWideLayout(): boolean {
 
 /**
  * The room (px) between the bottom of the stage and the top of the dock: the sheet never grows over the stage. It
- * follows scrolling (the stage sticks to the top once scrolled to) and resizing.
+ * follows resizing and the player folding away above the stage.
  */
 export function useSheetRoom(stageRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>, active: boolean): number {
   const [room, setRoom] = useState(320);
@@ -96,6 +96,8 @@ export function useSheetRoom(stageRef: RefObject<HTMLElement | null>, dockRef: R
     window.addEventListener('resize', schedule);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
     if (stageRef.current) observer?.observe(stageRef.current);
+    // The stage's own box grows when the player above folds away (the stage moves up without changing size).
+    if (stageRef.current?.parentElement) observer?.observe(stageRef.current.parentElement);
     if (dockRef.current) observer?.observe(dockRef.current);
     return () => {
       cancelAnimationFrame(frame);
@@ -535,22 +537,4 @@ export function PropTools({
       </div>
     </div>
   );
-}
-
-/** Reveals the stage when a sheet opens on an upright phone: scrolls it up to where it sticks if the sheet would be cramped. */
-export function useRevealStage(stageRef: RefObject<HTMLElement | null>, dockRef: RefObject<HTMLElement | null>, open: boolean) {
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => {
-      const s = stageRef.current?.getBoundingClientRect();
-      const d = dockRef.current?.getBoundingClientRect();
-      if (!s || !d) return;
-      const want = 300;
-      const room = d.top - s.bottom;
-      const stickTop = Number.parseFloat(getComputedStyle(stageRef.current!).top) || 0;
-      if (room >= want || s.top <= stickTop + 1) return;
-      window.scrollBy({ top: Math.min(s.top - stickTop, want - room), behavior: 'smooth' });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [stageRef, dockRef, open]);
 }

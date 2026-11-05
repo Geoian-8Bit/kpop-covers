@@ -1,5 +1,5 @@
 import type { FormationPath, FormationPositions, FormationProp, StagePoint } from '@coverscape/shared';
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { FormationInput, FormationMember } from '@/data/formations';
 import { cn } from '@/lib/cn';
 import { usePlayer } from '@/player/store';
@@ -21,7 +21,7 @@ import { PROP_LABELS } from './propRules';
 import { CLASH, initialOf, personColors, shortName } from './stage/personStyle';
 import { PropShape } from './stage/PropShape';
 import { ClashLayer, GhostLayer, PathHandles, RouteLayer, StageFloor, type GridLine } from './stage/StageLayers';
-import { AUDIENCE, DOT, HIT, line, PAD, type Box, type HandleDrag } from './stage/stageDrag';
+import { AUDIENCE, DOT, HIT, holdsTouch, line, PAD, type Box, type HandleDrag } from './stage/stageDrag';
 import { useStagePainter } from './stage/useStagePainter';
 
 export interface StageViewProps {
@@ -110,6 +110,18 @@ export function StageView({
   const [focused, setFocused] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const { width: W, depth: D } = stage;
+
+  // A finger on a person, a prop or a handle never scrolls the page, whatever way it first moves (see holdsTouch). A
+  // native, blocking listener: React's touch handlers are passive and can't cancel the scroll.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onTouchStart = (e: TouchEvent) => {
+      if (holdsTouch(e.target, e.touches.length, locked)) e.preventDefault();
+    };
+    svg.addEventListener('touchstart', onTouchStart, { passive: false });
+    return () => svg.removeEventListener('touchstart', onTouchStart);
+  }, [locked]);
 
   // ── Pointer → stage metres (undoing the mirror) ──
   function toStage(clientX: number, clientY: number): StagePoint {
@@ -422,6 +434,7 @@ export function StageView({
           }}
           role="button"
           tabIndex={0}
+          data-drag=""
           aria-pressed={selectedProp === p.id}
           aria-label={`${PROP_LABELS[p.kind]}${p.label ? ` «${p.label}»` : ''}. Flechas para moverla.`}
           onPointerDown={(e) => onPropDown(p.id, e)}
@@ -478,6 +491,7 @@ export function StageView({
             }}
             role="button"
             tabIndex={0}
+            data-drag=""
             aria-pressed={selected}
             aria-label={`${name}${person?.archived ? ' (ya no está en el grupo)' : ''}. Flechas para moverle, Mayúsculas para un paso fino.`}
             onPointerDown={(e) => onDotDown(id, e)}

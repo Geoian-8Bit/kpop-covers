@@ -1,7 +1,7 @@
 import type { FormationPositions, Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Plus, Redo2, Settings2, Undo2 } from 'lucide-react';
-import { lazy, Suspense, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -17,13 +17,15 @@ import { useIdentity } from '@/data/members';
 import { FormationTransport } from '@/features/studio/Transport';
 import { useShortcuts } from '@/features/studio/useShortcuts';
 import { useStickyBarPadding } from '@/components/stickyBarPadding';
+import { cn } from '@/lib/cn';
 import { snappy } from '@/lib/motion';
+import { useDesktop } from '@/lib/useDesktop';
 import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { activeIndex, formationAt, nextIndex, sortKeyframes, type Stage } from './formationRules';
 import { FormationTimeline } from './FormationTimeline';
 import { movePathPoint } from './pathRules';
-import { PanelHead, ToolDock, useRevealStage, useSheetRoom, useWideLayout, type ToolTab } from './EditorTools';
+import { PanelHead, ToolDock, useSheetRoom, useWideLayout, type ToolTab } from './EditorTools';
 import { PlanForm } from './PlanDialogs';
 import { patchProp } from './propRules';
 import { RhythmUnderlay } from './RhythmPanel';
@@ -31,6 +33,7 @@ import { ExportDialog } from './export/ExportDialog';
 import type { PlanSnapshot } from './export/exportStill';
 import { StageView } from './StageView';
 import { PositionsList } from './stage/PositionsList';
+import { AUDIENCE, PAD } from './stage/stageDrag';
 import { useFormationEditor } from './useFormationEditor';
 import { useWaveform } from './useWaveform';
 import { hasWebGL } from './three/webgl';
@@ -78,8 +81,10 @@ export function FormationEditor({ video, planId, stage, playsFile }: { video: Vi
   }
 
   return (
-    <Page className="px-2.5 pb-16 pt-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-[1500px] rounded-[10px] sm:rounded-[12px]">
+    // Phones and tablets: the editor is exactly the screen under the shell's top bar (h-16 + its 1 px rule), so nothing
+    // scrolls the page while editing. Desktop keeps a page that scrolls.
+    <Page className="p-1.5 max-lg:h-[calc(100dvh-65px)] sm:p-2.5 lg:px-6 lg:py-6">
+      <div className="paper mx-auto max-w-[1500px] rounded-[10px] max-lg:h-full max-lg:overflow-hidden sm:rounded-[12px]">
         {query.data ? (
           <EditorBody key={planId} full={query.data} video={video} stage={stage} back={back} playsFile={playsFile} />
         ) : (
@@ -119,6 +124,8 @@ function EditorBody({
     () => ({ width: ed.plan.stage_width, depth: ed.plan.stage_depth, grid: ed.plan.grid }),
     [ed.plan.stage_width, ed.plan.stage_depth, ed.plan.grid],
   );
+  /** Width / height of the drawn stage (StageView's viewBox): its box keeps that shape. */
+  const stageRatio = (stage.width + PAD * 2) / (stage.depth + PAD + AUDIENCE);
   const memberIds = ed.members;
   const list = ed.list;
 
@@ -140,8 +147,14 @@ function EditorBody({
   const stageBoxRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const sheetOpen = !wide && tab != null;
+  const desktop = useDesktop();
+  // A phone on its side: the panel sits under the player in a column that scrolls, so choosing a tab (or tapping a
+  // person, which opens «Posiciones») brings it up under the header.
+  useEffect(() => {
+    if (!wide || desktop || !tab) return;
+    document.getElementById('tool-panel')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [tab, wide, desktop]);
   const room = useSheetRoom(stageBoxRef, dockRef, sheetOpen);
-  useRevealStage(stageBoxRef, dockRef, sheetOpen);
   useStickyBarPadding(dockRef, !wide);
   /** REQ-10 · The prop being moved, turned or removed. */
   const [selectedProp, setSelectedProp] = useState<string | null>(null);
@@ -269,7 +282,17 @@ function EditorBody({
     savePlan,
     toast,
   };
-  const panelBody = (which: ToolTab) => <ToolPanelBody which={which} {...panelProps} />;
+  const panelBody = (which: ToolTab) => (
+    <>
+      <ToolPanelBody which={which} {...panelProps} />
+      {/* Upright there is no room under the stage: the text alternative folds inside «Posiciones». */}
+      {which === 'people' && !wide && (
+        <div className="-mx-4 mt-1 sm:-mx-5">
+          <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
+        </div>
+      )}
+    </>
+  );
 
   const panelHead = (which: ToolTab, onClose?: () => void) => (
     <PanelHead
@@ -286,7 +309,23 @@ function EditorBody({
 
   return (
     <>
-      <EditorHeader back={back} title={ed.plan.name} subtitle={video.title} status={<SaveBadge status={ed.status} onRetry={ed.retry} />}>
+      {/*
+        Phones and tablets fill the screen, nothing scrolls the page. Upright: a column (header, player, stage, timeline)
+        with the tools in a dock + sheet at the bottom; the player folds away while a sheet is open. On its side: the
+        stage as tall as the screen on the left, the rest in a column on the right that scrolls by itself. Desktop: the
+        stage sticks on the left of a page that scrolls, the rest on the right.
+      */}
+      <div
+        style={{ '--stage-ratio': stageRatio } as CSSProperties}
+        className="[--shell-h:calc(100dvh-77px)] max-lg:flex max-lg:h-full max-lg:flex-col sm:[--shell-h:calc(100dvh-85px)] max-lg:landscape:grid max-lg:landscape:grid-cols-[min(60%,calc((var(--shell-h)-16px)*var(--stage-ratio)))_minmax(0,1fr)] max-lg:landscape:grid-rows-[auto_auto_minmax(0,1fr)]"
+      >
+      <EditorHeader
+        back={back}
+        title={ed.plan.name}
+        subtitle={video.title}
+        status={<SaveBadge status={ed.status} onRetry={ed.retry} />}
+        className="shrink-0 max-lg:landscape:col-start-2 max-lg:landscape:row-start-1"
+      >
         <Button variant="ghost" size="icon" aria-label="Deshacer" title="Deshacer (Ctrl+Z)" disabled={!ed.canUndo || conflict} onClick={ed.undo}>
           <Undo2 className="size-5" />
         </Button>
@@ -306,7 +345,7 @@ function EditorBody({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={snappy}
-            className="overflow-hidden"
+            className="shrink-0 overflow-hidden max-lg:landscape:col-start-2 max-lg:landscape:row-start-2"
           >
             <div className="m-3 flex flex-wrap items-center gap-3 rounded-[12px] border border-enji-400/60 bg-enji-700/30 p-3 sm:mx-5">
               <AlertTriangle className="size-5 shrink-0 text-enji-300" />
@@ -321,21 +360,20 @@ function EditorBody({
         )}
       </AnimatePresence>
 
-      {/*
-        Upright phone: a column (player, stage, timeline) where the stage sticks under the top bar, and the tools in a
-        dock + sheet at the bottom. On its side or a big screen: the stage sticks on the left, the rest on the right.
-        A flex column (not a grid) upright: a sticky grid item could only move inside its own row.
-      */}
-      <div className="flex flex-col gap-3 px-3 pb-3 pt-3 sm:px-5 landscape:grid landscape:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] landscape:items-start landscape:gap-x-4 lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start lg:gap-x-5">
-        <div className="mx-auto w-[60%] max-w-[420px] landscape:col-start-2 landscape:row-start-1 landscape:w-full landscape:max-w-none lg:col-start-2 lg:row-start-1 lg:w-full lg:max-w-none">
-          {playerStage}
-        </div>
-
+      {/* Upright: a flex column. On its side its boxes join the grid above (`contents`). */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pt-2 max-lg:pb-[calc(56px+env(safe-area-inset-bottom))] sm:px-4 max-lg:landscape:contents lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start lg:gap-x-5 lg:p-5">
+        {/* The stage fits its box both ways (a size container): as wide as the phone, or as tall as the room left. */}
         <div
-          ref={stageBoxRef}
-          className="sticky top-16 z-20 -mx-3 bg-sumi-850 px-3 py-1.5 shadow-[0_14px_18px_-16px_rgb(0_0_0/0.9)] sm:-mx-5 sm:px-5 landscape:col-start-1 landscape:row-span-4 landscape:row-start-1 landscape:mx-0 landscape:bg-transparent landscape:px-0 landscape:py-0 landscape:shadow-none lg:top-3 lg:col-start-1 lg:row-span-4 lg:row-start-1 lg:mx-0 lg:bg-transparent lg:px-0 lg:py-0 lg:shadow-none"
+          className={cn(
+            'flex min-h-0 flex-1 items-start justify-center [container-type:size] max-lg:landscape:col-start-1 max-lg:landscape:row-span-3 max-lg:landscape:row-start-1 max-lg:landscape:items-center max-lg:landscape:p-2 lg:sticky lg:top-3 lg:z-20 lg:col-start-1 lg:row-start-1 lg:block lg:[container-type:normal]',
+            // A sheet open upright: a big (tablet) stage leaves it at least half the screen.
+            sheetOpen && 'max-h-[52dvh]',
+          )}
         >
-          <div className="relative mx-auto landscape:max-w-[min(100%,calc((100dvh-84px)*1.23))]">
+          <div
+            ref={stageBoxRef}
+            className="relative w-[min(100cqw,calc(100cqh*var(--stage-ratio)))] lg:mx-auto lg:w-full lg:landscape:max-w-[min(100%,calc((100dvh-84px)*1.23))]"
+          >
             {view3d ? (
               <Suspense fallback={<div className="skeleton aspect-[4/3] w-full rounded-[12px]" role="status" aria-label="Cargando la vista 3D" />}>
                 <Stage3D stage={stage} memberIds={memberIds} people={people} list={list} />
@@ -409,7 +447,18 @@ function EditorBody({
           </div>
         </div>
 
-        <div className="-mx-3 min-w-0 sm:-mx-5 landscape:col-start-2 landscape:mx-0 lg:col-start-2 lg:mx-0">
+        {/* Upright its boxes are the column's own (`contents`, the player first); on its side it scrolls by itself. */}
+        <div className="contents max-lg:landscape:col-start-2 max-lg:landscape:row-start-3 max-lg:landscape:flex max-lg:landscape:min-h-0 max-lg:landscape:flex-col max-lg:landscape:gap-2 max-lg:landscape:overflow-y-auto max-lg:landscape:overscroll-contain max-lg:landscape:px-3 max-lg:landscape:pt-2 lg:col-start-2 lg:row-start-1 lg:flex lg:min-w-0 lg:flex-col lg:gap-3">
+        <motion.div
+          initial={false}
+          animate={sheetOpen ? { height: 0, opacity: 0 } : { height: 'auto', opacity: 1 }}
+          transition={snappy}
+          className={cn('order-first shrink-0', sheetOpen && 'overflow-hidden')}
+        >
+          <div className="mx-auto w-[60%] max-w-[420px] max-lg:landscape:w-[min(100%,260px)] lg:w-full lg:max-w-none">{playerStage}</div>
+        </motion.div>
+
+        <div className="order-last -mx-3 min-w-0 shrink-0 sm:-mx-4 max-lg:landscape:order-none max-lg:landscape:mx-0 lg:order-none lg:mx-0">
           <FormationTimeline
             list={list}
             selectedId={selectedId}
@@ -425,8 +474,11 @@ function EditorBody({
         </div>
 
         {wide && shown && (
-          <section className="min-w-0 space-y-2 landscape:col-start-2 lg:col-start-2" aria-label="Herramientas">
-            <ToolDock tab={shown} wide onTab={(t) => setTab(t)} dockRef={dockRef} badges={{ paths: clashes.length > 0 }} />
+          // On its side the tabs stay pinned at the bottom of the column (it scrolls under them), like the upright dock.
+          <section className="min-w-0 space-y-2 max-lg:landscape:contents" aria-label="Herramientas">
+            <div className="max-lg:landscape:sticky max-lg:landscape:bottom-0 max-lg:landscape:z-30 max-lg:landscape:order-last max-lg:landscape:-mx-3 max-lg:landscape:bg-sumi-850 max-lg:landscape:px-3 max-lg:landscape:py-2">
+              <ToolDock tab={shown} wide onTab={(t) => setTab(t)} dockRef={dockRef} badges={{ paths: clashes.length > 0 }} />
+            </div>
             <div id="tool-panel" role="tabpanel" aria-labelledby={`tool-tab-${shown}`} className="rounded-[12px] border border-line bg-sumi-900/60">
               {panelHead(shown)}
               <div className="px-3 pb-3">{panelBody(shown)}</div>
@@ -434,12 +486,14 @@ function EditorBody({
           </section>
         )}
 
-        <div className="-mx-3 sm:-mx-5 landscape:col-start-2 landscape:mx-0 lg:col-start-2 lg:mx-0">
-          <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
+        {/* Upright it lives in «Posiciones» (see panelBody). */}
+        {wide && (
+          <div className="-mx-3 lg:mx-0">
+            <PositionsList list={list} memberIds={memberIds} people={people} stage={stage} index={active} />
+          </div>
+        )}
         </div>
-
-        {/* Upright: room to scroll the stage up to where it sticks, and for the end of the page above the dock/sheet. */}
-        {!wide && <div aria-hidden style={{ height: tab ? '62dvh' : 'calc(64px + env(safe-area-inset-bottom))' }} />}
+      </div>
       </div>
 
       {!wide && (

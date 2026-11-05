@@ -11,7 +11,8 @@ import { defineConfig, devices } from '@playwright/test';
 const evidenceRoot =
   process.env.ONESHOOT_EVIDENCE_DIR || path.join(os.homedir(), 'oneshoot-rendimiento-integral-tmp');
 const output = path.join(evidenceRoot, 'playwright-output');
-const PORT = 5174;
+// E2E_PORT: another checkout's dev server may already hold 5174 (reuseExistingServer would then test its code).
+const PORT = Number(process.env.E2E_PORT) || 5174;
 const baseURL = `http://localhost:${PORT}`;
 
 /** The specs that predate the REQ-01 suite; the new ones live in e2e/flows and e2e/visual. */
