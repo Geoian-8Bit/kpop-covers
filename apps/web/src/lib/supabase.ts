@@ -2,6 +2,7 @@ import { PostgrestClient } from '@supabase/postgrest-js';
 import type { StorageClient, StorageError } from '@supabase/storage-js';
 import type { Database } from '@coverscape/shared';
 import { IS_DEMO } from './backend/mode';
+import { createTimeoutFetch } from './netRules';
 import {
   createSessionRefresher,
   createSessionStore,
@@ -75,7 +76,14 @@ const authFetch = createAuthFetch(supabaseKey, bearerToken);
  * REQ-11 · Tables and RPCs straight through postgrest-js (`from`, `rpc`): the same requests supabase-js made, without
  * shipping auth, realtime and functions on the critical path.
  */
-export const supabase = new PostgrestClient<Database>(new URL('rest/v1', baseUrl).href, { fetch: authFetch });
+export const supabase = new PostgrestClient<Database>(new URL('rest/v1', baseUrl).href, {
+  // A read stuck on a dead 4G socket is aborted after a while so the query's retry starts over (netRules.ts).
+  // Writes are never cut short, and storage keeps `authFetch` as is (uploads can take minutes).
+  fetch: createTimeoutFetch(authFetch),
+  // postgrest-js would retry a failed GET up to 3 times itself (1 s, 2 s, 4 s); React Query's retry (netRules.ts)
+  // already does, so tries don't stack (one dead read gives up after about a minute, not five).
+  retry: false,
+});
 
 /**
  * REQ-11 · Keeps a failed lazy load from reaching the `vite:preloadError` listener (main.tsx), which reloads the page:

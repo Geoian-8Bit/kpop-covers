@@ -1,5 +1,6 @@
 import { MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { queryRetry, queryRetryDelay } from '@/lib/netRules';
 import { PerfProbe } from '@/lib/perfProbe';
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
@@ -42,7 +43,14 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     // Back in the app after a while: pick up what the rest of the group changed (only stale data refetches).
     // REQ-18 · gcTime 60 min: a screen left for a while (the library during a rehearsal) keeps its cache.
-    queries: { staleTime: 5 * 60_000, gcTime: 60 * 60_000, refetchOnWindowFocus: true, retry: 1 },
+    // Poor 4G: network / timeout / 5xx failures retry with backoff, answers that won't change (4xx, RLS) never do.
+    queries: {
+      staleTime: 5 * 60_000,
+      gcTime: 60 * 60_000,
+      refetchOnWindowFocus: true,
+      retry: queryRetry,
+      retryDelay: (failureCount) => queryRetryDelay(failureCount),
+    },
   },
 });
 
