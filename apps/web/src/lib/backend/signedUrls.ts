@@ -8,8 +8,8 @@ export const SIGN_SECONDS = 6 * 60 * 60;
 /** Paths per batch signature (`createSignedUrls`), so a long list never builds an over-long request. */
 export const SIGN_BATCH = 100;
 
-/** Reuse a URL only while it has more than this left. */
-const MIN_LEFT_MS = 30 * 60 * 1000;
+/** REQ-15 · Reuse a URL only while it has more than this left: 1 h, so a video opened late in a rehearsal never streams on a token that expires under it. */
+const MIN_LEFT_MS = 60 * 60 * 1000;
 
 type Entry = { url: string; expiresAt: number };
 
@@ -17,7 +17,7 @@ const memo = new Map<string, Entry>();
 const pending = new Map<string, Promise<string>>();
 
 /**
- * The URL for `key` (`${bucket}/${path}`): the remembered one while it has > 30 min left, otherwise `sign()`'s.
+ * The URL for `key` (`${bucket}/${path}`): the remembered one while it has > 1 h left, otherwise `sign()`'s.
  * Two calls at once share one promise (one signature); a failed signature is not remembered.
  */
 export function memoSigned(
@@ -51,7 +51,7 @@ export function forgetSigned(key: string): void {
 }
 
 /**
- * True while `key` has a remembered URL that would be reused (> 30 min left), or a signature on its way: a batch
+ * True while `key` has a remembered URL that would be reused (> 1 h left), or a signature on its way: a batch
  * signature leaves those alone and signs only the rest.
  */
 export function peekSigned(key: string, now: () => number = Date.now): boolean {

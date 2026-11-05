@@ -1,18 +1,29 @@
-import { createStore, del, get, set } from 'idb-keyval';
-import { cacheEvictions, CLOUD_CACHE, type CacheEntry } from './cloudCacheRules';
+import { createStore, del, get } from 'idb-keyval';
+import {
+  cacheEvictions,
+  cacheLimits,
+  orphanCopies,
+  type CacheEntry,
+  type CacheLimits,
+} from './cloudCacheRules';
 
 /**
  * The device's copies of group files that came from the cloud (not this device's own files: those live in
  * localVideos.ts and count as «on this device»). A cloud file streams by ranges: on a slow 4G every loop jump back
- * outside what the browser kept asks the network again and the video stops loading. Once the whole file is here the
- * loop plays from the phone. Keyed by storage path (a replaced file gets a new path), a few of them, least recently
- * used dropped first.
+ * outside what the browser kept asks the network again. Once the whole file is here the next visit plays it from the
+ * phone. Keyed by storage path (a replaced file gets a new path), a few of them, least recently used dropped first.
+ *
+ * REQ-15 · New copies are streamed straight to disk (Cache Storage, the response's ReadableStream), never gathered in
+ * memory: a 50 MB `res.blob()` per video opened was enough to crash a 6 GB phone's tab. Copies kept before in
+ * IndexedDB are still read (and dropped) as they were.
  */
 
-// Its own database: idb-keyval opens one object store per database.
+// Its own database: idb-keyval opens one object store per database. Copies from before REQ-15 live here.
 let store: ReturnType<typeof createStore> | null = null;
 const files = () => (store ??= createStore('coverscape-cache', 'files'));
 const INDEX_KEY = 'oneshoot.cloudcache.v1';
+/** REQ-15 · Cache Storage bucket of the streamed copies. */
+const CACHE_NAME = 'oneshoot-cloud-files-v1';
 
 type Index = Record<string, { bytes: number; usedAt: number }>;
 
@@ -32,10 +43,38 @@ function writeIndex(index: Index): void {
   }
 }
 
+/** Cache Storage, where the browser has it (secure contexts). */
+function cacheStorage(): CacheStorage | null {
+  return typeof caches === 'undefined' ? null : caches;
+}
+
+/** The Cache Storage key of a path: a same-origin URL nothing ever fetches. */
+function cacheKey(path: string): string {
+  return new URL(`/__oneshoot-cloud-file/${encodeURIComponent(path)}`, location.origin).href;
+}
+
+/**
+ * REQ-15 · This device's copy limits, by its memory class (`navigator.deviceMemory`, Chromium only: Safari and
+ * Firefox don't say, and get the low-memory limits).
+ */
+export function cloudCacheLimits(): CacheLimits {
+  return cacheLimits((navigator as Navigator & { deviceMemory?: number }).deviceMemory);
+}
+
+/** The streamed copy of `path`, as a disk-backed Blob. */
+async function readStreamed(path: string): Promise<Blob | undefined> {
+  const cache = cacheStorage();
+  if (!cache) return undefined;
+  const res = await (await cache.open(CACHE_NAME)).match(cacheKey(path));
+  if (!res) return undefined;
+  const blob = await res.blob();
+  return blob.size ? blob : undefined;
+}
+
 /** The device copy of the cloud file at `path`, if one was downloaded before. */
 export async function loadCachedCloudFile(path: string): Promise<Blob | undefined> {
   try {
-    const blob = await get<Blob>(path, files());
+    const blob = (await get<Blob>(path, files()).catch(() => undefined)) ?? (await readStreamed(path));
     const index = readIndex();
     if (blob) {
       index[path] = { bytes: blob.size, usedAt: Date.now() };
@@ -50,40 +89,176 @@ export async function loadCachedCloudFile(path: string): Promise<Blob | undefine
   }
 }
 
-async function remember(path: string, blob: Blob): Promise<void> {
-  try {
-    await set(path, blob, files());
-  } catch {
-    return; // full or unavailable: the copy still serves this visit
-  }
+async function forgetCopy(key: string): Promise<void> {
+  await del(key, files()).catch(() => undefined);
+  const cache = cacheStorage();
+  if (cache) await (await cache.open(CACHE_NAME)).delete(cacheKey(key)).catch(() => undefined);
+}
+
+function remember(path: string, bytes: number, limits: CacheLimits): Promise<void> {
   const index = readIndex();
-  index[path] = { bytes: blob.size, usedAt: Date.now() };
-  const entries: CacheEntry[] = Object.entries(index).map(([key, v]) => ({ key, bytes: v.bytes, usedAt: v.usedAt }));
-  for (const key of cacheEvictions(entries, path, CLOUD_CACHE)) {
-    delete index[key];
-    await del(key, files()).catch(() => undefined);
-  }
+  index[path] = { bytes, usedAt: Date.now() };
+  const entries: CacheEntry[] = Object.entries(index).map(([key, v]) => ({
+    key,
+    bytes: v.bytes,
+    usedAt: v.usedAt,
+  }));
+  const drop = cacheEvictions(entries, path, limits);
+  for (const key of drop) delete index[key];
   writeIndex(index);
+  return Promise.all(drop.map(forgetCopy))
+    .then(() => pruneOrphans(index))
+    .then(() => undefined);
+}
+
+/** The path a Cache Storage key stands for (null: not one of ours). */
+function pathOfKey(url: string): string | null {
+  const prefix = cacheKey('');
+  return url.startsWith(prefix) ? decodeURIComponent(url.slice(prefix.length)) : null;
+}
+
+/**
+ * REQ-15 · Copies on disk the index no longer knows (a tab closed between the copy and its index line, an index lost
+ * with localStorage) would hold space forever: drop them. Downloads still running are left alone.
+ */
+async function pruneOrphans(index: Index): Promise<void> {
+  const storage = cacheStorage();
+  if (!storage) return;
+  try {
+    const cache = await storage.open(CACHE_NAME);
+    const paths = (await cache.keys()).map((req) => pathOfKey(req.url));
+    const known = [...Object.keys(index), ...inFlight.keys()];
+    for (const path of orphanCopies(paths, known)) await cache.delete(cacheKey(path)).catch(() => undefined);
+  } catch {
+    /* the next copy tries again */
+  }
 }
 
 /** One download per file at a time (a stage that remounts joins the one running). */
 const inFlight = new Map<string, Promise<Blob | null>>();
 
+export interface DownloadOptions {
+  /**
+   * REQ-15 · Whether the network may be used now (cloudCacheRules.downloadMayRun). Asked before every chunk: while it
+   * says no, nothing is read, the connection holds still and the playing video keeps the bandwidth.
+   */
+  mayRun?: () => boolean;
+}
+
+const GATE_POLL_MS = 1000;
+/** REQ-15 · A download held still longer than this lets its connection go and asks for the rest when it may run. */
+const IDLE_ABORT_MS = 20_000;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Downloads the whole cloud file in the background and keeps it. Not cancelled when the screen closes: the next
- * visit plays it from here. Null when the network or the server refused.
+ * Downloads the whole cloud file in the background and keeps it on disk. Not cancelled when the screen closes: the
+ * next visit plays it from here. Null when the network or the server refused, the file is over this device's
+ * ceiling, or the browser has no Cache Storage. REQ-15 · Low priority, streamed to disk, only while `mayRun` allows.
  */
-export function downloadCloudFile(path: string, url: string): Promise<Blob | null> {
+export function downloadCloudFile(
+  path: string,
+  url: string,
+  opts: DownloadOptions = {},
+): Promise<Blob | null> {
   const running = inFlight.get(path);
   if (running) return running;
+  const mayRun = opts.mayRun ?? (() => true);
   const job = (async () => {
     try {
-      const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
-      if (!res.ok) return null;
-      const blob = await res.blob();
-      if (!blob.size) return null;
-      await remember(path, blob);
-      return blob;
+      const storage = cacheStorage();
+      if (!storage) return null;
+      const limits = cloudCacheLimits();
+      // The stage that asked mounts its <video> right after: give it a moment to show up before the first look.
+      await wait(GATE_POLL_MS);
+      while (!mayRun()) await wait(GATE_POLL_MS);
+      // `priority` (Fetch Priority) is Chromium's and Safari's; other browsers ignore the field.
+      const init: RequestInit & { priority?: 'low' } = { mode: 'cors', credentials: 'omit', priority: 'low' };
+      let abort = new AbortController();
+      const res = await fetch(url, { ...init, signal: abort.signal });
+      if (!res.ok || !res.body) return null;
+      const declared = Number(res.headers.get('content-length')) || 0;
+      if (declared > limits.maxFileBytes) {
+        void res.body.cancel().catch(() => undefined);
+        return null;
+      }
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = res.body.getReader();
+      let bytes = 0;
+      /** Bytes a restarted request repeats (a server that ignored the range): read and dropped, not stored twice. */
+      let skip = 0;
+      // REQ-15 · The rest of the file after a let-go connection: from where it stopped, or from the start (skipping
+      // what is already on disk) when the server doesn't take ranges.
+      const resume = async (): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
+        abort = new AbortController();
+        const again = await fetch(url, {
+          ...init,
+          signal: abort.signal,
+          headers: { Range: `bytes=${bytes}-` },
+        });
+        const range = again.headers.get('content-range') ?? '';
+        if (again.status === 206 && again.body && range.startsWith(`bytes ${bytes}-`)) {
+          skip = 0;
+          return again.body.getReader();
+        }
+        if (again.status === 200 && again.body) {
+          skip = bytes;
+          return again.body.getReader();
+        }
+        void again.body?.cancel().catch(() => undefined);
+        throw new Error('the rest of the file was refused');
+      };
+      const gated = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          let heldSince: number | null = null;
+          while (!mayRun()) {
+            heldSince ??= Date.now();
+            // REQ-15 · Held still too long: let the connection go instead of keeping a socket open unread.
+            if (reader && Date.now() - heldSince > IDLE_ABORT_MS) {
+              void reader.cancel().catch(() => undefined);
+              abort.abort();
+              reader = null;
+            }
+            await wait(GATE_POLL_MS);
+          }
+          reader ??= await resume();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              return;
+            }
+            let chunk = value;
+            if (skip > 0) {
+              if (chunk.byteLength <= skip) {
+                skip -= chunk.byteLength;
+                continue;
+              }
+              chunk = chunk.subarray(skip);
+              skip = 0;
+            }
+            bytes += chunk.byteLength;
+            if (bytes > limits.maxFileBytes) {
+              void reader.cancel().catch(() => undefined);
+              controller.error(new Error('over the device ceiling'));
+              return;
+            }
+            controller.enqueue(chunk);
+            return;
+          }
+        },
+        cancel(reason) {
+          return reader?.cancel(reason);
+        },
+      });
+      const cache = await storage.open(CACHE_NAME);
+      const type = res.headers.get('content-type') ?? 'application/octet-stream';
+      // Cache Storage writes the body to disk as it streams in: nothing piles up in the tab's memory.
+      await cache.put(cacheKey(path), new Response(gated, { headers: { 'content-type': type } }));
+      if (!bytes) {
+        await cache.delete(cacheKey(path)).catch(() => undefined);
+        return null;
+      }
+      await remember(path, bytes, limits);
+      return (await readStreamed(path)) ?? null;
     } catch {
       return null;
     } finally {

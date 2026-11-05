@@ -318,6 +318,7 @@ export function MediaStage({
                 <FileStage
                   src={file.url}
                   localSrc={file.cachedUrl}
+                  resign={file.resign}
                   offset={video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0}
                 />
               </PlayerZoomLayer>
