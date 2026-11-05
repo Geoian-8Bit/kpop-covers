@@ -19,6 +19,9 @@ import { keepViewportFitted } from './lib/viewport';
 import { forgetRetiredData } from './lib/retiredData';
 import { perfMark } from './lib/perfProbe';
 import { preloadRoute } from './lib/routeLoaders';
+import { IS_DEMO } from './lib/backend/mode';
+import { persistQueryCache } from './lib/queryPersist';
+import { isSupabaseConfigured } from './lib/supabase';
 import { startDeferredFonts } from './lib/fontsJa';
 import './index.css';
 
@@ -123,7 +126,25 @@ window.addEventListener(
 
 // REQ-06 · A deep link starts its route chunk (and, in the studio, the YouTube API and the group) before React
 // mounts, not after RequireCrew has the group. Not awaited: rendering starts at once.
+// Poor 4G · The group's last answers kept on this device stand in for requests that can't get through (never
+// blocks rendering; see lib/queryPersist.ts). Wired before the preload so its requests are covered too.
+if (isSupabaseConfigured && !IS_DEMO) persistQueryCache(queryClient);
 preloadRoute(window.location.pathname, queryClient);
+
+// Poor 4G · The nearest event's songs copied to this device in the background, quietly (see
+// data/videos/prefetchFiles.ts). Its chunk loads once the page is idle.
+if (isSupabaseConfigured && !IS_DEMO) {
+  const startPrefetch = () =>
+    whenIdle(
+      () =>
+        void import('./data/videos/prefetchFiles')
+          .then((m) => m.startCloudPrefetch(queryClient))
+          .catch(() => undefined),
+      { timeout: 5000, fallbackMs: 5000 },
+    );
+  if (document.readyState === 'complete') startPrefetch();
+  else window.addEventListener('load', startPrefetch, { once: true });
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -96,7 +96,8 @@ export function uploadFailure(error: unknown): UploadFailure {
   }
   if (status === 415 || e.code === 'InvalidMimeType' || /mime type/i.test(message)) return 'type';
   // A server or gateway error (e.g. a 504 on a slow 48 MB upload) is not a refusal: never «no room».
-  if (status >= 500) return 'unavailable';
+  // Nor is a timeout (408) or a «too many requests» (429): they pass (netRules.classifyError, «transient»).
+  if (status >= 500 || status === 408 || status === 429) return 'unavailable';
   if (e.name === 'StorageUnknownError' || !status || /failed to fetch|network|load failed/i.test(message))
     return 'network';
   return 'denied';

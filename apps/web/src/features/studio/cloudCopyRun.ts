@@ -221,8 +221,11 @@ async function run(video: Video, source: Blob, queryClient: QueryClient, signal:
     // Uploading only waits on the network: no load on the device, but an update would still cut it short.
     work.idle(true);
     setCopyJob(video.id, { status: 'working', phase: 'uploading', progress: 0, etaSeconds: null, height, attempt: 1, mode });
-    const upStarted = performance.now();
+    // Poor 4G · A silent new try (lib/backend/uploadRetry.ts) starts its progress again from 0: the bar holds the
+    // furthest point reached until the new try passes it, and the time left is measured on the new try alone.
+    let upStarted = performance.now();
     let upPaint = 0;
+    let upShown = 0;
     const updated = await uploadGroupFile({
       video,
       blob: blob ?? new Blob(),
@@ -231,14 +234,20 @@ async function run(video: Video, source: Blob, queryClient: QueryClient, signal:
       uploadedPath: uploaded.get(key) ?? null,
       onUploaded: (path) => uploaded.set(key, path),
       signal,
+      onRetry: () => {
+        upStarted = performance.now();
+        upPaint = 0;
+        setCopyJob(video.id, { status: 'working', phase: 'uploading', progress: upShown, etaSeconds: null, height, attempt: 1, mode });
+      },
       onProgress: (fraction) => {
         const now = performance.now();
         if (now - upPaint < 400 && fraction < 1) return;
         upPaint = now;
+        upShown = Math.max(upShown, fraction);
         const elapsed = (now - upStarted) / 1000;
         // Time left from the pace so far (no estimate before a few seconds: mobile data varies a lot).
         const eta = fraction > 0.03 && elapsed > 3 ? Math.round((elapsed * (1 - fraction)) / fraction) : null;
-        setCopyJob(video.id, { status: 'working', phase: 'uploading', progress: fraction, etaSeconds: eta, height, attempt: 1, mode });
+        setCopyJob(video.id, { status: 'working', phase: 'uploading', progress: upShown, etaSeconds: eta, height, attempt: 1, mode });
       },
     });
     uploaded.delete(key);

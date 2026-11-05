@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { forgetSigned, memoSigned, seedSigned } from './signedUrls';
+import { forgetSigned, memoSigned, peekSigned, SIGN_SECONDS, seedSigned } from './signedUrls';
 
 const HOUR = 60 * 60 * 1000;
 
 describe('memoSigned (REQ-15)', () => {
-  it('reuses the URL while it has more than 30 min left', async () => {
+  it('reuses the URL while it has more than 1 h left', async () => {
     let t = 0;
     const now = () => t;
     const sign = vi.fn(async () => ({ url: `u${sign.mock.calls.length}`, expiresAt: 6 * HOUR }));
     expect(await memoSigned('b/reuse', sign, now)).toBe('u1');
-    t = 5 * HOUR; // 1 h left
+    t = 5 * HOUR - 60 * 1000; // 61 min left
     expect(await memoSigned('b/reuse', sign, now)).toBe('u1');
     expect(sign).toHaveBeenCalledTimes(1);
   });
@@ -19,7 +19,7 @@ describe('memoSigned (REQ-15)', () => {
     const now = () => t;
     const sign = vi.fn(async () => ({ url: `u${sign.mock.calls.length}`, expiresAt: t + 6 * HOUR }));
     expect(await memoSigned('b/expire', sign, now)).toBe('u1');
-    t = 6 * HOUR - 29 * 60 * 1000; // 29 min left
+    t = 5 * HOUR + 60 * 1000; // 59 min left: a long rehearsal would outlive it
     expect(await memoSigned('b/expire', sign, now)).toBe('u2');
     expect(sign).toHaveBeenCalledTimes(2);
   });
@@ -56,5 +56,17 @@ describe('memoSigned (REQ-15)', () => {
     const sign = vi.fn(async () => ({ url: 'fresh', expiresAt: Date.now() + 6 * HOUR }));
     expect(await memoSigned('b/seed', sign)).toBe('seeded');
     expect(sign).not.toHaveBeenCalled();
+  });
+});
+
+describe('video signatures outlive a rehearsal', () => {
+  it('signs for 6 h', () => {
+    expect(SIGN_SECONDS).toBe(6 * 60 * 60);
+  });
+
+  it('a batch leaves alone only the URLs with more than 1 h left', () => {
+    seedSigned('b/peek', 'p', 2 * HOUR);
+    expect(peekSigned('b/peek', () => HOUR - 60 * 1000)).toBe(true);
+    expect(peekSigned('b/peek', () => HOUR + 60 * 1000)).toBe(false);
   });
 });

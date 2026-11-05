@@ -646,3 +646,20 @@ El implementador no ha desplegado ni aplicado nada en producción. Orden:
    `C:\Users\iangi\oneshoot-rendimiento-integral-tmp\` (subcarpeta `cierre\` para las tablas finales). No entran en el
    repositorio; revisarlas si se quiere y borrar la carpeta después. Ahí quedan también copias de trabajo y
    `node_modules` de los worktrees de medición, si alguno no se borró (`fase-10\head`).
+
+## Después del cierre · robustez en red lenta
+
+- **Memo de firmas (desviación de REQ-15).** La spec pedía reutilizar una URL firmada mientras le quedaran más de
+  30 min; `lib/backend/signedUrls.ts` solo la reutiliza con **más de 1 h** restante. Motivo: un vídeo abierto al final
+  de un ensayo largo se reproduce por rangos durante decenas de minutos y repite peticiones en cada salto del bucle;
+  con 30 min el token podía caducar a mitad de reproducción y el almacenamiento rechazaba los rangos siguientes. Con
+  1 h de margen y firmas de 6 h, el coste es firmar algo más a menudo, sin cambio visible.
+- **Vídeo en red lenta (REQ-15).** El estudio ya no se rinde: reintentos con espera creciente (4 s → 20 s), re-firma
+  y recarga en el mismo instante, reanudación si el navegador pausó por el corte (no si la pausa la pidió el usuario),
+  error inmediato como antes si el archivo nunca abrió con firma válida, y error tras 5 firmas vacías con red. La copia
+  completa se descarga en segundo plano solo cuando no compite con el vídeo, suelta la conexión tras 20 s parada y
+  sigue con `Range`. Simulación 4G malo: de **15 s parado a 0,5 s**.
+- **Fugas en uso largo.** Liberación del grafo de audio y del `<video>` al cerrar, cámara y compositor sin listeners
+  colgados, caché con límites de memoria baja donde el navegador no informa (Safari/Firefox) y poda de copias
+  huérfanas. Prueba de uso largo: **nodos, listeners y vídeos planos en 6 ciclos** (evidencias en
+  `C:/Users/iangi/oneshoot-rendimiento-integral-tmp/video/` y `uso-largo/fix/`).

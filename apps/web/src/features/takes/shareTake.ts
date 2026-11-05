@@ -353,7 +353,7 @@ export interface ShareTakeInput {
 
 /**
  * Reduce, upload as `<group>/<take id>.<ext>` and note `shared_path`/`shared_size` on the row. Resolves with the
- * updated row. Can be cancelled while the copy is made (the upload itself, once started, finishes).
+ * updated row. Can be cancelled while the copy is made and between upload tries (a try already sending finishes).
  */
 export async function shareTake({ take, source, signal, onProgress }: ShareTakeInput): Promise<Take> {
   if (take.shared_path) throw new FriendlyError('Esta toma ya está compartida.');
@@ -372,7 +372,9 @@ export async function shareTake({ take, source, signal, onProgress }: ShareTakeI
 
   onProgress?.('uploading', 0);
   const path = sharedPath(take, reduced.extension);
-  const upload = await backend.uploadTakeFile(path, reduced.blob);
+  const upload = await backend.uploadTakeFile(path, reduced.blob, { signal });
+  // Cancelled while the upload was retried: nothing is written on the row.
+  if (signal?.aborted) throw abortError();
   // A second try after an upload whose row update failed finds the file already there ('exists', or 'denied' by
   // the one-file-per-take rule): then only the row is missing it. The database only accepts the path if the file
   // really is in the bucket (and takes its real size), so a refused upload can never leave a take «shared» with

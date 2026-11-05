@@ -1,6 +1,8 @@
 import type { Clip, ClipColor, TablesUpdate } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { backend, type ClipWithVideo } from '@/lib/backend/core';
+import { pendingOf, pendingReady, submitWrite } from '@/lib/pendingWrites';
+import { overlayRows } from '@/lib/pendingWritesRules';
 import { parseQuickClips, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { invalidateAfterArchive, invalidateClipPickers } from './afterArchive';
 import { videoKeys, type VideoWithClipCount } from './videos';
@@ -25,9 +27,45 @@ export const CLIP_SWATCH: Record<ClipColor, { dot: string; soft: string; label: 
   teal: { dot: 'bg-rokusho', soft: 'bg-rokusho/20', label: 'Rokushō · verdín' },
 };
 
+const bySeconds = (a: Clip, b: Clip) => a.start_seconds - b.start_seconds;
+
+/** A clip made on this device and still waiting to reach the server, with the database's defaults. */
+function localClip(row: Record<string, unknown>): Clip {
+  return {
+    created_at: new Date().toISOString(),
+    archived_at: null,
+    created_by: null,
+    follow_path_id: null,
+    zoom_scale: 1,
+    zoom_x: 0.5,
+    zoom_y: 0.5,
+    ...row,
+  } as Clip;
+}
+
+/** The fetched clips with this device's waiting writes laid over them (a refetch never undoes them). */
+function withPendingClips(list: Clip[], videoId: string): Clip[] {
+  const out = overlayRows(list, pendingOf('clip'), {
+    belongs: (data) => data.video_id === videoId,
+    toRow: localClip,
+  });
+  return out === list ? list : [...out].sort(bySeconds);
+}
+
+/** What to refresh once a clip write reaches the server in the background. */
+const clipLists = (clip: Pick<Clip, 'video_id' | 'crew_id'>, countChanges: boolean) => [
+  clipKeys.forVideo(clip.video_id),
+  clipKeys.quick(clip.crew_id),
+  ['all-clips'],
+  ...(countChanges ? [videoKeys.list(clip.crew_id)] : []),
+];
+
 const clipsQuery = (videoId: string | undefined) => ({
   queryKey: clipKeys.forVideo(videoId),
-  queryFn: () => backend.listClips(videoId!),
+  queryFn: async ({ client }: { client: QueryClient }) => {
+    const [list] = await Promise.all([backend.listClips(videoId!), pendingReady(client)]);
+    return withPendingClips(list, videoId!);
+  },
 });
 
 export function useClips(videoId: string | undefined) {
@@ -89,10 +127,24 @@ export interface NewClip {
 export function useCreateClip() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (clip: NewClip) => backend.insertClip(clip),
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
+    // The id is made here, so a write retried after a lost answer finds its row instead of making a second one.
+    mutationFn: async (clip: NewClip) => {
+      const row = { ...clip, id: crypto.randomUUID() };
+      const outcome = await submitWrite<Clip | undefined>(queryClient, {
+        kind: 'clip',
+        action: 'create',
+        id: row.id,
+        data: row,
+        invalidate: clipLists(row, true),
+      });
+      return (outcome.sent && outcome.result) || localClip(row);
+    },
     onSuccess: (clip) => {
       queryClient.setQueryData<Clip[]>(clipKeys.forVideo(clip.video_id), (current = []) =>
-        [...current, clip].sort((a, b) => a.start_seconds - b.start_seconds),
+        // A refetch while it was on its way may already show it (laid over from the queue).
+        [...current.filter((c) => c.id !== clip.id), clip].sort(bySeconds),
       );
       // One more clip on the library card: a cache edit, not a download of the whole library.
       queryClient.setQueryData<VideoWithClipCount[]>(videoKeys.list(clip.crew_id), (current) =>
@@ -132,9 +184,19 @@ function settleBurst(queryClient: QueryClient, clip: Pick<Clip, 'video_id' | 'cr
 export function useUpdateClip() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
     mutationKey: CLIP_WRITE,
-    mutationFn: ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) =>
-      backend.updateClip(clip.id, patch),
+    mutationFn: async ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) => {
+      const outcome = await submitWrite<Clip>(queryClient, {
+        kind: 'clip',
+        action: 'update',
+        id: clip.id,
+        data: patch,
+        invalidate: clipLists(clip, false),
+      });
+      return outcome.sent ? outcome.result : ({ ...clip, ...patch } as Clip);
+    },
     onMutate: async ({ clip, patch }) => {
       const key = clipKeys.forVideo(clip.video_id);
       await queryClient.cancelQueries({ queryKey: key });
@@ -166,9 +228,16 @@ export function useUpdateClip() {
 export function useDeleteClip() {
   const queryClient = useQueryClient();
   return useMutation({
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
     mutationKey: CLIP_WRITE,
     mutationFn: async (clip: Clip) => {
-      await backend.deleteClip(clip.id);
+      await submitWrite(queryClient, {
+        kind: 'clip',
+        action: 'delete',
+        id: clip.id,
+        invalidate: clipLists(clip, true),
+      });
       return clip;
     },
     onMutate: async (clip) => {
