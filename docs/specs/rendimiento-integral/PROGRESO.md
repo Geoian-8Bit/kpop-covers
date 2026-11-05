@@ -20,7 +20,7 @@
 | 7 Trabajo pesado en workers | Hecha | 1a22b4f |
 | 8 Cliente de Supabase ligero | Hecha | 8369aae |
 | 9 Limpieza transversal | Hecha | ver git log de perf/rendimiento-integral |
-| 10 motion perezoso (condicional) | Pendiente | |
+| 10 motion perezoso (condicional) | Descartada | ver «Fase 10» abajo; parche en la carpeta de evidencias |
 | Cierre final | Pendiente | |
 
 ## Instrucción del responsable sobre commits (01-11-2026)
@@ -519,6 +519,34 @@ sin empezar, como hacen las capturas con `animations: 'disabled'`). Ficheros ent
 - S-14 p95 de fotograma: 49–53 ms, frente a ≤ 20 ms.
 - S-11: ~2,6 commits/s, todos con cambio visible (aviso «Zoom digital» y chip).
 - S-12 y S-17: no se pueden medir; la cámara falsa cuelga Chromium.
+
+### Fase 10 · motion perezoso — Descartada (los fotogramas de las barras de resultados cambian)
+
+**Qué se probó (REQ-12):** `LazyMotion strict` en `App.tsx` con `domAnimation` síncrono y `domMax` con `import()` en
+reposo (`whenIdle`, cambiando el `features` de LazyMotion para que los `m` ya montados reciban layout); los 115 ficheros
+que importaban `motion` pasaron a `m` (alias `m as motion`, sin tocar el JSX: muchos tienen variables locales `m`);
+la lista del repertorio (`EventPage`, único `Reorder`/`drag`) con su propio `<LazyMotion features={domMax}>` sin
+`strict` (Reorder usa `motion` completo por dentro); en `vite.config.ts`, lo que solo usa domMax (drag, pan, layout,
+nodos de proyección, Reorder, `motion` completo) a un chunk «motion-max» (el barril importa todo, así que hubo que
+separar por ruta; `projection/node/group` se queda en «motion» porque lo usa `LayoutGroup`).
+
+**M-01:** 242,96 → 231,65 kB gzip (−11,31 kB; chunk «motion» 46,42 → 34,54 kB, «motion-max» 13,36 kB perezoso).
+Pasaba la puerta de 10 kB.
+
+**Qué falló:** typecheck, lint (0 errores, 246 avisos), test (142 + 1147) en verde. Suite visual chromium completa (4
+workers): 278 bien, 8 mal. Cuatro (bolsa-canciones, formaciones-editor, rpd-jugar-preparados, rpd-jugar-salir)
+pasaron al repetirlos con 2 workers (carga). Los otros cuatro, `frames barras-resultados` 375/1440 en móvil y
+escritorio, fallan siempre con el cambio (4/4 en dos repeticiones) y pasan siempre en be4d35a (copia aparte con su
+propio servidor: 4/4 dos veces). Causa aislada: el commit que cambia `domAnimation` → `domMax` en reposo (con el reloj
+falso, el `requestIdleCallback` salta en el primer `runFor`) adelanta la salida del Suspense de la votación: en el
+fotograma de 100 ms ya se ve la página (la referencia aún muestra el sello de carga) y las barras van desfasadas.
+Con el cambio de `features` desactivado los cuatro pasan; hacerlo dentro de `startTransition` no lo evita. Quitar ese
+re-render no sirve: los `m` montados antes de domMax (la píldora del menú lateral, las pestañas) se quedarían sin
+proyección y perderían la primera animación de `layoutId`. Por la regla de la fase (cualquier diferencia en los
+fotogramas → se revierte), se revirtió entero; no se llegó a correr flows ni el caso límite con perfil 3.1.
+
+**Evidencias:** `C:/Users/iangi/oneshoot-rendimiento-integral-tmp/fase-10/` (m01-antes.txt, m01-despues.json,
+visual*.log, req12.patch con el cambio completo por si se quiere retomar).
 
 ## Diferencias visuales y su justificación
 
