@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE, guardConsole } from '../../support/seed';
 import { liveRows, openApp } from './support';
 
-// REQ-02 · Shell · Ajustes: members (add, rename, recolour, archive), «¿Quién eres?», «Buscar actualización» and the
+// REQ-02 · Shell · Ajustes: members (add, rename, recolour, delete = archive), «¿Quién eres?», «Buscar actualización» and the
 // version line. Members live in the demo store; the identity of the device in `oneshoot.me.v1`.
 
 test.beforeEach(({ browserName }) => {
@@ -79,17 +79,17 @@ test('cancelar la edición deja al miembro como estaba', async ({ page }) => {
   guard.check();
 });
 
-test('quitar un miembro pide confirmación y lo saca del grupo', async ({ page }) => {
+test('borrar un miembro pide confirmación y lo saca del grupo', async ({ page }) => {
   const guard = guardConsole(page);
   await openApp(page, '/ajustes');
-  await page.getByRole('button', { name: 'Quitar a Aoi del grupo' }).click();
-  const dialog = page.getByRole('dialog', { name: '¿Quitar a Aoi?' });
+  await page.getByRole('button', { name: 'Borrar a Aoi' }).click();
+  const dialog = page.getByRole('dialog', { name: '¿Borrar a Aoi?' });
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
   await expect(dialog).toBeHidden();
   expect((await members(page)).length).toBe(6);
 
-  await page.getByRole('button', { name: 'Quitar a Aoi del grupo' }).click();
-  await dialog.getByRole('button', { name: 'Quitar' }).click();
+  await page.getByRole('button', { name: 'Borrar a Aoi' }).click();
+  await dialog.getByRole('button', { name: 'Borrar' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button', { name: 'Editar a Aoi' })).toHaveCount(0);
   expect((await members(page)).some((m) => m.name === 'Aoi')).toBe(false);

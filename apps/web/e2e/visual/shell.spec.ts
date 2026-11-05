@@ -159,8 +159,8 @@ test.describe('ajustes', () => {
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await tick(page, 800);
 
-    await page.getByRole('button', { name: 'Quitar a Aoi del grupo' }).click();
-    const dialog = page.getByRole('dialog', { name: '¿Quitar a Aoi?' });
+    await page.getByRole('button', { name: 'Borrar a Aoi' }).click();
+    const dialog = page.getByRole('dialog', { name: '¿Borrar a Aoi?' });
     await tickUntilVisible(page, dialog);
     await tick(page, 800);
     await shotAtWidths(page, 'ajustes-quitar-miembro', { mask });
