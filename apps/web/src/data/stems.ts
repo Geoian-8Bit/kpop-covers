@@ -6,6 +6,7 @@ import { pickStems } from '@/features/voice/voiceRules';
 import { forgetSigned } from '@/lib/backend/signedUrls';
 import { stemsBackend, type VideoStems } from '@/lib/backend/stems';
 import { VIDEO_BUCKET } from '@/lib/supabase';
+import { takeKeys } from './trackKeys';
 
 /** 18 · The separations (AI) of a song's file, shared by the group. */
 export const stemKeys = {
@@ -118,6 +119,8 @@ export function useRefreshStems() {
         row,
         ...current.filter((s) => s.id !== row.id),
       ]);
+      // A finished separation uploaded its two tracks: the cloud space used has grown.
+      void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
     }
     void queryClient.invalidateQueries({ queryKey: stemKeys.forVideo(videoId) });
   };

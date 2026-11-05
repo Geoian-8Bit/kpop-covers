@@ -3,7 +3,7 @@ import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-q
 import { backend, type UploadFailure, type UploadResult, type VideoWithClipCount } from '@/lib/backend/core';
 import { cloudLimitBytes } from '@/lib/backend/mode';
 import { FriendlyError } from '@/lib/supabase';
-import { videoPlayKey } from '../trackKeys';
+import { takeKeys, videoPlayKey } from '../trackKeys';
 import { fileIdentity, keepLocalCopy, markLocalCopy } from './localCopy';
 import { rememberPoster, videoKeys } from './queries';
 
@@ -136,6 +136,7 @@ export function useCreateVideo() {
       rememberPoster(queryClient, video);
       // Not awaited: the caller moves on at once, the list refreshes behind it.
       void queryClient.invalidateQueries({ queryKey: videoKeys.list(video.crew_id) });
+      if (synced && input.file) void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
       // 13 · Too big for the cloud: start the lighter copy for the group (loaded only when needed).
       const file = input.file;
       if (!synced && uploadFailure === 'too-big' && file) {
@@ -152,9 +153,11 @@ export function useUpdateVideo() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: TablesUpdate<'videos'> }) =>
       backend.updateVideo(id, patch),
-    onSuccess: (video) => {
+    onSuccess: (video, { patch }) => {
       queryClient.setQueryData(videoKeys.detail(video.id), video);
       patchListedVideo(queryClient, video);
+      // A new cloud file (upload retry, linked file): the cloud space used has grown.
+      if (patch.storage_path) void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
     },
   });
 }

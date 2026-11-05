@@ -18,6 +18,7 @@ import { watchPresentedFrames } from './compositor';
 import { paceLog, type BenchResult, type PaceRest } from './pace';
 import { clearFailedFormats, failedFamilies, type RecordFormat } from './recorder';
 import { useRecordSettings } from './settings';
+import { useCameraZoom } from './zoomStore';
 import { syncSummary } from './syncRules';
 import type { TakeSyncMeta } from './takeStore';
 
@@ -107,6 +108,7 @@ export function InfoPanel({
   rest = null,
   onRemeasure,
   paceHint,
+  deviceId = null,
   onClose,
 }: {
   track: MediaStreamTrack | undefined;
@@ -126,6 +128,8 @@ export function InfoPanel({
   onRemeasure?: () => void;
   /** Without «Volver a medir» (a light mode, not measured): when the pace will be measured. */
   paceHint?: string;
+  /** The camera in use (REQ-23: the track is read again when it changes). */
+  deviceId?: string | null;
   onClose: () => void;
 }) {
   const live = useLivePace(video);
@@ -157,12 +161,15 @@ export function InfoPanel({
     };
   }, []);
 
-  // Settings change after a lens switch or a zoom: read again while the panel is open.
+  // Settings change after a lens switch or a zoom: read again while the panel is open. REQ-23 · Only then (another
+  // track, another camera, a zoom asked or applied), not every second: nothing else changes what is shown here.
+  const zoom = useCameraZoom((z) => z.zoom);
+  const zoomApplied = useCameraZoom((z) => z.applied);
   useEffect(() => {
     setInfo(readTrackInfo(track));
-    const id = setInterval(() => setInfo(readTrackInfo(track)), 1000);
+  }, [track, deviceId, zoom, zoomApplied]);
+  useEffect(() => {
     void listCameras().then(setCameras);
-    return () => clearInterval(id);
   }, [track]);
 
   const lastBps = last ? measuredBitrate(last.bytes, last.seconds) : 0;

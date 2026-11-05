@@ -12,14 +12,6 @@ const DIRS = ['apps/web/src', 'packages/shared/src'];
 const EXCEPTIONS = new Set([
   'apps/web/src/features/formations/FormationEditor.tsx',
   'apps/web/src/features/formations/StageView.tsx',
-  'apps/web/src/features/record/RecordStudio.tsx',
-  'apps/web/src/features/review/CompareStage.tsx',
-  'apps/web/src/features/review/ReviewControls.tsx',
-  'apps/web/src/features/review/ReviewMedia.tsx',
-  'apps/web/src/features/review/ReviewScreen.tsx',
-  'apps/web/src/features/review/reviewRules.ts',
-  'apps/web/src/features/takes/TakesPanel.tsx',
-  'packages/shared/src/recording.ts',
 ]);
 
 function* walk(dir) {

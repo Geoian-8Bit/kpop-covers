@@ -102,9 +102,14 @@ export function ClapArmView({ ui, phase, sensitivity, onSensitivity, onCancel, s
   const status = statusText(phase, ui.ready, ui.count);
   const meterRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
-  useMotionValueEvent(ui.level, 'change', (v) =>
-    meterRef.current?.setAttribute('aria-valuenow', String(Math.round(v * 100))),
-  );
+  // REQ-23 · The meter moves every frame; its announced value only when the whole number changes.
+  const shownNow = useRef(0);
+  useMotionValueEvent(ui.level, 'change', (v) => {
+    const now = Math.round(v * 100);
+    if (now === shownNow.current) return;
+    shownNow.current = now;
+    meterRef.current?.setAttribute('aria-valuenow', String(now));
+  });
   const fill = useTransform(ui.level, (v) => v);
   const mark = useTransform(ui.threshold, (v) => `${(v * 100).toFixed(1)}%`);
 

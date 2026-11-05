@@ -12,6 +12,7 @@ import {
   sharedPath,
   shareVideoBitrate,
 } from './takeRules';
+import { canReduceTakes, isAbort, type SharePhase } from './shareSupport';
 
 /**
  * F3 · «Compartir con el grupo»: a reduced 720p copy (≈ 2 Mbps video + 128 kbps sound, ≈ 16 MB a minute) goes to
@@ -29,7 +30,7 @@ import {
 export const SHARE_PRIVACY_NOTICE =
   'Las tomas compartidas son vídeos personales: las ve cualquiera que tenga el enlace de la app.';
 
-export type SharePhase = 'reducing' | 'uploading' | 'saving';
+export { canReduceTakes, isAbort, type SharePhase } from './shareSupport';
 
 export interface ReducedTake {
   blob: Blob;
@@ -46,23 +47,12 @@ export interface ReduceOptions {
   onProgress?: (progress: number) => void;
 }
 
-/** This browser can make the reduced copy. */
-export function canReduceTakes(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof MediaRecorder !== 'undefined' &&
-    typeof HTMLCanvasElement !== 'undefined' &&
-    typeof HTMLCanvasElement.prototype.captureStream === 'function'
-  );
-}
-
 const abortError = () => new DOMException('Compartir cancelado', 'AbortError');
 
-export function isAbort(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
-type CaptureElement = HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
+type CaptureElement = HTMLVideoElement & {
+  captureStream?: () => MediaStream;
+  mozCaptureStream?: () => MediaStream;
+};
 type AudioCtor = typeof AudioContext;
 
 /**
@@ -91,16 +81,16 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
   video.setAttribute('playsinline', '');
   video.setAttribute('aria-hidden', 'true');
   // On the page (some browsers stop decoding detached videos) but invisible and out of the way.
-  video.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;z-index:-1';
+  video.style.cssText =
+    'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;z-index:-1';
   video.src = url;
   document.body.appendChild(video);
 
   let audioCtx: AudioContext | null = null;
   let audioStream: MediaStream | null = null;
   try {
-    const Ctor = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: AudioCtor }).webkitAudioContext) as
-      | AudioCtor
-      | undefined;
+    const Ctor = (window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: AudioCtor }).webkitAudioContext) as AudioCtor | undefined;
     if (Ctor) {
       audioCtx = new Ctor();
       const node = audioCtx.createMediaElementSource(video);
@@ -167,7 +157,8 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
       throw new FriendlyError('No se pudo abrir la toma para prepararla.');
     }
     video.pause();
-    if (video.readyState < HTMLMediaElement.HAVE_METADATA) await Promise.race([once(video, 'loadedmetadata'), aborted]);
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA)
+      await Promise.race([once(video, 'loadedmetadata'), aborted]);
 
     let duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : hint;
     if (!duration) duration = await Promise.race([measureDuration(video), aborted]);
@@ -183,7 +174,8 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
       await Promise.race([once(video, 'seeked'), aborted]);
     }
     const size = shareDimensions(video.videoWidth, video.videoHeight);
-    if (!video.videoWidth || !video.videoHeight) throw new FriendlyError('La toma no tiene imagen que compartir.');
+    if (!video.videoWidth || !video.videoHeight)
+      throw new FriendlyError('La toma no tiene imagen que compartir.');
 
     const canvas = document.createElement('canvas');
     canvas.width = size.width;
@@ -210,7 +202,10 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
         audioBitsPerSecond: SHARE.audioBps,
       });
     } catch {
-      recorder = new MediaRecorder(stream, { videoBitsPerSecond: bitrate, audioBitsPerSecond: SHARE.audioBps });
+      recorder = new MediaRecorder(stream, {
+        videoBitsPerSecond: bitrate,
+        audioBitsPerSecond: SHARE.audioBps,
+      });
     }
     const rec = recorder;
     const chunks: Blob[] = [];
@@ -219,7 +214,8 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
     };
     const stopped = new Promise<void>((resolve, reject) => {
       rec.onstop = () => resolve();
-      rec.onerror = () => reject(new FriendlyError('La copia para compartir falló a medias. Inténtalo otra vez.'));
+      rec.onerror = () =>
+        reject(new FriendlyError('La copia para compartir falló a medias. Inténtalo otra vez.'));
     });
     stopped.catch(() => undefined);
 
@@ -267,7 +263,9 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
         if (document.hidden || video.ended) return;
         if (video.paused) void video.play().catch(() => undefined);
         if (performance.now() - lastProgressAt > 20_000) {
-          reject(new FriendlyError('La toma se atascó al prepararla. Inténtalo otra vez con la app abierta.'));
+          reject(
+            new FriendlyError('La toma se atascó al prepararla. Inténtalo otra vez con la app abierta.'),
+          );
         }
       }, 1000);
     });
@@ -284,7 +282,12 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
       throw new FriendlyError('El navegador no dejó reproducir la toma. Vuelve a pulsar «Compartir».');
     }
     if (document.hidden) video.pause();
-    await Promise.race([ended, aborted, stalled, stopped.then(() => Promise.reject(new FriendlyError('La copia se cortó.')))]);
+    await Promise.race([
+      ended,
+      aborted,
+      stalled,
+      stopped.then(() => Promise.reject(new FriendlyError('La copia se cortó.'))),
+    ]);
 
     draw();
     rec.stop();
@@ -336,7 +339,8 @@ const UPLOAD_COPY: Record<UploadFailure, string> = {
   denied: 'La nube no aceptó la toma: puede que esté llena. Inténtalo más tarde.',
   exists: 'Esta toma ya tiene una copia en la nube.',
   // Also a server error (5xx), not only a version without the cloud.
-  unavailable: 'Ahora no se puede compartir: la nube no responde. La toma sigue en este móvil; inténtalo más tarde.',
+  unavailable:
+    'Ahora no se puede compartir: la nube no responde. La toma sigue en este móvil; inténtalo más tarde.',
 };
 
 export interface ShareTakeInput {
@@ -385,11 +389,14 @@ export async function shareTake({ take, source, signal, onProgress }: ShareTakeI
     } catch (err) {
       lastError = err;
       if (!upload.ok) break; // nothing was uploaded by us: don't insist
-      if (/shared_file_missing|shared_path_locked/.test(String((err as { message?: string })?.message))) break;
+      if (/shared_file_missing|shared_path_locked/.test(String((err as { message?: string })?.message)))
+        break;
       await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
     }
   }
   if (!upload.ok) throw new FriendlyError(UPLOAD_COPY.denied);
   console.error('[shareTake]', lastError);
-  throw new FriendlyError('La copia se subió, pero no se pudo apuntar en la toma. Vuelve a pulsar «Compartir».');
+  throw new FriendlyError(
+    'La copia se subió, pero no se pudo apuntar en la toma. Vuelve a pulsar «Compartir».',
+  );
 }

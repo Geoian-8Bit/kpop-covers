@@ -15,6 +15,10 @@ import { lensProbes, rememberedMainLens, rememberLens, rememberMainLens } from '
 import { classifyLenses, fitChips, otherLensStep, probeFromCapabilities, torchHint, type Lens } from './lensRules';
 import { paceCap, usePaceCap } from './pace';
 import { initialFacing, recordSettings, useRecordSettings } from './settings';
+import { createZoomApplier, useCameraZoom, ZOOM_INITIAL } from './zoomStore';
+
+/** REQ-23 · The live zoom (store, not React state): see zoomStore.ts. */
+const zoomNow = () => useCameraZoom.getState().zoom;
 
 export interface CameraView {
   status: 'starting' | 'ready' | 'error';
@@ -23,8 +27,6 @@ export interface CameraView {
   deviceId: string | null;
   /** The lens's own zoom range (null: zoom is digital, on the recorded frame). */
   lensZoom: { min: number; max: number } | null;
-  /** Zoom as the phone's camera app shows it: 0.5 is the ultra-wide, 1 the main lens. */
-  zoom: number;
   torchAvailable: boolean;
   torch: boolean;
   /** P23 · The rear cameras, named like the camera app's (0,5× · 1× · Tele). */
@@ -33,8 +35,6 @@ export interface CameraView {
   aspect: number;
   /** The picture is a crop of the frame (no lens zoom here): less sharp, the recorder says so (Q7). */
   digital: boolean;
-  /** P19 · The digital crop (1 = the whole frame): the preview shows it with CSS, the canvas records it. */
-  crop: number;
   /** What the camera really gives (Q3/Q4); null until open. */
   mode: { width: number; height: number; fps: number } | null;
   /** The frame rate asked for (after this phone's cap), to tell when the camera stayed at 30. */
@@ -64,13 +64,11 @@ const INITIAL: CameraView = {
   facing: 'user',
   deviceId: null,
   lensZoom: null,
-  zoom: 1,
   torchAvailable: false,
   torch: false,
   lenses: [],
   aspect: 9 / 16,
   digital: false,
-  crop: 1,
   mode: null,
   wantFps: 30,
   paceCapped: false,
@@ -103,6 +101,16 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
   viewRef.current = view;
   /** The rear cameras as listed (names readable once the camera is allowed). */
   const backCams = useRef<BackCamera[]>([]);
+  /** REQ-23 · The camera this session landed on (the lens list, read later, may turn out it is the ultra-wide). */
+  const deviceNow = useRef<string | null>(null);
+  /** REQ-23 · The digital crop on or off as last set: a pinch asks React for a render only when this flips. */
+  const digitalNow = useRef(false);
+  /** REQ-23 · At most one lens zoom in flight while pinching (zoomStore.ts). */
+  const applyZoom = useRef<ReturnType<typeof createZoomApplier> | null>(null);
+  applyZoom.current ??= createZoomApplier(
+    (t, z) => applyTrack(t, { zoom: z }),
+    () => useCameraZoom.setState((s) => ({ applied: s.applied + 1 })),
+  );
   /** The main lens, found while a take was under way: opened when the recorder is idle again. */
   const mainLater = useRef<{ session: number; deviceId: string } | null>(null);
 
@@ -195,6 +203,9 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
           crop = z;
         }
       }
+      deviceNow.current = actualId;
+      digitalNow.current = digital;
+      useCameraZoom.setState({ zoom, crop });
       setView((v) => ({
         ...v,
         status: 'ready',
@@ -202,11 +213,9 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
         facing,
         deviceId: actualId,
         lensZoom: abilities.zoom,
-        zoom,
         torchAvailable: abilities.torch,
         torch: false,
         digital,
-        crop,
         lenses,
         mode,
         wantFps: want.fps,
@@ -225,11 +234,9 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
           backCams.current = cams;
           const listed = classify(cams);
           const here = listed.find((l) => l.id === actualId);
-          setView((v) => ({
-            ...v,
-            lenses: listed,
-            zoom: here?.role === 'ultra' && v.deviceId === actualId ? 0.5 * (v.zoom / scale) : v.zoom,
-          }));
+          setView((v) => ({ ...v, lenses: listed }));
+          if (here?.role === 'ultra' && deviceNow.current === actualId)
+            useCameraZoom.setState((z) => ({ zoom: 0.5 * (z.zoom / scale) }));
           // P23: the main lens (1×) by default. Opened by facing, the browser may have picked another one.
           const main = listed.find((l) => l.role === 'main' && l.sure);
           // Never in the middle of a take (a count of 0 may already be rolling a direct take on this camera): then
@@ -257,6 +264,9 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       session.current++;
       stopStream();
       if (source.current) source.current.srcObject = null;
+      deviceNow.current = null;
+      digitalNow.current = false;
+      useCameraZoom.setState(ZOOM_INITIAL);
       setView(INITIAL);
     };
   }, [open, start]);
@@ -303,7 +313,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       if (document.visibilityState !== 'visible') return;
       const t = track();
       const v = viewRef.current;
-      if (!t || t.readyState === 'ended') void start(v.facing, v.deviceId, v.zoom);
+      if (!t || t.readyState === 'ended') void start(v.facing, v.deviceId, zoomNow());
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
@@ -312,23 +322,33 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
   const role = roleOf(view);
   const onUltra = role === 'ultra';
 
-  /** Continuous zoom (pinch): never changes lens, so it is safe mid-take. */
+  /**
+   * Continuous zoom (pinch): never changes lens, so it is safe mid-take. REQ-23 · The value goes to the zoom store
+   * (the preview and the chip follow it without a React render) and, for a lens zoom, to the camera with at most one
+   * request in flight; the camera's state changes only when a digital crop starts or ends.
+   */
   const setZoom = useCallback((value: number) => {
     const v = viewRef.current;
     // A direct take records the camera as it comes: a digital crop would only change the preview.
     if (!v.lensZoom && !digitalAllowed.current) return;
     const ultra = roleOf(v) === 'ultra';
     const scale = ultra ? 0.5 : 1;
+    let digital: boolean;
     if (v.lensZoom) {
       const z = Math.min(v.lensZoom.max, Math.max(v.lensZoom.min, value / scale));
-      void applyTrack(track(), { zoom: z });
-      setView((s) => ({ ...s, zoom: z * scale, digital: false, crop: 1 }));
+      applyZoom.current?.(track(), z);
+      useCameraZoom.setState({ zoom: z * scale, crop: 1 });
+      digital = false;
     } else {
       // Digital: the ultra-wide crops up to just under 1×, where the main lens takes over.
       const z = Math.min(ultra ? 1.9 : DIGITAL_MAX, Math.max(1, value / scale));
       compositor.current?.setZoom(z);
-      setView((s) => ({ ...s, zoom: z * scale, digital: z > 1.001, crop: z }));
+      useCameraZoom.setState({ zoom: z * scale, crop: z });
+      digital = z > 1.001;
     }
+    if (digital === digitalNow.current) return;
+    digitalNow.current = digital;
+    setView((s) => ({ ...s, digital }));
   }, []);
 
   // ───────────── Zoom buttons like the camera app (P23) ─────────────
@@ -386,16 +406,17 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       switches: step.next != null && step.next !== view.deviceId,
     });
   }
-  const activeChip = (() => {
+  // REQ-23 · Read from the zoom store: this re-renders only when another chip becomes the active one.
+  const activeChip = useCameraZoom((z) => {
     if (back && role === 'ultra' && ultraLens) return 'ultra';
     if (back && role === 'tele') return 'tele';
     if (back && role === 'other') return 'other';
     const zoomChips = chips.filter((c) => c.zoom != null && !c.switches && c.key !== 'ultra');
     return zoomChips.reduce(
-      (best, c) => (Math.abs((c.zoom ?? 1) - view.zoom) < Math.abs((best.zoom ?? 1) - view.zoom) ? c : best),
+      (best, c) => (Math.abs((c.zoom ?? 1) - z.zoom) < Math.abs((best.zoom ?? 1) - z.zoom) ? c : best),
       zoomChips[0] ?? chips[0]!,
     ).key;
-  })();
+  });
 
   /** A zoom button: zoom on this lens, or open another one (a camera restart, so not during a direct take). */
   const pickChip = useCallback(
@@ -438,7 +459,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       if (later.deviceId !== v.deviceId) return void start('environment', later.deviceId);
     }
     // Even mid-reopen: the newer request wins (the session counter drops the older camera).
-    void start(v.facing, v.deviceId, v.zoom);
+    void start(v.facing, v.deviceId, zoomNow());
   }, [modeKey, open, start]);
 
   const retry = useCallback(() => {
@@ -451,7 +472,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
    */
   const reopen = useCallback(() => {
     const v = viewRef.current;
-    void start(v.facing, v.deviceId, v.zoom);
+    void start(v.facing, v.deviceId, zoomNow());
   }, [start]);
 
   /** Resolves with whether the camera took it (false: the switch went back). */
@@ -491,7 +512,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
       if (p.pointers.size === 2) {
         const [a, b] = [...p.pointers.values()];
         p.startDist = Math.hypot(a!.x - b!.x, a!.y - b!.y) || 1;
-        p.startZoom = viewRef.current.zoom;
+        p.startZoom = zoomNow();
       }
     },
     onPointerMove: (e: React.PointerEvent) => {

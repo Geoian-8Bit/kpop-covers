@@ -145,6 +145,36 @@ async function writeFile(dir: FileSystemDirectoryHandle, name: string, data: Blo
   }
 }
 
+/**
+ * REQ-24 · Reads from the phone's storage, several at a time instead of one after another (a 5-minute take is about
+ * 300 pieces): at most `READ_LIMIT` in flight, so a modest phone is never asked for hundreds at once. Results keep
+ * the order of `items`; a failure is the one the serial loop would have met first (the lowest index).
+ */
+const READ_LIMIT = 16;
+export async function mapLimited<T, R>(
+  items: readonly T[],
+  fn: (item: T, index: number) => Promise<R>,
+  limit = READ_LIMIT,
+): Promise<R[]> {
+  const results = new Array<PromiseSettledResult<R>>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: 'fulfilled', value: await fn(items[i]!, i) };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results.map((r) => {
+    if (r.status === 'rejected') throw r.reason;
+    return r.value;
+  });
+}
+
 async function names(dir: FileSystemDirectoryHandle): Promise<string[]> {
   const out: string[] = [];
   for await (const name of (dir as IterableDir).keys()) out.push(name);
@@ -239,8 +269,7 @@ const pieceName = (n: number) => `${String(n).padStart(6, '0')}.part`;
 /** All piece files of a take, in order, as one Blob backed by the disk. */
 async function readPieces(dir: FileSystemDirectoryHandle, type: string): Promise<Blob> {
   const parts = (await names(dir)).filter((n) => n.endsWith('.part')).sort();
-  const files: File[] = [];
-  for (const name of parts) files.push(await (await dir.getFileHandle(name)).getFile());
+  const files = await mapLimited(parts, async (name) => (await dir.getFileHandle(name)).getFile());
   return new Blob(files, { type });
 }
 
@@ -372,7 +401,7 @@ export async function listLeftovers(): Promise<Leftover[]> {
   const now = Date.now();
   const out: Leftover[] = [];
   try {
-    for (const id of await names(root)) {
+    const offers = await mapLimited(await names(root), async (id): Promise<Leftover | null> => {
       const locked = busy.has(lockName(id)) || held.has(id);
       let dir: FileSystemDirectoryHandle;
       let meta: TakeMeta;
@@ -386,10 +415,10 @@ export async function listLeftovers(): Promise<Leftover[]> {
           const empty = { startedAt: new Date(0).toISOString(), savedAt: null, bytes: 0, locked };
           if (leftoverAction(empty, now) === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
         }
-        continue;
+        return null;
       }
       // Kept in «Tomas»: never offered nor cleaned up here; skip reading its pieces (slow with long takes).
-      if (meta.kept) continue;
+      if (meta.kept) return null;
       let size = 0;
       let unreadable = false;
       try {
@@ -404,8 +433,10 @@ export async function listLeftovers(): Promise<Leftover[]> {
         now,
       );
       if (action === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
-      else if (action === 'offer') out.push({ meta: { ...meta, id }, size });
-    }
+      else if (action === 'offer') return { meta: { ...meta, id }, size };
+      return null;
+    });
+    for (const offer of offers) if (offer) out.push(offer);
   } catch {
     return out;
   }
@@ -477,14 +508,17 @@ export async function listKeptTakes(): Promise<Set<string>> {
   const out = new Set<string>();
   if (!root) return out;
   try {
-    for (const id of await names(root)) {
+    const ids = await names(root);
+    const kept = await mapLimited(ids, async (id) => {
       try {
-        const meta = await readMeta(await root.getDirectoryHandle(id));
-        if (meta.kept) out.add(id);
+        return (await readMeta(await root.getDirectoryHandle(id))).kept;
       } catch {
-        /* not a take folder */
+        return false; // not a take folder
       }
-    }
+    });
+    ids.forEach((id, i) => {
+      if (kept[i]) out.add(id);
+    });
   } catch {
     /* storage unavailable */
   }

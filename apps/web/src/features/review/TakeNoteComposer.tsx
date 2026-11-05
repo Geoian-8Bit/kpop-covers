@@ -1,7 +1,14 @@
 import { formatTime, type Member, type Note } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { ArrowUpRight, Circle, Eraser, PenLine, Undo2, Users } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Segmented } from '@/components/ui/Segmented';
@@ -73,7 +80,11 @@ function drawShapes(ctx: CanvasRenderingContext2D, shapes: readonly SketchShape[
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const raw of shapes) {
-      const s = { kind: raw.kind, from: { x: raw.from.x * scale, y: raw.from.y * scale }, to: { x: raw.to.x * scale, y: raw.to.y * scale } };
+      const s = {
+        kind: raw.kind,
+        from: { x: raw.from.x * scale, y: raw.from.y * scale },
+        to: { x: raw.to.x * scale, y: raw.to.y * scale },
+      };
       ctx.beginPath();
       if (s.kind === 'circle') {
         const e = ellipseOf(s);
@@ -128,7 +139,15 @@ export function captureFrame(video: HTMLVideoElement | null): HTMLCanvasElement 
   }
 }
 
-export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorName, onClose, onSave }: Props) {
+export function TakeNoteComposer({
+  draft,
+  mirrored,
+  members,
+  defaultFor,
+  authorName,
+  onClose,
+  onSave,
+}: Props) {
   const [body, setBody] = useState('');
   const [category, setCategory] = useState<NoteCategory | null>(null);
   const [forMember, setForMember] = useState<string | null>(null);
@@ -189,7 +208,14 @@ export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorN
         : undefined;
 
   return (
-    <Dialog open={draft != null} onClose={onClose} busy={saving} title={note ? 'Editar nota' : 'Nota sobre la toma'} description={when} size="lg">
+    <Dialog
+      open={draft != null}
+      onClose={onClose}
+      busy={saving}
+      title={note ? 'Editar nota' : 'Nota sobre la toma'}
+      description={when}
+      size="lg"
+    >
       <form onSubmit={onSubmit} className="space-y-5">
         <div>
           <label htmlFor="take-note-body" className="mb-1.5 block text-[13px] font-medium text-washi-muted">
@@ -217,7 +243,11 @@ export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorN
               Sin categoría
             </Chip>
             {NOTE_CATEGORIES.map((c) => (
-              <Chip key={c.id} active={category === c.id} onClick={() => setCategory(category === c.id ? null : c.id)}>
+              <Chip
+                key={c.id}
+                active={category === c.id}
+                onClick={() => setCategory(category === c.id ? null : c.id)}
+              >
                 {c.label}
               </Chip>
             ))}
@@ -239,14 +269,20 @@ export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorN
             </Chip>
           </div>
           <p className="mt-1.5 text-[12px] text-washi-subtle">
-            {authorName ? `La firmas como ${authorName}.` : 'Se guarda sin firma: di quién eres en Ajustes para firmarla.'}
+            {authorName
+              ? `La firmas como ${authorName}.`
+              : 'Se guarda sin firma: di quién eres en Ajustes para firmarla.'}
           </p>
         </fieldset>
 
         <section aria-label="Dibujo sobre el fotograma" className="space-y-2">
           {savedSketch && !shapes.length && (
             <div className="flex flex-wrap items-end gap-3">
-              <img src={savedSketch} alt="Dibujo guardado sobre el fotograma" className="w-full max-w-[240px] rounded-[8px] border border-line" />
+              <img
+                src={savedSketch}
+                alt="Dibujo guardado sobre el fotograma"
+                className="w-full max-w-[240px] rounded-[8px] border border-line"
+              />
               <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setDropSketch(true)}>
                 <Eraser className="size-4" /> Quitar dibujo
               </Button>
@@ -264,7 +300,14 @@ export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorN
             </Button>
           ) : (
             frame && (
-              <SketchPad frame={frame} mirrored={mirrored} shapes={shapes} onShapes={setShapes} tool={tool} onTool={setTool} />
+              <SketchPad
+                frame={frame}
+                mirrored={mirrored}
+                shapes={shapes}
+                onShapes={setShapes}
+                tool={tool}
+                onTool={setTool}
+              />
             )
           )}
           {!frame && (
@@ -293,7 +336,15 @@ export function TakeNoteComposer({ draft, mirrored, members, defaultFor, authorN
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <motion.button
       type="button"
@@ -312,8 +363,8 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-/** The paused frame, with circles and arrows drawn by dragging (finger or mouse). */
-function SketchPad({
+/** The paused frame, with circles and arrows drawn by dragging (finger or mouse). Exported for its tests. */
+export function SketchPad({
   frame,
   mirrored,
   shapes,
@@ -329,19 +380,52 @@ function SketchPad({
   onTool: (tool: SketchShape['kind']) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [live, setLive] = useState<SketchShape | null>(null);
+  /**
+   * REQ-25 · The shape being dragged lives in a ref and is painted at most once a frame (rAF): no React render per
+   * pointermove. The canvas is painted by the same `drawShapes` as before, and the saved drawing still comes only
+   * from `shapes` (`sketchImage`), so it is the same, byte for byte.
+   */
+  const live = useRef<SketchShape | null>(null);
+  /** The canvas's rect for the drag under way (re-read if it resizes meanwhile). */
+  const dragRect = useRef<DOMRect | null>(null);
+  const frameRequest = useRef(0);
 
-  useEffect(() => {
+  const paint = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(frame, 0, 0);
-    drawShapes(ctx, live ? [...shapes, live] : shapes, 1);
-  }, [frame, shapes, live]);
+    drawShapes(ctx, live.current ? [...shapes, live.current] : shapes, 1);
+  }, [frame, shapes]);
+  const paintRef = useRef(paint);
+  useEffect(() => {
+    paintRef.current = paint;
+    paint();
+  }, [paint]);
+  const schedulePaint = () => {
+    if (frameRequest.current) return;
+    frameRequest.current = requestAnimationFrame(() => {
+      frameRequest.current = 0;
+      paintRef.current();
+    });
+  };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const observer = canvas
+      ? new ResizeObserver(() => {
+          if (dragRect.current) dragRect.current = canvas.getBoundingClientRect();
+        })
+      : null;
+    if (canvas) observer?.observe(canvas);
+    return () => {
+      observer?.disconnect();
+      cancelAnimationFrame(frameRequest.current);
+    };
+  }, []);
 
   const point = (e: ReactPointerEvent<HTMLCanvasElement>): Pt => {
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = dragRect.current ?? e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * frame.width;
     const y = ((e.clientY - rect.top) / rect.height) * frame.height;
     // Shown mirrored like the take: the frame's own x is the other side.
@@ -357,14 +441,40 @@ function SketchPad({
           value={tool}
           onChange={onTool}
           options={[
-            { value: 'circle', label: <span className="flex items-center gap-1.5"><Circle className="size-4" /> Círculo</span> },
-            { value: 'arrow', label: <span className="flex items-center gap-1.5"><ArrowUpRight className="size-4" /> Flecha</span> },
+            {
+              value: 'circle',
+              label: (
+                <span className="flex items-center gap-1.5">
+                  <Circle className="size-4" /> Círculo
+                </span>
+              ),
+            },
+            {
+              value: 'arrow',
+              label: (
+                <span className="flex items-center gap-1.5">
+                  <ArrowUpRight className="size-4" /> Flecha
+                </span>
+              ),
+            },
           ]}
         />
-        <Button variant="ghost" size="icon" aria-label="Deshacer el último trazo" disabled={!shapes.length} onClick={() => onShapes(shapes.slice(0, -1))}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Deshacer el último trazo"
+          disabled={!shapes.length}
+          onClick={() => onShapes(shapes.slice(0, -1))}
+        >
           <Undo2 className="size-5" />
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Borrar el dibujo" disabled={!shapes.length} onClick={() => onShapes([])}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Borrar el dibujo"
+          disabled={!shapes.length}
+          onClick={() => onShapes([])}
+        >
           <Eraser className="size-5" />
         </Button>
       </div>
@@ -374,22 +484,35 @@ function SketchPad({
         height={frame.height}
         role="img"
         aria-label={`Fotograma de la toma para dibujar: ${shapes.length} ${shapes.length === 1 ? 'trazo' : 'trazos'}. Arrastra para dibujar ${tool === 'circle' ? 'un círculo' : 'una flecha'}.`}
-        className={cn('block max-h-[46dvh] w-full touch-none rounded-[10px] border border-line-strong bg-sumi-950 object-contain', mirrored && '-scale-x-100')}
+        className={cn(
+          'block max-h-[46dvh] w-full touch-none rounded-[10px] border border-line-strong bg-sumi-950 object-contain',
+          mirrored && '-scale-x-100',
+        )}
         style={{ aspectRatio: `${frame.width} / ${frame.height}`, cursor: 'crosshair' }}
         onPointerDown={(e) => {
           capturePointer(e);
+          dragRect.current = e.currentTarget.getBoundingClientRect();
           const p = point(e);
-          setLive({ kind: tool, from: p, to: p });
+          live.current = { kind: tool, from: p, to: p };
+          schedulePaint();
         }}
         onPointerMove={(e) => {
-          if (!live) return;
-          setLive({ ...live, to: point(e) });
+          if (!live.current) return;
+          live.current = { ...live.current, to: point(e) };
+          schedulePaint();
         }}
         onPointerUp={() => {
-          if (live && isShape(live)) onShapes([...shapes, live]);
-          setLive(null);
+          const shape = live.current;
+          live.current = null;
+          dragRect.current = null;
+          if (shape && isShape(shape)) onShapes([...shapes, shape]);
+          schedulePaint();
         }}
-        onPointerCancel={() => setLive(null)}
+        onPointerCancel={() => {
+          live.current = null;
+          dragRect.current = null;
+          schedulePaint();
+        }}
       />
     </div>
   );

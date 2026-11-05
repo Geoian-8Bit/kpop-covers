@@ -14,11 +14,11 @@
 | 1 Backend por dominio | Hecha | debc5a4 |
 | 2 Datos y base de datos | Hecha | commit conjunto con la fase 3 (ver git log de perf/rendimiento-integral) |
 | 3 Carga, shell y PWA | Hecha | commit conjunto con la fase 2 |
-| 4 Estudio fluido | Pendiente | |
-| 5 Grupo y diálogos fluidos | Pendiente | |
-| 6 Grabador, tomas y repaso | Pendiente | |
-| 7 Trabajo pesado en workers | Pendiente | |
-| 8 Cliente de Supabase ligero | Pendiente | |
+| 4 Estudio fluido | Hecha | eb58646 |
+| 5 Grupo y diálogos fluidos | Hecha | fa9de58 |
+| 6 Grabador, tomas y repaso | Hecha | ver git log de perf/rendimiento-integral |
+| 7 Trabajo pesado en workers | Hecha | 1a22b4f |
+| 8 Cliente de Supabase ligero | Hecha | 8369aae |
 | 9 Limpieza transversal | Pendiente | |
 | 10 motion perezoso (condicional) | Pendiente | |
 | Cierre final | Pendiente | |
@@ -438,6 +438,47 @@ PollPage y PinnedClips (todos ≤ 561 líneas). S-07 Paint/s 105 → 37 (máquin
 7 (un clic quieto en el sello A/B podía mover el tramo por un movimiento pendiente del cursor) y varios 5–6 para cumplir
 M-08/M-09; arreglos en curso. El orquestador restauró a HEAD cinco ficheros de `player/` que solo tenían formato
 (comprobado: Prettier aplicado a HEAD = fichero de trabajo).
+
+### Fase 6 · Grabador, tomas y repaso — Hecha
+
+**Hecho:**
+- REQ-27: `RecordStudio.tsx` (2950 líneas) dividido en `features/record/studio/**` (hooks de sesión, máquina de tomas,
+  aplauso, zoom, revisión, paneles); `features/review/**` y `features/takes/**` divididos (TakeRow memo, ShareDialog
+  lazy, useTakeActions). Ningún fichero de la fase pasa de 600 líneas.
+- REQ-23: applier de zoom con una sola llamada en vuelo y `zoomStore` (pinza sin re-render del estudio),
+  `canRecordCanvas` memorizado, nivel por rAF, InfoPanel sin intervalo, paneles tras un toque en lazy con precarga.
+  Chunk del grabador 41,23 kB gz frente a ≈53,1 (−22,4 %, objetivo ≥ 20 %).
+- REQ-24: `probeVideo({ needDuration })`, lecturas de OPFS en paralelo (`mapLimited(16)`, mismo orden y mismo primer
+  error), progreso de compartir aclarado (umbral 400 ms; las fases y el 100 % siempre se pintan).
+- REQ-25: rect del repaso cacheado con ResizeObserver, pulgar con translateX, trazo en vivo por rAF, media query
+  cacheada.
+- REQ-20: `storage_usage` con staleTime 10 min; se invalida al compartir, al copiar a la nube, al borrar una toma
+  compartida, al subir un vídeo con archivo (`data/videos/mutations.ts`) y al terminar una separación de voces
+  (`data/stems.ts`). `takeKeys` vive en `data/trackKeys.ts` para no meter tomas en el chunk de vídeos.
+- S-13: ShareDialog 2,9 commits/s (≤ 3) con toma corta.
+- Escenarios nuevos: S-18 (cámara lista) y S-19 (grabador en frío).
+
+**Revisión:** r1 sin hallazgos ≥ 7 (dos de 6, arreglados: paneles lazy que podían dejar perder una toma y
+`storage_usage` sin invalidar al subir). r2 sin hallazgos ≥ 5. Cerrada tras dos rondas limpias.
+
+**Pruebas:** typecheck, lint (0 errores, 258 avisos), test (142 + 1130) y check:size en verde. e2e completo: 559 bien;
+los fallos se repitieron aislados. Dos visuales de `record.spec.ts` (cerrar «Compartir» y aviso de canción parada en el
+repaso) fallaron con `--repeat-each=3` contra un servidor de desarrollo cargado de HMR; en HEAD y con el diff de la fase
+en un worktree limpio dan 6/6 y 6/6, y en el árbol principal 12/12 en dos pasadas: intermitencia del entorno, no
+regresión. Los fallos de WebKit son los conocidos (sin Web Audio en Windows, ver fase 0).
+
+**Descartados (regla de oro / no necesarios):**
+- REQ-23.8 FrameBus: es condicional y no hacía falta.
+- REQ-23.5 limitar la lectura del analizador del aplauso: es opcional y cambiaría el decaimiento.
+- Revisión r1: la tira de repaso (TakeReviewPane), el diálogo de confirmación (StudioConfirm) y la vista del aplauso
+  armado (ClapArm) vuelven a importarse de forma estática: si su chunk no cargaba, en el repaso solo quedaba «Cerrar»
+  (la toma se podía perder) o el aplauso quedaba armado sin vista.
+
+**No alcanzado (medido con la máquina cargada; se repite al cerrar la fase):**
+- camera-ready: 86–90 % de la línea base, frente al objetivo ≤ 85 %.
+- S-14 p95 de fotograma: 49–53 ms, frente a ≤ 20 ms.
+- S-11: ~2,6 commits/s, todos con cambio visible (aviso «Zoom digital» y chip).
+- S-12 y S-17: no se pueden medir; la cámara falsa cuelga Chromium.
 
 ## Diferencias visuales y su justificación
 

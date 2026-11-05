@@ -20,5 +20,15 @@ export function optionsRow(options: RoundOptions): TrackOptionsRow {
   };
 }
 
+/**
+ * The takes' query keys, here so that whatever puts files in the cloud (a video upload, the voice separation) can
+ * refresh the cloud space used (`sharedBytes`, from storage_usage) without pulling in the takes data layer.
+ */
+export const takeKeys = {
+  all: ['takes'] as const,
+  forVideo: (videoId: string | undefined) => ['takes', 'video', videoId] as const,
+  sharedBytes: ['takes', 'shared-bytes'] as const,
+};
+
 /** REQ-19 · The playable columns of a song of a round (its own key: the studio's full row is not needed here). */
 export const videoPlayKey = (id: string | undefined) => ['video-play', id] as const;
