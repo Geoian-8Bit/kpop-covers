@@ -196,6 +196,7 @@ export function PathHandles({
             <circle
               r={HIT * 0.8}
               fill="transparent"
+              data-drag=""
               className="cursor-grab touch-none"
               onPointerDown={(e) => onHandleDown(i, pt, e)}
             />

@@ -42,5 +42,18 @@ export interface Box {
   b: StagePoint;
 }
 
+/** What a finger can drag on the stage (people, props, path handles) carries this attribute. */
+const DRAGGABLE = 'data-drag';
+
+/**
+ * Whether a touch that starts on `target` must not scroll the page. Browsers ignore `touch-action` on the shapes inside
+ * an <svg>: the stage's own `pan-y` decides, so a finger that lands on a person and goes up or down scrolls the page
+ * and the drag never starts. One finger on something draggable (and a stage that takes edits) keeps the gesture.
+ */
+export function holdsTouch(target: EventTarget | null, touches: number, locked: boolean): boolean {
+  if (locked || touches !== 1 || !target || !('closest' in target)) return false;
+  return (target as Element).closest(`[${DRAGGABLE}]`) != null;
+}
+
 /** SVG `points` from stage points. */
 export const line = (pts: StagePoint[]) => pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
