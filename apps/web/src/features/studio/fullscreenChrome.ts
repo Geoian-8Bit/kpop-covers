@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
-import { create } from 'zustand';
+import { createAutoHideChrome } from '@/lib/autoHideChrome';
 import { usePlayer } from '@/player/store';
 
-/** Controls hide this long after the last touch while the song plays (YouTube-style). */
-const HIDE_AFTER_MS = 3000;
 /** How long a double-tap seek badge («+10 s») stays. */
 const FLASH_MS = 700;
 
@@ -19,30 +17,21 @@ interface FsChromeState {
 /**
  * 5 · Fullscreen controls state, outside the studio's page tree: showing or hiding the controls repaints only the
  * controls layer (a fine selector), never the stage with the players inside it. UI state only: the player's own
- * state stays in player/store.ts.
+ * state stays in player/store.ts. REQ-28 · The hide timer and its listeners come from lib/autoHideChrome.ts (shared
+ * with the round's bar); controls hide 3 s after the last touch while the song plays (YouTube-style).
  */
-export const useFsChrome = create<FsChromeState>(() => ({ shown: true, menu: false, flash: null }));
+const chrome = createAutoHideChrome<FsChromeState>(
+  { shown: true, menu: false, flash: null },
+  { isPlaying: () => usePlayer.getState().playing },
+);
+export const useFsChrome = chrome.store;
 
-let hideTimer: ReturnType<typeof setTimeout> | undefined;
 let flashTimer: ReturnType<typeof setTimeout> | undefined;
-
-function scheduleHide() {
-  clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => {
-    if (usePlayer.getState().playing) useFsChrome.setState({ shown: false });
-  }, HIDE_AFTER_MS);
-}
 
 export const fsChrome = {
   /** Show the controls now; they hide again after a while if the song plays. */
-  wake() {
-    if (!useFsChrome.getState().shown) useFsChrome.setState({ shown: true });
-    scheduleHide();
-  },
-  hide() {
-    clearTimeout(hideTimer);
-    if (useFsChrome.getState().shown) useFsChrome.setState({ shown: false });
-  },
+  wake: chrome.wake,
+  hide: chrome.hide,
   /** Whether the controls are on screen (a menu or a drag on the progress line keeps them up). */
   isVisible(): boolean {
     const { shown, menu } = useFsChrome.getState();
@@ -73,29 +62,18 @@ export function useFsChromeDriver(active: boolean): void {
     if (!active) return;
     useFsChrome.setState({ shown: true, menu: false, flash: null });
     fsChrome.wake();
-    const onMouse = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') fsChrome.wake();
-    };
-    const onKey = () => fsChrome.wake();
-    window.addEventListener('pointermove', onMouse);
-    window.addEventListener('keydown', onKey);
+    const unlisten = chrome.listen();
     const offPlayer = usePlayer.subscribe((s, prev) => {
-      if (s.playing !== prev.playing) {
-        if (!s.playing) {
-          clearTimeout(hideTimer);
-          useFsChrome.setState({ shown: true });
-        } else scheduleHide();
-      }
+      if (s.playing !== prev.playing) chrome.onPlayingChange(s.playing);
       if (prev.scrubbing && !s.scrubbing) fsChrome.wake();
     });
     const offChrome = useFsChrome.subscribe((s, prev) => {
       if (prev.menu && !s.menu) fsChrome.wake();
     });
     return () => {
-      clearTimeout(hideTimer);
+      chrome.cancelHide();
       clearTimeout(flashTimer);
-      window.removeEventListener('pointermove', onMouse);
-      window.removeEventListener('keydown', onKey);
+      unlisten();
       offPlayer();
       offChrome();
       useFsChrome.setState({ shown: true, menu: false, flash: null });

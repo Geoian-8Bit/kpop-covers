@@ -1,4 +1,5 @@
 import { belowRequested } from '@coverscape/shared';
+import { sleep } from '@/lib/async';
 import {
   canSetTemperature,
   createLatestQueue,
@@ -285,7 +286,6 @@ export function setExposureCompensation(track: MediaStreamTrack | undefined, val
 }
 
 const wbQueue = createLatestQueue();
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * C4 / P24 / P48 · Applies a preset (or «Auto», null) and checks the camera shows it (`whiteBalanceRules`).

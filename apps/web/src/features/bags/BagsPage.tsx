@@ -1,5 +1,6 @@
 import type { BagKind } from '@coverscape/shared';
 import { Plus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { navigateFromLayer } from '@/lib/backLayers';
@@ -7,7 +8,7 @@ import { Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { useBags } from '@/data/bags';
+import { prefetchBag, useBags } from '@/data/bags';
 import { BagSettingsDialog } from './BagSettingsDialog';
 import { BagGroup } from './BagShelf';
 import { KIND_COPY } from './drawRules';
@@ -19,12 +20,21 @@ export function BagsPage() {
   const bags = useBags();
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const list = bags.data ?? [];
 
   return (
     // <main> already leaves room at the bottom for the floating menu button on phones (AppShell).
     <Page className="px-2.5 pb-3 pt-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
-      <div className="paper mx-auto max-w-4xl rounded-[10px] sm:rounded-[12px]">
+      <div
+        className="paper mx-auto max-w-4xl rounded-[10px] sm:rounded-[12px]"
+        // REQ-18 · A real press on a bag's card warms its items and history (a scroll sweeping over cards warms none).
+        onPointerDown={(e) => {
+          const href = (e.target as Element).closest('a')?.getAttribute('href');
+          const id = href?.match(/^\/bolsas\/([^/?#]+)$/)?.[1];
+          if (id) prefetchBag(queryClient, id);
+        }}
+      >
         <header className="flex flex-wrap items-end justify-between gap-4 px-5 pb-6 pt-6 sm:px-9 sm:pt-8">
           <div className="min-w-0">
             <h1 className="font-display text-[28px] font-bold leading-tight sm:text-[34px]">Bolsas</h1>

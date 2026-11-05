@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { canShareFile, downloadFile, IS_IOS, shareFile, takeFileName } from '@/features/record/recorder';
 import { forgetTake, keepTake, listKeptTakes, loadKeptTake, unkeepTake } from '@/features/record/takeStore';
-import { isAbort, shareTake, type SharePhase } from '@/features/takes/shareTake';
+import { isAbort, type SharePhase } from '@/features/takes/shareSupport';
+import type { ShareTakeInput } from '@/features/takes/shareTake';
 import {
   applyBest,
   assignPatch,
@@ -15,8 +16,9 @@ import {
   type SaveTakeInput,
   type TakeItem,
 } from '@/features/takes/takeRules';
-import { backend, type TakePatch } from '@/lib/backend';
+import { backend, type TakePatch } from '@/lib/backend/core';
 import { friendlyError, FriendlyError } from '@/lib/supabase';
+import { takeKeys } from './trackKeys';
 
 /**
  * F3 / F4 · Saved takes. The row (song, second, speed, who, when…) is shared through the database; the video
@@ -25,14 +27,21 @@ import { friendlyError, FriendlyError } from '@/lib/supabase';
  * copy; cloud files are never deleted from the app.
  */
 
-export type { TakeItem, TakeWhere } from '@/features/takes/takeRules';
-export type { SharePhase } from '@/features/takes/shareTake';
+export type { TakeItem } from '@/features/takes/takeRules';
+export type { SharePhase } from '@/features/takes/shareSupport';
 
-export const takeKeys = {
-  all: ['takes'] as const,
-  forVideo: (videoId: string | undefined) => ['takes', 'video', videoId] as const,
-  sharedBytes: ['takes', 'shared-bytes'] as const,
-};
+/**
+ * REQ-23 · `shareTake.ts` (the 720p copy) is its own chunk, out of the takes list. The share dialog imports only its
+ * privacy notice from it, but that static import loads the chunk with the dialog, so by the time «Compartir» can be
+ * tapped the module is here and `start` still calls it synchronously from the tap (iPhone). `useShareTake` asks for
+ * it on mount just in case.
+ */
+type ShareModule = typeof import('@/features/takes/shareTake');
+let shareModule: ShareModule | null = null;
+const loadShareModule = (): Promise<ShareModule> =>
+  import('@/features/takes/shareTake').then((mod) => (shareModule = mod));
+
+export { takeKeys };
 
 // ───────────── This device ─────────────
 
@@ -79,11 +88,13 @@ export async function takeUrl(take: TakeItem): Promise<string> {
     if (url) return url;
     throw new FriendlyError('No se pudo abrir la copia de la nube. Revisa la conexión.');
   }
-  throw new FriendlyError(take.where === 'here' ? 'Esta toma ya no está en este móvil.' : 'Esta toma está en otro móvil.');
+  throw new FriendlyError(
+    take.where === 'here' ? 'Esta toma ya no está en este móvil.' : 'Esta toma está en otro móvil.',
+  );
 }
 
 /** Name for a downloaded take: the one it was saved with, or one made from the song and the date. */
-export function takeDownloadName(take: TakeItem, video: Pick<Video, 'title'>, extension?: string): string {
+function takeDownloadName(take: TakeItem, video: Pick<Video, 'title'>, extension?: string): string {
   const base = take.file_name || takeFileName(video, take.mime_type ?? '', take.recorded_at);
   if (!extension) return base;
   return `${base.replace(/\.[A-Za-z0-9]{1,10}$/, '')}-720p.${extension}`;
@@ -93,7 +104,10 @@ export function takeDownloadName(take: TakeItem, video: Pick<Video, 'title'>, ex
  * Download a take: this phone's copy (on iPhone through the share sheet, so it can reach Photos), or else the
  * shared 720p copy. Resolves 'cancelled' when the share sheet was closed.
  */
-export async function downloadTake(take: TakeItem, video: Pick<Video, 'title'>): Promise<'saved' | 'cancelled'> {
+export async function downloadTake(
+  take: TakeItem,
+  video: Pick<Video, 'title'>,
+): Promise<'saved' | 'cancelled'> {
   if (take.where === 'here') {
     const blob = await loadKeptTake(take.id);
     if (blob) {
@@ -121,7 +135,9 @@ export async function downloadTake(take: TakeItem, video: Pick<Video, 'title'>):
     a.remove();
     return 'saved';
   }
-  throw new FriendlyError(take.where === 'here' ? 'Esta toma ya no está en este móvil.' : 'Esta toma está en otro móvil.');
+  throw new FriendlyError(
+    take.where === 'here' ? 'Esta toma ya no está en este móvil.' : 'Esta toma está en otro móvil.',
+  );
 }
 
 // ───────────── Reading ─────────────
@@ -146,12 +162,16 @@ export function useSharedTakesBytes() {
   return useQuery({
     queryKey: takeKeys.sharedBytes,
     queryFn: () => backend.storageUsage(),
-    staleTime: 60_000,
+    // REQ-20 · storage_usage() walks storage.objects: ask for it at most every 10 min. Sharing a take, the cloud copy,
+    // a video upload, a voice separation and deleting a shared take invalidate it, so those changes still show at once.
+    staleTime: 10 * 60_000,
   });
 }
 
 function patchCache(queryClient: QueryClient, videoId: string, fn: (items: TakeItem[]) => TakeItem[]) {
-  queryClient.setQueryData<TakeItem[]>(takeKeys.forVideo(videoId), (current) => (current ? fn(current) : current));
+  queryClient.setQueryData<TakeItem[]>(takeKeys.forVideo(videoId), (current) =>
+    current ? fn(current) : current,
+  );
 }
 
 /** Keep the item's `where` when the server hands back a fresh row. */
@@ -171,7 +191,10 @@ export interface SaveTakeVars extends Omit<SaveTakeInput, 'videoId' | 'mimeType'
 
 const isDuplicate = (err: unknown) => {
   const e = err as { code?: string; message?: string } | null;
-  return /takes_pkey/.test(e?.message ?? '') || (e?.code === '23505' && !/takes_one_best_key/.test(e?.message ?? ''));
+  return (
+    /takes_pkey/.test(e?.message ?? '') ||
+    (e?.code === '23505' && !/takes_one_best_key/.test(e?.message ?? ''))
+  );
 };
 
 /**
@@ -187,7 +210,9 @@ export function useSaveTake() {
       const file = vars.file ?? null;
       const meta = await keepTake(vars.id);
       if (!meta) {
-        throw new FriendlyError('Este navegador no deja guardar la toma en el móvil. Descárgala para no perderla.');
+        throw new FriendlyError(
+          'Este navegador no deja guardar la toma en el móvil. Descárgala para no perderla.',
+        );
       }
       const row = takeRow(
         {
@@ -212,7 +237,9 @@ export function useSaveTake() {
           const existing = await backend.getTake(vars.id).catch(() => null);
           if (existing) return { ...existing, where: 'here' };
           await unkeepTake(vars.id);
-          throw new FriendlyError('Esta toma ya se guardó y luego se borró de «Tomas». Descárgala para no perderla.');
+          throw new FriendlyError(
+            'Esta toma ya se guardó y luego se borró de «Tomas». Descárgala para no perderla.',
+          );
         }
         await unkeepTake(vars.id);
         throw err;
@@ -253,12 +280,15 @@ export function useSetBestTake() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: BEST_WRITE,
-    mutationFn: ({ take, isBest }: { take: TakeItem; isBest: boolean }) => backend.updateTake(take.id, { is_best: isBest }),
+    mutationFn: ({ take, isBest }: { take: TakeItem; isBest: boolean }) =>
+      backend.updateTake(take.id, { is_best: isBest }),
     onMutate: async ({ take, isBest }) => {
       const key = takeKeys.forVideo(take.video_id);
       await queryClient.cancelQueries({ queryKey: key });
       const before = queryClient.getQueryData<TakeItem[]>(key);
-      queryClient.setQueryData<TakeItem[]>(key, (current) => (current ? applyBest(current, take.id, isBest) : current));
+      queryClient.setQueryData<TakeItem[]>(key, (current) =>
+        current ? applyBest(current, take.id, isBest) : current,
+      );
       return { before, key };
     },
     onError: (_err, _vars, context) => {
@@ -290,7 +320,9 @@ export function useUpdateTakeReview() {
       const key = takeKeys.forVideo(take.video_id);
       await queryClient.cancelQueries({ queryKey: key });
       const before = queryClient.getQueryData<TakeItem[]>(key);
-      patchCache(queryClient, take.video_id, (items) => items.map((t) => (t.id === take.id ? { ...t, ...patch } : t)));
+      patchCache(queryClient, take.video_id, (items) =>
+        items.map((t) => (t.id === take.id ? { ...t, ...patch } : t)),
+      );
       return { before, key };
     },
     onError: (_err, _vars, context) => {
@@ -306,7 +338,15 @@ export function useUpdateTakeReview() {
 export function useAssignTakes() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ takes, memberId, all }: { takes: TakeItem[]; memberId: string; all: TakeItem[] }) => {
+    mutationFn: async ({
+      takes,
+      memberId,
+      all,
+    }: {
+      takes: TakeItem[];
+      memberId: string;
+      all: TakeItem[];
+    }) => {
       let current: Take[] = [...all];
       let done = 0;
       for (const take of takes) {
@@ -347,9 +387,16 @@ export function useShareTake() {
   const [state, setState] = useState<ShareState>(IDLE);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  /** REQ-24 · The last progress painted (phase, rounded percent, when), to thin out the copy's reports. */
+  const lastPaint = useRef<{ phase: SharePhase; pct: number; at: number }>({
+    phase: 'reducing',
+    pct: 0,
+    at: 0,
+  });
 
   useEffect(() => {
     mounted.current = true;
+    void loadShareModule();
     return () => {
       mounted.current = false;
       controller.current?.abort();
@@ -365,29 +412,44 @@ export function useShareTake() {
       if (controller.current) return Promise.resolve(null);
       const abort = new AbortController();
       controller.current = abort;
+      lastPaint.current = { phase: 'reducing', pct: 0, at: performance.now() };
       set({ takeId: take.id, phase: 'reducing', progress: 0, error: null });
       // Called synchronously (no await before it): the tap must reach the video element.
-      const run = shareTake({
+      const input: ShareTakeInput = {
         take,
         source,
         signal: abort.signal,
-        onProgress: (phase, progress) => set({ takeId: take.id, phase, progress, error: null }),
-      });
-      return run.then(
-        (row) => {
-          patchCache(queryClient, row.video_id, (items) => merge(items, row));
-          void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
-          set({ takeId: take.id, phase: 'done', progress: 1, error: null });
-          return row;
+        onProgress: (phase, progress) => {
+          // REQ-24 · The 720p copy reports every frame (~30 Hz): repaint the dialog only when the phase or the shown
+          // percent changes, and the percent at most every 400 ms (like cloudCopyRun), so the copy keeps its frames.
+          const now = performance.now();
+          const pct = Math.round(progress * 100);
+          const paint = lastPaint.current;
+          if (phase === paint.phase && (pct === paint.pct || (now - paint.at < 400 && progress < 1))) return;
+          lastPaint.current = { phase, pct, at: now };
+          set({ takeId: take.id, phase, progress, error: null });
         },
-        (err: unknown) => {
-          if (isAbort(err)) set(IDLE);
-          else set({ takeId: take.id, phase: 'error', progress: 0, error: friendlyError(err) });
-          return null;
-        },
-      ).finally(() => {
-        if (controller.current === abort) controller.current = null;
-      });
+      };
+      const run = shareModule
+        ? shareModule.shareTake(input)
+        : loadShareModule().then((mod) => mod.shareTake(input));
+      return run
+        .then(
+          (row) => {
+            patchCache(queryClient, row.video_id, (items) => merge(items, row));
+            void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
+            set({ takeId: take.id, phase: 'done', progress: 1, error: null });
+            return row;
+          },
+          (err: unknown) => {
+            if (isAbort(err)) set(IDLE);
+            else set({ takeId: take.id, phase: 'error', progress: 0, error: friendlyError(err) });
+            return null;
+          },
+        )
+        .finally(() => {
+          if (controller.current === abort) controller.current = null;
+        });
     },
     [queryClient, set],
   );
@@ -397,5 +459,11 @@ export function useShareTake() {
     if (!controller.current) set(IDLE);
   }, [set]);
 
-  return { ...state, busy: state.phase === 'reducing' || state.phase === 'uploading' || state.phase === 'saving', start, cancel, reset };
+  return {
+    ...state,
+    busy: state.phase === 'reducing' || state.phase === 'uploading' || state.phase === 'saving',
+    start,
+    cancel,
+    reset,
+  };
 }

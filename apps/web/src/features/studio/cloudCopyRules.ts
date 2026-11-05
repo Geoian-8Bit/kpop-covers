@@ -105,7 +105,7 @@ export type CloudDecision =
   | { kind: 'too-long'; maxSeconds: number };
 
 /** Smallest copy worth making for `seconds` (lowest bitrates), in bytes. */
-export function minCopyBytes(seconds: number): number {
+function minCopyBytes(seconds: number): number {
   if (!(seconds > 0)) return 0;
   return Math.ceil((((COPY.minVideoBps + COPY.minAudioBps) / 8) * seconds) / COPY.overhead);
 }

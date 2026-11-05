@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Lock, LockOpen, X } from 'lucide-react';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
 import {
@@ -13,17 +13,9 @@ import {
 } from './camera';
 import { formatExposure } from './quickExposureRules';
 import { visiblePresets } from './whiteBalanceRules';
+import type { ImageState } from './imageState';
 
-export interface ImageState {
-  /** Exposure compensation (C3), 0 = as the camera meters. */
-  exposure: number;
-  /** White balance (C4), null = automatic. */
-  kelvin: number | null;
-  /** Focus and exposure held (C2). */
-  locked: boolean;
-}
-
-export const IMAGE_DEFAULT: ImageState = { exposure: 0, kelvin: null, locked: false };
+export { IMAGE_DEFAULT, type ImageState } from './imageState';
 
 /**
  * Image controls for rehearsal rooms (C2–C4): exposure compensation, white balance and the focus/exposure
@@ -33,6 +25,7 @@ export function ImageControls({
   info,
   state,
   onExposure,
+  onExposurePreview,
   onWhiteBalance,
   onLock,
   onClose,
@@ -40,6 +33,12 @@ export function ImageControls({
   info: TrackInfo;
   state: ImageState;
   onExposure: (value: number) => void;
+  /**
+   * REQ-23 · While the «Luz» slider moves: the camera only (coalesced, as before). The recorder gets the value
+   * (`onExposure`) when the slider is let go of, so it doesn't re-render on every step. Without it, every step is sent
+   * to `onExposure`.
+   */
+  onExposurePreview?: (value: number) => void;
   onWhiteBalance: (kelvin: number | null) => void;
   onLock: (locked: boolean) => void;
   onClose: () => void;
@@ -52,6 +51,30 @@ export function ImageControls({
   // P24 · Re-render when this phone turns out to ignore the colour presets (the option then hides).
   useSyncExternalStore(subscribeWhiteBalance, whiteBalanceVersion);
   const whiteBalance = canWhiteBalance(info);
+  // REQ-23 · The value under the thumb while it moves (null: the recorder's own value).
+  const [live, setLive] = useState<number | null>(null);
+  const exposure = live ?? state.exposure;
+  const slider = useRef<HTMLInputElement>(null);
+  const commit = useRef({ onExposure, live });
+  commit.current = { onExposure, live };
+  const previewing = onExposurePreview != null;
+  const hasExposure = ev != null;
+  useEffect(() => {
+    const el = slider.current;
+    if (!el || !previewing || !hasExposure) return;
+    // The native `change` fires when the slider is let go of (and on each key step).
+    const onLetGo = () => {
+      setLive(null);
+      commit.current.onExposure(Number(el.value));
+    };
+    el.addEventListener('change', onLetGo);
+    return () => {
+      el.removeEventListener('change', onLetGo);
+      // Closed mid-drag: the recorder still gets the value the camera has.
+      const { live: pending, onExposure: send } = commit.current;
+      if (pending != null) send(pending);
+    };
+  }, [previewing, hasExposure]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -96,7 +119,7 @@ export function ImageControls({
               Luz
             </label>
             <span className="tabular font-mono text-[13px] font-bold">
-              {formatExposure(state.exposure)}
+              {formatExposure(exposure)}
             </span>
           </div>
           <input
@@ -105,10 +128,16 @@ export function ImageControls({
             min={ev.min}
             max={ev.max}
             step={step}
-            value={state.exposure}
-            onChange={(e) => onExposure(Number(e.target.value))}
+            ref={slider}
+            value={exposure}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              if (!onExposurePreview) return onExposure(value);
+              setLive(value);
+              onExposurePreview(value);
+            }}
             className="mt-1 h-11 w-full cursor-pointer accent-kin-300"
-            aria-valuetext={`${state.exposure > 0 ? 'más' : state.exposure < 0 ? 'menos' : 'sin cambio de'} luz, ${Math.abs(state.exposure).toFixed(1)}`}
+            aria-valuetext={`${exposure > 0 ? 'más' : exposure < 0 ? 'menos' : 'sin cambio de'} luz, ${Math.abs(exposure).toFixed(1)}`}
           />
           <div className="flex justify-between text-[11px] text-washi-subtle">
             <span>Más oscuro</span>

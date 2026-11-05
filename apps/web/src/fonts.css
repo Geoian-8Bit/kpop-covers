@@ -1,0 +1,164 @@
+/*
+ * REQ-07 · Self-hosted fonts, same files and same declaration order Google's two stylesheets gave (they used to be
+ * linked from index.html and blocked the first paint). Where unicode-ranges overlap the LAST declaration wins.
+ *
+ * - This file is the CRITICAL part (it ships in the render-blocking CSS): only our own copies of the latin and
+ *   latin-ext slices of the three families, plus the UI-kanji subset at the end. The slices that are not needed to
+ *   paint the first screen (cyrillic, greek, vietnamese and the many Japanese ones) live in ./fonts-ja.css, which
+ *   main.tsx links after the first render (REQ-07 · M-01). That file does NOT re-declare these faces: its
+ *   unicode-ranges are trimmed instead (see its header), so it must be regenerated whenever the faces or ranges
+ *   here change.
+ * - JetBrains Mono 500 and 600 share one variable file (hence the shared file name).
+ * - The subset holds the kanji the UI itself shows. To add a UI kanji: request
+ *   https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@700;800&display=swap&text=<all UI kanji,
+ *   percent-encoded> with a modern Chrome User-Agent, download the two woff2 files it returns into
+ *   ./assets/fonts/ (replacing the previous ones), and update the two subset blocks at the end of this file
+ *   (the files' names and the unicode-range), then regenerate ./fonts-ja.css with trim-fonts.mjs and check with
+ *   winners.mjs (procedure in the header of ./fonts-ja.css).
+ */
+/* latin-ext · JetBrains Mono 500 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(./assets/fonts/jetbrains-mono-500-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · JetBrains Mono 500 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(./assets/fonts/jetbrains-mono-500-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · JetBrains Mono 600 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(./assets/fonts/jetbrains-mono-500-600-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · JetBrains Mono 600 */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(./assets/fonts/jetbrains-mono-500-600-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · Shippori Mincho B1 700 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · Shippori Mincho B1 700 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · Shippori Mincho B1 800 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-800-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · Shippori Mincho B1 800 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-800-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · Zen Kaku Gothic New 400 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-400-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · Zen Kaku Gothic New 400 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-400-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · Zen Kaku Gothic New 500 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-500-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · Zen Kaku Gothic New 500 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-500-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext · Zen Kaku Gothic New 700 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-700-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin · Zen Kaku Gothic New 700 */
+@font-face {
+  font-family: 'Zen Kaku Gothic New';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./assets/fonts/zen-kaku-gothic-new-700-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* UI kanji subset (declared last so it wins over the Japanese slices) */
+/* ui-kanji · Shippori Mincho B1 700 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-700-ui-kanji.woff2) format('woff2');
+  unicode-range: U+4eba, U+4eca, U+4f5c, U+5143, U+5168, U+5186, U+5224, U+53e4, U+54e1, U+5831, U+58f0, U+5916, U+5b50, U+5b9a, U+5bf8, U+5c45, U+5c4f, U+5e16, U+5e33, U+5ea7, U+5eab, U+5f0f, U+5f15, U+5f53, U+5fa1, U+624b, U+62cd, U+64ae, U+65e5, U+66a6, U+66f2, U+66f8, U+672d, U+683c, U+697d, U+6b21, U+6bd4, U+6c34, U+6c7a, U+6ce2, U+6d77, U+6f14, U+706f, U+753b, U+756a, U+76ee, U+76f8, U+773c, U+795e, U+7968, U+796d, U+798f, U+7a3d, U+7c3e, U+7c64, U+7d19, U+7d42, U+821e, U+829d, U+83f1, U+888b, U+8a18, U+8a2d, U+8a3b, U+8a66, U+8cea, U+9078, U+9332, U+9593, U+9752, U+9762, U+97f3, U+9858, U+9f63;
+}
+/* ui-kanji · Shippori Mincho B1 800 */
+@font-face {
+  font-family: 'Shippori Mincho B1';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url(./assets/fonts/shippori-mincho-b1-800-ui-kanji.woff2) format('woff2');
+  unicode-range: U+4eba, U+4eca, U+4f5c, U+5143, U+5168, U+5186, U+5224, U+53e4, U+54e1, U+5831, U+58f0, U+5916, U+5b50, U+5b9a, U+5bf8, U+5c45, U+5c4f, U+5e16, U+5e33, U+5ea7, U+5eab, U+5f0f, U+5f15, U+5f53, U+5fa1, U+624b, U+62cd, U+64ae, U+65e5, U+66a6, U+66f2, U+66f8, U+672d, U+683c, U+697d, U+6b21, U+6bd4, U+6c34, U+6c7a, U+6ce2, U+6d77, U+6f14, U+706f, U+753b, U+756a, U+76ee, U+76f8, U+773c, U+795e, U+7968, U+796d, U+798f, U+7a3d, U+7c3e, U+7c64, U+7d19, U+7d42, U+821e, U+829d, U+83f1, U+888b, U+8a18, U+8a2d, U+8a3b, U+8a66, U+8cea, U+9078, U+9332, U+9593, U+9752, U+9762, U+97f3, U+9858, U+9f63;
+}

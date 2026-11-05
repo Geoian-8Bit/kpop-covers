@@ -34,7 +34,7 @@ export function whereLabel(
 
 // ───────────── Device id ─────────────
 
-export const DEVICE_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 
 /** Same check as the database (`takes.device_id`). */
 export function isDeviceId(value: unknown): value is string {
@@ -92,7 +92,7 @@ export function isFiltered(filter: TakeFilter): boolean {
   return filter.member !== 'all' || filter.clip !== 'all';
 }
 
-export function startOfDay(now: Date): Date {
+function startOfDay(now: Date): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
@@ -147,7 +147,7 @@ export function notesCount(n: number): string {
 // ───────────── Best take (F4) ─────────────
 
 /** Same trio as the database trigger: one best take per song, section (clip) and person. */
-export function sameTrio(a: Pick<Take, 'video_id' | 'member_id' | 'clip_id'>, b: Pick<Take, 'video_id' | 'member_id' | 'clip_id'>): boolean {
+function sameTrio(a: Pick<Take, 'video_id' | 'member_id' | 'clip_id'>, b: Pick<Take, 'video_id' | 'member_id' | 'clip_id'>): boolean {
   return a.video_id === b.video_id && (a.member_id ?? null) === (b.member_id ?? null) && (a.clip_id ?? null) === (b.clip_id ?? null);
 }
 
@@ -253,7 +253,7 @@ export function takeSongZero(
 }
 
 /** The most the recorded start may move the planned one (s). */
-export const SONG_ZERO_MAX_SHIFT = 2;
+const SONG_ZERO_MAX_SHIFT = 2;
 
 // ───────────── The reduced copy shared with the group ─────────────
 

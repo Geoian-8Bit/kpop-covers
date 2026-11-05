@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { CSSProperties, ReactNode } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { TONE, type Tone } from '@/features/bags/tones';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, jelly, soft } from '@/lib/motion';
@@ -66,7 +66,8 @@ const LAYOUT = {
   '--rpd-upright-max': 'max(300px, calc((100dvh - 400px) * 16 / 9 + 24px))',
 } as CSSProperties;
 
-export function RandomPlayScreen(props: RandomPlayScreenProps) {
+// REQ-22 · memo: RoundRunner hands it stable props (memoised cards, elements and callbacks).
+export const RandomPlayScreen = memo(function RandomPlayScreen(props: RandomPlayScreenProps) {
   const reduce = useReducedMotion();
   // Lead-in over: the card slides away at once (a clip still loading says so in its notice).
   const lead = props.lead?.phase === 'go' ? null : props.lead;
@@ -222,7 +223,7 @@ export function RandomPlayScreen(props: RandomPlayScreenProps) {
       </SideColumn>
     </div>
   );
-}
+});
 
 /**
  * What goes beside the picture. Full screen upright: a bar under it. Full screen sideways: the studio's bar on the

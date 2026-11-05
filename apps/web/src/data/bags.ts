@@ -1,30 +1,21 @@
 import type { Bag, BagDraw, BagKind } from '@coverscape/shared';
-import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
-  backend,
   bagsBackend,
+  type BagHoldingRef,
   type BagItemView,
   type BagPatch,
   type BagWithCount,
-  type ClipWithVideo,
   type NewBag,
   type NewBagItem,
-} from '@/lib/backend';
+} from '@/lib/backend/bags';
+import { backend, type ClipWithVideo } from '@/lib/backend/core';
 import { friendlyError } from '@/lib/supabase';
+import { bagKeys } from './bagKeys';
 import { useCreateVideo, videoKeys } from './videos';
 
-export type { BagItemView, BagWithCount, NewBag } from '@/lib/backend';
-
-/**
- * F13 · Bolsas para sortear: shared by the group. The draw happens on the server (atomic); here only the cache
- * follows: after a draw or a «Quitar» / «Devolver» the bag's items and history are fetched again.
- */
-export const bagKeys = {
-  all: ['bags'] as const,
-  items: (bagId: string | undefined) => ['bag-items', bagId] as const,
-  draws: (bagId: string | undefined) => ['bag-draws', bagId] as const,
-  allClips: ['all-clips'] as const,
-};
+export type { BagItemView, BagWithCount, NewBag } from '@/lib/backend/bags';
+export { bagKeys };
 
 /** Bag errors in the group's words (falls back to the app's general mapping). */
 export function bagError(error: unknown): string {
@@ -62,14 +53,27 @@ export function useBagItems(bagId: string | undefined) {
   });
 }
 
-/** The items of several bags at once (the «Añadir a una bolsa» dialog marks where it already is). */
-export function useBagsItems(bagIds: string[], enabled: boolean) {
-  return useQueries({
-    queries: bagIds.map((id) => ({
-      queryKey: bagKeys.items(id),
-      enabled,
-      queryFn: () => bagsBackend.listBagItems(id),
-    })),
+/**
+ * REQ-19 · The ids of the bags that already hold this song, wish or clip (the «Añadir a una bolsa» dialog marks
+ * them): one `bag_items select bag_id` query instead of the full item list of every bag.
+ */
+export function useBagsHolding(ref: BagHoldingRef, enabled: boolean) {
+  return useQuery({
+    queryKey: bagKeys.holding(ref),
+    enabled,
+    queryFn: () => bagsBackend.listBagsHolding(ref),
+  });
+}
+
+/** REQ-18 · A press on a bag's card: its items and history start loading (cached ones aren't fetched again). */
+export function prefetchBag(queryClient: QueryClient, bagId: string): void {
+  void queryClient.prefetchQuery({
+    queryKey: bagKeys.items(bagId),
+    queryFn: () => bagsBackend.listBagItems(bagId),
+  });
+  void queryClient.prefetchQuery({
+    queryKey: bagKeys.draws(bagId),
+    queryFn: () => bagsBackend.listBagDraws(bagId),
   });
 }
 
@@ -94,6 +98,7 @@ function refreshBag(queryClient: QueryClient, bagId: string) {
   void queryClient.invalidateQueries({ queryKey: bagKeys.items(bagId) });
   void queryClient.invalidateQueries({ queryKey: bagKeys.draws(bagId) });
   void queryClient.invalidateQueries({ queryKey: bagKeys.all });
+  void queryClient.invalidateQueries({ queryKey: bagKeys.holdingAll });
 }
 
 export function useCreateBag() {
@@ -134,6 +139,7 @@ export function useDeleteBag() {
       );
       queryClient.removeQueries({ queryKey: bagKeys.items(bag.id) });
       queryClient.removeQueries({ queryKey: bagKeys.draws(bag.id) });
+      void queryClient.invalidateQueries({ queryKey: bagKeys.holdingAll });
     },
   });
 }

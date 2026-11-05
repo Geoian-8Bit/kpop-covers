@@ -19,7 +19,7 @@ import {
 import { askWho, MEMBER_SWATCH } from '@/data/members';
 import { useMarkCalendarSeen } from '@/data/calendar';
 import { useEvents } from '@/data/events';
-import { useNow } from '@/features/events/useNow';
+import { useNowDate } from '@/lib/useNow';
 import { cn } from '@/lib/cn';
 import { snappy, soft } from '@/lib/motion';
 import { useToast } from '@/providers/ToastProvider';
@@ -59,7 +59,7 @@ type Layer =
  * opens that day (the notifications of REQ-05 land there).
  */
 export function CalendarPage() {
-  const now = useNow();
+  const now = useNowDate();
   const today = madridToday(now);
   const [params, setParams] = useSearchParams();
   const [month, setMonth] = useState<MonthRef>(() => monthOf(isDayKey(params.get('dia')) ? params.get('dia')! : today));

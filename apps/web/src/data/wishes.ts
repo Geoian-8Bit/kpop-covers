@@ -1,15 +1,16 @@
 import type { Poll, PollVote, Wish, WishInterest } from '@coverscape/shared';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { bagsBackend } from '@/lib/backend/bags';
+import { backend } from '@/lib/backend/core';
 import {
-  backend,
-  bagsBackend,
   wishesBackend,
   type CloseResolve,
   type NewPoll,
   type NewWish,
   type PollPatch,
   type WishPatch,
-} from '@/lib/backend';
+} from '@/lib/backend/wishes';
 import { friendlyError } from '@/lib/supabase';
 import { bagKeys } from './bags';
 import { useCreateVideo, videoKeys } from './videos';
@@ -18,7 +19,7 @@ import { useCreateVideo, videoKeys } from './videos';
  * F12 · Lista de deseos and F11 · votaciones: shared by the group. The lists are small (a group's wishes and
  * votes), so they load whole and every view reads from the same cache. Voting goes through `cast_vote`.
  */
-export const wishKeys = {
+const wishKeys = {
   wishes: ['wishes'] as const,
   interest: ['wish-interest'] as const,
   polls: ['polls'] as const,
@@ -71,17 +72,68 @@ export function usePollOptions() {
   return useQuery({ queryKey: wishKeys.options, queryFn: () => wishesBackend.listPollOptions() });
 }
 
+/** REQ-19 · The signature of the ballots each live poll query last downloaded, to tell if a poll tick found news. */
+const seenSignature = new Map<string, string | null>();
+
+/** The ballots as the server holds them, remembering their signature (taken first, so a vote in between is not lost). */
+async function downloadVotes(pollIds: string[], remember: boolean): Promise<PollVote[]> {
+  const pollId = pollIds[0];
+  if (!remember || pollIds.length !== 1 || !pollId) return wishesBackend.listPollVotes(pollIds);
+  const signature = await wishesBackend.pollVotesSignature(pollId).then(
+    (value) => ({ value }),
+    () => null,
+  );
+  const votes = await wishesBackend.listPollVotes(pollIds);
+  if (signature) seenSignature.set(pollId, signature.value);
+  else seenSignature.delete(pollId);
+  return votes;
+}
+
+/** How often someone looking at an open vote picks up the others' ballots. */
+const POLL_TICK_MS = 8_000;
+
 /**
- * The votes of these polls only. `live`: someone is looking at an open vote — pick up the others' ballots every
- * few seconds (just that poll's rows, never the whole table).
+ * The votes of these polls only. `live`: someone is looking at an open vote — every few seconds ask for the poll's
+ * light signature and download the ballots only when it changed (REQ-19; never the whole table). `select` derives
+ * a subset of one shared download (the wishes page and the poll list read the same query).
  */
-export function usePollVotes(pollIds: string[], { live = false, enabled = true }: { live?: boolean; enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: wishKeys.pollVotes(pollIds),
+export function usePollVotes<T = PollVote[]>(
+  pollIds: string[],
+  {
+    live = false,
+    enabled = true,
+    select,
+  }: { live?: boolean; enabled?: boolean; select?: (votes: PollVote[]) => T } = {},
+) {
+  const queryClient = useQueryClient();
+  const key = wishKeys.pollVotes(pollIds);
+  const pollId = pollIds.length === 1 ? pollIds[0] : undefined;
+  const query = useQuery({
+    queryKey: key,
     enabled,
-    queryFn: () => wishesBackend.listPollVotes(pollIds),
-    refetchInterval: live ? 8_000 : false,
+    queryFn: () => downloadVotes(pollIds, live),
+    select,
   });
+
+  useEffect(() => {
+    if (!live || !enabled || !pollId) return;
+    const refetch = () => void queryClient.refetchQueries({ queryKey: wishKeys.pollVotes([pollId]), exact: true });
+    const id = setInterval(() => {
+      // Like refetchInterval: nothing while the page is in the background.
+      if (document.visibilityState === 'hidden') return;
+      wishesBackend.pollVotesSignature(pollId).then(
+        (signature) => {
+          // Unknown (never downloaded with a signature) or different: fetch the ballots.
+          if (!seenSignature.has(pollId) || seenSignature.get(pollId) !== signature) refetch();
+        },
+        // The signature could not be read: do what polling always did.
+        refetch,
+      );
+    }, POLL_TICK_MS);
+    return () => clearInterval(id);
+  }, [live, enabled, pollId, queryClient]);
+
+  return query;
 }
 
 function refreshPolls(queryClient: QueryClient) {
@@ -314,6 +366,7 @@ export function useAddToNextCoreo() {
     },
     onSettled: (result) => {
       void queryClient.invalidateQueries({ queryKey: bagKeys.all });
+      void queryClient.invalidateQueries({ queryKey: bagKeys.holdingAll });
       if (result) void queryClient.invalidateQueries({ queryKey: bagKeys.items(result.bag.id) });
     },
   });

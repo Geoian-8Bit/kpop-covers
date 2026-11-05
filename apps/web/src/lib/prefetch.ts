@@ -1,20 +1,13 @@
+import { whenIdle } from './idle';
+import { routeLoaders } from './routeLoaders';
+import { afterStartupSettled } from './startupSettled';
 import { loadYouTubeApi } from './youtubeIframe';
 
-/** Route chunk for the studio; shared by `React.lazy` in App and the idle prefetch below. */
-export const loadStudioPage = () => import('@/features/studio/StudioPage');
+/** REQ-06 · Route chunk for the studio: the one loader lives in routeLoaders.ts (App's lazy, main.tsx, this prefetch). */
+export const loadStudioPage = routeLoaders.studio;
 
 /** "Añadir vídeo" dialog chunk; shared by `React.lazy` in AppShell and its warm-ups. */
 export const loadAddVideoDialog = () => import('@/features/library/AddVideoDialog');
-
-/** Runs `run` when the phone is idle (or after `fallbackMs` where idle callbacks don't exist). Returns a cancel. */
-function whenIdle(run: () => void, fallbackMs = 1500): () => void {
-  if ('requestIdleCallback' in window) {
-    const id = window.requestIdleCallback(run, { timeout: 4000 });
-    return () => window.cancelIdleCallback(id);
-  }
-  const id = setTimeout(run, fallbackMs);
-  return () => clearTimeout(id);
-}
 
 let warmed = false;
 
@@ -44,5 +37,14 @@ export function prefetchAddVideo(): void {
 
 /** Warms the add-video dialog while idle, so even a first tap without hover opens it at once. */
 export function prefetchAddVideoWhenIdle(): () => void {
-  return addWarmed ? () => undefined : whenIdle(prefetchAddVideo, 3000);
+  if (addWarmed) return () => undefined;
+  // REQ-10 · After the first screen has settled: in a cold start it no longer shares the bandwidth with the posters.
+  let cancelIdle: () => void = () => undefined;
+  const cancelWait = afterStartupSettled(() => {
+    cancelIdle = whenIdle(prefetchAddVideo, { fallbackMs: 3000 });
+  });
+  return () => {
+    cancelWait();
+    cancelIdle();
+  };
 }

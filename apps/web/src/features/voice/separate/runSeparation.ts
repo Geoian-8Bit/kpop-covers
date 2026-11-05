@@ -1,6 +1,10 @@
 import { formatBytes, type Video } from '@coverscape/shared';
 import { isStaleCopy } from '@/data/videos';
-import { backend, stemsBackend, type UploadFailure, type VideoStems } from '@/lib/backend';
+import { offlineAudioContextCtor } from '@/lib/audioCtor';
+import { backend } from '@/lib/backend/core';
+import { deviceShape } from '@/lib/deviceShape';
+import { stemsBackend } from '@/lib/backend/stems';
+import type { UploadFailure, VideoStems } from '@/lib/backend/types';
 import { beginHeavyWork, heavyWorkBusy, untilHeavyWork, type HeavyWork } from '@/lib/heavyWork';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { FriendlyError } from '@/lib/supabase';
@@ -40,7 +44,7 @@ interface GpuAdapterLike {
 }
 
 /** What this device offers for the separation (one adapter request, no device is created). */
-export async function deviceCaps(): Promise<DeviceCaps> {
+async function deviceCaps(): Promise<DeviceCaps> {
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(o?: object): Promise<GpuAdapterLike | null> } }).gpu;
   let adapter: GpuAdapterLike | null;
   try {
@@ -77,7 +81,7 @@ export interface SeparationPreview {
 }
 
 /** The song's length as the group knows it (the linked file's, else the video's). */
-export function songSeconds(video: Pick<Video, 'file_duration_seconds' | 'duration_seconds'>): number {
+function songSeconds(video: Pick<Video, 'file_duration_seconds' | 'duration_seconds'>): number {
   return Number(video.file_duration_seconds ?? video.duration_seconds ?? 0) || 0;
 }
 
@@ -102,7 +106,7 @@ export async function previewSeparation(video: Video, engine: EngineKind, mobile
   };
 }
 
-export type SeparationProgress = ProgressState;
+type SeparationProgress = ProgressState;
 
 const WORKER_ERRORS: Record<SeparationErrorCode, string> = {
   'no-webgpu': 'Este dispositivo no puede separar la voz; hazlo desde el ordenador.',
@@ -111,13 +115,6 @@ const WORKER_ERRORS: Record<SeparationErrorCode, string> = {
   gpu: 'La tarjeta gráfica no ha podido con la separación; prueba desde otro ordenador.',
   unknown: 'No se pudo separar la voz. Inténtalo otra vez.',
 };
-
-/** This device as far as memory goes: a phone (coarse pointer, small screen) and `navigator.deviceMemory`. */
-function deviceShape(): { mobile: boolean; memoryGb: number | null } {
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return { mobile: coarse && Math.min(screen.width, screen.height) < 820, memoryGb: typeof memory === 'number' ? memory : null };
-}
 
 /**
  * The file's bytes on this device: its own copy if current, else the group's cloud copy (≤ 50 MB). An original too
@@ -149,9 +146,9 @@ async function readSongFile(video: Video): Promise<ArrayBuffer> {
  * consumed by the decoder and the decoded buffer is dropped on return: only the two arrays stay.
  */
 async function decodeSong(bytes: ArrayBuffer, maxSeconds: number): Promise<{ left: Float32Array; right: Float32Array }> {
-  const Ctor =
-    window.OfflineAudioContext ??
-    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  const Ctor = offlineAudioContextCtor();
+  // Same failure as before where there is none (calling a missing constructor threw a TypeError too).
+  if (!Ctor) throw new TypeError('no OfflineAudioContext');
   const ctx = new Ctor(2, 1, DEMUCS.sampleRate);
   let audio: AudioBuffer;
   try {

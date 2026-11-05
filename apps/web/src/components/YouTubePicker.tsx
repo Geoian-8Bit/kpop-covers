@@ -16,6 +16,7 @@ import { Field } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { soft } from '@/lib/motion';
 import { fetchYouTubeMeta, type YouTubeMetaState } from '@/lib/youtubeMeta';
+import { thumbCors } from '@/lib/thumbCors';
 import {
   nextResultIndex,
   readPickerInput,
@@ -43,7 +44,7 @@ export interface YouTubePick {
 }
 
 /** A note on a result, e.g. «Ya en la biblioteca». `warn`: picking it will be refused or redirected by the form. */
-export interface YouTubeBadge {
+interface YouTubeBadge {
   label: string;
   tone?: 'warn' | 'info';
 }
@@ -85,7 +86,7 @@ const META_TIMEOUT_MS = 8000;
  * Searches YouTube through `/api/youtube-search` (the key stays on the server). One request per explicit search
  * (Enter, the magnifier or the parent's «Buscar»), never while typing: the API quota is 100 searches a day.
  */
-export function useYouTubeSearch() {
+function useYouTubeSearch() {
   const [state, setState] = useState<YouTubeSearchState>({ status: 'idle' });
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -421,7 +422,7 @@ export function YouTubePicker({
             className="flex min-w-0 items-center gap-3 rounded-[12px] border border-line bg-sumi-950/50 p-2 outline-none focus-visible:border-kin-300/70"
           >
             <span className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-[8px] bg-sumi-800">
-              <img src={youTubeThumbnail(linkId, 'mqdefault')} alt="" className="size-full object-cover" />
+              <img src={youTubeThumbnail(linkId, 'mqdefault')} crossOrigin={thumbCors(youTubeThumbnail(linkId, 'mqdefault'))} alt="" className="size-full object-cover" />
               {chosen?.duration != null && (
                 <span className="tabular absolute bottom-1 right-1 rounded-[4px] bg-sumi-950/85 px-1 font-mono text-[10px] text-washi">
                   {formatDuration(chosen.duration)}
@@ -547,7 +548,7 @@ function Results({
                   className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-[10px] p-1.5 text-left transition-colors hover:bg-washi/[0.06] focus-visible:bg-washi/[0.06]"
                 >
                   <span className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-[8px] bg-sumi-800">
-                    <img src={item.thumbnail} alt="" loading="lazy" className="size-full object-cover" />
+                    <img src={item.thumbnail} crossOrigin={thumbCors(item.thumbnail)} alt="" loading="lazy" className="size-full object-cover" />
                     {item.duration != null && (
                       <span className="tabular absolute bottom-1 right-1 rounded-[4px] bg-sumi-950/85 px-1 font-mono text-[10px] text-washi">
                         <span className="sr-only">Duración </span>

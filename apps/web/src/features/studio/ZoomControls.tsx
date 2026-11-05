@@ -6,10 +6,10 @@ import { useUpdateClip } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { rememberStage } from '@/lib/stagePref';
 import { friendlyError } from '@/lib/supabase';
-import { useEffect, useState, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePlayer } from '@/player/store';
 import { useUnlessCovered } from './studioAsleep';
-import { ZoomLayer } from '@/player/ZoomLayer';
+import { FollowZoomLayer } from '@/player/ZoomLayer';
 import {
   clipHasZoom,
   clipZoomColumns,
@@ -20,8 +20,10 @@ import {
   stepZoom,
   zoomBadgeLabel,
   zoomControlsView,
+  zoomLabel,
   zoomOfClip,
   type Size,
+  type Zoom,
 } from '@/player/zoom';
 import { useShallow } from 'zustand/react/shallow';
 import { useToast } from '@/providers/ToastProvider';
@@ -38,25 +40,15 @@ import { useToast } from '@/providers/ToastProvider';
  * YouTube the row says how to get it.
  */
 
-export const ZOOM_NEEDS_FILE = 'Vincula el archivo del vídeo para ampliar.';
+const ZOOM_NEEDS_FILE = 'Vincula el archivo del vídeo para ampliar.';
 
 /** 44 · The zoom's buttons (row and fullscreen arrows) are for a mouse: hidden where the primary pointer is a finger. */
-export const ZOOM_UI_TOUCH_HIDDEN = 'pointer-coarse:hidden';
+const ZOOM_UI_TOUCH_HIDDEN = 'pointer-coarse:hidden';
 
 /** «Ampliar» in the row: one tap, one step (around the spot already zoomed, the centre the first time). */
 const ZOOM_STEP = 1.5;
 /** The amount is read out this long after it last changed (a pinch changes it every frame). */
 const LIVE_SETTLE_MS = 600;
-
-/** `value`, once it has stayed the same for `ms`. */
-function useSettled<T>(value: T, ms: number): T {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setSettled(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms]);
-  return settled;
-}
 
 /** Whether the studio can zoom right now, and why not. */
 export function zoomAvailability(
@@ -69,10 +61,17 @@ export function zoomAvailability(
   return ready ? { can: true, reason: null } : { can: false, reason: 'loading' };
 }
 
-export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[]; onLink: () => void }) {
+function ZoomRowView({ video, clips, onLink }: { video: Video; clips: Clip[]; onLink: () => void }) {
   // P12 · Derived values, not the zoom itself: a pinch or a drag changes it every frame, the row only
   // when its label, a limit or «saved with the clip» changes.
-  const view = usePlayer(useShallow((s) => zoomControlsView(s.zoom)));
+  // REQ-21 · The amount (a new label every frame of a pinch) lives in ZoomAmount and ZoomLiveLabel: the row itself only
+  // re-renders when it starts or stops being zoomed or reaches the limit.
+  const view = usePlayer(
+    useShallow((s) => {
+      const { zoomed, atMax } = zoomControlsView(s.zoom);
+      return { zoomed, atMax };
+    }),
+  );
   const stage = usePlayer((s) => s.stage);
   const ready = usePlayer((s) => s.ready);
   const activeClipId = usePlayer((s) => s.activeClipId);
@@ -83,7 +82,6 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
   const clipZoom = zoomOfClip(clip);
   const zoomed = can && view.zoomed;
   const saved = usePlayer((s) => clip != null && sameZoom(s.zoom, clipZoom));
-  const settledLabel = useSettled(zoomed ? view.label : '', LIVE_SETTLE_MS);
   // 44 · On a touch screen only the clip's own zoom stays, as one compact line: saving the zoom pinched now, or
   // taking it off the clip (and the note that a YouTube clip opens zoomed with the file). Nothing else.
   const clipLine = clip != null && ((zoomed && !saved) || clipHasZoom(clip));
@@ -125,9 +123,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         Zoom
       </p>
       {/* Said once the amount settles, not on every frame of a pinch. */}
-      <span className="sr-only" aria-live="polite">
-        {settledLabel}
-      </span>
+      <ZoomLiveLabel can={can} />
       {/* Only with something to do: «Ampliar» (one finger, 2.5.1), the amount and the way back while zoomed, the clip's saved zoom. */}
       <div className="empty:hidden mb-1 flex flex-wrap items-center gap-1.5 pointer-coarse:mb-0">
         {can && !view.atMax && (
@@ -141,9 +137,7 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
         )}
         {zoomed && (
           <>
-            <span className={cn('tabular rounded-[8px] bg-sumi-800 px-2.5 py-1 font-mono text-[13px] font-semibold text-washi', ZOOM_UI_TOUCH_HIDDEN)}>
-              {view.label}
-            </span>
+            <ZoomAmount />
             <Button variant="ghost" className={cn('min-h-11', ZOOM_UI_TOUCH_HIDDEN)} onClick={() => usePlayer.getState().setZoom(NO_ZOOM)}>
               <Scan className="size-4" /> Ver completo
             </Button>
@@ -210,6 +204,60 @@ export function ZoomRow({ video, clips, onLink }: { video: Video; clips: Clip[];
       )}
     </div>
   );
+}
+
+/** REQ-21 · Memoised: the row only follows its own props and the store, not the studio's other state. */
+export const ZoomRow = memo(ZoomRowView);
+
+/** The zoom amount in the row (only shown while zoomed). */
+function ZoomAmount() {
+  const label = usePlayer((s) => zoomLabel(s.zoom));
+  return (
+    <span className={cn('tabular rounded-[8px] bg-sumi-800 px-2.5 py-1 font-mono text-[13px] font-semibold text-washi', ZOOM_UI_TOUCH_HIDDEN)}>
+      {label}
+    </span>
+  );
+}
+
+/** The amount for screen readers, said once it settles (not on every frame of a pinch). */
+function ZoomLiveLabel({ can }: { can: boolean }) {
+  const [said, setSaid] = useState(() => liveLabel(usePlayer.getState().zoom, can));
+  // REQ-21 · A store subscription, not a selector: a pinch changes the amount every frame and must not render this
+  // component (nor arm a timer) per frame. One timer re-arms itself until the amount has stayed put.
+  useEffect(() => {
+    let latest = liveLabel(usePlayer.getState().zoom, can);
+    let changedAt = performance.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = (ms: number) => {
+      timer = setTimeout(() => {
+        const rest = changedAt + LIVE_SETTLE_MS - performance.now();
+        if (rest > 1) return arm(rest);
+        timer = undefined;
+        setSaid(latest);
+      }, ms);
+    };
+    arm(LIVE_SETTLE_MS);
+    const unsubscribe = usePlayer.subscribe((s) => {
+      const next = liveLabel(s.zoom, can);
+      if (next === latest) return;
+      latest = next;
+      changedAt = performance.now();
+      if (timer === undefined) arm(LIVE_SETTLE_MS);
+    });
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [can]);
+  return (
+    <span className="sr-only" aria-live="polite">
+      {said}
+    </span>
+  );
+}
+
+function liveLabel(zoom: Zoom, can: boolean): string {
+  return can && isZoomed(zoom) ? zoomLabel(zoom) : '';
 }
 
 /**
@@ -287,12 +335,15 @@ export function PlayerZoomLayer({
   live: boolean;
   children: ReactNode;
 }) {
+  // REQ-21 · During a gesture (`live`) the picture follows the fingers through motion values written from a store
+  // subscription: the selector below gives null (no change) meanwhile, so this layer never re-renders while
+  // the fingers move. Released, it reads the store again and glides (`soft`) from wherever the fingers left it.
   // Holds still under the recorder (`covered`): the zoom never repaints a hidden picture.
-  const zoom = useUnlessCovered((s) => (enabled ? s.zoom : NO_ZOOM));
+  const zoom = useUnlessCovered((s) => (!enabled ? NO_ZOOM : live ? null : s.zoom));
   return (
-    <ZoomLayer zoom={zoom} box={box} media={media} live={live}>
+    <FollowZoomLayer zoom={zoom} box={box} media={media} live={live} enabled={enabled}>
       {children}
-    </ZoomLayer>
+    </FollowZoomLayer>
   );
 }
 
@@ -307,13 +358,23 @@ export function ZoomBadge({ visible, className }: { visible: boolean; className?
   // P12 · Only the label (a string): a pinch doesn't repaint the badge every frame.
   const label = usePlayer((s) => zoomBadgeLabel(s.zoom));
   const [shown, setShown] = useState(false);
+  // REQ-21 · Shown once per run of changes (a pinch changes the label every frame): asking React to show it again on
+  // every frame cost a second commit per frame. The timer still restarts on each change.
+  const shownRef = useRef(false);
   useEffect(() => {
     if (label == null) {
+      shownRef.current = false;
       setShown(false);
       return;
     }
-    setShown(true);
-    const id = setTimeout(() => setShown(false), BADGE_MS);
+    if (!shownRef.current) {
+      shownRef.current = true;
+      setShown(true);
+    }
+    const id = setTimeout(() => {
+      shownRef.current = false;
+      setShown(false);
+    }, BADGE_MS);
     return () => clearTimeout(id);
   }, [label]);
   return (

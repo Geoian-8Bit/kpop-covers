@@ -835,6 +835,7 @@ export type Database = {
           for_member_id: string | null;
           status: string;
           sketch: string | null;
+          has_sketch: boolean | null;
           body: string;
           created_at: string;
           archived_at: string | null;
@@ -1622,6 +1623,9 @@ export type Database = {
           file_offset_seconds: number | null;
           file_size: number | null;
           id: string;
+          list_thumbnail_url: string | null;
+          poster_inline: boolean | null;
+          poster_rev: string | null;
           source: string;
           storage_path: string | null;
           thumbnail_url: string | null;
@@ -1814,6 +1818,18 @@ export type Database = {
       cast_vote: {
         Args: { p_member: string; p_options: string[]; p_poll: string };
         Returns: number;
+      };
+      poll_votes_signature: {
+        Args: { p_poll: string };
+        Returns: string;
+      };
+      set_event_song_positions: {
+        Args: { p_event: string; p_ids: string[] };
+        Returns: undefined;
+      };
+      set_track_positions: {
+        Args: { p_ids: string[]; p_track: string };
+        Returns: undefined;
       };
       close_poll: {
         Args: { p_poll: string; p_resolve?: string; p_winner?: string | null };

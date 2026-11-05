@@ -100,7 +100,7 @@ export function reloadNeedsConfirm(input: {
 }
 
 /** What the confirmation says when long work is running. */
-export function busyReloadText(busy: ReloadBusy): string {
+function busyReloadText(busy: ReloadBusy): string {
   return busy === 'copy'
     ? 'Hay una copia para el grupo en marcha: si actualizas ahora, se pierde y habrá que repetirla.'
     : 'Se está separando la voz: si actualizas ahora, se pierde y habrá que repetirla.';

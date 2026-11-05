@@ -10,13 +10,13 @@ import type { FormationPath, FormationPathKind, StagePoint } from '@coverscape/s
  */
 
 /** Control points of a `curve`: 1 = arc (quadratic), 2 = cubic (S bends). Old rows have 1. */
-export const CURVE_POINTS_MAX = 2;
+const CURVE_POINTS_MAX = 2;
 export const PATH_POINTS_MAX = 8;
 export const FREE_POINTS_MAX = 40;
 /** A drawn line shorter than this is a tap or a slip: it stays straight (REQ-08). */
-export const MIN_STROKE = 0.5;
+const MIN_STROKE = 0.5;
 /** How far (metres) the simplified line may stray from the drawn one. */
-export const SIMPLIFY_EPSILON = 0.12;
+const SIMPLIFY_EPSILON = 0.12;
 
 export type PathChoice = 'straight' | FormationPathKind;
 /** The two shapes of a `curve`: one control point (arc) or two bending opposite ways (S). */

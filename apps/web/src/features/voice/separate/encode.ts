@@ -1,5 +1,22 @@
-import { buildMp4, type Mp4Codec } from './mp4';
-import { estimateLagSliced, headFrameCount, LAG_HEAD_SECONDS, monoHead, stemBitrate } from './separateRules';
+import {
+  AudioPassEncoder,
+  plainPass,
+  type AudioPass,
+  YIELD_EVERY_BLOCKS,
+  yieldToPage,
+} from '@/lib/mp4/audioEncode';
+import { offlineAudioContextCtor } from '@/lib/audioCtor';
+import { AudioWorkerUnavailable, openAudioWorker } from '@/lib/mp4/audioWorkerClient';
+import type { Mp4Codec } from './mp4';
+import {
+  estimateLagSliced,
+  headFrameCount,
+  LAG_HEAD_SECONDS,
+  monoHead,
+  stemBitrate,
+  type LagEstimate,
+} from './separateRules';
+import { muxStem, stemFrameSamples, type StemJob, type StemMuxJob } from './stemFrames';
 
 /**
  * 18 · The two separated tracks as small audio files (3–6 MB each for a 4-minute song): WebCodecs' AudioEncoder
@@ -9,6 +26,10 @@ import { estimateLagSliced, headFrameCount, LAG_HEAD_SECONDS, monoHead, stemBitr
  *
  * Afterwards each file is decoded back and compared with what went in: that proves the browser can play it and
  * measures the encoder's fixed delay (AAC priming, Opus pre-skip), which the player compensates.
+ *
+ * REQ-26 · The encoding and the MP4 writing run in a worker (`stemEncoder.worker.ts`); the page keeps only what
+ * needs OfflineAudioContext (resampling to Opus' 48 kHz, decoding back to measure). Where workers have no
+ * AudioEncoder (some Safari) it all stays here, giving the thread back every few blocks. Same blocks, same bytes.
  */
 
 export interface EncodedStem {
@@ -66,11 +87,8 @@ export async function pickCodec(durationSeconds: number, inputRate: number): Pro
   return null;
 }
 
-type OfflineCtor = typeof OfflineAudioContext;
-function offlineCtor(): OfflineCtor {
-  const Ctor =
-    window.OfflineAudioContext ??
-    (window as unknown as { webkitOfflineAudioContext?: OfflineCtor }).webkitOfflineAudioContext;
+function offlineCtor(): typeof OfflineAudioContext {
+  const Ctor = offlineAudioContextCtor();
   if (!Ctor) throw new Error('no OfflineAudioContext');
   return Ctor;
 }
@@ -92,66 +110,128 @@ async function resample(left: Float32Array, right: Float32Array, from: number, t
   return [out.getChannelData(0), out.getChannelData(1)] as const;
 }
 
-const toBytes = (d: AllowSharedBufferSource): Uint8Array =>
-  ArrayBuffer.isView(d)
-    ? new Uint8Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength))
-    : new Uint8Array(d.slice(0));
+/**
+ * The encoded track, wherever it lives: its frames' lengths, its file (whole, or its first `headCount` frames) and
+ * the encoder's delay measured on a decoded-back start (in the worker when there is one).
+ */
+interface StemEncoding {
+  frameSamples: number[];
+  file(primingSamples: number, headCount?: number): Promise<Uint8Array>;
+  lag(
+    reference: Float32Array,
+    back: Float32Array,
+    maxLag: number,
+    window: number,
+  ): Promise<LagEstimate | null>;
+  close(): void;
+}
 
-async function encodeFrames(left: Float32Array, right: Float32Array, choice: CodecChoice) {
-  const frames: Uint8Array[] = [];
-  const frameSamples: number[] = [];
-  let description: Uint8Array | null = null;
-  let failure: unknown = null;
+const cancelled = () => new DOMException('cancelled', 'AbortError');
+const isCancel = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
+
+export async function encodeFrames(
+  left: Float32Array,
+  right: Float32Array,
+  choice: CodecChoice,
+): Promise<StemEncoding> {
   const rate = choice.sampleRate;
-  const fallbackSamples = choice.codec === 'aac' ? 1024 : 960;
-  const encoder = new AudioEncoder({
-    output: (chunk, meta) => {
-      const data = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(data);
-      frames.push(data);
-      const samples = chunk.duration ? Math.round((chunk.duration * rate) / 1e6) : fallbackSamples;
-      frameSamples.push(samples > 0 ? samples : fallbackSamples);
-      const d = meta?.decoderConfig?.description;
-      if (d && !description) description = toBytes(d);
-    },
-    error: (e) => {
-      failure = e;
-    },
+  const pass = plainPass(choice.config, left.length);
+  const job = (primingSamples: number, headCount?: number): StemMuxJob => ({
+    codec: choice.codec,
+    sampleRate: rate,
+    channels: 2,
+    primingSamples,
+    headCount: headCount ?? null,
   });
-  encoder.configure(choice.config);
-  const block = 4800;
-  for (let at = 0; at < left.length; at += block) {
-    if (failure) break;
-    const n = Math.min(block, left.length - at);
-    const planar = new Float32Array(n * 2);
-    planar.set(left.subarray(at, at + n), 0);
-    planar.set(right.subarray(at, at + n), n);
-    const data = new AudioData({
-      format: 'f32-planar',
-      sampleRate: rate,
-      numberOfFrames: n,
-      numberOfChannels: 2,
-      timestamp: Math.round((at / rate) * 1e6),
-      data: planar,
-    });
-    encoder.encode(data);
-    data.close();
-    // Don't queue the whole song at once.
-    if (encoder.encodeQueueSize > 64) await new Promise((r) => setTimeout(r, 0));
+  const worker = await openAudioWorker<StemJob>(
+    () => new Worker(new URL('./stemEncoder.worker.ts', import.meta.url), { type: 'module' }),
+    cancelled,
+  );
+  if (worker) {
+    let again: Promise<StemEncoding> | undefined;
+    const onPage = () => (again ??= encodeOnPage(left, right, choice, pass, job));
+    try {
+      const summary = await worker.encode(pass, [left, right]);
+      return {
+        frameSamples: stemFrameSamples(summary.durations, rate, choice.codec),
+        // REQ-26 · The worker lost after it encoded (it alone held the samples): the page encodes again, once, from
+        // the sound it still has, and writes the file itself, as it did before there were workers.
+        file: async (primingSamples, headCount) => {
+          try {
+            return await worker.run<Uint8Array>({ kind: 'file', file: job(primingSamples, headCount) });
+          } catch (error) {
+            if (!(error instanceof AudioWorkerUnavailable)) throw error;
+            return (await onPage()).file(primingSamples, headCount);
+          }
+        },
+        // The reference serves several measures: copies go over (the page keeps its own, in case the worker is
+        // lost mid-way and the page measures after all, as before).
+        lag: async (reference, back, maxLag, window) => {
+          if (!worker.broken) {
+            const ref = reference.slice();
+            const head = back.slice();
+            try {
+              return await worker.run<LagEstimate | null>(
+                { kind: 'lag', reference: ref, back: head, maxLag, window },
+                [ref.buffer, head.buffer],
+              );
+            } catch (error) {
+              if (isCancel(error)) throw error;
+            }
+          }
+          return estimateLagSliced(reference, back, maxLag, window, breathe);
+        },
+        close: worker.close,
+      };
+    } catch (error) {
+      worker.close();
+      // REQ-26 · The worker can't take this configuration (or is lost): the page encodes, as before.
+      if (!(error instanceof AudioWorkerUnavailable))
+        throw error instanceof Error ? error : new Error(String(error));
+    }
   }
-  await encoder.flush();
-  encoder.close();
+  return encodeOnPage(left, right, choice, pass, job);
+}
+
+/** On the page: the same blocks, with the thread given back every few of them even when the encoder keeps up. */
+async function encodeOnPage(
+  left: Float32Array,
+  right: Float32Array,
+  choice: CodecChoice,
+  pass: AudioPass,
+  job: (primingSamples: number, headCount?: number) => StemMuxJob,
+): Promise<StemEncoding> {
+  const rate = choice.sampleRate;
+  const encoder = new AudioPassEncoder(pass);
+  const slice = { start: 0, channels: [left, right] };
+  try {
+    for (let blocks = 1; !encoder.done && !encoder.failure; blocks++) {
+      encoder.encodeBlock(slice);
+      // Don't queue the whole song at once.
+      if (encoder.queueSize > 64 || blocks % YIELD_EVERY_BLOCKS === 0) await breathe();
+    }
+    await encoder.flush();
+  } finally {
+    encoder.close();
+  }
+  const failure = encoder.failure;
   if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
-  return { frames, frameSamples, description };
+  const frameSamples = stemFrameSamples(
+    encoder.samples.map((s) => s.duration),
+    rate,
+    choice.codec,
+  );
+  return {
+    frameSamples,
+    file: async (primingSamples, headCount) =>
+      muxStem(encoder.samples, frameSamples, encoder.description, job(primingSamples, headCount)),
+    lag: (reference, back, maxLag, window) => estimateLagSliced(reference, back, maxLag, window, breathe),
+    close: () => undefined,
+  };
 }
 
 /** Lets the page breathe between the heavy steps (the studio's loop and clips run on this thread). */
-const breathe = () =>
-  new Promise<void>((resolve) => {
-    const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
-    if (s?.yield) void s.yield().then(resolve, () => setTimeout(resolve, 0));
-    else setTimeout(resolve, 0);
-  });
+const breathe = yieldToPage;
 
 /**
  * Encodes one track. `left`/`right` are at `inputRate` (44.1 kHz from the model). Throws when the result can't be
@@ -172,28 +252,38 @@ export async function encodeStem(
   const rate = choice.sampleRate;
   const maxLag = Math.round(rate * 0.15);
   const headSamples = LAG_HEAD_SECONDS * rate;
-  // The resampled song only lives inside this block: once encoded, only its first seconds (mono) are kept.
-  const { encoded, reference } = await (async () => {
-    const [l, r] = await resample(left, right, inputRate, rate);
-    await breathe();
-    const out = await encodeFrames(l, r, choice);
-    return { encoded: out, reference: monoHead(l, r, headSamples + 2 * maxLag) };
-  })();
+  // The resampled song lives until the end (a lost worker's sound is encoded again from it); of it the delay measure
+  // keeps only its first seconds (mono).
+  const [l, r] = await resample(left, right, inputRate, rate);
   await breathe();
-  const { frames, frameSamples, description } = encoded;
-  const build = (primingSamples = 0) =>
-    buildMp4({ codec: choice.codec, sampleRate: rate, channels: 2, frames, frameSamples, description, primingSamples });
-  const headCount = headFrameCount(frameSamples, headSamples + 2 * maxLag);
-  const buildHead = (primingSamples = 0) =>
-    buildMp4({
-      codec: choice.codec,
-      sampleRate: rate,
-      channels: 2,
-      frames: frames.slice(0, headCount),
-      frameSamples: frameSamples.slice(0, headCount),
-      description,
-      primingSamples,
-    });
+  const encoded = await encodeFrames(l, r, choice);
+  let reference: Float32Array;
+  try {
+    reference = monoHead(l, r, headSamples + 2 * maxLag);
+  } catch (error) {
+    encoded.close();
+    throw error;
+  }
+  try {
+    await breathe();
+    return await finishStem(encoded, reference, choice, maxLag, headSamples, primingSamples);
+  } finally {
+    encoded.close();
+  }
+}
+
+async function finishStem(
+  encoded: StemEncoding,
+  reference: Float32Array,
+  choice: CodecChoice,
+  maxLag: number,
+  headSamples: number,
+  primingSamples: number | undefined,
+): Promise<EncodedStem> {
+  const rate = choice.sampleRate;
+  const build = (primingSamples = 0) => encoded.file(primingSamples);
+  const headCount = headFrameCount(encoded.frameSamples, headSamples + 2 * maxLag);
+  const buildHead = (primingSamples = 0) => encoded.file(primingSamples, headCount);
 
   const Ctor = offlineCtor();
   const decode = async (file: Uint8Array) => {
@@ -202,14 +292,14 @@ export async function encodeStem(
   };
   // The encoder's delay, on the first seconds of the track.
   const measure = async (primingSamples = 0) => {
-    const decoded = await decode(buildHead(primingSamples));
+    const decoded = await decode(await buildHead(primingSamples));
     const back = monoHead(
       decoded.getChannelData(0),
       decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : decoded.getChannelData(0),
       reference.length,
     );
     await breathe();
-    const lag = await estimateLagSliced(reference, back, maxLag, rate, breathe);
+    const lag = await encoded.lag(reference, back, maxLag, rate);
     await breathe();
     return lag && lag.confidence > 0.5 ? lag.lag : null;
   };
@@ -229,12 +319,12 @@ export async function encodeStem(
   });
 
   if (primingSamples != null) {
-    const bytes = build(primingSamples);
+    const bytes = await build(primingSamples);
     await provePlays(bytes);
     const lag = await measure(primingSamples);
     return result(bytes, lag == null ? Number.NaN : lag / rate, primingSamples);
   }
-  let bytes = build();
+  let bytes = await build();
   await provePlays(bytes);
   let priming = 0;
   const lag = await measure();
@@ -246,11 +336,15 @@ export async function encodeStem(
   if (choice.codec === 'aac' && lag != null && lag > 0 && lag < maxLag) {
     const left = await measure(lag).catch(() => null);
     if (left != null && Math.abs(left) <= Math.round(rate * 0.002)) {
-      bytes = build(lag);
+      bytes = await build(lag);
       priming = lag;
       delaySeconds = left / rate;
     } else {
-      console.info('[stems] this browser ignores the AAC edit list; the measured delay is kept instead', lag, left);
+      console.info(
+        '[stems] this browser ignores the AAC edit list; the measured delay is kept instead',
+        lag,
+        left,
+      );
     }
   }
   return result(bytes, delaySeconds, priming);

@@ -11,6 +11,7 @@ import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
 import { useAnnouncer } from '@/lib/reorderA11y';
+import { thumbCors } from '@/lib/thumbCors';
 import { useToast } from '@/providers/ToastProvider';
 import { withMe } from './identity';
 import { ballotProblem, moveInRanking, VOTE_TYPE_COPY } from './pollRules';
@@ -216,7 +217,7 @@ function WishLine({ wish, compact = false }: { wish: Wish | undefined; compact?:
   return (
     <>
       {wish?.thumbnail_url ? (
-        <img src={wish.thumbnail_url} alt="" loading="lazy" className={cn(thumb, 'object-cover')} />
+        <img src={wish.thumbnail_url} crossOrigin={thumbCors(wish.thumbnail_url)} alt="" loading="lazy" className={cn(thumb, 'object-cover')} />
       ) : (
         <span aria-hidden className={cn(thumb, 'bg-sumi-950')} />
       )}

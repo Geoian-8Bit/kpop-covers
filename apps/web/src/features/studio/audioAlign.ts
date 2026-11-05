@@ -75,7 +75,7 @@ export function bestLag(a: Float32Array, b: Float32Array, minLag: number, maxLag
 }
 
 /** Start of the loudest `length`-sample stretch of `x` (in `step` jumps), at least `margin` from both ends. */
-export function loudestStart(x: Float32Array, length: number, step: number, margin: number): number {
+function loudestStart(x: Float32Array, length: number, step: number, margin: number): number {
   let best = margin;
   let bestEnergy = -1;
   for (let s = margin; s + length + margin <= x.length; s += step) {
@@ -89,6 +89,9 @@ export function loudestStart(x: Float32Array, length: number, step: number, marg
   return best;
 }
 
+/** The furthest start shift looked for (seconds); whoever hands the copy's head over must keep this much past the window. */
+export const MAX_SHIFT_SECONDS = 0.5;
+
 /**
  * How late the copy's sound is against the original's. Both as planar channels at `sampleRate`. Looks at the first
  * `windowSeconds` (the start is what matters) and shifts of up to `maxShiftSeconds`. Null when there's nothing to
@@ -98,7 +101,7 @@ export function measureShift(
   original: readonly Float32Array[],
   copy: readonly Float32Array[],
   sampleRate: number,
-  { windowSeconds = 40, maxShiftSeconds = 0.5 }: { windowSeconds?: number; maxShiftSeconds?: number } = {},
+  { windowSeconds = 40, maxShiftSeconds = MAX_SHIFT_SECONDS }: { windowSeconds?: number; maxShiftSeconds?: number } = {},
 ): ShiftMeasure | null {
   const origLength = original[0]?.length ?? 0;
   const window = Math.min(Math.floor(windowSeconds * sampleRate), origLength);

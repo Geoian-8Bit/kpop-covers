@@ -27,7 +27,7 @@ import { usePlayer } from '@/player/store';
 import { formatMoment } from './formationRules';
 import { curveShape, PATH_LABELS, PATH_POINTS_MAX, type CurveShape, type PathChoice } from './pathRules';
 import { PROP_KINDS, PROP_LABEL_MAX, PROP_LABELS, PROP_ROTATE_STEP } from './propRules';
-import { PropShape } from './StageView';
+import { PropShape } from './stage/PropShape';
 
 /**
  * REQ-06…13 · The editor's tools, grouped so the stage never leaves the screen: five tabs (a dock at the bottom of a
@@ -37,7 +37,7 @@ import { PropShape } from './StageView';
 
 export type ToolTab = 'formation' | 'people' | 'paths' | 'props' | 'more';
 
-export const TOOL_TABS: { id: ToolTab; label: string; icon: ReactNode }[] = [
+const TOOL_TABS: { id: ToolTab; label: string; icon: ReactNode }[] = [
   { id: 'formation', label: 'Formación', icon: <Layers className="size-5" aria-hidden /> },
   { id: 'people', label: 'Posiciones', icon: <UsersRound className="size-5" aria-hidden /> },
   { id: 'paths', label: 'Recorridos', icon: <Spline className="size-5" aria-hidden /> },
@@ -45,7 +45,7 @@ export const TOOL_TABS: { id: ToolTab; label: string; icon: ReactNode }[] = [
   { id: 'more', label: 'Más', icon: <Ellipsis className="size-5" aria-hidden /> },
 ];
 
-export const toolTabLabel = (tab: ToolTab) => TOOL_TABS.find((t) => t.id === tab)!.label;
+const toolTabLabel = (tab: ToolTab) => TOOL_TABS.find((t) => t.id === tab)!.label;
 
 // ── Shared looks (44 px targets everywhere: fingers) ──
 export const tool =

@@ -1,6 +1,6 @@
 import type { Video } from '@coverscape/shared';
 import { useEffect, useState } from 'react';
-import { isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
+import { forgetVideoUrl, isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
 import { downloadCloudFile, loadCachedCloudFile, saveDataOn } from '@/lib/cloudCache';
 import { shouldCacheCloudFile } from '@/lib/cloudCacheRules';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
@@ -41,6 +41,12 @@ export function useFileSource(
     setState({ status: 'loading' });
 
     void (async () => {
+      const path = video.storage_path;
+      // REQ-15 · A retry (the file didn't load) must not reuse the remembered URL.
+      if (path && reloadKey > 0) forgetVideoUrl(path);
+      // REQ-15 · Sign in parallel with the device lookups (the signature is remembered, and dropped when a copy on
+      // this device wins), so a cloud-only file doesn't wait for IndexedDB first.
+      const signing = path ? signedVideoUrl(path).catch(() => null) : Promise.resolve(null);
       const blob = await loadLocalVideo(video.id);
       if (cancelled) return;
       // F1: a copy left from a file that was since replaced (another size) is not this video's file any more.
@@ -53,7 +59,6 @@ export function useFileSource(
         setState({ status: 'ready', url: urlFor(blob), local: blob });
         return;
       }
-      const path = video.storage_path;
       if (path) {
         const cached = await loadCachedCloudFile(path);
         if (cancelled) return;
@@ -61,11 +66,14 @@ export function useFileSource(
           setState({ status: 'ready', url: urlFor(cached) });
           return;
         }
-        const url = await signedVideoUrl(path);
+        const url = await signing;
         if (cancelled) return;
         if (url) {
           setState({ status: 'ready', url });
-          if (cacheRemote && shouldCacheCloudFile({ url, bytes: video.file_size ?? null, saveData: saveDataOn() })) {
+          if (
+            cacheRemote &&
+            shouldCacheCloudFile({ url, bytes: video.file_size ?? null, saveData: saveDataOn() })
+          ) {
             const whole = await downloadCloudFile(path, url);
             if (cancelled || !whole) return;
             setState({ status: 'ready', url, cachedUrl: urlFor(whole) });
@@ -80,7 +88,16 @@ export function useFileSource(
       cancelled = true;
       for (const url of objectUrls) URL.revokeObjectURL(url);
     };
-  }, [video.id, video.source, video.storage_path, video.file_name, video.file_size, reloadKey, enabled, cacheRemote]);
+  }, [
+    video.id,
+    video.source,
+    video.storage_path,
+    video.file_name,
+    video.file_size,
+    reloadKey,
+    enabled,
+    cacheRemote,
+  ]);
 
   return state;
 }

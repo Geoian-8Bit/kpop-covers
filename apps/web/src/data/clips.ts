@@ -1,13 +1,13 @@
 import type { Clip, ClipColor, TablesUpdate } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { backend, type ClipWithVideo } from '@/lib/backend';
+import { backend, type ClipWithVideo } from '@/lib/backend/core';
 import { parseQuickClips, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { invalidateAfterArchive, invalidateClipPickers } from './afterArchive';
 import { videoKeys, type VideoWithClipCount } from './videos';
 
-export type { ClipVideo, ClipWithVideo } from '@/lib/backend';
+export type { ClipWithVideo } from '@/lib/backend/core';
 
-export const clipKeys = {
+const clipKeys = {
   forVideo: (videoId: string | undefined) => ['clips', videoId] as const,
   quick: (crewId: string | undefined) => ['quick-clips', crewId] as const,
 };
@@ -49,13 +49,29 @@ export function useQuickClips(crewId: string | undefined, { snapshot = false }: 
   return useQuery({
     queryKey: clipKeys.quick(crewId),
     enabled: Boolean(crewId),
-    placeholderData: snapshot && crewId ? () => readSnapshot(quickSnapshot(crewId), (v) => parseQuickClips(v, crewId)) : undefined,
-    queryFn: async (): Promise<ClipWithVideo[]> => {
-      const list = await backend.listQuickClips(crewId!);
-      writeSnapshot(quickSnapshot(crewId!), list);
-      return list;
-    },
+    placeholderData:
+      snapshot && crewId
+        ? () => readSnapshot(quickSnapshot(crewId), (v) => parseQuickClips(v, crewId))
+        : undefined,
+    queryFn: () => fetchQuickClips(crewId!),
   });
+}
+
+async function fetchQuickClips(crewId: string): Promise<ClipWithVideo[]> {
+  const list = await backend.listQuickClips(crewId);
+  writeSnapshot(quickSnapshot(crewId), list);
+  return list;
+}
+
+/**
+ * REQ-10 · Startup on the library with the group kept on this device: the quick access row is asked for before React
+ * mounts (same key and function as `useQuickClips`, which joins the request and shows its snapshot meanwhile).
+ */
+export function prefetchQuickClips(queryClient: QueryClient, crewId: string | undefined): void {
+  if (!crewId) return;
+  void queryClient
+    .prefetchQuery({ queryKey: clipKeys.quick(crewId), queryFn: () => fetchQuickClips(crewId) })
+    .catch(() => undefined);
 }
 
 export interface NewClip {
@@ -80,7 +96,9 @@ export function useCreateClip() {
       );
       // One more clip on the library card: a cache edit, not a download of the whole library.
       queryClient.setQueryData<VideoWithClipCount[]>(videoKeys.list(clip.crew_id), (current) =>
-        current?.map((v) => (v.id === clip.video_id ? { ...v, clips: [{ count: (v.clips[0]?.count ?? 0) + 1 }] } : v)),
+        current?.map((v) =>
+          v.id === clip.video_id ? { ...v, clips: [{ count: (v.clips[0]?.count ?? 0) + 1 }] } : v,
+        ),
       );
       // Not awaited: the dialog closes as soon as the clip is saved, the quick row refreshes behind it.
       void queryClient.invalidateQueries({ queryKey: clipKeys.quick(clip.crew_id) });
@@ -115,7 +133,8 @@ export function useUpdateClip() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: CLIP_WRITE,
-    mutationFn: ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) => backend.updateClip(clip.id, patch),
+    mutationFn: ({ clip, patch }: { clip: Clip; patch: TablesUpdate<'clips'> }) =>
+      backend.updateClip(clip.id, patch),
     onMutate: async ({ clip, patch }) => {
       const key = clipKeys.forVideo(clip.video_id);
       await queryClient.cancelQueries({ queryKey: key });
@@ -123,7 +142,9 @@ export function useUpdateClip() {
       queryClient.setQueryData<Clip[]>(key, (current = []) => {
         const next = current.map((c) => (c.id === clip.id ? ({ ...c, ...patch } as Clip) : c));
         // An edited start moves the clip in the list (and the timeline), which run in song order.
-        return patch.start_seconds === undefined ? next : next.sort((a, b) => a.start_seconds - b.start_seconds);
+        return patch.start_seconds === undefined
+          ? next
+          : next.sort((a, b) => a.start_seconds - b.start_seconds);
       });
       return { before, key };
     },
@@ -132,7 +153,9 @@ export function useUpdateClip() {
       const before = context?.before;
       if (context && before) {
         queryClient.setQueryData<Clip[]>(context.key, (current) =>
-          current?.map((c) => (c.id === before.id ? before : c)).sort((a, b) => a.start_seconds - b.start_seconds),
+          current
+            ?.map((c) => (c.id === before.id ? before : c))
+            .sort((a, b) => a.start_seconds - b.start_seconds),
         );
       }
     },

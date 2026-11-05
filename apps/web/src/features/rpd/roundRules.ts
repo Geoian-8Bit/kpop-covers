@@ -24,9 +24,9 @@ export interface RoundOptions {
 
 export const MAX_ROUND = 50;
 export const PAUSE_MAX = 5;
-export const COUNTDOWN_SECONDS = 3;
+const COUNTDOWN_SECONDS = 3;
 /** Modo adivinar: the title appears after this long sounding (or halfway through a shorter clip). */
-export const GUESS_REVEAL_SECONDS = 4;
+const GUESS_REVEAL_SECONDS = 4;
 
 export const DEFAULT_ROUND_OPTIONS: RoundOptions = {
   count: 8,
@@ -357,7 +357,7 @@ export function leadIn(
   };
 }
 
-export type LeadPhase = 'pause' | 'countdown' | 'go';
+type LeadPhase = 'pause' | 'countdown' | 'go';
 
 export interface LeadStatus {
   phase: LeadPhase;
@@ -491,4 +491,9 @@ export function roundLeadStatus(state: RoundState, now: number): LeadStatus | nu
   if (state.phase !== 'lead') return null;
   const at = state.pausedAt ?? now;
   return leadStatus(at - state.leadStart, state.lead);
+}
+
+/** REQ-22 · What the lead-in puts on screen (phase, 3-2-1, seconds left): equal keys draw the same. */
+export function leadShown(status: LeadStatus): string {
+  return `${status.phase}:${status.count ?? ''}:${Math.ceil(status.remainingMs / 1000)}`;
 }

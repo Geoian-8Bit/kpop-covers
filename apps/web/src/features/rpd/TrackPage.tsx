@@ -50,6 +50,8 @@ import { SaveTrackDialog } from './SaveTrackDialog';
 export function TrackPage() {
   const { trackId } = useParams();
   const track = useTrack(trackId);
+  // REQ-18 · The clips load in parallel with the track (same key as TrackEditor's own call).
+  useTrackItems(trackId);
   if (track.isPending) {
     return (
       <Page className="grid min-h-[60dvh] place-items-center">
@@ -113,10 +115,9 @@ function TrackEditor({ track }: { track: Track }) {
   }
 
   function commit(next: TrackItemView[]) {
-    const patches = positionPatches(next);
-    if (!patches.length) return;
+    if (!positionPatches(next).length) return;
     reorderMut.mutate(
-      { trackId: track.id, ordered: next, patches },
+      { trackId: track.id, ordered: next },
       { onError: (err) => toast(bagError(err), 'error') },
     );
   }
@@ -127,7 +128,8 @@ function TrackEditor({ track }: { track: Track }) {
     commit(next);
   }
 
-  function rename(event: FormEvent) {
+  // REQ-29 · Submit and blur both land here; only `preventDefault` is used, so either event fits without a cast.
+  function rename(event: Pick<FormEvent, 'preventDefault'>) {
     event.preventDefault();
     const clean = name.trim();
     if (!clean || clean === track.name) return setName(track.name);
@@ -169,7 +171,7 @@ function TrackEditor({ track }: { track: Track }) {
               value={name}
               maxLength={80}
               onChange={(e) => setName(e.target.value)}
-              onBlur={(e) => rename(e as unknown as FormEvent)}
+              onBlur={(e) => rename(e)}
               className="min-w-0 flex-1"
             />
             <Button

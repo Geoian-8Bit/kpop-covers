@@ -33,7 +33,7 @@ interface YTEvent<T = unknown> {
   data: T;
 }
 
-export interface YTPlayerOptions {
+interface YTPlayerOptions {
   videoId: string;
   width?: string | number;
   height?: string | number;

@@ -12,7 +12,7 @@ import type { EngineKind } from './separateRules';
  *   without half precision. The JS pre/post-processing of github.com/timcsy/demucs-web (MIT) is ported in dsp.ts.
  */
 
-export interface ModelPiece {
+interface ModelPiece {
   url: string;
   /** Tensor names in and out (from the manifest); empty for the single-file model (read from the session). */
   inputs: readonly string[];
@@ -74,8 +74,22 @@ export const MODELS: Record<EngineKind, ModelDescriptor> = {
     baseUrl: `https://huggingface.co/monteslu/htdemucs-web-onnx/resolve/${FP16_REVISION}/`,
     manifestUrl: `https://huggingface.co/monteslu/htdemucs-web-onnx/resolve/${FP16_REVISION}/htdemucs_split_manifest.json`,
     cpuNodes: [
-      '/ReduceMean', '/Sub', '/Pow', '/ReduceMean_1', '/Clip', '/Sqrt', '/Add', '/Div',
-      '/ReduceMean_2', '/Sub_1', '/Pow_1', '/ReduceMean_3', '/Clip_1', '/Sqrt_1', '/Add_1', '/Div_1',
+      '/ReduceMean',
+      '/Sub',
+      '/Pow',
+      '/ReduceMean_1',
+      '/Clip',
+      '/Sqrt',
+      '/Add',
+      '/Div',
+      '/ReduceMean_2',
+      '/Sub_1',
+      '/Pow_1',
+      '/ReduceMean_3',
+      '/Clip_1',
+      '/Sqrt_1',
+      '/Add_1',
+      '/Div_1',
     ],
   },
   fp32: {
@@ -101,7 +115,7 @@ export function expectedFileBytes(model: ModelDescriptor, url: string): number |
 }
 
 /** Cache Storage bucket for the model files (outside the service worker's precache, so installs stay light). */
-export const MODEL_CACHE = 'stem-models-v1';
+const MODEL_CACHE = 'stem-models-v1';
 
 export interface Manifest {
   pieces: { file: string; inputs: string[]; outputs: string[] }[];
@@ -115,7 +129,11 @@ export function isManifest(value: unknown): value is Manifest {
     Array.isArray(m.pieces) &&
     m.pieces.length > 0 &&
     m.pieces.every(
-      (p) => typeof p.file === 'string' && /^[\w.-]+\.onnx$/.test(p.file) && Array.isArray(p.inputs) && Array.isArray(p.outputs),
+      (p) =>
+        typeof p.file === 'string' &&
+        /^[\w.-]+\.onnx$/.test(p.file) &&
+        Array.isArray(p.inputs) &&
+        Array.isArray(p.outputs),
     ) &&
     typeof m.outputs?.freq === 'string' &&
     typeof m.outputs?.time === 'string'
@@ -147,7 +165,10 @@ export function downloadComplete(input: {
   if (!(input.read > 0)) return false;
   if (input.expected != null && input.read !== input.expected) return false;
   const encoded = input.contentEncoding != null && !/^\s*identity\s*$/i.test(input.contentEncoding);
-  const length = input.contentLength != null && /^\d+$/.test(input.contentLength.trim()) ? Number(input.contentLength) : null;
+  const length =
+    input.contentLength != null && /^\d+$/.test(input.contentLength.trim())
+      ? Number(input.contentLength)
+      : null;
   return encoded || length == null || length === input.read;
 }
 
@@ -173,7 +194,13 @@ export async function fetchModelFile(
   const cached = await cache?.match(url).catch(() => undefined);
   if (cached) {
     const bytes = await cached.arrayBuffer();
-    if (cachedComplete({ bytes: bytes.byteLength, stored: cached.headers.get(BYTES_HEADER), expected: expectedBytes })) {
+    if (
+      cachedComplete({
+        bytes: bytes.byteLength,
+        stored: cached.headers.get(BYTES_HEADER),
+        expected: expectedBytes,
+      })
+    ) {
       onBytes(bytes.byteLength);
       return bytes;
     }
@@ -182,20 +209,27 @@ export async function fetchModelFile(
   const res = await fetch(url, { signal, mode: 'cors', credentials: 'omit' });
   if (!res.ok || !res.body) throw new Error(`model-http-${res.status}`);
   const reader = res.body.getReader();
+  // REQ-26 · With the exact size known, the bytes go straight into one array (no list of pieces joined at the end:
+  // half the memory at the peak). A body of another length is only counted: the size check below refuses it.
+  const whole = expectedBytes != null && expectedBytes > 0 ? new Uint8Array(expectedBytes) : null;
   const chunks: Uint8Array[] = [];
   let read = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (!whole) chunks.push(value);
+    else if (read + value.byteLength <= whole.byteLength) whole.set(value, read);
     read += value.byteLength;
     onBytes(read);
   }
-  const bytes = new Uint8Array(read);
-  let at = 0;
-  for (const c of chunks) {
-    bytes.set(c, at);
-    at += c.byteLength;
+  let bytes = whole;
+  if (!bytes) {
+    bytes = new Uint8Array(read);
+    let at = 0;
+    for (const c of chunks) {
+      bytes.set(c, at);
+      at += c.byteLength;
+    }
   }
   if (
     !downloadComplete({
@@ -211,12 +245,43 @@ export async function fetchModelFile(
     // `put` reads the whole body before it resolves, so the same bytes can be handed to the model afterwards.
     await cache?.put(
       url,
-      new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream', [BYTES_HEADER]: String(read) } }),
+      new Response(bytes, {
+        headers: { 'Content-Type': 'application/octet-stream', [BYTES_HEADER]: String(read) },
+      }),
     );
   } catch {
     /* no room to keep it: it will be downloaded again next time */
   }
   return bytes.buffer;
+}
+
+/** REQ-26 · At most this often the worker tells the page how the download goes (~4 times a second). */
+const MODEL_PROGRESS_MS = 250;
+
+/**
+ * REQ-26 · The model's overall download progress (all its files) for the page, at most every `intervalMs` (each
+ * network piece used to be one message and one repaint); the moment it is whole is always told, once.
+ */
+export function throttledModelProgress(
+  total: number,
+  post: (loaded: number) => void,
+  intervalMs = MODEL_PROGRESS_MS,
+  now: () => number = () => performance.now(),
+): (url: string, read: number) => void {
+  const done = new Map<string, number>();
+  let last = -Infinity;
+  let toldWhole = false;
+  return (url, read) => {
+    done.set(url, read);
+    let loaded = 0;
+    for (const v of done.values()) loaded += v;
+    loaded = Math.min(loaded, total);
+    const t = now();
+    if (loaded === total ? toldWhole : t - last < intervalMs) return;
+    if (loaded === total) toldWhole = true;
+    last = t;
+    post(loaded);
+  };
 }
 
 /**

@@ -8,7 +8,8 @@ import {
   type PlayerEngine,
 } from './engine';
 import { clockMoved, shouldSwapSource, STALL, stallAction, type SwapInput } from './stallRules';
-import { hasRange, usePlayer } from './store';
+import { restartOnEnded } from './restartOnEnded';
+import { usePlayer } from './store';
 
 interface StageControls {
   /** Another file: load it as a new one. */
@@ -28,7 +29,15 @@ interface StageControls {
  * The element's source is set here, not by React: a change has to keep the timeline's moment. A watchdog plays again
  * by itself when the video stays stuck loading (stallRules.ts).
  */
-export function FileStage({ src, localSrc, offset = 0 }: { src: string; localSrc?: string; offset?: number }) {
+export function FileStage({
+  src,
+  localSrc,
+  offset = 0,
+}: {
+  src: string;
+  localSrc?: string;
+  offset?: number;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   /** The URL the element plays now. */
   const active = useRef<string | null>(null);
@@ -95,7 +104,8 @@ export function FileStage({ src, localSrc, offset = 0 }: { src: string; localSrc
     };
     const trySwap = (moment: SwapInput['moment']) => {
       const copy = sources.current.localSrc;
-      if (!copy || !shouldSwapSource({ pending: pendingLocal(), captured: mediaCaptured(el), moment })) return false;
+      if (!copy || !shouldSwapSource({ pending: pendingLocal(), captured: mediaCaptured(el), moment }))
+        return false;
       // Not attached yet and past its metadata: the attach is under way, swap at the next moment.
       if (usePlayer.getState().engine !== engine && el.readyState >= 1 && !reloading) return false;
       reload(copy);
@@ -185,19 +195,7 @@ export function FileStage({ src, localSrc, offset = 0 }: { src: string; localSrc
       startWatch();
     };
     const onEnded = () => {
-      // Same as the loop controller: a gap keeps the media paused while the countdown runs.
-      const { loop, gap, loopAll, gapAll } = usePlayer.getState();
-      const restartAt = loop.enabled && hasRange(loop) ? loop.start : loopAll ? 0 : null;
-      if (restartAt != null) {
-        const wait = loop.enabled && hasRange(loop) ? gap : gapAll;
-        engine.seek(restartAt);
-        if (wait > 0) {
-          engine.pause();
-          usePlayer.setState({ time: restartAt, countdownEndsAt: performance.now() + wait * 1000, playing: false });
-        } else engine.play();
-      } else {
-        sync({ playing: false });
-      }
+      if (!restartOnEnded(engine)) sync({ playing: false });
     };
     // Recorded WebMs only learn their length late (after playing through): pick it up when it arrives.
     const onDuration = () => {

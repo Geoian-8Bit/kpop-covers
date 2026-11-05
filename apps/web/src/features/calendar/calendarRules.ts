@@ -5,12 +5,12 @@ import type { AbsenceKind } from '@coverscape/shared';
  * Europe/Madrid written as `YYYY-MM-DD` keys; the arithmetic runs in UTC so no time zone or DST shift moves a day.
  */
 
-export const CALENDAR_ZONE = 'Europe/Madrid';
+const CALENDAR_ZONE = 'Europe/Madrid';
 export const ABSENCE_NOTE_MAX = 140;
 /** Longest range: 61 days (`ends_on - starts_on <= 60` in the database). */
 export const ABSENCE_MAX_SPAN = 60;
 /** More than this many absent people in a day cell: 3 dots and «+N». */
-export const DOTS_MAX = 4;
+const DOTS_MAX = 4;
 
 const DAY_MS = 86_400_000;
 const KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -19,7 +19,7 @@ const HHMM = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/;
 export const WEEKDAYS_SHORT = ['lun', 'mar', 'miér', 'jue', 'vie', 'sáb', 'dom'] as const;
 export const WEEKDAYS_LONG = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] as const;
 export const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'] as const;
-export const MONTHS_LONG = [
+const MONTHS_LONG = [
   'enero',
   'febrero',
   'marzo',
@@ -168,7 +168,7 @@ export interface AbsenceLike {
   at_time: string | null;
 }
 
-export function coversDay(absence: Pick<AbsenceLike, 'starts_on' | 'ends_on'>, day: string): boolean {
+function coversDay(absence: Pick<AbsenceLike, 'starts_on' | 'ends_on'>, day: string): boolean {
   return absence.starts_on <= day && day <= absence.ends_on;
 }
 
@@ -208,7 +208,7 @@ export interface AbsenceDraft {
   note: string;
 }
 
-export interface AbsenceRow {
+interface AbsenceRow {
   member_id: string;
   starts_on: string;
   ends_on: string;

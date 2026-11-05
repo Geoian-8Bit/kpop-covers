@@ -14,8 +14,6 @@ import {
 } from './voiceRules';
 import { createStemPlayer, onStemsChange, stemsFor, type StemPlayer, type StemSources } from './stems';
 
-export type { VoiceMode } from './voiceRules';
-
 /**
  * F17 · Separar la voz y la música, live in the browser with plain Web Audio nodes (no models, no workers): a
  * centre-channel (mid/side) split.
@@ -69,7 +67,7 @@ export interface VoiceSplit {
 }
 
 /** `stems`: «Sin voz» / «Voz» play the tracks separated by the AI model (18). */
-export type VoiceAnalysis = MonoJudgement & { stems?: boolean };
+type VoiceAnalysis = MonoJudgement & { stems?: boolean };
 
 export interface VoiceSplitOptions {
   /** Mode at creation, applied without a glide. Default `original`. */

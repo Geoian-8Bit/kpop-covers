@@ -53,7 +53,7 @@ export function lerpAngle(a: number, b: number, p: number): number {
   return normalizeAngle(a + diff * p);
 }
 
-export function clampProp(prop: FormationProp, stage: Size): FormationProp {
+function clampProp(prop: FormationProp, stage: Size): FormationProp {
   return {
     ...prop,
     x: round3(Math.min(stage.width, Math.max(0, prop.x))),

@@ -318,7 +318,7 @@ export function WhoPromptHost() {
  * «¿Quién eres?» (F2): pick a name from the list or add yours. `onLater` = «Ahora no» (the first-time suggestion
  * isn't shown again; it stays in Ajustes and in the menu).
  */
-export function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: () => void; reason?: string }) {
+function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: () => void; reason?: string }) {
   const members = useMembers();
   const create = useCreateMember();
   const { memberId, choose, dismiss } = useIdentity();

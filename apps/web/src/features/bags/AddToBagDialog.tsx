@@ -6,7 +6,7 @@ import { navigateFromLayer } from '@/lib/backLayers';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/Spinner';
-import { bagError, bagsOfKind, itemRef, useAddBagItem, useBags, useBagsItems } from '@/data/bags';
+import { bagError, bagsOfKind, useAddBagItem, useBags, useBagsHolding } from '@/data/bags';
 import { cn } from '@/lib/cn';
 import { jelly, soft } from '@/lib/motion';
 import { useToast } from '@/providers/ToastProvider';
@@ -35,16 +35,20 @@ export function AddToBagDialog({
 }) {
   const bags = useBags();
   const mine = bagsOfKind(bags.data, target.kind);
-  const items = useBagsItems(
-    mine.map((b) => b.id),
-    open,
-  );
   const add = useAddBagItem();
   const toast = useToast();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [busyBag, setBusyBag] = useState<string | null>(null);
-  const ref = 'videoId' in target ? target.videoId : 'wishId' in target ? target.wishId : target.clipId;
+  // REQ-19 · One light query tells which bags already hold it (it was one full item list per bag).
+  const holding = useBagsHolding(
+    'videoId' in target
+      ? { video_id: target.videoId }
+      : 'wishId' in target
+        ? { wish_id: target.wishId }
+        : { clip_id: target.clipId },
+    open,
+  );
 
   async function addTo(bagId: string, bagName: string) {
     if (busyBag) return;
@@ -98,14 +102,13 @@ export function AddToBagDialog({
           <>
             {mine.length > 0 && (
               <ul className="space-y-1.5">
-                {mine.map((bag, i) => {
-                  const query = items[i];
-                  const inside = query?.data?.some((item) => itemRef(item) === ref) ?? false;
+                {mine.map((bag) => {
+                  const inside = holding.data?.includes(bag.id) ?? false;
                   return (
                     <li key={bag.id}>
                       <motion.button
                         type="button"
-                        disabled={inside || busyBag != null || query?.isPending}
+                        disabled={inside || busyBag != null || holding.isPending}
                         onClick={() => void addTo(bag.id, bag.name)}
                         whileTap={inside ? undefined : { scale: 0.97 }}
                         transition={jelly}

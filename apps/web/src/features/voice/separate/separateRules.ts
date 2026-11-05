@@ -302,8 +302,11 @@ export function modelCacheLooksBroken(message: string): boolean {
   return /manifest|protobuf|invalid (onnx )?model|pars(e|ing)|corrupt|unexpected end|outputs|missing /i.test(message);
 }
 
-/** «8 MB», «1,2 GB» (Spanish decimal comma). */
-export function formatBytes(bytes: number): string {
+/**
+ * «8 MB», «1,2 GB» (Spanish decimal comma). REQ-28 · Named apart from the shared `formatBytes` («1.5 MB»): the voice
+ * copy keeps its own rounding and comma, every caller its exact text.
+ */
+export function formatBytesEs(bytes: number): string {
   if (bytes >= 1000 * MiB) return `${(bytes / (1024 * MiB)).toFixed(1).replace('.', ',')} GB`;
   if (bytes >= 10 * MiB) return `${Math.round(bytes / MiB)} MB`;
   return `${Math.max(0.1, bytes / MiB).toFixed(1).replace('.', ',')} MB`;
@@ -319,7 +322,7 @@ export interface LagEstimate {
 }
 
 /** Start of the loudest `window`-long stretch of `signal` (within `from`…`to`), stepping by a quarter window. */
-export function loudestWindow(signal: ArrayLike<number>, window: number, from = 0, to = signal.length): number {
+function loudestWindow(signal: ArrayLike<number>, window: number, from = 0, to = signal.length): number {
   let best = from;
   let bestEnergy = -1;
   const step = Math.max(1, Math.floor(window / 4));
@@ -370,7 +373,7 @@ export function estimateLag(
 }
 
 /** Coarse lags tried between two pauses of `estimateLagSliced` (a few tens of ms each on a slow phone). */
-export const LAG_SLICE = 400;
+const LAG_SLICE = 400;
 
 /**
  * Global review 2 [3] · `estimateLag` in slices of `slice` coarse lags, awaiting `pause` between them: the coarse

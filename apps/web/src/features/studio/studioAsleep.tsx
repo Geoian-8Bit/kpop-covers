@@ -8,7 +8,7 @@ import { usePlayer } from '@/player/store';
  * time readout, the timeline's playhead and note dots, the zoom layer) stops following it, and everything but the
  * stage skips rendering altogether. The player's state is untouched; uncovering repaints once from the clock.
  */
-export function useStudioAsleep(): boolean {
+function useStudioAsleep(): boolean {
   return usePlayer((s) => s.covered);
 }
 

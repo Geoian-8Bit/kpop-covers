@@ -28,22 +28,11 @@ export function LevelIndicator({ className }: { className?: string }) {
     let isLevel = false;
     let isShown = false;
 
-    const onOrientation = (e: DeviceOrientationEvent) => {
-      if (e.beta == null || e.gamma == null) return;
-      const b = e.beta * D2R;
-      const g = e.gamma * D2R;
-      // «Up» in the phone's own axes (x to its right edge, y to its top), from the W3C Z-X'-Y'' angles: works the
-      // same whether the phone lies on a table or stands on the floor.
-      const ux = -Math.sin(g) * Math.cos(b);
-      const uy = Math.sin(b);
-      // Smooth the vector, not the angle: no jump when the angle wraps round.
-      const k = first ? 1 : SMOOTH;
-      sx += (ux - sx) * k;
-      sy += (uy - sy) * k;
-      if (first) {
-        first = false;
-        setSeen(true);
-      }
+    // REQ-23 · Some Androids fire 100–200 readings a second: each one is smoothed as it comes (same smoothing),
+    // but the line moves and the flags change at most once per frame.
+    let frame = 0;
+    const apply = () => {
+      frame = 0;
       const screenAngle = screen.orientation?.angle ?? (typeof window.orientation === 'number' ? window.orientation : 0);
       let angle = Math.atan2(sx, sy) * R2D - screenAngle;
       angle = ((((angle + 180) % 360) + 360) % 360) - 180;
@@ -63,8 +52,30 @@ export function LevelIndicator({ className }: { className?: string }) {
       }
     };
 
+    const onOrientation = (e: DeviceOrientationEvent) => {
+      if (e.beta == null || e.gamma == null) return;
+      const b = e.beta * D2R;
+      const g = e.gamma * D2R;
+      // «Up» in the phone's own axes (x to its right edge, y to its top), from the W3C Z-X'-Y'' angles: works the
+      // same whether the phone lies on a table or stands on the floor.
+      const ux = -Math.sin(g) * Math.cos(b);
+      const uy = Math.sin(b);
+      // Smooth the vector, not the angle: no jump when the angle wraps round.
+      const k = first ? 1 : SMOOTH;
+      sx += (ux - sx) * k;
+      sy += (uy - sy) * k;
+      if (first) {
+        first = false;
+        setSeen(true);
+      }
+      frame ||= requestAnimationFrame(apply);
+    };
+
     window.addEventListener('deviceorientation', onOrientation);
-    return () => window.removeEventListener('deviceorientation', onOrientation);
+    return () => {
+      window.removeEventListener('deviceorientation', onOrientation);
+      cancelAnimationFrame(frame);
+    };
   }, [rotate]);
 
   return (

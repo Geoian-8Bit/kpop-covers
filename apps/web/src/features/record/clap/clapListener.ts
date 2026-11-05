@@ -5,21 +5,6 @@ import { createClapDetector, peakOf, type ClapReading, type ClapSensitivity } fr
  * peak of each short window feeds the pure detector of `@coverscape/shared`. Everything is freed on `stop()`.
  */
 
-/** An AudioContext for the analysis. Create it inside the tap that arms (Safari only lets audio start there). */
-export function createListeningContext(): AudioContext | null {
-  const Ctor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) return null;
-  try {
-    const ctx = new Ctor({ latencyHint: 'interactive' });
-    void ctx.resume().catch(() => undefined);
-    return ctx;
-  } catch {
-    return null;
-  }
-}
-
 export interface ClapListener {
   setSensitivity(sensitivity: ClapSensitivity): void;
   stop(): void;

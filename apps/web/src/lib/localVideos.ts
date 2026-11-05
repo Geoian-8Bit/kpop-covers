@@ -1,4 +1,5 @@
-import { createStore, del, delMany, get, keys, set, values } from 'idb-keyval';
+import { createStore, del, delMany, entries, get, keys, set, setMany, values } from 'idb-keyval';
+import { posterKey } from './posterKey';
 
 // Uploaded files live in IndexedDB on the device (instant, offline playback, no size cap).
 // Files ≤ 50 MB are additionally synced to Supabase Storage so the whole crew can open them.
@@ -39,6 +40,46 @@ export async function loadLocalVideo(videoId: string): Promise<Blob | undefined>
 
 export function deleteLocalVideo(videoId: string): Promise<void> {
   return del(videoId, store);
+}
+
+// ── REQ-14 · Uploaded videos' posters, kept so a repeat visit doesn't download them again. ──
+
+// Its own database (idb-keyval opens one object store per database), opened on first use.
+let posterDb: ReturnType<typeof createStore> | null = null;
+const posterStore = () => (posterDb ??= createStore('oneshoot-posters', 'posters'));
+const POSTER_PREFIX = 'oneshoot.poster.v1:';
+
+export { posterKey };
+
+/** Every kept poster by key. Throws when storage is unavailable (the caller falls back to the network). */
+export async function readKeptPosters(): Promise<Map<string, string>> {
+  const all = await entries<IDBValidKey, string>(posterStore());
+  const out = new Map<string, string>();
+  for (const [key, url] of all) {
+    if (typeof key === 'string' && key.startsWith(POSTER_PREFIX) && typeof url === 'string')
+      out.set(key, url);
+  }
+  return out;
+}
+
+/** Keeps posters (best effort: a full or blocked storage only means they're downloaded next time). */
+export async function keepPosters(list: readonly [key: string, url: string][]): Promise<void> {
+  if (!list.length) return;
+  try {
+    await setMany([...list], posterStore());
+  } catch {
+    /* storage unavailable or full */
+  }
+}
+
+/** Drops posters by key (old revisions, archived videos). */
+export async function dropPosters(keys: readonly string[]): Promise<void> {
+  if (!keys.length) return;
+  try {
+    await delMany([...keys], posterStore());
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 // ── Local demo only (13): a pretend group cloud in this browser, so the reduced copy can be tried end to end. ──
@@ -88,7 +129,9 @@ export async function demoCloudBytes(): Promise<number> {
 const POSTER_MAX_SIDE = 400;
 
 /** Reads duration and grabs a small poster frame from a local media file. */
-export async function probeMediaFile(file: Blob): Promise<{ duration: number | null; poster: string | null }> {
+export async function probeMediaFile(
+  file: Blob,
+): Promise<{ duration: number | null; poster: string | null }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.preload = 'metadata';

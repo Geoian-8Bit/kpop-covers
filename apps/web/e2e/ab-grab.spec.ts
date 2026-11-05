@@ -56,3 +56,22 @@ test('arrastrar el sello A mueve A', async ({ page }) => {
   await expect.poll(() => bandLeft(band)).not.toBe(left);
   guard.check();
 });
+
+// REQ-21 · A still click on the A seal (hover move pending in its frame) must not nudge the range.
+test('un clic quieto en el sello A no mueve A', async ({ page }) => {
+  const guard = guardConsole(page);
+  const { band } = await openWithLoop(page);
+  const left = await bandLeft(band);
+  const seal = band.getByText('A', { exact: true });
+  const box = (await seal.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  // Land the hover and the press inside one frame, as a real mouse does.
+  await page.mouse.move(x - 3, y);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  expect(await bandLeft(band)).toBe(left);
+  guard.check();
+});

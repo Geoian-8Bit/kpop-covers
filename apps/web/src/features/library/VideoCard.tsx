@@ -7,12 +7,12 @@ import { guardNav } from '@/components/AppShell';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { useQueryClient } from '@tanstack/react-query';
 import { prefetchClips } from '@/data/clips';
-import { prefetchNotes } from '@/data/notes';
-import { prefetchVideo, type VideoWithClipCount } from '@/data/videos';
+import { prefetchVideo, prefetchVideoUrl, type VideoWithClipCount } from '@/data/videos';
 import { AddToBagButton } from '@/features/bags/AddToBagButton';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, fadeUpCapped, jelly } from '@/lib/motion';
 import { loadStudioPage } from '@/lib/prefetch';
+import { thumbCors } from '@/lib/thumbCors';
 
 /** Cards cascade in, but only the first 8 wait: the rest of a long library appears with the 8th. */
 const cardIn = fadeUpCapped(0.04, 8);
@@ -48,7 +48,13 @@ export const VideoCard = memo(function VideoCard({
     void loadStudioPage().catch(() => undefined);
     prefetchVideo(queryClient, video.id);
     prefetchClips(queryClient, video.id);
-    prefetchNotes(queryClient, video.id);
+    // REQ-08 · The notes module (shared with the studio) loads on demand; a hover warms it and then the notes.
+    // A chunk made stale by a deploy must not raise vite:preloadError (that reloads the page): ignore it.
+    void import('@/data/notes')
+      .then((m) => m.prefetchNotes(queryClient, video.id))
+      .catch(() => undefined);
+    // REQ-16 · And the cloud file's signature (REQ-15 remembers it), so the studio starts the file at once.
+    prefetchVideoUrl(video.storage_path);
   };
 
   return (
@@ -79,6 +85,7 @@ export const VideoCard = memo(function VideoCard({
               // P11 · Small cards (a 144 px row on phones, a quarter column on desktop) take YouTube's 320 px
               // thumbnail; the featured one keeps the large one.
               src={featured ? video.thumbnail_url : withYouTubeThumbQuality(video.thumbnail_url, 'mqdefault')}
+              crossOrigin={thumbCors(featured ? video.thumbnail_url : withYouTubeThumbQuality(video.thumbnail_url, 'mqdefault'))}
               alt=""
               // The featured thumbnail is the library's LCP image: fetch it first; the rest wait for the viewport.
               loading={featured ? 'eager' : 'lazy'}

@@ -1,5 +1,6 @@
-import { motion, MotionConfig } from 'motion/react';
+import { MotionConfig } from 'motion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PerfProbe } from '@/lib/perfProbe';
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { AppShell } from '@/components/AppShell';
@@ -8,48 +9,49 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { LogoMark } from '@/components/Logo';
 import { Button } from '@/components/ui/Button';
 import { LibraryPage } from '@/features/library/LibraryPage';
+import '@/components/splash.css';
 import { pageTitle } from '@/lib/pageTitle';
-import { loadStudioPage } from '@/lib/prefetch';
+import { routeLoaders } from '@/lib/routeLoaders';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { AuthProvider } from '@/providers/AuthProvider';
 import { CrewProvider, useCrew } from '@/providers/CrewProvider';
 import { ToastProvider } from '@/providers/ToastProvider';
 
 // Route-level splitting: the library is the landing page, the studio and legal pages load on demand.
-const StudioPage = lazy(() => loadStudioPage().then((m) => ({ default: m.StudioPage })));
-const PrivacyPage = lazy(() => import('@/features/legal/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
-const SettingsPage = lazy(() => import('@/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+// REQ-06 · The loaders live in one map (routeLoaders.ts) shared with main.tsx's cold-start preload and prefetch.ts.
+const StudioPage = lazy(() => routeLoaders.studio().then((m) => ({ default: m.StudioPage })));
+const PrivacyPage = lazy(() => routeLoaders.privacy().then((m) => ({ default: m.PrivacyPage })));
+const SettingsPage = lazy(() => routeLoaders.settings().then((m) => ({ default: m.SettingsPage })));
 // F13 bags and F14 Random Play Dance: their own chunks, loaded when visited.
-const BagsPage = lazy(() => import('@/features/bags/BagsPage').then((m) => ({ default: m.BagsPage })));
-const BagPage = lazy(() => import('@/features/bags/BagPage').then((m) => ({ default: m.BagPage })));
-const RpdPage = lazy(() => import('@/features/rpd/RpdPage').then((m) => ({ default: m.RpdPage })));
-const TrackPage = lazy(() => import('@/features/rpd/TrackPage').then((m) => ({ default: m.TrackPage })));
-const RpdPlayPage = lazy(() => import('@/features/rpd/RpdPlayPage').then((m) => ({ default: m.RpdPlayPage })));
+const BagsPage = lazy(() => routeLoaders.bags().then((m) => ({ default: m.BagsPage })));
+const BagPage = lazy(() => routeLoaders.bag().then((m) => ({ default: m.BagPage })));
+const RpdPage = lazy(() => routeLoaders.rpd().then((m) => ({ default: m.RpdPage })));
+const TrackPage = lazy(() => routeLoaders.track().then((m) => ({ default: m.TrackPage })));
+const RpdPlayPage = lazy(() => routeLoaders.rpdPlay().then((m) => ({ default: m.RpdPlayPage })));
 // F12 wish list and F11 votes («Próxima cover»).
-const WishesPage = lazy(() => import('@/features/wishes/WishesPage').then((m) => ({ default: m.WishesPage })));
-const PollPage = lazy(() => import('@/features/wishes/PollPage').then((m) => ({ default: m.PollPage })));
+const WishesPage = lazy(() => routeLoaders.wishes().then((m) => ({ default: m.WishesPage })));
+const PollPage = lazy(() => routeLoaders.poll().then((m) => ({ default: m.PollPage })));
 // F16 events (countdown and repertoire).
-const EventsPage = lazy(() => import('@/features/events/EventsPage').then((m) => ({ default: m.EventsPage })));
-const EventPage = lazy(() => import('@/features/events/EventPage').then((m) => ({ default: m.EventPage })));
-// REQ-03 / REQ-04 calendar of absences and rehearsals.
-const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+const EventsPage = lazy(() => routeLoaders.events().then((m) => ({ default: m.EventsPage })));
+const EventPage = lazy(() => routeLoaders.event().then((m) => ({ default: m.EventPage })));
+// Calendar of absences and rehearsals.
+const CalendarPage = lazy(() => routeLoaders.calendar().then((m) => ({ default: m.CalendarPage })));
 
-const queryClient = new QueryClient({
+// REQ-06 · Exported so main.tsx can start the group request before React mounts.
+export const queryClient = new QueryClient({
   defaultOptions: {
     // Back in the app after a while: pick up what the rest of the group changed (only stale data refetches).
-    queries: { staleTime: 5 * 60_000, refetchOnWindowFocus: true, retry: 1 },
+    // REQ-18 · gcTime 60 min: a screen left for a while (the library during a rehearsal) keeps its cache.
+    queries: { staleTime: 5 * 60_000, gcTime: 60 * 60_000, refetchOnWindowFocus: true, retry: 1 },
   },
 });
 
 function Splash() {
   return (
     <div className="grid min-h-dvh place-items-center" role="status" aria-label="Cargando">
-      <motion.div
-        animate={{ scale: [1, 0.92, 1], rotate: [-4, -8, -4] }}
-        transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-      >
+      <div className="splash-seal">
         <LogoMark size={56} />
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -135,7 +137,9 @@ export function App() {
                           path="/v/:videoId"
                           element={
                             <Suspense fallback={<Splash />}>
-                              <StudioPage />
+                              <PerfProbe id="StudioPage">
+                                <StudioPage />
+                              </PerfProbe>
                             </Suspense>
                           }
                         />
@@ -144,7 +148,9 @@ export function App() {
                           path="/v/:videoId/formaciones/:planId"
                           element={
                             <Suspense fallback={<Splash />}>
-                              <StudioPage />
+                              <PerfProbe id="StudioPage">
+                                <StudioPage />
+                              </PerfProbe>
                             </Suspense>
                           }
                         />
@@ -163,14 +169,23 @@ export function App() {
                             ['/rpd', <RpdPage key="rpd" />],
                             ['/rpd/pista/:trackId', <TrackPage key="track" />],
                             ['/rpd/jugar', <RpdPlayPage key="play" />],
-                            ['/deseos', <WishesPage key="wishes" />],
+                            [
+                              '/deseos',
+                              <PerfProbe key="wishes" id="WishesPage">
+                                <WishesPage />
+                              </PerfProbe>,
+                            ],
                             ['/deseos/votacion/:pollId', <PollPage key="poll" />],
                             ['/eventos', <EventsPage key="events" />],
                             ['/eventos/:eventId', <EventPage key="event" />],
                             ['/calendario', <CalendarPage key="calendar" />],
                           ] as const
                         ).map(([path, page]) => (
-                          <Route key={path} path={path} element={<Suspense fallback={<Splash />}>{page}</Suspense>} />
+                          <Route
+                            key={path}
+                            path={path}
+                            element={<Suspense fallback={<Splash />}>{page}</Suspense>}
+                          />
                         ))}
                       </Route>
                       <Route

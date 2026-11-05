@@ -15,6 +15,7 @@ import { cn } from '@/lib/cn';
 import { probeMediaFile } from '@/lib/localVideos';
 import { jelly, soft } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
+import { thumbCors } from '@/lib/thumbCors';
 import { useCrew } from '@/providers/CrewProvider';
 import { useToast } from '@/providers/ToastProvider';
 import { editMeta, EMPTY_META, shownMeta, suggestMeta, type MetaState } from './addVideoRules';
@@ -335,7 +336,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                           }}
                           className="flex min-h-12 w-full items-center gap-3 rounded-[10px] bg-sumi-800 px-3 text-left hover:bg-sumi-700"
                         >
-                          {v.thumbnail_url && <img src={v.thumbnail_url} alt="" className="h-9 w-16 shrink-0 rounded-[6px] object-cover" />}
+                          {v.thumbnail_url && <img src={v.thumbnail_url} crossOrigin={thumbCors(v.thumbnail_url)} alt="" className="h-9 w-16 shrink-0 rounded-[6px] object-cover" />}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[14px] font-bold">{v.title}</span>
                             {v.artist && <span className="block truncate text-[12px] text-washi-subtle">{v.artist}</span>}

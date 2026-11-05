@@ -16,7 +16,7 @@ interface MarkerDrag {
 }
 
 /** The span the timeline draws: the player's duration once known, else enough to show every formation. */
-export function timelineSpan(duration: number, list: readonly FormationInput[]): number {
+function timelineSpan(duration: number, list: readonly FormationInput[]): number {
   if (duration > 0) return duration;
   const last = list.length ? list[list.length - 1]!.at : 0;
   return Math.max(30, Math.ceil(last + 10));
@@ -53,7 +53,10 @@ export function FormationTimeline({
   const scrub = useRef<number | null>(null);
   const [marker, setMarker] = useState<MarkerDrag | null>(null);
   const spanRef = useRef(span);
-  spanRef.current = span;
+  // REQ-30 · Synced at commit, before the playhead effects below read it (they only run after commit too).
+  useLayoutEffect(() => {
+    spanRef.current = span;
+  }, [span]);
 
   // The playhead follows the clock straight on the DOM (no render per frame).
   useLayoutEffect(() => {

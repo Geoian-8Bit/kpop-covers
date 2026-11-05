@@ -6,7 +6,7 @@ import { clapLogEntry, type ClapLogEntry, type ClapReading } from '@coverscape/s
  * «Información técnica» on, each one is also written to the console as «[oneshoot:clap] …».
  */
 
-export const CLAP_LOG_SIZE = 8;
+const CLAP_LOG_SIZE = 8;
 
 export interface ClapLogItem extends ClapLogEntry {
   /** Date.now() when it was judged. */

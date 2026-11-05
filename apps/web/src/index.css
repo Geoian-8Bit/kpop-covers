@@ -1,4 +1,5 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source('./');
+@import './fonts.css';
 
 /* ───────────── Tokens · sumi ink & urushi lacquer, washi paper, ai indigo, shu seal vermilion ───────────── */
 @theme {

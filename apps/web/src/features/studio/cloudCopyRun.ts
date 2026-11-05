@@ -2,7 +2,9 @@ import { formatBytes, type Video } from '@coverscape/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { takeKeys } from '@/data/takes';
 import { fileIdentity, uploadGroupFile, videoKeys } from '@/data/videos';
-import { backend, cloudLimitBytes } from '@/lib/backend';
+import { backend } from '@/lib/backend/core';
+import { cloudLimitBytes } from '@/lib/backend/mode';
+import { deviceShape } from '@/lib/deviceShape';
 import { heavyWorkBusy, type HeavyWork } from '@/lib/heavyWork';
 import { friendlyError } from '@/lib/supabase';
 import { usePlayer } from '@/player/store';
@@ -40,7 +42,7 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
   e.returnValue = '';
 }
 
-type WakeLock = { release: () => Promise<void> };
+type WakeLock = { release: () => Promise<void>; addEventListener?: EventTarget['addEventListener'] };
 let wakeLock: WakeLock | null = null;
 
 async function keepAwake() {
@@ -48,7 +50,7 @@ async function keepAwake() {
   try {
     const nav = navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLock> } };
     wakeLock = (await nav.wakeLock?.request('screen')) ?? null;
-    (wakeLock as unknown as EventTarget | null)?.addEventListener?.('release', () => {
+    wakeLock?.addEventListener?.('release', () => {
       wakeLock = null;
     });
   } catch {
@@ -75,13 +77,6 @@ function guardsOff() {
   document.removeEventListener('visibilitychange', onVisible);
   void wakeLock?.release().catch(() => undefined);
   wakeLock = null;
-}
-
-/** This device as far as memory goes (a phone reads less into memory before closing the tab). */
-function deviceShape(): { mobile: boolean; memoryGb: number | null } {
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return { mobile: coarse && Math.min(screen.width, screen.height) < 820, memoryGb: typeof memory === 'number' ? memory : null };
 }
 
 function extensionOf(name: string | null | undefined): string {

@@ -16,7 +16,7 @@ import { countLabel, KIND_COPY, MODE_COPY } from './drawRules';
  * `jelly` preset.
  */
 
-export type BagCardData = Pick<BagWithCount, 'id' | 'name' | 'kind' | 'draw_mode' | 'no_repeat' | 'items'>;
+type BagCardData = Pick<BagWithCount, 'id' | 'name' | 'kind' | 'draw_mode' | 'no_repeat' | 'items'>;
 
 export interface BagGroupProps {
   bags: BagCardData[];

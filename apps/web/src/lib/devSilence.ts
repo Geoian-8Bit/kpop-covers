@@ -51,10 +51,12 @@ if (silent && typeof window !== 'undefined') {
 
   // YouTube: wrap the player constructor once the API loads, muting every player when it's ready.
   const wrapYT = () => {
+    // REQ-29 · Kept (dev-only): the YouTube API global is untyped until it loads.
     const w = window as unknown as { YT?: { Player?: unknown; __silenced?: boolean } };
     const yt = w.YT;
     if (!yt?.Player || yt.__silenced) return false;
     const Original = yt.Player as new (el: unknown, opts: Record<string, unknown>) => { mute?: () => void };
+    // REQ-29 · Kept (dev-only): a plain function stands in for the API's constructor (cast below).
     yt.Player = function (el: unknown, opts: Record<string, unknown> = {}) {
       const events = (opts.events ?? {}) as Record<string, (e: { target: { mute?: () => void } }) => void>;
       const onReady = events.onReady;

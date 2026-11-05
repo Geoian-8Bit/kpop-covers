@@ -28,22 +28,22 @@ export interface VoiceWaveProps {
 export const GROUP_LABEL = 'Voz y música';
 
 /** Copy per mode. `seal`: the kanji stamped on it (全 all · 楽 music · 声 voice). */
-export const MODE_COPY: Record<VoiceMode, { label: string; hint: string; seal: string }> = {
+const MODE_COPY: Record<VoiceMode, { label: string; hint: string; seal: string }> = {
   original: { label: 'Todo', hint: 'La canción tal cual', seal: '全' },
   // Neutral: true both with the approximate split (centre lowered) and with the AI tracks.
   'sin-voz': { label: 'Sin voz', hint: 'La música sin la voz', seal: '楽' },
   voz: { label: 'Voz', hint: 'Sube el centro: la voz y poco más', seal: '声' },
 };
 
-export const UNAVAILABLE_COPY = 'Solo con el archivo del vídeo (YouTube no deja tocar su sonido)';
-export const MONO_COPY =
+const UNAVAILABLE_COPY = 'Solo con el archivo del vídeo (YouTube no deja tocar su sonido)';
+const MONO_COPY =
   'Esta pista suena en mono: la voz y la música van juntas en el centro y no se pueden separar.';
 
 /**
  * Roving radios for the three modes: Tab lands on the chosen one, arrows move the choice (wrapping), Home/End
  * jump. Returns the props for each option's button.
  */
-export function useModeRadios(mode: VoiceMode, onChange: (mode: VoiceMode) => void, disabled: boolean) {
+function useModeRadios(mode: VoiceMode, onChange: (mode: VoiceMode) => void, disabled: boolean) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const next = stepMode(mode, e.key);

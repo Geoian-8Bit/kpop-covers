@@ -7,7 +7,7 @@ import { youTubeThumbnail } from '@coverscape/shared';
  */
 
 /** Same format as `videos.youtube_id` and `wishes.youtube_id`. */
-export const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const THUMB_RE = /^https:\/\/i\.ytimg\.com\/vi\/[A-Za-z0-9_-]{11}\/[a-z0-9_]+\.jpg$/;
 export const SONG_TITLE_MAX = 200;
 export const SONG_ARTIST_MAX = 120;

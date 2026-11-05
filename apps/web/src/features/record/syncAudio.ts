@@ -1,3 +1,4 @@
+import { audioContextCtor } from '@/lib/audioCtor';
 import { recordingTap } from '@/player/engine';
 import { paceLog } from './pace';
 import { IS_IOS } from './recorder';
@@ -16,18 +17,15 @@ import { delaySeconds, MAX_AUDIO_DELAY_MS, planSync, renderAheadMs, type SyncInp
  * woken again and only reported if it stays stopped (`watch`, `ensure`).
  */
 
-type AudioCtor = typeof AudioContext;
 let ctx: AudioContext | null = null;
 
 /** How long a context that left «running» gets to come back (a brief iOS route change) before the take is paused. */
-export const REVIVE_GRACE_MS = 400;
+const REVIVE_GRACE_MS = 400;
 
 function context(): AudioContext | null {
   if (ctx && ctx.state !== 'closed') return ctx;
   if (typeof window === 'undefined') return null;
-  const Ctor = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: AudioCtor }).webkitAudioContext) as
-    | AudioCtor
-    | undefined;
+  const Ctor = audioContextCtor();
   if (!Ctor) return null;
   try {
     // 'playback': the song's own graph uses the same hint, so its render buffer and this one's roughly cancel out.

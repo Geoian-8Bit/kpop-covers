@@ -1,0 +1,28 @@
+/*
+ * REQ-22 · The raffle drum of BagDrawStage.tsx. Both boxes cover the scene (the 300×210 viewBox) and turn about its
+ * centre, 50 % 50 % = (150, 105): that is where the drum really turned before. The spec says the axle (150, 100,
+ * i.e. 47.62 % down), but the old motion `<g>` had `transform-box: view-box` and motion wrote its own
+ * `transform-origin: 50% 50%` over the `150px 100px` of its style, so the phase-0 frames turn about the viewBox
+ * centre; the golden rule keeps that. The outer box carries the stops (motion's `soft` spring); the inner one the
+ * spin: one linear turn from 0° every 550 ms, as the motion keyframes did.
+ */
+.fukubiki-drum {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.fukubiki-spin {
+  animation: fukubiki-spin 550ms linear infinite;
+  will-change: transform;
+}
+
+@keyframes fukubiki-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

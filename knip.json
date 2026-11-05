@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs"],
+      "project": ["scripts/**/*.mjs", "supabase/tests/local/**/*.mjs"],
+      "ignoreBinaries": ["vercel", "vite"],
+      "ignoreDependencies": ["vitest"]
+    },
+    "apps/web": {
+      "entry": ["api/*.ts", "e2e/**/*.ts", "src/**/*.worker.ts", "src/**/*.test.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx}", "api/**/*.ts", "e2e/**/*.ts"]
+    },
+    "packages/shared": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  }
+}

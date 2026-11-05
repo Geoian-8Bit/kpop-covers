@@ -1,7 +1,9 @@
-import { hasLinkedFile, type Video } from '@coverscape/shared';
+import { hasLinkedFile } from '@coverscape/shared';
 import { useEffect, useState } from 'react';
-import { isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
+import { forgetVideoUrl, isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
+import type { PlayableVideo } from '@/lib/backend/bags';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
+import { lruGet, lruSet } from '@/lib/lru';
 
 /**
  * What plays a clip's song in a round: its own file when there is one (F1: no ads, no waiting), from this device
@@ -18,13 +20,14 @@ export type ClipSource =
   | { status: 'file'; url: string; offset: number }
   | { status: 'missing' };
 
-type Playable = Pick<
-  Video,
-  'id' | 'source' | 'youtube_id' | 'storage_path' | 'file_name' | 'file_size' | 'file_offset_seconds'
->;
+type Playable = PlayableVideo;
 
+// REQ-29 · Capped far above a round's songs (the whole cache is dropped when the round closes anyway).
+const CACHE_MAX = 200;
 const cache = new Map<string, Promise<ClipSource>>();
 const objectUrls = new Set<string>();
+/** REQ-15 · The cloud path behind each signed URL handed out this round (the signature is remembered for hours). */
+const signedPaths = new Map<string, string>();
 
 function cacheKey(video: Playable): string {
   return [
@@ -45,6 +48,8 @@ async function resolveSource(video: Playable): Promise<{ source: ClipSource; las
   const wantsFile = video.source === 'upload' || hasLinkedFile(video);
   if (!wantsFile) return { source: fallback, lasting: true };
   const offset = video.source === 'youtube' ? Number(video.file_offset_seconds ?? 0) : 0;
+  // REQ-15 · The signature starts together with the device lookup (it is dropped if a copy is there).
+  const signing = video.storage_path ? signedVideoUrl(video.storage_path).catch(() => null) : null;
   try {
     const blob = await loadLocalVideo(video.id);
     const stale = blob != null && isStaleCopy(video);
@@ -57,18 +62,21 @@ async function resolveSource(video: Playable): Promise<{ source: ClipSource; las
       objectUrls.add(url);
       return { source: { status: 'file', url, offset }, lasting: true };
     }
-    if (!video.storage_path) return { source: fallback, lasting: true };
-    const url = await signedVideoUrl(video.storage_path);
-    if (url) return { source: { status: 'file', url, offset }, lasting: true };
+    if (!signing) return { source: fallback, lasting: true };
+    const url = await signing;
+    if (url) {
+      signedPaths.set(url, video.storage_path!);
+      return { source: { status: 'file', url, offset }, lasting: true };
+    }
   } catch {
     /* fall back below */
   }
   return { source: fallback, lasting: false };
 }
 
-export function clipSourceFor(video: Playable): Promise<ClipSource> {
+function clipSourceFor(video: Playable): Promise<ClipSource> {
   const key = cacheKey(video);
-  let pending = cache.get(key);
+  let pending = lruGet(cache, key);
   if (!pending) {
     const attempt: Promise<ClipSource> = resolveSource(video).then(({ source, lasting }) => {
       // A failure that may pass is not kept: the next clip of this song (or «Otra vez») asks again.
@@ -76,14 +84,24 @@ export function clipSourceFor(video: Playable): Promise<ClipSource> {
       return source;
     });
     pending = attempt;
-    cache.set(key, pending);
+    lruSet(cache, key, pending, CACHE_MAX);
   }
   return pending;
+}
+
+/**
+ * REQ-15 · The song's file failed to play from `url`: if it was a remembered signature, forget it, so the next
+ * round signs again (each round signed afresh before). This round keeps its source, as it did.
+ */
+export function forgetFailedClipSource(url: string): void {
+  const path = signedPaths.get(url);
+  if (path) forgetVideoUrl(path);
 }
 
 /** The round screen closed: forget the resolved sources and free the device copies' URLs. */
 export function releaseClipSources(): void {
   cache.clear();
+  signedPaths.clear();
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls.clear();
 }

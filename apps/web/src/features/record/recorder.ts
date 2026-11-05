@@ -66,7 +66,7 @@ export function markFormatBad(mimeType: string): void {
     /* for this visit only */
   }
   remembered.clear();
-  badVersion++;
+  badCount++;
 }
 
 /** Families skipped on this phone (shown in the «i» panel, where they can be tried again). */
@@ -81,11 +81,18 @@ export function clearFailedFormats(): void {
     /* nothing stored */
   }
   remembered.clear();
-  badVersion++;
+  badCount++;
 }
 
-/** Bumped when the marks change: callers that memoise a format include it. */
-export let badVersion = 0;
+let badCount = 0;
+
+/**
+ * Bumped when the marks change: callers that memoise a format include it. REQ-29 · A getter instead of an exported
+ * `let`, so only this module can change it.
+ */
+export function badVersion(): number {
+  return badCount;
+}
 
 /** isTypeSupported answers once per plan (it's asked on every render of the recorder otherwise). */
 const remembered = new Map<string, RecordFormat>();

@@ -100,7 +100,7 @@ function setCap(next: PaceCap): void {
 }
 
 /** Applies a verdict straight away; true when the cap changed (the camera reopens lighter). */
-export function learnPace(verdict: PaceVerdict, resolution: ResolutionClass): boolean {
+function learnPace(verdict: PaceVerdict, resolution: ResolutionClass): boolean {
   const before = paceCap();
   const after = capAfter(before, verdict, resolution);
   if (after === before) return false;

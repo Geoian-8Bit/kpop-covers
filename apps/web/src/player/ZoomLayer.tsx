@@ -1,7 +1,8 @@
-import { motion } from 'motion/react';
-import { useLayoutEffect, useState, type ReactNode } from 'react';
+import { animate, motion, useMotionValue } from 'motion/react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { soft } from '@/lib/motion';
-import { zoomOffsets, type Size, type Zoom } from './zoom';
+import { usePlayer } from './playerStore';
+import { NO_ZOOM, zoomOffsets, type Size, type Zoom } from './zoom';
 
 /**
  * F9 · What a zoom needs from the page: the size of the box the video is shown in, and the video's own size (to
@@ -91,6 +92,67 @@ export function ZoomLayer({
       transition={live ? { duration: 0 } : soft}
       style={{ transformOrigin: '50% 50%' }}
     >
+      {children}
+    </motion.div>
+  );
+}
+
+/**
+ * REQ-21 · The studio's zoom layer. Same picture as `ZoomLayer`, but while a gesture runs (`live`, `zoom` null) it
+ * follows the player store straight into motion values (`jump`, no React render per frame). Otherwise each new zoom
+ * glides in with `soft` from the current values, like `ZoomLayer`'s `animate`; the first one lands without a glide.
+ */
+export function FollowZoomLayer({
+  zoom,
+  box,
+  media,
+  live,
+  enabled,
+  children,
+}: {
+  zoom: Zoom | null;
+  box: Size;
+  media: Size | null;
+  live: boolean;
+  enabled: boolean;
+  children: ReactNode;
+}) {
+  const first = zoomOffsets(zoom ?? NO_ZOOM, box, media);
+  const x = useMotionValue(first.x);
+  const y = useMotionValue(first.y);
+  const scale = useMotionValue(first.scale);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (zoom == null) return;
+    const target = zoomOffsets(zoom, box, media);
+    if (!mounted.current || live) {
+      mounted.current = true;
+      x.jump(target.x);
+      y.jump(target.y);
+      scale.jump(target.scale);
+      return;
+    }
+    const runs = [animate(x, target.x, soft), animate(y, target.y, soft), animate(scale, target.scale, soft)];
+    return () => runs.forEach((run) => run.stop());
+  }, [zoom, box, media, live, x, y, scale]);
+
+  // The fingers move the picture: every store change paints it at once (nothing glides under a finger).
+  useEffect(() => {
+    if (!live) return;
+    const follow = (s: ReturnType<typeof usePlayer.getState>) => {
+      if (s.covered) return;
+      const o = zoomOffsets(enabled ? s.zoom : NO_ZOOM, box, media);
+      x.jump(o.x);
+      y.jump(o.y);
+      scale.jump(o.scale);
+    };
+    follow(usePlayer.getState());
+    return usePlayer.subscribe(follow);
+  }, [live, enabled, box, media, x, y, scale]);
+
+  return (
+    <motion.div className="absolute inset-0" style={{ x, y, scale, transformOrigin: '50% 50%' }}>
       {children}
     </motion.div>
   );

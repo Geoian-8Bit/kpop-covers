@@ -162,8 +162,11 @@ export function watchPresentedFrames(source: HTMLVideoElement): FrameWatch {
   };
 }
 
+/** REQ-23 · Asked on every render of the recorder: the answer never changes, so one canvas is made once, not per render. */
+let canvasCapture: boolean | null = null;
 export function canRecordCanvas(): boolean {
-  return typeof (document.createElement('canvas') as CapturableCanvas).captureStream === 'function';
+  canvasCapture ??= typeof (document.createElement('canvas') as CapturableCanvas).captureStream === 'function';
+  return canvasCapture;
 }
 
 export function createCompositor(source: HTMLVideoElement): Compositor {

@@ -9,7 +9,7 @@ import type { ClipWithVideo, EventWithCount, VideoWithClipCount } from './backen
  */
 
 /** Above this a snapshot isn't kept (and the old one goes): localStorage is small and synchronous. */
-export const SNAPSHOT_MAX_CHARS = 120_000;
+const SNAPSHOT_MAX_CHARS = 120_000;
 const PREFIX = 'oneshoot.snap.v1.';
 
 type SnapshotStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -88,7 +88,13 @@ function listOf<T>(value: unknown, row: (v: unknown) => T | null, max: number): 
 
 /** What is kept of the group: no invite code (nothing reads it, and it needn't sit in storage). */
 export function crewSnapshot(crew: Crew): Crew {
-  return { id: crew.id, name: crew.name, created_at: crew.created_at, created_by: crew.created_by, invite_code: '' };
+  return {
+    id: crew.id,
+    name: crew.name,
+    created_at: crew.created_at,
+    created_by: crew.created_by,
+    invite_code: '',
+  };
 }
 
 export function parseCrew(value: unknown): Crew | null {
@@ -110,8 +116,17 @@ export function stripInlineThumbnail(url: string | null | undefined): string | n
   return url && !url.startsWith('data:') ? url : null;
 }
 
+/**
+ * A kept library row: only the card's columns (REQ-16's file columns stay out: the snapshot never opens the studio,
+ * and a cloud path has no business on disk). REQ-14 · `poster_inline`/`poster_rev` let the poster combine by id.
+ */
+export type KeptLibraryRow = Omit<
+  VideoWithClipCount,
+  'storage_path' | 'file_size' | 'file_offset_seconds' | 'file_duration_seconds' | 'updated_at'
+>;
+
 /** The library list as kept: only the card's columns, no inline posters. */
-export function libraryRowsSnapshot(list: readonly VideoWithClipCount[]): VideoWithClipCount[] {
+export function libraryRowsSnapshot(list: readonly VideoWithClipCount[]): KeptLibraryRow[] {
   return list.map((v) => ({
     id: v.id,
     crew_id: v.crew_id,
@@ -124,16 +139,31 @@ export function libraryRowsSnapshot(list: readonly VideoWithClipCount[]): VideoW
     created_at: v.created_at,
     file_name: v.file_name,
     aspect_ratio: typeof v.aspect_ratio === 'number' ? v.aspect_ratio : null,
+    poster_inline: v.poster_inline === true,
+    poster_rev: typeof v.poster_rev === 'string' ? v.poster_rev : null,
     clips: [{ count: num(v.clips?.[0]?.count) ? v.clips[0]!.count : 0 }],
   }));
 }
 
 function libraryRow(v: unknown): VideoWithClipCount | null {
   if (!isRow(v)) return null;
-  const { id, crew_id, title, artist, source, youtube_id, thumbnail_url, duration_seconds, created_at, file_name, clips } = v;
+  const {
+    id,
+    crew_id,
+    title,
+    artist,
+    source,
+    youtube_id,
+    thumbnail_url,
+    duration_seconds,
+    created_at,
+    file_name,
+    clips,
+  } = v;
   if (!str(id) || !str(crew_id) || !str(title) || !str(created_at)) return null;
   if (source !== 'youtube' && source !== 'upload') return null;
-  if (!strOrNull(artist) || !strOrNull(youtube_id) || !strOrNull(thumbnail_url) || !strOrNull(file_name)) return null;
+  if (!strOrNull(artist) || !strOrNull(youtube_id) || !strOrNull(thumbnail_url) || !strOrNull(file_name))
+    return null;
   if (!numOrNull(duration_seconds)) return null;
   const count = Array.isArray(clips) && isRow(clips[0]) && num(clips[0].count) ? clips[0].count : 0;
   return {
@@ -149,6 +179,15 @@ function libraryRow(v: unknown): VideoWithClipCount | null {
     file_name,
     // Older kept copies have no proportion: unknown.
     aspect_ratio: typeof v.aspect_ratio === 'number' ? v.aspect_ratio : null,
+    // REQ-14 · Older kept copies have no poster columns: no inline poster to combine.
+    poster_inline: v.poster_inline === true,
+    poster_rev: typeof v.poster_rev === 'string' ? v.poster_rev : null,
+    // Not kept (see `KeptLibraryRow`): only shown, never opened from.
+    storage_path: null,
+    file_size: null,
+    file_offset_seconds: null,
+    file_duration_seconds: null,
+    updated_at: created_at,
     clips: [{ count }],
   };
 }
@@ -160,11 +199,12 @@ export function parseLibrary(value: unknown, crewId: string): VideoWithClipCount
 }
 
 /**
- * P3 · What the studio needs before its first paint, from the library's row: only for a YouTube entry with no
- * linked file (the list has no file columns; with no file they are all empty). Anything else waits for the row.
+ * P3 · What the studio needs before its first paint, from the library's row. REQ-16 · The row carries the file's
+ * columns, so this serves every video (uploaded and linked too); `thumbnail_url` is the combined poster when the
+ * caller has it. A row without them (a list cached before they existed) waits for the real row.
  */
 export function videoFromLibraryRow(row: VideoWithClipCount | undefined): Video | undefined {
-  if (!row || row.source !== 'youtube' || !row.youtube_id || row.file_name) return undefined;
+  if (!row || row.updated_at === undefined || row.storage_path === undefined) return undefined;
   return {
     id: row.id,
     crew_id: row.crew_id,
@@ -173,17 +213,20 @@ export function videoFromLibraryRow(row: VideoWithClipCount | undefined): Video 
     source: row.source,
     youtube_id: row.youtube_id,
     thumbnail_url: row.thumbnail_url,
+    list_thumbnail_url: row.poster_inline ? null : row.thumbnail_url,
+    poster_inline: row.poster_inline,
+    poster_rev: row.poster_rev,
     duration_seconds: row.duration_seconds,
     created_at: row.created_at,
-    file_name: null,
-    file_size: null,
-    file_duration_seconds: null,
-    file_offset_seconds: null,
-    storage_path: null,
+    file_name: row.file_name,
+    file_size: row.file_size,
+    file_duration_seconds: row.file_duration_seconds,
+    file_offset_seconds: row.file_offset_seconds,
+    storage_path: row.storage_path,
     archived_at: null,
     aspect_ratio: row.aspect_ratio ?? null,
     created_by: null,
-    updated_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -191,11 +234,21 @@ export function videoFromLibraryRow(row: VideoWithClipCount | undefined): Video 
 
 function quickClip(v: unknown): ClipWithVideo | null {
   if (!isRow(v)) return null;
-  if (!str(v.id) || !str(v.crew_id) || !str(v.video_id) || !str(v.name) || !str(v.color) || !str(v.created_at)) return null;
+  if (
+    !str(v.id) ||
+    !str(v.crew_id) ||
+    !str(v.video_id) ||
+    !str(v.name) ||
+    !str(v.color) ||
+    !str(v.created_at)
+  )
+    return null;
   if (!num(v.start_seconds) || !num(v.end_seconds) || !num(v.speed)) return null;
   if (typeof v.mirrored !== 'boolean' || typeof v.is_pinned !== 'boolean') return null;
   const video = v.video;
-  if (video !== null && !(isRow(video) && str(video.id) && str(video.title) && str(video.source))) return null;
+  if (video !== null && !(isRow(video) && str(video.id) && str(video.title) && str(video.source)))
+    return null;
+  // REQ-29 · Kept: every field read above was checked by hand; TypeScript can't follow those guards.
   return v as unknown as ClipWithVideo;
 }
 

@@ -1,143 +1,63 @@
-import {
-  clamp,
-  clampAdjust,
-  formatSpeed,
-  formatTime,
-  hasLinkedFile,
-  MIN_LOOP_LENGTH,
-  round3,
-  songTimeAt,
-  takeRangeToSong,
-  type Clip,
-  type Note,
-  type Video,
-} from '@coverscape/shared';
+import { formatSpeed, hasLinkedFile, type Clip, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { BookmarkPlus, FileVideo, TriangleAlert, X } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
+import { FileVideo, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button } from '@/components/ui/Button';
-import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
-import { askWho, currentMemberId, useMe, useMembers } from '@/data/members';
-import { useCreateNote, useDeleteNote, useNotes, useUpdateNote } from '@/data/notes';
-import { useUpdateTakeReview, type TakeItem, type TakeReviewPatch } from '@/data/takes';
+import { useMe, useMembers } from '@/data/members';
+import type { TakeItem } from '@/data/takes';
 import { useFileSource } from '@/features/studio/fileSource';
-import { SaveClipDialog, type ClipDraft } from '@/features/studio/SaveClipDialog';
+import { SaveClipDialog } from '@/features/studio/SaveClipDialog';
 import { takeDateLabel } from '@/features/takes/takeRules';
 import { cn } from '@/lib/cn';
 import { soft } from '@/lib/motion';
-import { friendlyError } from '@/lib/supabase';
 import { useBackToClose } from '@/lib/useBackToClose';
-import { hasRange, useReview } from '@/player/store';
+import { useReview } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
-import { CompareStage, type ChosenSplit } from './CompareStage';
-import { useTapAnyFinger } from './tapAnyFinger';
-import { PlayCrest, QuickStrip, ReviewSettings, ReviewTimeline, ReviewTransport, SettingsButton, SoundPill } from './ReviewControls';
+import { QuickStrip } from './ReviewControls';
+import { ReviewBar, ReviewFooter } from './ReviewBar';
+import { OVERLAY_NEEDS_FILE, ReviewHeader } from './ReviewHeader';
 import { OriginalFile, OriginalYouTube, TakeVideo, useReviewClock } from './ReviewMedia';
+import { readPrefs, writePrefs } from './reviewPrefs';
 import {
   aspectOf,
-  atNoteMoment,
   bottomSheetHeight,
   coverPanelWidth,
-  YOUTUBE_MIN_BOX,
-  clipsInTake,
-  crossedNote,
   fitOf,
   isValidSketch,
-  NO_FIT,
-  parseViewPrefs,
-  sameFit,
-  takeLength,
-  takeNotes,
-  takeTiming,
   overlayStartOpacity,
+  parseViewPrefs,
+  takeLength,
+  takeTiming,
+  YOUTUBE_MIN_BOX,
   type CompareMode,
-  type Fit,
   type ViewPrefs,
 } from './reviewRules';
-import { captureFrame, TakeNoteComposer, type ComposerDraft, type ComposerValues } from './TakeNoteComposer';
+import { ReviewSettingsPanel } from './ReviewSettingsPanel';
+import { NoteArea, ReviewCompareStage } from './ReviewStage';
+import { createStageStore, type SaveStatus } from './reviewStageStore';
 import { NoteAlert, TakeNoteCard } from './TakeNoteCard';
+import { TakeNoteComposer } from './TakeNoteComposer';
+import { useTapAnyFinger } from './tapAnyFinger';
+import { useClipSave } from './useClipSave';
+import { useFitAndSplit } from './useFitAndSplit';
+import { useReviewKeys } from './useReviewKeys';
+import { useSize } from '@/lib/useSize';
+import { BAR_H, LOW_SCREEN, useInsets, useMatch, WIDE_SCREEN } from './useReviewLayout';
+import { useReviewNotes } from './useReviewNotes';
+import { useSyncAdjust } from './useSyncAdjust';
+import { useTakeSaver } from './useTakeSaver';
 
 /**
  * F5 · «Repaso»: the take next to (or over) the original, in sync, to find what to fix. F6 · notes on the take,
  * with a drawing over the frame. A screen of its own above the studio (Escape or back closes it).
+ *
+ * REQ-25 · What a gesture changes many times a second (the overlay fit, the hinge, the take's rect, the fine sync)
+ * lives in stores read only where it is painted; this screen keeps the settled values it saves. REQ-27 · Its hooks
+ * and pieces live in their own files (notes, keys, saving, layout, header, bars, settings, stage).
  */
 
-const PREFS_KEY = 'oneshoot.review.v1';
-export const OVERLAY_NEEDS_FILE = 'Necesita el archivo del vídeo: vincúlalo en el estudio.';
-
-function readPrefs(): ViewPrefs {
-  let prefs: ViewPrefs;
-  try {
-    prefs = parseViewPrefs(localStorage.getItem(PREFS_KEY));
-  } catch {
-    prefs = parseViewPrefs(null);
-  }
-  // Opening straight in «Superpuesto»: never with the one on top hiding the other.
-  return prefs.mode === 'overlay' ? { ...prefs, opacity: overlayStartOpacity(prefs.opacity) } : prefs;
-}
-
-function writePrefs(prefs: ViewPrefs) {
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    /* private mode: this visit only */
-  }
-}
-
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
-
-/** Debounced, optimistic save of one of the review's values on the take. */
-function useTakeSaver(take: TakeItem, onError: (message: string) => void) {
-  const mutation = useUpdateTakeReview();
-  const [status, setStatus] = useState<SaveStatus>('idle');
-  const pending = useRef<TakeReviewPatch | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const mounted = useRef(true);
-  const mutate = mutation.mutate;
-  const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
-
-  const flush = useCallback(() => {
-    clearTimeout(timer.current);
-    const patch = pending.current;
-    pending.current = null;
-    if (!patch) return;
-    if (mounted.current) setStatus('saving');
-    mutate(
-      { take, patch },
-      {
-        onSuccess: () => {
-          if (mounted.current) setStatus('saved');
-        },
-        onError: (err) => {
-          if (mounted.current) setStatus('error');
-          onErrorRef.current(friendlyError(err));
-        },
-      },
-    );
-  }, [mutate, take]);
-
-  const save = useCallback(
-    (patch: TakeReviewPatch, wait = 600) => {
-      pending.current = { ...pending.current, ...patch };
-      clearTimeout(timer.current);
-      timer.current = setTimeout(flush, wait);
-    },
-    [flush],
-  );
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      flush(); // closing within the wait still saves
-    };
-  }, [flush]);
-
-  return { save, status };
-}
+export { OVERLAY_NEEDS_FILE };
 
 export function ReviewScreen({
   video,
@@ -156,10 +76,6 @@ export function ReviewScreen({
   const toast = useToast();
   const members = useMembers();
   const me = useMe();
-  const notesQuery = useNotes(video.id);
-  const createNote = useCreateNote();
-  const updateNote = useUpdateNote();
-  const deleteNote = useDeleteNote();
   const titleId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const takeVideo = useRef<HTMLVideoElement | null>(null);
@@ -193,75 +109,57 @@ export function ReviewScreen({
   // ── Store: a fresh review for this take; the media attach right after (their effects run later). ──
   useLayoutEffect(() => {
     useReview.getState().begin({
-      timing: { songStart: timing.songStart, speed: timing.speed, adjust: timing.adjust, offset: 0, onFile: false },
+      timing: {
+        songStart: timing.songStart,
+        speed: timing.speed,
+        adjust: timing.adjust,
+        offset: 0,
+        onFile: false,
+      },
       duration: takeLength(0, take.duration_seconds),
       mirrored: take.mirrored,
     });
     return () => useReview.getState().end();
     // Only when another take opens: fresh values of the same take come through `setTiming`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept (layout effect: the review must begin before paint)
   }, [take.id]);
   useEffect(() => {
     useReview.getState().setTiming({ onFile: source === 'file', offset });
   }, [source, offset]);
   useReviewClock(true);
 
-  // ── Saved with the take: fine sync and overlay fit. ──
+  // ── Saved with the take: fine sync and overlay fit. REQ-25 · Live values in the stores, settled ones saved. ──
+  const [stage] = useState(() => createStageStore(fitOf(take)));
   const showSaveError = useCallback((message: string) => toast(message, 'error'), [toast]);
-  const adjustSaver = useTakeSaver(take, showSaveError);
-  const fitSaver = useTakeSaver(take, showSaveError);
-  const [adjust, setAdjust] = useState(timing.adjust);
-  const adjustTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  /** The adjustment the original was last put in place for (a let-go reported twice jumps once). */
-  const alignedAdjust = useRef(timing.adjust);
-  const alignFor = (value: number) => {
-    if (value === alignedAdjust.current) return;
-    alignedAdjust.current = value;
-    useReview.getState().alignOriginal();
-  };
-  useEffect(() => () => clearTimeout(adjustTimer.current), []);
-  const onAdjust = (value: number, settled: boolean | 'soon' = true) => {
-    const next = clampAdjust(value);
-    setAdjust(next);
-    clearTimeout(adjustTimer.current);
-    if (settled === 'soon') {
-      // ±0,01 taps: one jump of the original once they stop (each would make YouTube load again).
-      useReview.setState({ timing: { ...useReview.getState().timing, adjust: next } });
-      adjustTimer.current = setTimeout(() => alignFor(next), 300);
-      adjustSaver.save({ sync_adjust_seconds: next });
-      return;
-    }
-    // While the slider moves only the timing changes (a jump per step would make YouTube load over and over); the
-    // original is put in place once, when it is let go.
-    const r = useReview.getState();
-    useReview.setState({ timing: { ...r.timing, adjust: next } });
-    if (settled) alignFor(next);
-    adjustSaver.save({ sync_adjust_seconds: next });
-  };
-  const [fit, setFit] = useState<Fit>(() => fitOf(take));
-  const savedFit = useRef(fitOf(take));
-  const onFit = (next: Fit, settled: boolean) => {
-    setFit(next);
-    if (settled && !sameFit(next, savedFit.current)) {
-      savedFit.current = next;
-      fitSaver.save({ fit_scale: next.scale, fit_x: next.x, fit_y: next.y }, 500);
-    }
-  };
+  const adjustSaver = useTakeSaver(take, showSaveError, (adjustStatus: SaveStatus) =>
+    stage.setState({ adjustStatus }),
+  );
+  const fitSaver = useTakeSaver(take, showSaveError, (fitStatus: SaveStatus) =>
+    stage.setState({ fitStatus }),
+  );
+  const onAdjust = useSyncAdjust(timing.adjust, adjustSaver.save);
+  const fitAndSplit = useFitAndSplit(stage, take, fitSaver.save);
 
   // ── Notes of this take ──
-  const notes = useMemo(() => takeNotes(notesQuery.data ?? [], take.id), [notesQuery.data, take.id]);
-  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
-  const openNote = openNoteId ? (notes.find((n) => n.id === openNoteId) ?? null) : null;
-  const [sketchShown, setSketchShown] = useState(true);
-  // P1 · A boolean of the clock, not the clock: the screen repaints when the take reaches or leaves the note's
-  // moment, not 60 times a second.
-  const noteSeconds = openNote?.take_seconds;
-  const atOpenNote = useReview((s) => atNoteMoment(s.time, noteSeconds));
-  const [alert, setAlert] = useState<Note | null>(null);
-  const [composer, setComposer] = useState<ComposerDraft | null>(null);
+  const {
+    notes,
+    openNoteId,
+    setOpenNoteId,
+    openNote,
+    sketchShown,
+    setSketchShown,
+    atOpenNote,
+    alert,
+    composer,
+    setComposer,
+    showNote,
+    newNote,
+    editNote,
+    saveNote,
+    setNoteStatus,
+    removeNote,
+  } = useReviewNotes(video, take, takeVideo, toast);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** «Separados»: the share the hinge was dragged to (this visit only); null: the best for these two pictures. */
-  const [split, setSplit] = useState<ChosenSplit | null>(null);
   /** A slider of the panel over the take is being dragged. */
   const [sliding, setSliding] = useState(false);
   // 51 · A phone on its side (the usual way to watch it big) gets the stage at full height and a one-row bar.
@@ -271,7 +169,6 @@ export function ReviewScreen({
   const room = useSize(roomRef);
   const insetsRef = useRef<HTMLDivElement>(null);
   const insets = useInsets(insetsRef, room);
-  const [takeRect, setTakeRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const settingsTitleRef = useRef<HTMLHeadingElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   // Focus goes into the settings when they open and back to their button when they close.
@@ -280,7 +177,8 @@ export function ReviewScreen({
     if (settingsOpen && !wasOpen.current) settingsTitleRef.current?.focus();
     else if (!settingsOpen && wasOpen.current) {
       const active = document.activeElement;
-      if (!active || active === document.body || !rootRef.current?.contains(active)) settingsButtonRef.current?.focus();
+      if (!active || active === document.body || !rootRef.current?.contains(active))
+        settingsButtonRef.current?.focus();
     }
     wasOpen.current = settingsOpen;
   }, [settingsOpen]);
@@ -288,13 +186,8 @@ export function ReviewScreen({
   const takeError = useReview((s) => s.takeError);
   const originalError = useReview((s) => s.originalError);
   const reduceMotion = useReducedMotion();
-  const duration = useReview((s) => s.duration);
   const mirrorTake = useReview((s) => s.mirrorTake);
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
-  const notesRef = useRef(notes);
-  notesRef.current = notes;
-  const loop = useReview((s) => s.loop);
-  const activeClipId = useReview((s) => s.activeClipId);
   // F9 · The zooms are read by the stage (ReviewCompareStage) and the dialog: a gesture never repaints this screen.
 
   // ── F9 · Zoom: the take always (a file of this phone or the cloud); the original only as a file. ──
@@ -310,123 +203,7 @@ export function ReviewScreen({
   }, [toast]);
 
   // ── F8 · A range marked on the take, saved as a clip of the song: it serves in every take and in practice. ──
-  const [savingClip, setSavingClip] = useState(false);
-  const [clipDraft, setClipDraft] = useState<ClipDraft | null>(null);
-  const openSaveRange = useCallback(() => {
-    const r = useReview.getState();
-    if (!hasRange(r.loop)) {
-      toast('Marca A y B en la toma primero', 'info');
-      return;
-    }
-    const song = takeRangeToSong({ songStart: timing.songStart, speed: timing.speed, adjust }, r.loop);
-    if (song.end - song.start < MIN_LOOP_LENGTH) {
-      toast('El tramo es demasiado corto para un clip', 'info');
-      return;
-    }
-    r.pause();
-    // The take's speed and mirror: the range is practised as it was danced.
-    setClipDraft({ start: song.start, end: song.end, speed: timing.speed, mirrored: take.mirrored });
-    setSavingClip(true);
-  }, [adjust, take.mirrored, timing.songStart, timing.speed, toast]);
-
-  useEffect(() => {
-    let last = useReview.getState().time;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = useReview.subscribe((s) => {
-      const now = s.time;
-      if (s.playing && !s.scrubbing) {
-        const hit = crossedNote(notesRef.current, last, now);
-        if (hit) {
-          setAlert(hit);
-          clearTimeout(timer);
-          timer = setTimeout(() => setAlert(null), 4200);
-        }
-      }
-      last = now;
-    });
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
-  }, []);
-
-  const showNote = useCallback((note: Note) => {
-    const review = useReview.getState();
-    review.pause();
-    review.seek(Number(note.take_seconds ?? 0));
-    setAlert(null);
-    setSketchShown(true);
-    setOpenNoteId(note.id);
-  }, []);
-
-  const newNote = useCallback(() => {
-    const review = useReview.getState();
-    review.pause();
-    const takeSeconds = review.time;
-    askWho('Así tus notas llevan tu nombre. Se recuerda en este dispositivo.', () => {
-      setComposer({
-        mode: 'new',
-        takeSeconds,
-        songSeconds: Math.max(0, songTimeAt(review.timing, takeSeconds)),
-        frame: captureFrame(takeVideo.current),
-      });
-    });
-  }, []);
-
-  // «Dibujar de nuevo» draws over the note's own frame: go there first, then capture.
-  const editNote = (note: Note) => {
-    const review = useReview.getState();
-    review.pause();
-    const at = Number(note.take_seconds);
-    const el = takeVideo.current;
-    if (!el || !Number.isFinite(at) || Math.abs(el.currentTime - at) < 0.05) {
-      setComposer({ mode: 'edit', note, frame: captureFrame(el) });
-      return;
-    }
-    const done = () => {
-      el.removeEventListener('seeked', done);
-      setComposer({ mode: 'edit', note, frame: captureFrame(el) });
-    };
-    el.addEventListener('seeked', done);
-    review.seek(at);
-  };
-
-  async function saveNote(values: ComposerValues) {
-    const draft = composer;
-    if (!draft) return;
-    try {
-      if (draft.mode === 'new') {
-        const created = await createNote.mutateAsync({
-          video_id: video.id,
-          crew_id: video.crew_id,
-          at_seconds: round3(Math.max(0, draft.songSeconds)),
-          body: values.body,
-          author_member_id: currentMemberId(members.data),
-          take_id: take.id,
-          take_seconds: round3(clamp(draft.takeSeconds, 0, 7200)),
-          category: values.category,
-          for_member_id: values.forMemberId,
-          sketch: values.sketch ?? null,
-        });
-        toast('Nota guardada en la toma', 'success');
-        setOpenNoteId(created.id);
-      } else {
-        await updateNote.mutateAsync({
-          note: draft.note,
-          patch: {
-            body: values.body,
-            category: values.category,
-            for_member_id: values.forMemberId,
-            ...(values.sketch !== undefined ? { sketch: values.sketch } : {}),
-          },
-        });
-        toast('Nota actualizada', 'success');
-      }
-      setComposer(null);
-    } catch (err) {
-      throw new Error(friendlyError(err), { cause: err });
-    }
-  }
+  const { savingClip, setSavingClip, clipDraft, openSaveRange } = useClipSave(timing, take.mirrored, toast);
 
   const close = useCallback(() => onClose(), [onClose]);
   // The X answers to any finger (a thumb may rest on the video while the phone is on its side).
@@ -435,7 +212,7 @@ export function ReviewScreen({
   useBackToClose(true, close, composer != null || savingClip);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   useBackToClose(settingsOpen, closeSettings);
-  const closeNote = useCallback(() => setOpenNoteId(null), []);
+  const closeNote = useCallback(() => setOpenNoteId(null), [setOpenNoteId]);
   useBackToClose(openNoteId != null, closeNote, composer != null);
 
   // ── Focus, page scroll and keys ──
@@ -449,108 +226,15 @@ export function ReviewScreen({
       previous?.focus?.();
     };
   }, []);
-
-  /** Which of the settings and a note opened last (Escape closes it first, as «Atrás» does). */
-  const openedOrder = useRef<('settings' | 'note')[]>([]);
-  useEffect(() => {
-    const order = openedOrder.current.filter((k) => (k === 'settings' ? settingsOpen : openNoteId != null));
-    if (settingsOpen && !order.includes('settings')) order.push('settings');
-    if (openNoteId != null && !order.includes('note')) order.push('note');
-    openedOrder.current = order;
-  }, [settingsOpen, openNoteId]);
-  const stateRef = useRef({ composer, openNoteId, settingsOpen });
-  stateRef.current = { composer, openNoteId, settingsOpen };
-  useEffect(() => {
-    let swallowSpaceUp = false;
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === ' ' && swallowSpaceUp) {
-        swallowSpaceUp = false;
-        e.preventDefault();
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      const st = stateRef.current;
-      if (st.composer || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      // Another layer on top (the «¿Quién eres?» dialog…) owns the keys.
-      const modals = [...document.querySelectorAll('[aria-modal="true"]')];
-      if (modals.some((m) => m !== rootRef.current)) return;
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        // Same order as «Atrás»: the last one opened goes first.
-        const top = openedOrder.current.at(-1);
-        if (top === 'settings' && st.settingsOpen) setSettingsOpen(false);
-        else if (st.openNoteId) setOpenNoteId(null);
-        else if (st.settingsOpen) setSettingsOpen(false);
-        else close();
-        return;
-      }
-      if (e.key === 'Tab') {
-        trapFocus(e, rootRef.current);
-        return;
-      }
-      if (target && (target.isContentEditable || /^(TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
-      const onControl = target?.closest('[role="slider"], [role="separator"], [role="radiogroup"], [role="group"], input[type="range"]');
-      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      // A zoom panel moves its view with the arrows itself (when zoomed); on a whole picture they still seek.
-      if (key.startsWith('Arrow') && onControl && !onControl.hasAttribute('data-zoom-panel')) return;
-      if (key === ' ' && target?.closest('[role="radio"], [role="switch"], input')) return;
-      if (key === ' ' && target?.closest('button, a[href]')) {
-        swallowSpaceUp = true;
-        e.preventDefault();
-      }
-      if (e.repeat && !key.startsWith('Arrow') && key !== ',' && key !== '.') return;
-      const r = useReview.getState();
-      let handled = true;
-      switch (key) {
-        case ' ':
-        case 'k':
-          r.togglePlay();
-          break;
-        case ',':
-          r.step(-1);
-          break;
-        case '.':
-          r.step(1);
-          break;
-        case 'ArrowLeft':
-          r.seek(r.time - (e.shiftKey ? 5 : 1));
-          break;
-        case 'ArrowRight':
-          r.seek(r.time + (e.shiftKey ? 5 : 1));
-          break;
-        case 'a':
-        case '[':
-          r.markStart();
-          break;
-        case 'b':
-        case ']':
-          r.markEnd();
-          break;
-        case 'l':
-          if (!r.toggleLoop()) toast('Marca A y B para repetir un tramo', 'info');
-          break;
-        case 'n':
-          newNote();
-          break;
-        default:
-          handled = false;
-      }
-      if (handled) e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [close, newNote, toast]);
+  useReviewKeys(
+    rootRef,
+    { composer, openNoteId, settingsOpen },
+    { closeSettings, closeNote, close, newNote, toast },
+  );
 
   const memberName = take.member_id
     ? (members.data?.find((m) => m.id === take.member_id)?.name ?? 'Antiguo miembro')
     : 'Sin nombre';
-  const inTake = useMemo(() => clipsInTake(clips, { ...take, sync_adjust_seconds: adjust }, duration), [clips, take, adjust, duration]);
 
   const original =
     source === 'file' && file.status === 'ready' ? (
@@ -559,7 +243,10 @@ export function ReviewScreen({
       <OriginalYouTube
         videoId={video.youtube_id!}
         onRateAdjusted={(actual) =>
-          toast(`YouTube no admite esa velocidad en este vídeo: el original va a ${formatSpeed(actual)} y se recoloca de vez en cuando.`, 'info')
+          toast(
+            `YouTube no admite esa velocidad en este vídeo: el original va a ${formatSpeed(actual)} y se recoloca de vez en cuando.`,
+            'info',
+          )
         }
         onStuck={() => toast('YouTube no ha arrancado: toca ▶ otra vez para seguir.', 'info')}
       />
@@ -571,18 +258,15 @@ export function ReviewScreen({
       <div className="seigaiha grid size-full place-items-center p-4 text-center">
         <p className="flex max-w-[16rem] flex-col items-center gap-2 text-[13px] text-washi-muted">
           <FileVideo className="size-6 text-kin-300" />
-          El archivo del vídeo no está en este dispositivo ni en la nube. Vincúlalo en el estudio para compararlo.
+          El archivo del vídeo no está en este dispositivo ni en la nube. Vincúlalo en el estudio para
+          compararlo.
         </p>
       </div>
     );
 
   // The drawing is a still of its moment: shown only while the take stands at that moment (review round 1).
   const sketch =
-    openNote &&
-    sketchShown &&
-    !playing &&
-    isValidSketch(openNote.sketch) &&
-    atOpenNote ? (
+    openNote && sketchShown && !playing && isValidSketch(openNote.sketch) && atOpenNote ? (
       <img
         src={openNote.sketch}
         alt={`Dibujo de la nota: ${openNote.body}`}
@@ -594,20 +278,18 @@ export function ReviewScreen({
   const loopMissing = () => toast('Marca A y B para repetir un tramo', 'info');
   const overlayRefused = () => toast(`«Superpuesto» no va con YouTube. ${OVERLAY_NEEDS_FILE}`, 'info');
   const settingsProps = {
+    stage,
+    take,
+    allClips: clips,
     mode,
     prefs,
     onPrefs: setPrefs,
-    split: split?.value ?? null,
-    onAutoSplit: () => setSplit(null),
-    onResetFit: () => onFit(NO_FIT, true),
-    fitStatus: fitSaver.status,
-    adjust,
+    onAutoSplit: fitAndSplit.onAutoSplit,
+    onResetFit: fitAndSplit.onResetFit,
     onAdjust,
-    adjustStatus: adjustSaver.status,
     hasOriginal,
     originalIsYouTube: source === 'youtube',
     practisedMirrored: take.mirrored,
-    clips: inTake,
     canZoomOriginal,
     onSaveRange: openSaveRange,
     compact: low,
@@ -628,8 +310,6 @@ export function ReviewScreen({
   const belowMax = sheetBelow ? bottomSheetHeight(room.height - BAR_H - insets.bottom, youtube) : 0;
   /** The take's side of a phone on its side (where the panel opens). */
   const takeAtEnd = prefs.order === 'original-first';
-  // Elsewhere, notes, their pop-ups and errors sit over the take, never over YouTube.
-  const noteArea = youtube && mode === 'stacked' ? takeRect : null;
   // A narrow phone in portrait (360 px): no side padding, or YouTube would fall under its minimum.
   const tightPortrait = youtube && !low && !wide && room.width > 0 && room.width - 16 < YOUTUBE_MIN_BOX.width;
 
@@ -644,14 +324,8 @@ export function ReviewScreen({
           onToggleSketch={() => setSketchShown((v) => !v)}
           onClose={() => setOpenNoteId(null)}
           onEdit={() => editNote(openNote)}
-          onStatus={(status) => updateNote.mutate({ note: openNote, patch: { status } }, { onError: (err) => toast(friendlyError(err), 'error') })}
-          onDelete={() => {
-            setOpenNoteId(null);
-            deleteNote.mutate(openNote, {
-              onSuccess: () => toast('Nota borrada', 'success'),
-              onError: (err) => toast(friendlyError(err), 'error'),
-            });
-          }}
+          onStatus={(status) => setNoteStatus(openNote, status)}
+          onDelete={() => removeNote(openNote)}
         />
       )}
     </AnimatePresence>
@@ -680,7 +354,7 @@ export function ReviewScreen({
       </div>
     ) : null;
 
-  const stage = (
+  const stageView = (
     <div
       className={cn(
         // Isolated: whatever the stage draws stays under the controls.
@@ -695,15 +369,20 @@ export function ReviewScreen({
       {!takeAtEnd && strip}
       <div className="relative min-w-0 flex-1">
         <ReviewCompareStage
+          stage={stage}
           mode={mode}
           prefs={prefs}
-          split={split}
-          onSplit={setSplit}
-          fit={fit}
-          onFit={onFit}
+          onSplit={fitAndSplit.onSplit}
+          onFit={fitAndSplit.onFit}
           mirrorTake={mirrorTake}
           mirrorOriginal={mirrorOriginal}
-          take={<TakeVideo url={url} videoRef={takeVideo} onBlocked={() => toast('El móvil no dejó empezar la toma: toca ▶ para reproducirla.', 'info')} />}
+          take={
+            <TakeVideo
+              url={url}
+              videoRef={takeVideo}
+              onBlocked={() => toast('El móvil no dejó empezar la toma: toca ▶ para reproducirla.', 'info')}
+            />
+          }
           original={original}
           originalIsYouTube={youtube}
           takeAspect={takeAspect}
@@ -711,20 +390,19 @@ export function ReviewScreen({
           onTap={() => useReview.getState().togglePlay()}
           isPlaying={() => useReview.getState().playing}
           takeRoom={coverOpen && coverWidth > 0 ? coverWidth : undefined}
-          onTakeRect={setTakeRect}
+          onTakeRect={fitAndSplit.onTakeRect}
           canZoomOriginal={canZoomOriginal}
           onZoom={(which, z) => useReview.getState().setZoom(which, z)}
           onZoomUnavailable={onZoomUnavailable}
           overlayGesture={overlayGesture}
           onOverlayGesture={setOverlayGesture}
         />
-        <div
-          // Over the panel when it is open: a note arriving or an error must show while adjusting.
-          className={cn('pointer-events-none absolute [&>*]:pointer-events-auto', coverOpen ? 'z-40' : 'z-20')}
-          style={noteArea ? { left: noteArea.left, top: noteArea.top, width: noteArea.width, height: noteArea.height } : { inset: 0 }}
-        >
+        {/* Elsewhere, notes, their pop-ups and errors sit over the take, never over YouTube. */}
+        <NoteArea stage={stage} overTake={youtube && mode === 'stacked'} coverOpen={coverOpen}>
           {!coverOpen && noteCard}
-          <AnimatePresence>{alert && !openNote && <NoteAlert key={alert.id} note={alert} onOpen={() => showNote(alert)} />}</AnimatePresence>
+          <AnimatePresence>
+            {alert && !openNote && <NoteAlert key={alert.id} note={alert} onOpen={() => showNote(alert)} />}
+          </AnimatePresence>
           {(takeError || originalError) && (
             <p
               role="alert"
@@ -734,7 +412,7 @@ export function ReviewScreen({
               {takeError ?? originalError}
             </p>
           )}
-        </div>
+        </NoteArea>
       </div>
       {takeAtEnd && strip}
       {coverOpen && (
@@ -743,7 +421,10 @@ export function ReviewScreen({
           initial={{ opacity: 0, x: reduceMotion ? 0 : takeAtEnd ? 24 : -24 }}
           animate={{ opacity: 1, x: 0 }}
           transition={reduceMotion ? { duration: 0.15 } : soft}
-          className={cn('absolute inset-y-0 z-30', takeAtEnd ? 'right-[env(safe-area-inset-right)]' : 'left-[env(safe-area-inset-left)]')}
+          className={cn(
+            'absolute inset-y-0 z-30',
+            takeAtEnd ? 'right-[env(safe-area-inset-right)]' : 'left-[env(safe-area-inset-left)]',
+          )}
           style={{ width: coverWidth }}
         >
           {settingsOpen && (
@@ -753,7 +434,12 @@ export function ReviewScreen({
               className="absolute inset-0 overflow-y-auto overscroll-contain bg-sumi-900 p-3 pt-[max(12px,env(safe-area-inset-top))] transition-opacity duration-150 motion-reduce:transition-none"
               style={{ opacity: sliding ? 0.25 : 1 }}
             >
-              <ReviewSettings {...settingsProps} titleRef={settingsTitleRef} onClose={() => setSettingsOpen(false)} onSliding={setSliding} />
+              <ReviewSettingsPanel
+                {...settingsProps}
+                titleRef={settingsTitleRef}
+                onClose={() => setSettingsOpen(false)}
+                onSliding={setSliding}
+              />
             </section>
           )}
           {noteCard}
@@ -763,25 +449,25 @@ export function ReviewScreen({
   );
 
   const settingsSheet = (
-    <ReviewSettings {...settingsProps} titleRef={settingsTitleRef} onClose={wide ? undefined : () => setSettingsOpen(false)} />
+    <ReviewSettingsPanel
+      {...settingsProps}
+      titleRef={settingsTitleRef}
+      onClose={wide ? undefined : () => setSettingsOpen(false)}
+    />
   );
 
-  /** One row: close, play, time and line, what's heard, settings (a phone on its side, or under the settings). */
+  const toggleSettings = () => setSettingsOpen((v) => !v);
   const bar = (
-    <footer
-      className={cn(
-        'sep-t relative z-20 box-content flex h-14 shrink-0 items-center gap-1 bg-sumi-900 pb-[env(safe-area-inset-bottom)] pl-[max(6px,env(safe-area-inset-left))]',
-        'pr-[max(6px,env(safe-area-inset-right))]',
-      )}
-    >
-      <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" {...closeTap}>
-        <X className="size-6" />
-      </Button>
-      <PlayCrest size="sm" />
-      <ReviewTimeline variant="bar" notes={notes} openNoteId={openNoteId} onNote={showNote} />
-      <SoundPill hasOriginal={hasOriginal} />
-      <SettingsButton ref={settingsButtonRef} open={settingsOpen} onClick={() => setSettingsOpen((v) => !v)} />
-    </footer>
+    <ReviewBar
+      closeTap={closeTap}
+      notes={notes}
+      openNoteId={openNoteId}
+      onNote={showNote}
+      hasOriginal={hasOriginal}
+      settingsOpen={settingsOpen}
+      onSettings={toggleSettings}
+      settingsRef={settingsButtonRef}
+    />
   );
 
   return createPortal(
@@ -802,49 +488,22 @@ export function ReviewScreen({
         aria-hidden
         className="pointer-events-none invisible fixed left-0 top-0 h-0 w-0 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]"
       />
-      {low ? (
-        // A phone on its side: no header, the stage takes the whole height; the title stays for screen readers.
-        <h2 id={titleId} className="sr-only">
-          Repaso · {memberName} · {takeDateLabel(take.recorded_at)}
-        </h2>
-      ) : (
-        <header className="sep-b flex shrink-0 items-center gap-2 bg-sumi-900 pb-1.5 pl-[max(8px,env(safe-area-inset-left))] pr-[max(12px,env(safe-area-inset-right))] pt-[max(6px,env(safe-area-inset-top))]">
-          <Button variant="ghost" size="icon" aria-label="Cerrar el repaso" {...closeTap}>
-            <X className="size-6" />
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="flex items-baseline gap-1.5 truncate font-display text-[19px] font-bold leading-tight">
-              Repaso <span aria-hidden className="text-[14px] text-shu-400">比</span>
-            </h2>
-            <p className="truncate text-[12px] text-washi-muted">
-              {memberName} · {takeDateLabel(take.recorded_at)}
-            </p>
-          </div>
-          {hasOriginal && (
-            <Segmented
-              label="Cómo comparar"
-              layoutId={`review-mode-${take.id}`}
-              size="sm"
-              value={mode}
-              onChange={setMode}
-              onDisabled={overlayRefused}
-              options={[
-                { value: 'stacked', label: 'Separados' },
-                {
-                  value: 'overlay',
-                  label: 'Superpuesto',
-                  disabled: !canOverlay,
-                  ariaLabel: canOverlay ? undefined : `Superpuesto, no disponible: ${OVERLAY_NEEDS_FILE}`,
-                },
-              ]}
-            />
-          )}
-        </header>
-      )}
+      <ReviewHeader
+        low={low}
+        titleId={titleId}
+        subtitle={`${memberName} · ${takeDateLabel(take.recorded_at)}`}
+        closeTap={closeTap}
+        hasOriginal={hasOriginal}
+        layoutId={`review-mode-${take.id}`}
+        mode={mode}
+        onMode={setMode}
+        canOverlay={canOverlay}
+        onOverlayRefused={overlayRefused}
+      />
 
       <div ref={roomRef} className="flex min-h-0 flex-1">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {stage}
+          {stageView}
 
           {low ? (
             bar
@@ -863,40 +522,19 @@ export function ReviewScreen({
               {bar}
             </>
           ) : (
-            <footer className="paper relative z-20 shrink-0 rounded-t-[20px] border-x-0 border-b-0 px-3 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 before:hidden sm:px-5">
-              <div className="mx-auto max-w-2xl">
-                <ReviewTimeline
-                  notes={notes}
-                  openNoteId={openNoteId}
-                  onNote={showNote}
-                  // Portrait: the quick ones share the clock's row (no row of their own: the stage keeps its height).
-                  showTotal={false}
-                  actions={
-                    <>
-                      <SoundPill hasOriginal={hasOriginal} />
-                      <QuickStrip orientation="row" bare {...quickProps} withLoop={false} withMode={false} />
-                    </>
-                  }
-                />
-                {hasRange(loop) && !activeClipId && (
-                  <div className="flex items-center justify-between gap-2 pb-1">
-                    <span className="tabular truncate font-mono text-[12px] text-washi-muted">
-                      A–B {formatTime(loop.start, { tenths: true })}–{formatTime(loop.end, { tenths: true })}
-                    </span>
-                    <Button variant="secondary" size="sm" className="min-h-11" onClick={openSaveRange}>
-                      <BookmarkPlus className="size-4" /> Guardar como clip
-                    </Button>
-                  </div>
-                )}
-                <ReviewTransport
-                  settingsOpen={settingsOpen}
-                  onSettings={() => setSettingsOpen((v) => !v)}
-                  onLoopMissing={loopMissing}
-                  settingsRef={settingsButtonRef}
-                  hideSettings={wide}
-                />
-              </div>
-            </footer>
+            <ReviewFooter
+              notes={notes}
+              openNoteId={openNoteId}
+              onNote={showNote}
+              hasOriginal={hasOriginal}
+              quickProps={quickProps}
+              onSaveRange={openSaveRange}
+              settingsOpen={settingsOpen}
+              onSettings={toggleSettings}
+              onLoopMissing={loopMissing}
+              settingsRef={settingsButtonRef}
+              hideSettings={wide}
+            />
           )}
         </div>
         {asideShown && (
@@ -939,79 +577,3 @@ export function ReviewScreen({
     document.body,
   );
 }
-
-/** F9 · The stage with the review's zooms, read here so a pinch or a wheel turn repaints only the stage. */
-function ReviewCompareStage(props: Omit<ComponentProps<typeof CompareStage>, 'zoomTake' | 'zoomOriginal'>) {
-  const zoomTake = useReview((s) => s.zoomTake);
-  const zoomOriginal = useReview((s) => s.zoomOriginal);
-  return <CompareStage {...props} zoomTake={zoomTake} zoomOriginal={zoomOriginal} />;
-}
-
-/** Below this height (a phone on its side) the review drops its header and keeps one row of controls. */
-const LOW_SCREEN = '(max-height: 520px)';
-/** A computer or tablet: the settings sit beside the stage. */
-const WIDE_SCREEN = '(min-width: 1024px) and (min-height: 521px)';
-
-/** The one-row bar's height (px, without the safe area). */
-const BAR_H = 56;
-
-function useSize(ref: React.RefObject<HTMLElement | null>): { width: number; height: number } {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () =>
-      setSize((s) => (s.width === el.clientWidth && s.height === el.clientHeight ? s : { width: el.clientWidth, height: el.clientHeight }));
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return size;
-}
-
-/** The safe areas (px), read from an element padded by them; read again whenever the room changes (a turn). */
-function useInsets(ref: React.RefObject<HTMLElement | null>, room: { width: number; height: number }) {
-  const [insets, setInsets] = useState({ left: 0, right: 0, bottom: 0 });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const cs = getComputedStyle(el);
-    const next = { left: parseFloat(cs.paddingLeft) || 0, right: parseFloat(cs.paddingRight) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
-    setInsets((s) => (s.left === next.left && s.right === next.right && s.bottom === next.bottom ? s : next));
-  }, [ref, room.width, room.height]);
-  return insets;
-}
-
-function useMatch(query: string): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const list = window.matchMedia(query);
-      list.addEventListener('change', onChange);
-      return () => list.removeEventListener('change', onChange);
-    },
-    () => window.matchMedia(query).matches,
-    () => false,
-  );
-}
-
-function trapFocus(event: KeyboardEvent, root: HTMLElement | null) {
-  if (!root) return;
-  const nodes = [
-    ...root.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ].filter((n) => n.offsetParent !== null);
-  if (!nodes.length) return;
-  const first = nodes[0]!;
-  const last = nodes[nodes.length - 1]!;
-  const active = document.activeElement;
-  if (event.shiftKey && (active === first || !root.contains(active) || active === root)) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && (active === last || !root.contains(active))) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-

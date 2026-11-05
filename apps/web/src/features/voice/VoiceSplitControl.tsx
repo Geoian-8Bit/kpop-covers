@@ -5,8 +5,6 @@ import { GROUP_LABEL, ModeSeals, VoiceNote } from './controlParts';
 import { VoiceOnda } from './VoiceOnda';
 import type { VoiceMode } from './voiceRules';
 
-export type { VoiceMode } from './voiceRules';
-
 export interface VoiceSplitControlProps {
   mode: VoiceMode;
   onChange: (mode: VoiceMode) => void;

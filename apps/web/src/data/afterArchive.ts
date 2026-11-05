@@ -17,6 +17,8 @@ const CROSS_FEATURE_LISTS = [
   ['wishes'],
   ['wish-interest'],
   ['poll-votes'],
+  // REQ-19 · The playable row of each song of a round, so an archived song reaches the round on its next read.
+  ['video-play'],
 ] as const;
 
 export function invalidateClipPickers(queryClient: QueryClient): void {

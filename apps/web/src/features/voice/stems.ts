@@ -53,6 +53,17 @@ export function onStemsChange(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+const failListeners = new Set<(sources: StemSources) => void>();
+
+/**
+ * REQ-15 · Told when a pair of tracks failed to load: their signed URLs may be remembered (and reused for hours), so
+ * the studio forgets them and the next signature is a fresh one, as every signature was before.
+ */
+export function onStemsFail(listener: (sources: StemSources) => void): () => void {
+  failListeners.add(listener);
+  return () => failListeners.delete(listener);
+}
+
 // ───────────────────────── Followers ─────────────────────────
 
 type PitchMedia = HTMLMediaElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean };
@@ -210,6 +221,7 @@ export function createStemPlayer(
     failed = true;
     for (const { el } of tracks) el.pause();
     events.onFail?.();
+    failListeners.forEach((l) => l(sources));
   };
 
   const MASTER_EVENTS = ['play', 'playing', 'waiting', 'seeked', 'ratechange', 'volumechange', 'ended'] as const;

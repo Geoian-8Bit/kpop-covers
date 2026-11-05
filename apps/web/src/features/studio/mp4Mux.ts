@@ -9,6 +9,8 @@
  * Pure (bytes in, bytes out): no DOM, testable in Node.
  */
 
+import { aacLcConfig, aacRateIndex, descriptorBytes, MATRIX, runLength } from '@/lib/mp4/boxes';
+
 export interface MuxSample {
   data: Uint8Array;
   /** Presentation time, µs. Video samples come in decode order. */
@@ -126,8 +128,6 @@ class Writer {
   }
 }
 
-const MATRIX = [0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000];
-
 // ───────────── Track tables ─────────────
 
 interface TrackPlan {
@@ -161,7 +161,10 @@ function planVideo(track: MuxVideoTrack, id: number): TrackPlan {
   const dts = sorted;
   const durations: number[] = [];
   for (let i = 0; i < dts.length; i++) {
-    const next = i + 1 < dts.length ? dts[i + 1]! : dts[i]! + Math.max(1, toTicks(s[s.length - 1]!.duration, VIDEO_TIMESCALE));
+    const next =
+      i + 1 < dts.length
+        ? dts[i + 1]!
+        : dts[i]! + Math.max(1, toTicks(s[s.length - 1]!.duration, VIDEO_TIMESCALE));
     durations.push(Math.max(1, next - dts[i]!));
   }
   const offsets = pts.map((p, i) => p - dts[i]!);
@@ -223,18 +226,13 @@ function chunkTrack(plan: TrackPlan) {
     t += plan.durations[i]!;
   }
   if (plan.durations.length > first) {
-    plan.chunks.push({ first, count: plan.durations.length - first, start: chunkStart / plan.timescale, offset: 0 });
+    plan.chunks.push({
+      first,
+      count: plan.durations.length - first,
+      start: chunkStart / plan.timescale,
+      offset: 0,
+    });
   }
-}
-
-function runs(values: readonly number[]): [count: number, value: number][] {
-  const out: [number, number][] = [];
-  for (const v of values) {
-    const last = out[out.length - 1];
-    if (last && last[1] === v) last[0]++;
-    else out.push([1, v]);
-  }
-  return out;
 }
 
 // ───────────── Boxes ─────────────
@@ -263,7 +261,8 @@ function writeMvhd(w: Writer, duration: number, nextTrackId: number) {
 }
 
 /** What the track shows or plays, in movie ticks (the edit list's priming left out). */
-const presented = (plan: TrackPlan) => Math.round(((plan.duration - plan.skip) / plan.timescale) * MOVIE_TIMESCALE);
+const presented = (plan: TrackPlan) =>
+  Math.round(((plan.duration - plan.skip) / plan.timescale) * MOVIE_TIMESCALE);
 
 function writeTkhd(w: Writer, plan: TrackPlan, width: number, height: number) {
   w.fullBox('tkhd', 0, 3, (w) => {
@@ -323,18 +322,11 @@ function writeVisualEntry(w: Writer, track: MuxVideoTrack) {
   });
 }
 
-/** MPEG-4 descriptor with a 4-byte length (as most muxers write it). */
+/** MPEG-4 descriptor with a 4-byte length (as most muxers write it). REQ-28 · framing shared in lib/mp4/boxes.ts. */
 function descriptor(w: Writer, tag: number, body: (w: Writer) => void) {
   const inner = new Writer();
   body(inner);
-  const bytes = inner.done();
-  w.u8(tag);
-  const n = bytes.length;
-  w.u8(0x80 | ((n >>> 21) & 0x7f));
-  w.u8(0x80 | ((n >>> 14) & 0x7f));
-  w.u8(0x80 | ((n >>> 7) & 0x7f));
-  w.u8(n & 0x7f);
-  w.bytes(bytes);
+  w.bytes(descriptorBytes(tag, inner.done()));
 }
 
 function writeAudioEntry(w: Writer, track: MuxAudioTrack, plan: TrackPlan) {
@@ -348,7 +340,9 @@ function writeAudioEntry(w: Writer, track: MuxAudioTrack, plan: TrackPlan) {
     w.u16(0);
     w.u32((track.sampleRate & 0xffff) * 0x10000);
     if (track.codec === 'mp4a') {
-      const asc = track.description?.length ? track.description : audioSpecificConfig(track.sampleRate, track.channels);
+      const asc = track.description?.length
+        ? track.description
+        : audioSpecificConfig(track.sampleRate, track.channels);
       const maxSize = plan.sizes.reduce((a, b) => Math.max(a, b), 0);
       const avg = track.bitrate ?? 0;
       w.fullBox('esds', 0, 0, (w) =>
@@ -385,7 +379,7 @@ function writeStbl(w: Writer, plan: TrackPlan, entry: (w: Writer) => void) {
       w.u32(1);
       entry(w);
     });
-    const stts = runs(plan.durations);
+    const stts = runLength(plan.durations);
     w.fullBox('stts', 0, 0, (w) => {
       w.u32(stts.length);
       for (const [count, delta] of stts) {
@@ -394,7 +388,7 @@ function writeStbl(w: Writer, plan: TrackPlan, entry: (w: Writer) => void) {
       }
     });
     if (plan.offsets) {
-      const ctts = runs(plan.offsets);
+      const ctts = runLength(plan.offsets);
       w.fullBox('ctts', 1, 0, (w) => {
         w.u32(ctts.length);
         for (const [count, offset] of ctts) {
@@ -410,7 +404,7 @@ function writeStbl(w: Writer, plan: TrackPlan, entry: (w: Writer) => void) {
         for (const k of keys) w.u32(k);
       });
     }
-    const perChunk = runs(plan.chunks.map((c) => c.count));
+    const perChunk = runLength(plan.chunks.map((c) => c.count));
     w.fullBox('stsc', 0, 0, (w) => {
       w.u32(perChunk.length);
       let chunk = 1;
@@ -483,11 +477,12 @@ function writeMoov(input: MuxInput, plans: TrackPlan[]): Uint8Array {
   return w.done();
 }
 
-/** AudioSpecificConfig for AAC-LC when the encoder doesn't give one. */
+/**
+ * AudioSpecificConfig for AAC-LC when the encoder doesn't give one. REQ-28 · An unknown rate keeps writing index 0
+ * here (the separated tracks' writer refuses it instead): each caller keeps its own behaviour.
+ */
 export function audioSpecificConfig(sampleRate: number, channels: number): Uint8Array {
-  const rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
-  const index = Math.max(0, rates.indexOf(sampleRate));
-  return new Uint8Array([(2 << 3) | (index >> 1), ((index & 1) << 7) | ((channels & 0xf) << 3)]);
+  return aacLcConfig(Math.max(0, aacRateIndex(sampleRate)), channels & 0xf);
 }
 
 /** vpcC payload for 8-bit 4:2:0 VP9 (profile 0), BT.709. */
@@ -517,7 +512,8 @@ export function muxMp4(input: MuxInput): Uint8Array[] {
   // Offsets don't change the index's size: write it once to measure, then again with the real offsets.
   const moovSize = writeMoov(input, plans).length;
   const mdatSize = order.reduce(
-    (sum, { plan, chunk }) => sum + plan.sizes.slice(chunk.first, chunk.first + chunk.count).reduce((a, b) => a + b, 0),
+    (sum, { plan, chunk }) =>
+      sum + plan.sizes.slice(chunk.first, chunk.first + chunk.count).reduce((a, b) => a + b, 0),
     0,
   );
   const large = mdatSize + 8 > 0xffffffff;

@@ -5,7 +5,7 @@ import { AlertTriangle, Check, CloudUpload, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { isStaleCopy } from '@/data/videos';
-import { cloudLimitBytes } from '@/lib/backend';
+import { cloudLimitBytes } from '@/lib/backend/mode';
 import { cn } from '@/lib/cn';
 import { loadLocalVideo } from '@/lib/localVideos';
 import { snappy } from '@/lib/motion';
@@ -22,7 +22,7 @@ import { copyHoldText, estimateCopySeconds, formatEta } from './cloudCopyRules';
 type Original = { status: 'checking' | 'none' } | { status: 'here'; blob: Blob };
 
 /** This device has the group's original of `video`, and the cloud doesn't have it yet. */
-export function useLocalOriginal(video: Video): Original {
+function useLocalOriginal(video: Video): Original {
   const [state, setState] = useState<Original>({ status: 'checking' });
   const wanted = !video.storage_path && (video.source === 'upload' || hasLinkedFile(video));
   useEffect(() => {
@@ -42,7 +42,7 @@ export function useLocalOriginal(video: Video): Original {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: keyed on the file's identity, not the row object (each refetch is a new object)
   }, [wanted, video.id, video.source, video.file_name, video.file_size]);
   return state;
 }

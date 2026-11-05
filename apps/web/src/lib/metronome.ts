@@ -1,3 +1,5 @@
+import { audioContextCtor } from './audioCtor';
+
 /**
  * Tiny Web Audio metronome for the count-in between loop repetitions.
  * Browsers only allow audio after a user gesture, so `unlockAudio` is wired to the first tap/key.
@@ -7,7 +9,7 @@ let ctx: AudioContext | null = null;
 function context(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (!ctx) {
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctor = audioContextCtor();
     if (!Ctor) return null;
     ctx = new Ctor();
   }

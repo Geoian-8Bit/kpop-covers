@@ -11,7 +11,7 @@ import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactP
 /** Furthest a finger may slide (px) and still be a tap. */
 export const TAP_SLOP = 10;
 /** A `click` this soon after acting on `pointerup` is the same tap: ignored. */
-export const TAP_CLICK_GUARD_MS = 700;
+const TAP_CLICK_GUARD_MS = 700;
 
 export interface TapStart {
   id: number;

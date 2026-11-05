@@ -6,7 +6,7 @@ import { useEvents } from '@/data/events';
 import { snappy } from '@/lib/motion';
 import { EventCountdown } from './EventCountdown';
 import { nearestEvent } from './eventRules';
-import { useNow } from './useNow';
+import { useNowDate } from '@/lib/useNow';
 
 /**
  * F16 · On the home page: the countdown to the nearest event still to come. Several events → the nearest; a
@@ -18,7 +18,7 @@ export function NextEventBanner() {
   // P8 · The events kept from the last visit show from the first paint (refreshed behind), so the banner is
   // already in place instead of arriving later and pushing the library down.
   const events = useEvents({ snapshot: true });
-  const now = useNow();
+  const now = useNowDate();
   const event = nearestEvent(events.data ?? [], now);
   if (!event) return null;
   return (

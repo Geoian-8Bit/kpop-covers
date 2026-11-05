@@ -3,7 +3,7 @@ import type { FormationMember } from '@/data/formations';
 import { canShareFile, downloadFile, shareFile } from '@/features/record/recorder';
 import { mirrorPoint, type PropFrame, type Stage } from '../formationRules';
 import { PROP_SIZE } from '../propRules';
-import { initialOf, personColors, shortName } from '../StageView';
+import { initialOf, personColors, shortName } from '../stage/personStyle';
 import { cssColor, cssFont } from '../cssTokens';
 import { fitStage, type Rect } from './exportRules';
 

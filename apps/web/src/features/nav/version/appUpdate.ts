@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { sleep } from '@/lib/async';
 import { decideUpdate, parseVersionFile, type UpdateStatus } from './versionRules';
 
 /**
@@ -46,7 +47,6 @@ export function savingCount(): number {
 export const useUpdateStatus = create<{ status: UpdateStatus }>(() => ({ status: { kind: 'idle' } }));
 const setStatus = (status: UpdateStatus) => useUpdateStatus.setState({ status });
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A connection that says it is online but doesn't answer must not leave «Buscando…» up for minutes. */
 const FETCH_TIMEOUT_MS = 10_000;

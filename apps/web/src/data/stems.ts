@@ -1,17 +1,20 @@
 import type { Video } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { registerStems, type StemSources } from '@/features/voice/stems';
+import { onStemsFail, registerStems, type StemSources } from '@/features/voice/stems';
 import { pickStems } from '@/features/voice/voiceRules';
-import { stemsBackend, type VideoStems } from '@/lib/backend';
+import { forgetSigned } from '@/lib/backend/signedUrls';
+import { stemsBackend, type VideoStems } from '@/lib/backend/stems';
+import { VIDEO_BUCKET } from '@/lib/supabase';
+import { takeKeys } from './trackKeys';
 
 /** 18 · The separations (AI) of a song's file, shared by the group. */
-export const stemKeys = {
+const stemKeys = {
   forVideo: (videoId: string | undefined) => ['video-stems', videoId] as const,
   sources: (stemsId: string | undefined) => ['video-stems-urls', stemsId] as const,
 };
 
-export function useVideoStems(videoId: string | undefined, enabled = true) {
+function useVideoStems(videoId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: stemKeys.forVideo(videoId),
     enabled: Boolean(videoId) && enabled,
@@ -21,24 +24,32 @@ export function useVideoStems(videoId: string | undefined, enabled = true) {
 }
 
 /** The separation that goes with the video's current file (newest complete one of the same file), or null. */
-export function useCurrentStems(video: Pick<Video, 'id' | 'file_name' | 'file_size'>, enabled = true): VideoStems | null {
+export function useCurrentStems(
+  video: Pick<Video, 'id' | 'file_name' | 'file_size'>,
+  enabled = true,
+): VideoStems | null {
   const rows = useVideoStems(video.id, enabled);
   return rows.data ? pickStems(video, rows.data) : null;
 }
 
 /** Signed URLs (6 h) of a separation's two tracks. */
-export function useStemSources(stems: VideoStems | null): StemSources | null {
+function useStemSources(stems: VideoStems | null): StemSources | null {
   const urls = useQuery({
     queryKey: stemKeys.sources(stems?.id),
     enabled: Boolean(stems?.vocals_path && stems?.instrumental_path),
     // Renewed well before the signature expires.
     staleTime: 4 * 60 * 60 * 1000,
+    // REQ-18 · Same life as the signatures (6 h), so a still-valid pair survives long visits elsewhere.
+    gcTime: 6 * 60 * 60 * 1000,
     queryFn: async (): Promise<StemSources | null> => {
-      const [instrumental, vocals] = await Promise.all([
-        stemsBackend.signedStemUrl(stems!.instrumental_path!),
-        stemsBackend.signedStemUrl(stems!.vocals_path!),
+      // REQ-15 · One signature request for both tracks (and none for ones the memory still holds).
+      const [instrumental, vocals] = await stemsBackend.signedStemUrls([
+        stems!.instrumental_path!,
+        stems!.vocals_path!,
       ]);
-      return instrumental && vocals ? { instrumental, vocals, delay: Number(stems!.delay_seconds) || 0 } : null;
+      return instrumental && vocals
+        ? { instrumental, vocals, delay: Number(stems!.delay_seconds) || 0 }
+        : null;
     },
   });
   return urls.data ?? null;
@@ -52,10 +63,21 @@ export function useStemSources(stems: VideoStems | null): StemSources | null {
 export function useStageStems(video: Video, mediaUrl: string | null): void {
   const stems = useCurrentStems(video, mediaUrl != null);
   const sources = useStemSources(stems);
+  const instrumentalPath = stems?.instrumental_path;
+  const vocalsPath = stems?.vocals_path;
   useEffect(() => {
     if (!mediaUrl || !sources) return;
-    return registerStems(mediaUrl, sources);
-  }, [mediaUrl, sources]);
+    const unregister = registerStems(mediaUrl, sources);
+    // REQ-15 · These tracks failed to load: their remembered signatures go, so the next one is fresh.
+    const unwatch = onStemsFail((failed) => {
+      if (failed !== sources) return;
+      for (const path of [instrumentalPath, vocalsPath]) if (path) forgetSigned(`${VIDEO_BUCKET}/${path}`);
+    });
+    return () => {
+      unwatch();
+      unregister();
+    };
+  }, [mediaUrl, sources, instrumentalPath, vocalsPath]);
 }
 
 /**
@@ -80,7 +102,9 @@ export function useRemoveStems() {
       return ofThisFile.map((r) => r.id);
     },
     onSuccess: (ids, video) => {
-      queryClient.setQueryData<VideoStems[]>(stemKeys.forVideo(video.id), (current) => current?.filter((s) => !ids.includes(s.id)));
+      queryClient.setQueryData<VideoStems[]>(stemKeys.forVideo(video.id), (current) =>
+        current?.filter((s) => !ids.includes(s.id)),
+      );
       void queryClient.invalidateQueries({ queryKey: stemKeys.forVideo(video.id) });
     },
   });
@@ -95,6 +119,8 @@ export function useRefreshStems() {
         row,
         ...current.filter((s) => s.id !== row.id),
       ]);
+      // A finished separation uploaded its two tracks: the cloud space used has grown.
+      void queryClient.invalidateQueries({ queryKey: takeKeys.sharedBytes });
     }
     void queryClient.invalidateQueries({ queryKey: stemKeys.forVideo(videoId) });
   };

@@ -13,12 +13,13 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { bagsOfKind, useAllClips, useBagItems, useBags } from '@/data/bags';
 import { CLIP_SWATCH } from '@/data/clips';
-import { trackKeys, useTracks, type TrackWithCount } from '@/data/tracks';
+import { prefetchTrack, trackKeys, useTracks, type TrackWithCount } from '@/data/tracks';
 import { useVideos } from '@/data/videos';
 import { BagIcon } from '@/features/bags/BagIcon';
 import { countLabel } from '@/features/bags/drawRules';
 import { ClipPickList, SongPickList, toggleIn } from '@/features/bags/Pickers';
-import { bagsBackend, type ClipWithVideo } from '@/lib/backend';
+import { bagsBackend } from '@/lib/backend/bags';
+import type { ClipWithVideo } from '@/lib/backend/types';
 import { cn } from '@/lib/cn';
 import { fadeUpCapped, jelly, soft } from '@/lib/motion';
 import { useCrew } from '@/providers/CrewProvider';
@@ -110,7 +111,7 @@ function RoundBuilder() {
     writeRoundSetup({ kind, bagId, clipIds: [...manual], videoIds: [...songs], options });
   }, [kind, bagId, manual, songs, options]);
 
-  const all = clips.data ?? [];
+  const all = useMemo(() => clips.data ?? [], [clips.data]);
   const clipCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of all) m.set(c.video_id, (m.get(c.video_id) ?? 0) + 1);
@@ -455,6 +456,8 @@ function TrackList() {
               <Link
                 to={`/rpd/pista/${track.id}`}
                 onClick={guardNav}
+                // REQ-18 · A real press warms the track's clips (a scroll sweeping over rows warms none).
+                onPointerDown={() => prefetchTrack(queryClient, track.id)}
                 className="group flex min-h-11 min-w-0 flex-1 items-center gap-3"
               >
                 <span className="min-w-0 flex-1">
