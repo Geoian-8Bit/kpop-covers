@@ -290,7 +290,13 @@ export const demoBackend: Backend = {
     mutate((db) => {
       const member = db.members?.find((m) => m.id === id);
       if (!member) throw new Error('not found');
-      Object.assign(member, patch, patch.name != null ? { name: patch.name.trim() } : {});
+      const name = patch.name?.trim();
+      if (name != null && db.members!.some((m) => m.id !== id && m.name.trim().toLowerCase() === name.toLowerCase())) {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "members_crew_name_key"'), {
+          code: '23505',
+        });
+      }
+      Object.assign(member, patch, name != null ? { name } : {});
       return member;
     }),
   deleteMember: (id) =>

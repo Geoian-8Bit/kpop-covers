@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
 import { Spinner } from '@/components/ui/Spinner';
+import { cn } from '@/lib/cn';
 import type { SaveStatus } from '../useFormationEditor';
 
 export function EditorHeader({
@@ -10,16 +11,18 @@ export function EditorHeader({
   title,
   subtitle,
   status,
+  className,
   children,
 }: {
   back: string;
   title: string;
   subtitle: string;
   status?: ReactNode;
+  className?: string;
   children?: ReactNode;
 }) {
   return (
-    <div className="sep-b flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
+    <div className={cn('sep-b flex items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-4 lg:px-6 lg:py-4', className)}>
       <Link
         to={back}
         aria-label="Volver a la canción"
@@ -28,7 +31,7 @@ export function EditorHeader({
         <ButtonSkin kind="back" />
       </Link>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate font-display text-[19px] font-bold leading-tight sm:text-[24px]">{title}</h1>
+        <h1 className="truncate font-display text-[17px] font-bold leading-tight lg:text-[24px]">{title}</h1>
         <div className="flex min-w-0 items-center gap-2">
           <p className="min-w-0 truncate text-sm text-washi-muted">Formaciones · {subtitle}</p>
           {status}

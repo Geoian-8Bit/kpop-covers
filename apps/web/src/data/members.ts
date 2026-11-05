@@ -62,7 +62,7 @@ export function useDeleteMember() {
     },
     onSuccess: (member) => {
       queryClient.setQueryData<Member[]>(memberKeys.all, (current = []) => current.filter((m) => m.id !== member.id));
-      if (useIdentity.getState().memberId === member.id) useIdentity.getState().choose(null);
+      if (useIdentity.getState().memberId === member.id) forgetMe();
       // People bags, «Me apunto» and vote counts stop counting them.
       invalidateAfterArchive(queryClient);
       // Takes, notes, reactions and the calendar point at members: fetched again so none goes on showing them as before.
@@ -117,6 +117,16 @@ export const useIdentity = create<IdentityState>()((set, get) => ({
     writeIdentity(get());
   },
 }));
+
+/**
+ * This device's member was deleted (here or on another phone): back to how a new phone starts, so the next take
+ * or note asks «¿Quién eres?» again even if «Ahora no» was pressed before. Nothing signed by them is touched.
+ */
+export function forgetMe(): void {
+  useIdentity.setState({ memberId: null, dismissed: false });
+  writeIdentity(useIdentity.getState());
+  useWhoPrompt.setState({ asked: false });
+}
 
 /** The member this device is, if it still exists in the group (an archived one reads as «Sin nombre»). */
 export function useMe(): Member | null {

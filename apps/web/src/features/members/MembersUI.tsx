@@ -1,14 +1,14 @@
-import { MEMBER_COLORS, type Member, type MemberColor } from '@coverscape/shared';
-import { AnimatePresence, motion } from 'motion/react';
-import { Check, Pencil, Plus, Trash2, UserRound } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import type { Member } from '@coverscape/shared';
+import { motion } from 'motion/react';
+import { Pencil, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Spinner } from '@/components/ui/Spinner';
 import {
   closeWho,
-  MEMBER_SWATCH,
+  forgetMe,
   openWho,
   useWhoPrompt,
   useCreateMember,
@@ -16,128 +16,25 @@ import {
   useIdentity,
   useMe,
   useMembers,
-  useUpdateMember,
 } from '@/data/members';
 import { cn } from '@/lib/cn';
-import { jelly, snappy } from '@/lib/motion';
+import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
+import { deleteMemberText, freeColor, MemberForm, MemberManageList, MemberSeal } from './MemberParts';
+import { isVanishedMe } from './memberRules';
 
-/** A member as a small hanko seal: their initial on their pigment. */
-export function MemberSeal({ member, size = 'md' }: { member: Pick<Member, 'name' | 'color'> | null; size?: 'sm' | 'md' | 'lg' }) {
-  const swatch = member ? MEMBER_SWATCH[member.color] : null;
-  const box = size === 'sm' ? 'size-6 text-[11px]' : size === 'lg' ? 'size-12 text-[20px]' : 'size-9 text-[15px]';
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'grid shrink-0 place-items-center rounded-[7px] font-display font-extrabold shadow-[inset_0_0_0_1.5px_rgb(255_255_255/0.28)]',
-        box,
-        swatch ? [swatch.dot, swatch.text] : 'bg-sumi-700 text-washi-subtle',
-      )}
-    >
-      {member ? member.name.trim().charAt(0).toUpperCase() : <UserRound className="size-[60%]" />}
-    </span>
-  );
-}
+export { MemberSeal };
 
-function ColorPicker({ value, onChange, label }: { value: MemberColor; onChange: (c: MemberColor) => void; label: string }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-      {MEMBER_COLORS.map((c) => (
-        <motion.button
-          key={c}
-          type="button"
-          role="radio"
-          aria-checked={value === c}
-          aria-label={MEMBER_SWATCH[c].label}
-          whileTap={{ scale: 0.85 }}
-          transition={jelly}
-          onClick={() => onChange(c)}
-          className="grid size-11 place-items-center rounded-full"
-        >
-          <span
-            className={cn(
-              'grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-sumi-850 transition-shadow',
-              MEMBER_SWATCH[c].dot,
-              value === c && 'ring-2 ring-kin-300',
-            )}
-          >
-            {value === c && <Check className={cn('size-4', MEMBER_SWATCH[c].text)} strokeWidth={3} />}
-          </span>
-        </motion.button>
-      ))}
-    </div>
-  );
-}
-
-/** Next colour no member uses yet (falls back to cycling). */
-function freeColor(members: Member[] | undefined): MemberColor {
-  const used = new Set(members?.map((m) => m.color));
-  return MEMBER_COLORS.find((c) => !used.has(c)) ?? MEMBER_COLORS[(members?.length ?? 0) % MEMBER_COLORS.length]!;
-}
-
-function MemberForm({
-  initial,
-  onSubmit,
-  busy,
-  submitLabel,
-  onCancel,
-}: {
-  initial: { name: string; color: MemberColor };
-  onSubmit: (v: { name: string; color: MemberColor }) => void;
-  busy: boolean;
-  submitLabel: string;
-  onCancel?: () => void;
-}) {
-  const [name, setName] = useState(initial.name);
-  const [color, setColor] = useState(initial.color);
-  const trimmed = name.trim();
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (trimmed) onSubmit({ name: trimmed, color });
-  }
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="flex items-center gap-3">
-        <MemberSeal member={{ name: trimmed || '?', color }} size="lg" />
-        <label className="min-w-0 flex-1">
-          <span className="mb-1 block text-[13px] font-medium text-washi-muted">Nombre</span>
-          <input
-            value={name}
-            maxLength={40}
-            onChange={(e) => setName(e.target.value)}
-            data-autofocus="desktop"
-            placeholder="Como os llamáis en el grupo"
-            className="well h-12 w-full rounded-[10px] px-4 text-[15px] text-washi outline-none focus:border-kin-300/70"
-          />
-        </label>
-      </div>
-      <ColorPicker value={color} onChange={setColor} label="Color" />
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button variant="ghost" onClick={onCancel}>
-            Cancelar
-          </Button>
-        )}
-        <Button type="submit" loading={busy} disabled={!trimmed}>
-          {submitLabel}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-/** Ajustes · the group's members: add, rename, recolour, remove (archived). */
+/** Ajustes · the group's members: add, rename, recolour, delete (archived). */
 export function MembersSection() {
   const members = useMembers();
   const create = useCreateMember();
-  const update = useUpdateMember();
   const remove = useDeleteMember();
   const toast = useToast();
   const me = useMe();
   const choose = useIdentity((s) => s.choose);
-  const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [adding, setAdding] = useState(false);
   const [confirm, setConfirm] = useState<Member | null>(null);
 
   return (
@@ -158,97 +55,53 @@ export function MembersSection() {
         <div className="mt-4 rounded-[10px] border border-enji-400/50 p-4 text-[14px] text-washi-muted">
           No se pudo cargar la lista. <button type="button" className="font-bold text-kin-300" onClick={() => void members.refetch()}>Reintentar</button>
         </div>
+      ) : members.data?.length ? (
+        <div className="mt-4">
+          <MemberManageList
+            members={members.data}
+            onDelete={setConfirm}
+            trailing={(m) =>
+              me?.id === m.id ? (
+                <span className="rounded-full bg-kin-300 px-2.5 py-1 text-[12px] font-bold text-sumi-900">Eres tú</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => choose(m.id)}
+                  className="min-h-11 rounded-[8px] px-2.5 text-[13px] font-bold text-kin-300 hover:bg-washi/10"
+                >
+                  Soy yo
+                </button>
+              )
+            }
+          />
+        </div>
       ) : (
-        <ul className="mt-4 space-y-2">
-          <AnimatePresence initial={false}>
-            {members.data?.map((m) => (
-              <motion.li
-                key={m.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -16 }}
-                transition={snappy}
-                className="well rounded-[12px] p-2.5"
-              >
-                {editing === m.id ? (
-                  <MemberForm
-                    initial={{ name: m.name, color: m.color }}
-                    busy={update.isPending}
-                    submitLabel="Guardar"
-                    onCancel={() => setEditing(null)}
-                    onSubmit={(v) =>
-                      update.mutate(
-                        { id: m.id, patch: v },
-                        {
-                          onSuccess: () => setEditing(null),
-                          onError: (err) => toast(friendlyError(err), 'error'),
-                        },
-                      )
-                    }
-                  />
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <MemberSeal member={m} />
-                    <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{m.name}</span>
-                    {me?.id === m.id ? (
-                      <span className="rounded-full bg-kin-300 px-2.5 py-1 text-[12px] font-bold text-sumi-900">Eres tú</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => choose(m.id)}
-                        className="min-h-11 rounded-[8px] px-2.5 text-[13px] font-bold text-kin-300 hover:bg-washi/10"
-                      >
-                        Soy yo
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Editar a ${m.name}`}
-                      onClick={() => setEditing(m.id)}
-                      className="grid size-11 place-items-center rounded-full text-washi-muted hover:bg-washi/10 hover:text-washi"
-                    >
-                      <Pencil className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Quitar a ${m.name} del grupo`}
-                      onClick={() => setConfirm(m)}
-                      className="grid size-11 place-items-center rounded-full text-washi-muted hover:bg-washi/10 hover:text-shu-400"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                )}
-              </motion.li>
-            ))}
-          </AnimatePresence>
-          {!members.data?.length && editing !== 'new' && (
-            <li className="rounded-[12px] border border-dashed border-line-strong p-4 text-center text-[14px] text-washi-subtle">
-              Aún no hay nadie. Añadid vuestros nombres para firmar tomas y notas.
-            </li>
-          )}
-        </ul>
+        !adding && (
+          <p className="mt-4 rounded-[12px] border border-dashed border-line-strong p-4 text-center text-[14px] text-washi-subtle">
+            Aún no hay nadie. Añadid vuestros nombres para firmar tomas y notas.
+          </p>
+        )
       )}
 
       <div className="mt-3">
-        {editing === 'new' ? (
+        {adding ? (
           <div className="well rounded-[12px] p-3">
             <MemberForm
               initial={{ name: '', color: freeColor(members.data) }}
+              members={members.data}
               busy={create.isPending}
               submitLabel="Añadir"
-              onCancel={() => setEditing(null)}
+              onCancel={() => setAdding(false)}
               onSubmit={(v) =>
                 create.mutate(v, {
-                  onSuccess: () => setEditing(null),
+                  onSuccess: () => setAdding(false),
                   onError: (err) => toast(friendlyError(err), 'error'),
                 })
               }
             />
           </div>
         ) : (
-          <Button variant="secondary" onClick={() => setEditing('new')} disabled={!members.data}>
+          <Button variant="secondary" onClick={() => setAdding(true)} disabled={!members.data}>
             <Plus className="size-4" /> Añadir miembro
           </Button>
         )}
@@ -257,14 +110,14 @@ export function MembersSection() {
       <Dialog
         open={confirm != null}
         onClose={() => setConfirm(null)}
-        title={`¿Quitar a ${confirm?.name ?? ''}?`}
-        description="Deja de salir en la lista. Sus tomas y notas se conservan; el administrador puede recuperarla."
+        title={`¿Borrar a ${confirm?.name ?? ''}?`}
+        description={deleteMemberText(confirm != null && me?.id === confirm.id)}
         size="sm"
         hideClose
         busy={remove.isPending}
       >
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirm(null)}>
+          <Button variant="ghost" onClick={() => setConfirm(null)} disabled={remove.isPending}>
             Cancelar
           </Button>
           <Button
@@ -278,7 +131,7 @@ export function MembersSection() {
               })
             }
           >
-            Quitar
+            Borrar
           </Button>
         </div>
       </Dialog>
@@ -308,35 +161,59 @@ export function WhoButton({ onPick, className, inMenu = false }: { onPick?: () =
   );
 }
 
-/** The app-wide «¿Quién eres?» dialog, driven by `askWho` / `openWho` (mounted once in the shell). */
+/**
+ * The app-wide «¿Quién eres?» dialog, driven by `askWho` / `openWho` (mounted once in the shell). Also notices
+ * when this device's member was deleted on another phone and forgets it, so the question comes back.
+ */
 export function WhoPromptHost() {
   const { open, reason } = useWhoPrompt();
+  const memberId = useIdentity((s) => s.memberId);
+  const members = useMembers();
+  useEffect(() => {
+    if (isVanishedMe(memberId, members.data)) forgetMe();
+  }, [memberId, members.data]);
   return <WhoAreYouDialog open={open} onClose={closeWho} reason={reason} />;
 }
 
 /**
  * «¿Quién eres?» (F2): pick a name from the list or add yours. `onLater` = «Ahora no» (the first-time suggestion
- * isn't shown again; it stays in Ajustes and in the menu).
+ * isn't shown again; it stays in Ajustes and in the menu). «Corregir nombres» switches the same dialog to a list
+ * where a misspelt name is renamed or a repeated one deleted (with its own «¿Borrar…?» step).
  */
 function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: () => void; reason?: string }) {
   const members = useMembers();
   const create = useCreateMember();
+  const remove = useDeleteMember();
   const { memberId, choose, dismiss } = useIdentity();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const [confirm, setConfirm] = useState<Member | null>(null);
+
+  function close() {
+    setManaging(false);
+    setConfirm(null);
+    onClose();
+  }
 
   function pick(id: string) {
     choose(id);
-    onClose();
+    close();
   }
+
+  const heading = confirm
+    ? { title: `¿Borrar a ${confirm.name}?`, description: deleteMemberText(confirm.id === memberId) }
+    : managing
+      ? { title: 'Corregir nombres', description: 'Cambia un nombre mal escrito o borra uno que sobre, como uno repetido.' }
+      : { title: '¿Quién eres?', description: reason ?? 'Así tus tomas y notas llevan tu nombre. Se recuerda en este dispositivo.' };
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
-      title="¿Quién eres?"
-      description={reason ?? 'Así tus tomas y notas llevan tu nombre. Se recuerda en este dispositivo.'}
-      busy={create.isPending}
+      onClose={close}
+      title={heading.title}
+      description={heading.description}
+      busy={create.isPending || remove.isPending}
     >
       {members.isPending ? (
         <div className="grid place-items-center py-6">
@@ -354,6 +231,37 @@ function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: ()
           >
             Reintentar
           </button>
+        </div>
+      ) : confirm ? (
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirm(null)} disabled={remove.isPending}>
+            Cancelar
+          </Button>
+          <Button
+            variant="danger"
+            loading={remove.isPending}
+            onClick={() =>
+              remove.mutate(confirm, {
+                onSuccess: (gone) => {
+                  setConfirm(null);
+                  if (!members.data?.some((m) => m.id !== gone.id)) setManaging(false);
+                  toast(`${gone.name} ya no está en la lista`, 'success');
+                },
+                onError: (err) => toast(friendlyError(err), 'error'),
+              })
+            }
+          >
+            Borrar
+          </Button>
+        </div>
+      ) : managing && members.data?.length ? (
+        <div className="space-y-4">
+          <MemberManageList members={members.data} onDelete={setConfirm} />
+          <div className="flex justify-end border-t border-line pt-3">
+            <Button variant="secondary" onClick={() => setManaging(false)}>
+              Listo
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -384,6 +292,7 @@ function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: ()
             <div className="well rounded-[12px] p-3">
               <MemberForm
                 initial={{ name: '', color: freeColor(members.data) }}
+                members={members.data}
                 busy={create.isPending}
                 submitLabel="Soy yo"
                 onCancel={members.data?.length ? () => setAdding(false) : undefined}
@@ -396,9 +305,14 @@ function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: ()
               />
             </div>
           ) : (
-            <Button variant="secondary" onClick={() => setAdding(true)}>
-              <Plus className="size-4" /> No estoy en la lista
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setAdding(true)}>
+                <Plus className="size-4" /> No estoy en la lista
+              </Button>
+              <Button variant="ghost" onClick={() => setManaging(true)}>
+                <Pencil className="size-4" /> Corregir nombres
+              </Button>
+            </div>
           )}
           <div className="flex justify-end gap-2 border-t border-line pt-3">
             {memberId && (
@@ -406,7 +320,7 @@ function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: ()
                 variant="ghost"
                 onClick={() => {
                   choose(null);
-                  onClose();
+                  close();
                 }}
               >
                 Sin nombre
@@ -416,7 +330,7 @@ function WhoAreYouDialog({ open, onClose, reason }: { open: boolean; onClose: ()
               variant="ghost"
               onClick={() => {
                 dismiss();
-                onClose();
+                close();
               }}
             >
               Ahora no
