@@ -42,6 +42,11 @@ export interface QueueDeps {
   clearTimer?: (handle: unknown) => void;
   /** One try longer than this is aborted and counts as a network failure. */
   attemptTimeoutMs?: number;
+  /**
+   * A write still unanswered after this long resolves as saved (it stays queued and its try goes on): a network that
+   * swallows packets never holds a dialog open until the try times out.
+   */
+  answerWithinMs?: number;
   /** `ready` stops waiting for the kept writes after this long; they still merge in when they arrive. */
   loadTimeoutMs?: number;
   /** Rows sent side by side. */
@@ -222,7 +227,20 @@ export function createWriteQueue(deps: QueueDeps): WriteQueue {
       for (const id of cancelled) settle(id, { sent: false });
       const waiter: Waiter = { resolve: resolve as (o: Outcome) => void, reject };
       if (target == null) waiter.resolve({ sent: false });
-      else waiters.set(target, [...(waiters.get(target) ?? []), waiter]);
+      else {
+        waiters.set(target, [...(waiters.get(target) ?? []), waiter]);
+        if (deps.answerWithinMs) {
+          setTimer(() => {
+            if (waiters.get(target)?.includes(waiter)) {
+              waiters.set(
+                target,
+                waiters.get(target)!.filter((w) => w !== waiter),
+              );
+              waiter.resolve({ sent: false });
+            }
+          }, deps.answerWithinMs);
+        }
+      }
       persist();
       // A new write is a good moment to try its row again (order within the row is kept).
       blocked.delete(rowOf(op));
@@ -387,6 +405,7 @@ function appQueue(): WriteQueue {
     onBackgroundDone: invalidate,
     lock: lockAcrossTabs,
     attemptTimeoutMs: 20_000,
+    answerWithinMs: 6_000,
     loadTimeoutMs: READY_WAIT_MS * 2,
   });
   if (typeof window !== 'undefined') {

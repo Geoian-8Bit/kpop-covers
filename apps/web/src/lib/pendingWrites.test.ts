@@ -200,6 +200,33 @@ describe('createWriteQueue', () => {
     expect(calls.map((o) => o.data)).toEqual([{ name: 'old' }, { name: 'old' }, { name: 'new' }]);
   });
 
+  it('a write unanswered for a while resolves as saved, and its try goes on in the background', async () => {
+    const answer = deferred<unknown>();
+    const onBackgroundDone = vi.fn();
+    const { queue, timers } = setup({
+      execute: () => answer.promise,
+      answerWithinMs: 6000,
+      onBackgroundDone,
+    });
+    const a = queue.submit(write({ id: 'a' }));
+    await settleAll();
+    timers.find((t) => t.ms === 6000)!.fn();
+    await expect(a).resolves.toEqual({ sent: false });
+    expect(queue.pending().map((o) => o.id)).toEqual(['a']);
+    answer.resolve({ ok: 'a' });
+    await settleAll();
+    expect(queue.pending()).toEqual([]);
+    expect(onBackgroundDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('a quick answer still resolves with the server row', async () => {
+    const { queue, timers } = setup({ answerWithinMs: 6000 });
+    await expect(queue.submit(write({ id: 'a' }))).resolves.toEqual({ sent: true, result: { ok: 'a' } });
+    timers.find((t) => t.ms === 6000)!.fn();
+    await settleAll();
+    expect(queue.pending()).toEqual([]);
+  });
+
   it('#4 regression: a slow read of the kept writes is merged in when it arrives, never overwritten', async () => {
     const read = deferred<PendingOp[]>();
     const loadTimers: (() => void)[] = [];
