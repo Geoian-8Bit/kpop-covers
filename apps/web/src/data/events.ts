@@ -2,7 +2,7 @@ import type { CrewEvent } from '@coverscape/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { bagKeys } from '@/data/bagKeys';
 import { optionsRow, trackKeys } from '@/data/trackKeys';
-import { appendPositions, chorusClips, uniqueName } from '@/features/events/eventRules';
+import { appendPositions, chorusClips, nearestEvent, uniqueName } from '@/features/events/eventRules';
 import { DEFAULT_ROUND_OPTIONS } from '@/features/rpd/roundRules';
 import { bagsBackend } from '@/lib/backend/bags';
 import {
@@ -242,4 +242,25 @@ export function useCreateChorusTrack() {
     },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: trackKeys.all }),
   });
+}
+
+/**
+ * The videos of the nearest event's repertoire still to come, in its order (the background prefetch's guess of what
+ * the next rehearsal plays). Reads the events already loaded (no request for the list); the repertoire is fetched
+ * only if it isn't cached. Empty with no event ahead or when the network fails.
+ */
+export async function nearestEventVideoIds(queryClient: QueryClient, now: Date): Promise<string[]> {
+  const events = queryClient.getQueryData<EventWithCount[]>(eventKeys.all) ?? [];
+  const event = nearestEvent(events, now);
+  if (!event || event.songs === 0) return [];
+  try {
+    const songs = await queryClient.fetchQuery({
+      queryKey: eventKeys.songs(event.id),
+      queryFn: () => eventsBackend.listEventSongs(event.id),
+      staleTime: 10 * 60 * 1000,
+    });
+    return [...songs].sort((a, b) => a.position - b.position).flatMap((s) => (s.video ? [s.video.id] : []));
+  } catch {
+    return [];
+  }
 }

@@ -2,8 +2,17 @@ import type { Clip, Member, Take, Video } from '@coverscape/shared';
 import { TAKE_BUCKET, VIDEO_BUCKET, supabase, withStorage } from '../supabase';
 import { must } from './shared';
 import { SIGN_SECONDS, memoSigned } from './signedUrls';
-import type { Backend, ClipWithVideo, VideoPoster, VideoPosterRev, VideoWithClipCount } from './types';
+import type {
+  Backend,
+  ClipWithVideo,
+  UploadOptions,
+  UploadResult,
+  VideoPoster,
+  VideoPosterRev,
+  VideoWithClipCount,
+} from './types';
 import { isDuplicate, uploadFailure, uploadWithProgress } from './upload';
+import { uploadWithRetry } from './uploadRetry';
 
 /**
  * Only what the library cards and the add dialog read (file_name: «con archivo», F1); no audit columns.
@@ -48,6 +57,42 @@ async function signed(bucket: string, path: string): Promise<string | null> {
 
 /** New files are never overwritten (each name is unique), so they can be cached for a year (REQ-15). */
 const CACHE_SECONDS = '31536000';
+
+/** One try of a video file upload (uploadFile retries it). */
+async function uploadVideoOnce(path: string, file: File, options?: UploadOptions): Promise<UploadResult> {
+  if (options?.onProgress || options?.signal) return uploadWithProgress(VIDEO_BUCKET, path, file, options);
+  // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
+  const { error } = await withStorage((storage) =>
+    storage
+      .from(VIDEO_BUCKET)
+      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
+  );
+  if (!error) return { ok: true, path };
+  console.error('[uploadFile]', error);
+  // 409: the file is already there (an earlier try got through; the row just didn't get its path).
+  if (isDuplicate(error)) return { ok: false, reason: 'exists' };
+  return { ok: false, reason: uploadFailure(error) };
+}
+
+/** One try of a shared take's upload (uploadTakeFile retries it). */
+async function uploadTakeOnce(path: string, file: Blob): Promise<UploadResult> {
+  const { error } = await withStorage((storage) =>
+    storage
+      .from(TAKE_BUCKET)
+      .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
+  );
+  if (!error) return { ok: true, path };
+  console.error('[uploadTakeFile]', error);
+  if (isDuplicate(error)) return { ok: false, reason: 'exists' };
+  return { ok: false, reason: uploadFailure(error) };
+}
+
+/** Poor 4G · Size of the file already at the name (null: none, or it can't be read), for a retried upload's check. */
+async function storedBytes(bucket: string, path: string): Promise<number | null> {
+  const { data, error } = await withStorage((storage) => storage.from(bucket).info(path));
+  const size = error ? null : data?.size;
+  return typeof size === 'number' ? size : null;
+}
 
 export const supabaseBackend: Backend = {
   async joinGroup() {
@@ -164,20 +209,15 @@ export const supabaseBackend: Backend = {
   async deleteNote(id) {
     must(await supabase.from('notes').delete().eq('id', id));
   },
-  async uploadFile(path, file, options) {
-    if (options?.onProgress || options?.signal) return uploadWithProgress(VIDEO_BUCKET, path, file, options);
-    // No upsert: overwriting needs an UPDATE grant the bucket doesn't give, and the name is already unique.
-    const { error } = await withStorage((storage) =>
-      storage
-        .from(VIDEO_BUCKET)
-        .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
-    );
-    if (!error) return { ok: true, path };
-    console.error('[uploadFile]', error);
-    // 409: the file is already there (an earlier try got through; the row just didn't get its path).
-    if (isDuplicate(error)) return { ok: false, reason: 'exists' };
-    return { ok: false, reason: uploadFailure(error) };
-  },
+  uploadFile: (path, file, options) =>
+    // Poor 4G · Tried again silently after a failure that can fix itself (uploadRetry.ts).
+    uploadWithRetry(() => uploadVideoOnce(path, file, options), {
+      path,
+      bytes: file.size,
+      signal: options?.signal,
+      onRetry: options?.onRetry,
+      storedBytes: () => storedBytes(VIDEO_BUCKET, path),
+    }),
   signedUrl: (path) => signed(VIDEO_BUCKET, path),
   async listMembers() {
     const data = must(await supabase.from('members').select('*').order('created_at'));
@@ -227,20 +267,13 @@ export const supabaseBackend: Backend = {
   async deleteTake(id) {
     must(await supabase.from('takes').delete().eq('id', id));
   },
-  async uploadTakeFile(path, file) {
-    const { error } = await withStorage((storage) =>
-      storage
-        .from(TAKE_BUCKET)
-        .upload(path, file, { contentType: file.type || 'video/mp4', cacheControl: CACHE_SECONDS }),
-    );
-    if (!error) return { ok: true, path };
-    console.error('[uploadTakeFile]', error);
-    const e = error as { status?: number; statusCode?: string; message?: string };
-    if (Number(e.status ?? e.statusCode) === 409 || /already exists|duplicate/i.test(e.message ?? '')) {
-      return { ok: false, reason: 'exists' };
-    }
-    return { ok: false, reason: uploadFailure(error) };
-  },
+  uploadTakeFile: (path, file, options) =>
+    uploadWithRetry(() => uploadTakeOnce(path, file), {
+      path,
+      bytes: file.size,
+      signal: options?.signal,
+      storedBytes: () => storedBytes(TAKE_BUCKET, path),
+    }),
   signedTakeUrl: (path) => signed(TAKE_BUCKET, path),
   async storageUsage() {
     const data = must(await supabase.rpc('storage_usage'));

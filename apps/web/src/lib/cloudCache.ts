@@ -6,6 +6,7 @@ import {
   type CacheEntry,
   type CacheLimits,
 } from './cloudCacheRules';
+import { prefetchEvictions } from './cloudPrefetchRules';
 
 /**
  * The device's copies of group files that came from the cloud (not this device's own files: those live in
@@ -95,20 +96,62 @@ async function forgetCopy(key: string): Promise<void> {
   if (cache) await (await cache.open(CACHE_NAME)).delete(cacheKey(key)).catch(() => undefined);
 }
 
-function remember(path: string, bytes: number, limits: CacheLimits): Promise<void> {
+/** Files open on screen now (a stage or the review), by path, with how many hold each. */
+const openFiles = new Map<string, number>();
+
+/** A screen holds `path` open while mounted (a prefetch never pushes its copy out). Returns a release. */
+export function holdCloudFileOpen(path: string): () => void {
+  openFiles.set(path, (openFiles.get(path) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const n = (openFiles.get(path) ?? 1) - 1;
+    if (n > 0) openFiles.set(path, n);
+    else openFiles.delete(path);
+  };
+}
+
+/** The paths open on screen now. */
+export function openCloudFiles(): ReadonlySet<string> {
+  return new Set(openFiles.keys());
+}
+
+/** The copies kept now (path, bytes, last use), for the background prefetch's room check. */
+export function cachedCloudFiles(): CacheEntry[] {
+  return Object.entries(readIndex()).map(([key, v]) => ({ key, bytes: v.bytes, usedAt: v.usedAt }));
+}
+
+/**
+ * Notes a finished copy and drops the oldest ones that no longer fit. A `prefetched` copy (nobody opened it yet)
+ * counts as the oldest of all (`usedAt` 0: the first to go when a played file needs room) and never makes room by
+ * dropping another copy: when it doesn't fit any more (a file opened meanwhile took the room), it is the one dropped.
+ */
+async function remember(
+  path: string,
+  bytes: number,
+  limits: CacheLimits,
+  prefetched = false,
+): Promise<boolean> {
   const index = readIndex();
-  index[path] = { bytes, usedAt: Date.now() };
+  index[path] = { bytes, usedAt: prefetched ? 0 : Date.now() };
   const entries: CacheEntry[] = Object.entries(index).map(([key, v]) => ({
     key,
     bytes: v.bytes,
     usedAt: v.usedAt,
   }));
-  const drop = cacheEvictions(entries, path, limits);
+  const drop = prefetched
+    ? prefetchEvictions(entries, { key: path, bytes }, openCloudFiles(), limits)
+    : cacheEvictions(entries, path, limits);
+  if (!drop) {
+    await forgetCopy(path);
+    return false;
+  }
   for (const key of drop) delete index[key];
   writeIndex(index);
-  return Promise.all(drop.map(forgetCopy))
-    .then(() => pruneOrphans(index))
-    .then(() => undefined);
+  await Promise.all(drop.map(forgetCopy));
+  await pruneOrphans(index);
+  return true;
 }
 
 /** The path a Cache Storage key stands for (null: not one of ours). */
@@ -134,8 +177,19 @@ async function pruneOrphans(index: Index): Promise<void> {
   }
 }
 
-/** One download per file at a time (a stage that remounts joins the one running). */
-const inFlight = new Map<string, Promise<Blob | null>>();
+/**
+ * One download per file at a time (a stage that remounts joins the one running). `gate`: the running download's
+ * rule and kind, which a stage joining a background prefetch takes over (its own rule; kept as a played file).
+ */
+const inFlight = new Map<
+  string,
+  { job: Promise<Blob | null>; gate: { mayRun: () => boolean; prefetched: boolean } }
+>();
+
+/** Downloads running now (the background prefetch waits while another one runs). */
+export function cloudDownloadsRunning(): number {
+  return inFlight.size;
+}
 
 export interface DownloadOptions {
   /**
@@ -143,6 +197,10 @@ export interface DownloadOptions {
    * says no, nothing is read, the connection holds still and the playing video keeps the bandwidth.
    */
   mayRun?: () => boolean;
+  /** A guess of what may be played next (cloudPrefetchRules.ts), not a file being played. */
+  prefetched?: boolean;
+  /** A lower ceiling than this device's for this copy (a cautious prefetch): the download stops past it. */
+  maxBytes?: number;
 }
 
 const GATE_POLL_MS = 1000;
@@ -161,13 +219,24 @@ export function downloadCloudFile(
   opts: DownloadOptions = {},
 ): Promise<Blob | null> {
   const running = inFlight.get(path);
-  if (running) return running;
-  const mayRun = opts.mayRun ?? (() => true);
+  if (running) {
+    if (!opts.prefetched && running.gate.prefetched) {
+      running.gate.mayRun = opts.mayRun ?? (() => true);
+      running.gate.prefetched = false;
+    }
+    return running.job;
+  }
+  const gate = { mayRun: opts.mayRun ?? (() => true), prefetched: Boolean(opts.prefetched) };
+  const mayRun = () => gate.mayRun();
   const job = (async () => {
     try {
       const storage = cacheStorage();
       if (!storage) return null;
-      const limits = cloudCacheLimits();
+      const deviceLimits = cloudCacheLimits();
+      const limits = {
+        ...deviceLimits,
+        maxFileBytes: Math.min(deviceLimits.maxFileBytes, opts.maxBytes ?? Number.POSITIVE_INFINITY),
+      };
       // The stage that asked mounts its <video> right after: give it a moment to show up before the first look.
       await wait(GATE_POLL_MS);
       while (!mayRun()) await wait(GATE_POLL_MS);
@@ -257,7 +326,7 @@ export function downloadCloudFile(
         await cache.delete(cacheKey(path)).catch(() => undefined);
         return null;
       }
-      await remember(path, bytes, limits);
+      if (!(await remember(path, bytes, limits, gate.prefetched))) return null;
       return (await readStreamed(path)) ?? null;
     } catch {
       return null;
@@ -265,7 +334,7 @@ export function downloadCloudFile(
       inFlight.delete(path);
     }
   })();
-  inFlight.set(path, job);
+  inFlight.set(path, { job, gate });
   return job;
 }
 

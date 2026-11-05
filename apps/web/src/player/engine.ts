@@ -1,5 +1,6 @@
 import { createVoiceSplit, type VoiceSplit } from '@/features/voice/voiceSplit';
 import type { VoiceMode } from '@/features/voice/voiceRules';
+import { registerMediaProbe } from '@/lib/mediaActivity';
 import { YTState, type YTPlayer } from '@/lib/youtubeIframe';
 import {
   FILE_MAX_SEEK_MS,
@@ -125,14 +126,6 @@ export function releaseMediaAudio(el: HTMLMediaElement): void {
     t.stop();
   }
   void graph.ctx.close().catch(() => undefined);
-}
-
-/**
- * The element's sound is being taken straight from it (captureStream, not through Web Audio): a new source would
- * end that track, and with it a recording's song.
- */
-export function mediaCaptured(el: HTMLMediaElement): boolean {
-  return !elementGraphs.has(el) && audioTracks.get(el)?.readyState === 'live';
 }
 
 /** The element loads another file: forget what the mono check heard (the warning belongs to the old song). */
@@ -296,6 +289,11 @@ export function createYouTubeEngine(
   let wantPlay = false;
   /** 8 · Measured time for the loop's own jumps (sent while playing) to land (ms). */
   let latency: number | null = null;
+  // Poor 4G · The background prefetch holds still while the iframe plays or loads (lib/mediaActivity.ts).
+  const releaseProbe = registerMediaProbe(() => {
+    const state = player.getPlayerState();
+    return state === YTState.PLAYING || state === YTState.BUFFERING;
+  });
   let measuring = false;
   /** 8 · BUFFERING seen while measuring: first and last time (ms), to tell a flicker from a download. */
   let bufferingFrom = Number.NaN;
@@ -322,6 +320,7 @@ export function createYouTubeEngine(
   return {
     dispose: () => {
       disposed = true;
+      releaseProbe();
       clearTimeout(rateCheck);
       clearTimeout(sendTimer);
     },

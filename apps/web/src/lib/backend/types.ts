@@ -85,6 +85,11 @@ export type UploadResult = { ok: true; path: string } | { ok: false; reason: Upl
 export interface UploadOptions {
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /**
+   * Poor 4G · A silent new try is about to start (lib/backend/uploadRetry.ts): its progress starts again from 0, so
+   * whoever shows progress keeps the bar where it was and restarts its time estimate.
+   */
+  onRetry?: () => void;
 }
 
 /** What the app may change on a take (the database grants exactly these columns). F5 adds the review's sync and fit. */
@@ -160,7 +165,8 @@ export interface Backend {
   getTake(id: string): Promise<Take | null>;
   updateTake(id: string, patch: TakePatch): Promise<Take>;
   deleteTake(id: string): Promise<void>;
-  uploadTakeFile(path: string, file: Blob): Promise<UploadResult>;
+  /** The signal stops the silent retries (a try already sending finishes). */
+  uploadTakeFile(path: string, file: Blob, options?: { signal?: AbortSignal }): Promise<UploadResult>;
   signedTakeUrl(path: string): Promise<string | null>;
   /**
    * Bytes really used in the cloud: by shared takes (deleted ones included: their files stay until the admin

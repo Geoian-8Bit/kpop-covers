@@ -101,6 +101,8 @@ export async function uploadGroupFile(input: {
   onUploaded?: (path: string) => void;
   /** Progress of the upload (0–1) and cancelling it (rejects with an AbortError). */
   onProgress?: (fraction: number) => void;
+  /** Poor 4G · A silent new try starts (its progress starts again from 0). */
+  onRetry?: () => void;
   signal?: AbortSignal;
 }): Promise<Video> {
   const fresh = await backend.getVideo(input.video.id);
@@ -121,7 +123,11 @@ export async function uploadGroupFile(input: {
         ? `${fresh.crew_id}/${fresh.id}--${Math.random().toString(36).slice(2, 8)}.${ext}`
         : `${fresh.crew_id}/${fresh.id}.${ext}`;
     const file = new File([input.blob], `${fresh.id}.${ext}`, { type: input.blob.type || 'video/mp4' });
-    let upload = await backend.uploadFile(name, file, { onProgress: input.onProgress, signal: input.signal });
+    let upload = await backend.uploadFile(name, file, {
+      onProgress: input.onProgress,
+      onRetry: input.onRetry,
+      signal: input.signal,
+    });
     // An uploaded video's only name already holds a file: an earlier try got it there (see `settlePlainUpload`).
     if (fresh.source === 'upload') upload = await settlePlainUpload(name, upload);
     if (!upload.ok) {

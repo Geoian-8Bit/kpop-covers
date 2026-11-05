@@ -131,6 +131,21 @@ window.addEventListener(
 if (isSupabaseConfigured && !IS_DEMO) persistQueryCache(queryClient);
 preloadRoute(window.location.pathname, queryClient);
 
+// Poor 4G · The nearest event's songs copied to this device in the background, quietly (see
+// data/videos/prefetchFiles.ts). Its chunk loads once the page is idle.
+if (isSupabaseConfigured && !IS_DEMO) {
+  const startPrefetch = () =>
+    whenIdle(
+      () =>
+        void import('./data/videos/prefetchFiles')
+          .then((m) => m.startCloudPrefetch(queryClient))
+          .catch(() => undefined),
+      { timeout: 5000, fallbackMs: 5000 },
+    );
+  if (document.readyState === 'complete') startPrefetch();
+  else window.addEventListener('load', startPrefetch, { once: true });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

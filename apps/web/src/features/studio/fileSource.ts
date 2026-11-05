@@ -1,7 +1,13 @@
 import type { Video } from '@coverscape/shared';
 import { useEffect, useState } from 'react';
 import { forgetVideoUrl, isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
-import { cloudCacheLimits, downloadCloudFile, loadCachedCloudFile, saveDataOn } from '@/lib/cloudCache';
+import {
+  cloudCacheLimits,
+  downloadCloudFile,
+  holdCloudFileOpen,
+  loadCachedCloudFile,
+  saveDataOn,
+} from '@/lib/cloudCache';
 import { downloadMayRun, shouldCacheCloudFile } from '@/lib/cloudCacheRules';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
 import { stageBuffer } from '@/player/stageBuffer';
@@ -41,6 +47,8 @@ export function useFileSource(
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    // Poor 4G · While on screen, the background prefetch never pushes this file's copy out.
+    const releaseOpen = video.storage_path ? holdCloudFileOpen(video.storage_path) : null;
     const objectUrls: string[] = [];
     const urlFor = (blob: Blob) => {
       const url = URL.createObjectURL(blob);
@@ -105,6 +113,7 @@ export function useFileSource(
 
     return () => {
       cancelled = true;
+      releaseOpen?.();
       for (const url of objectUrls) URL.revokeObjectURL(url);
     };
   }, [
