@@ -5,8 +5,6 @@ import { createClapDetector, peakOf, type ClapReading, type ClapSensitivity } fr
  * peak of each short window feeds the pure detector of `@coverscape/shared`. Everything is freed on `stop()`.
  */
 
-export { createListeningContext } from './listeningContext';
-
 export interface ClapListener {
   setSensitivity(sensitivity: ClapSensitivity): void;
   stop(): void;

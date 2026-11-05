@@ -16,6 +16,4 @@ export function canReduceTakes(): boolean {
   );
 }
 
-export function isAbort(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
+export { isAbort } from '@/lib/async';

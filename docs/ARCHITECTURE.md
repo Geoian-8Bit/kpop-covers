@@ -16,6 +16,35 @@ No hay servidor propio: Supabase es el backend (datos y ficheros) y las dos func
 `apps/web/api/` hablan con YouTube. En desarrollo las sirve un middleware de Vite (`vite.config.ts`); sin
 `YOUTUBE_API_KEY` la búsqueda devuelve resultados de prueba.
 
+## Capas y carpetas
+
+```
+features/*  pantallas y su lógica  ──▶  data/*  React Query  ──▶  lib/backend/<dominio>  ──▶  Supabase | demo
+     │                                                              (fachada: IS_DEMO ? demo : supabase)
+     └──▶ player/store.ts (estado del reproductor y del repaso, zustand)  ◀──  player/engine.ts (YouTube / <video>)
+```
+
+| Carpeta                        | Qué vive ahí                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web/src/features/<área>` | Pantallas por área (biblioteca, estudio, grabador, repaso, tomas, voz, ronda, bolsas, votaciones, eventos, calendario, formaciones…). Las reglas puras van en `*Rules.ts` con su test al lado.                                                                                                                                                                                                                     |
+| `apps/web/src/data`            | Consultas y mutaciones de React Query por dominio (`data/videos/` dividido en consultas, mutaciones, subida, pósteres y copia local).                                                                                                                                                                                                                                                                              |
+| `apps/web/src/lib/backend`     | Acceso a datos: por dominio una fachada `X.ts` + `X.supabase.ts` + `X.demo.ts`; `types.ts`, `mode.ts` (`IS_DEMO`), `session.ts` (sesiones antiguas), `signedUrls.ts` (memoria de firmas, 6 h), `upload.ts`.                                                                                                                                                                                                        |
+| `apps/web/src/lib`             | Utilidades compartidas sin pantalla: `supabase.ts` (cliente PostgREST directo; storage-js se carga aparte, perezoso), `motion.ts` (presets), `async.ts`, `audioCtor.ts`, `deviceShape.ts`, `useNow.ts`, `useSize.ts`, `lru.ts`, `autoHideChrome.ts` y `orientation.ts` (pantalla completa del estudio y de la ronda), `mp4/` (codificación de audio en worker), `heavyWork.ts`, `devSilence.ts` (demo sin sonido). |
+| `apps/web/src/player`          | `store.ts` (barril: `playerStore.ts` estudio, `reviewStore.ts` toma/original, `loopActions.ts` bucle compartido), `engine.ts` (motores sin estado de UI), `FileStage`/`YouTubeStage`.                                                                                                                                                                                                                              |
+| `apps/web/src/components`      | Shell de la app (`shell/`), `ui/` (botones, diálogos, campos) y piezas comunes.                                                                                                                                                                                                                                                                                                                                    |
+| `apps/web/src/providers`       | Auth (sesiones antiguas y demo), grupo, toasts.                                                                                                                                                                                                                                                                                                                                                                    |
+| `apps/web/api`                 | Funciones Vercel de YouTube (búsqueda y oEmbed).                                                                                                                                                                                                                                                                                                                                                                   |
+| `packages/shared/src`          | TS puro compartido: dominio, tiempos, reproducción, grabación, aplauso, tipos generados de la base de datos.                                                                                                                                                                                                                                                                                                       |
+| `supabase/`                    | Migraciones, tests SQL y Edge Functions.                                                                                                                                                                                                                                                                                                                                                                           |
+
+- **Workers:** separación de voces (`stemSeparator.worker.ts`), codificación de pistas (`stemEncoder.worker.ts`) y
+  sonido de la copia para la nube (`cloudCopy/sound.worker.ts`); el audio se codifica fuera del hilo principal.
+- **Pósteres:** los vídeos subidos guardan un póster JPEG en línea; las listas no lo traen y una consulta aparte lo
+  pide y lo guarda en el dispositivo por revisión (`data/videos/posters.ts`).
+- **Fuentes propias:** `fonts.css` y `fonts-ja.css` (la segunda solo cuando hace falta japonés), sin Google Fonts.
+- **Tomas y archivos locales:** tomas en OPFS (`features/record/takeStore.ts`), archivos subidos en IndexedDB
+  (`lib/localVideos.ts`).
+
 ## Acceso: un solo grupo, sin login
 
 - No hay login. Quien tenga la URL usa la app como rol `anon` de Supabase.
@@ -41,14 +70,14 @@ No hay servidor propio: Supabase es el backend (datos y ficheros) y las dos func
 
 ## Datos
 
-| Tabla          | Qué guarda                                                                           |
-| -------------- | ------------------------------------------------------------------------------------ |
-| `crews`        | el grupo (la app usa uno solo, el más antiguo)                                       |
-| `crew_members` | pertenencia de las cuentas antiguas (ya no se usa desde la app)                      |
-| `profiles`     | nombre y color de las cuentas antiguas (ya no se usa desde la app)                   |
-| `videos`       | `source = youtube` (`youtube_id`) o `upload` (`file_name`, `storage_path?`), `archived_at` |
+| Tabla          | Qué guarda                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `crews`        | el grupo (la app usa uno solo, el más antiguo)                                                |
+| `crew_members` | pertenencia de las cuentas antiguas (ya no se usa desde la app)                               |
+| `profiles`     | nombre y color de las cuentas antiguas (ya no se usa desde la app)                            |
+| `videos`       | `source = youtube` (`youtube_id`) o `upload` (`file_name`, `storage_path?`), `archived_at`    |
 | `clips`        | tramo `start_seconds`–`end_seconds`, `speed`, `mirrored`, `color`, `is_pinned`, `archived_at` |
-| `notes`        | nota con tiempo sobre un vídeo: `at_seconds`, `body` (≤ 500), `archived_at`          |
+| `notes`        | nota con tiempo sobre un vídeo: `at_seconds`, `body` (≤ 500), `archived_at`                   |
 
 - `clips.crew_id` y `notes.crew_id` los rellena un trigger a partir del vídeo; los topes también cuentan por el grupo
   del vídeo, nunca por el que manda el cliente.
@@ -81,7 +110,9 @@ StudioPage
 ```
 
 - `player/engine.ts` define una interfaz mínima (`play/pause/seek/getCurrentTime/getDuration/setRate`).
-- `player/store.ts` (zustand) es la única fuente de verdad de UI: tiempo, velocidad, espejo, tramo, clip activo.
+- `player/store.ts` (zustand, barril de `playerStore.ts` y `reviewStore.ts`) es la única fuente de verdad de UI:
+  tiempo, velocidad, espejo, tramo, clip activo. La lógica del bucle es común al estudio y al repaso
+  (`player/loopActions.ts`).
 - `player/useLoopController.ts` corre un `requestAnimationFrame`: lee el reloj del motor, salta de B a A y gestiona
   la cuenta atrás de la pausa entre repeticiones.
 - La IFrame API solo actualiza `getCurrentTime()` unas pocas veces por segundo; el motor de YouTube interpola
@@ -90,7 +121,7 @@ StudioPage
 
 ## Estado remoto
 
-React Query (`src/data`) con claves `['group']`, `['profile', userId]`, `['videos', crewId]`, `['video', id]`,
+React Query (`src/data`, una carpeta o fichero por dominio) con, entre otras, las claves `['group']`, `['profile', userId]`, `['videos', crewId]`, `['video', id]`,
 `['clips', videoId]`, `['quick-clips', crewId]` y `['notes', videoId]`. Fijar y borrar clips son optimistas.
 
 ## PWA
@@ -108,6 +139,8 @@ React Query (`src/data`) con claves `['group']`, `['profile', userId]`, `['video
 
 ## Backend intercambiable y modo demo
 
-`src/lib/backend.ts` define la interfaz de datos con dos implementaciones: Supabase (normal) y almacenamiento del
-navegador (demo). El modo demo solo se activa con `import.meta.env.DEV && VITE_DEMO=true`: datos en `localStorage`
-(`coverscape.demo.v1`). El minificador lo elimina de la build de producción.
+`src/lib/backend/` define la interfaz de datos por dominio con dos implementaciones: Supabase (normal) y
+almacenamiento del navegador (demo). El modo demo solo se activa con `import.meta.env.DEV && VITE_DEMO=true`
+(`IS_DEMO`, constante de build): datos en `localStorage` (`coverscape.demo.v1`). Rollup elimina los `*.demo.ts` de la
+build de producción y `pnpm perf:bundle` comprueba que no queda ninguna cadena del demo. `@/lib/backend` solo
+reexporta los tipos; los valores se importan del módulo de cada dominio.

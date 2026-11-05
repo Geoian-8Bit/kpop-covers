@@ -13,7 +13,7 @@ import { gestureFit, stageGesture, wheelFit, type Fit, type Pt, type Size } from
 import type { Target } from './stageLayout';
 
 /** The zoom a target works on, its box (px) and how to bring a frame point into it (see `CompareStage`). */
-export interface ZoomTarget {
+interface ZoomTarget {
   which: 'take' | 'original';
   zoom: Zoom;
   box: ZoomSize;

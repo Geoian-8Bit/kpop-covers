@@ -1,3 +1,5 @@
+import { clamp } from '@coverscape/shared';
+
 /**
  * F9 · Zoom over the video. Pure rules shared by the studio (practice) and the review: limits, the conversion
  * between the picture and the box it is shown in, gestures (two fingers, wheel, drag, keys) and the zoom saved
@@ -27,11 +29,10 @@ export interface Pt {
 }
 
 /** Same limits as the database (`clips_zoom_range`). */
-export const ZOOM_MIN = 1;
+const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
 export const NO_ZOOM: Zoom = { scale: 1, x: 0.5, y: 0.5 };
 
-const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 const finite = (v: unknown, fallback: number) => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : fallback;

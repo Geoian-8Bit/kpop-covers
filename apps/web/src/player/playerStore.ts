@@ -20,7 +20,7 @@ import {
 } from './prefs';
 import { clampZoom, NO_ZOOM, zoomOfClip, type Zoom } from './zoom';
 
-export interface ClipSettings {
+interface ClipSettings {
   id: string;
   start_seconds: number;
   end_seconds: number;
@@ -150,7 +150,7 @@ function clampTime(seconds: number, duration: number): number {
 const SCRUB_SEEK_MS = 220;
 
 /** REQ-27 · The throttled drag seek's module state, grouped so tests (and `reset`) can clear it in one call. */
-export const scrubState = {
+const scrubState = {
   timer: undefined as ReturnType<typeof setTimeout> | undefined,
   seekAt: 0,
   /** Latest drag target the engine hasn't been sent yet. */
@@ -180,7 +180,7 @@ function flushScrub() {
  * Play/pause flip the UI at once (a phone's iframe can take a second to report back); this check
  * puts it right if the media didn't follow, e.g. a blocked autoplay.
  */
-export const playState = {
+const playState = {
   check: undefined as ReturnType<typeof setTimeout> | undefined,
   /** A clip tapped while no engine is attached (switching stage, retrying, the file still loading) plays once one is. */
   onAttach: false,

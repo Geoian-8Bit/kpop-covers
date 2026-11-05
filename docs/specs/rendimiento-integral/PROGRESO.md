@@ -19,7 +19,7 @@
 | 6 Grabador, tomas y repaso | Hecha | ver git log de perf/rendimiento-integral |
 | 7 Trabajo pesado en workers | Hecha | 1a22b4f |
 | 8 Cliente de Supabase ligero | Hecha | 8369aae |
-| 9 Limpieza transversal | Pendiente | |
+| 9 Limpieza transversal | Hecha | ver git log de perf/rendimiento-integral |
 | 10 motion perezoso (condicional) | Pendiente | |
 | Cierre final | Pendiente | |
 
@@ -466,6 +466,46 @@ los fallos se repitieron aislados. Dos visuales de `record.spec.ts` (cerrar «Co
 repaso) fallaron con `--repeat-each=3` contra un servidor de desarrollo cargado de HMR; en HEAD y con el diff de la fase
 en un worktree limpio dan 6/6 y 6/6, y en el árbol principal 12/12 en dos pasadas: intermitencia del entorno, no
 regresión. Los fallos de WebKit son los conocidos (sin Web Audio en Windows, ver fase 0).
+
+### Fase 9 · Limpieza transversal
+
+**Hecho:**
+- REQ-27: `formations/FormationEditor.tsx` 1113 → 495 (+ `formations/editor/**`) y `StageView.tsx` 888 → 557
+  (+ `formations/stage/**`). `EXCEPTIONS` de `scripts/check-file-size.mjs` vacío; ningún fichero > 600 líneas.
+- REQ-28: en `apps/web/src/lib/`: `audioCtor.ts` (7 copias), `deviceShape.ts`, `async.ts` (`sleep`, `abortError`,
+  `isAbort`), `useNow.ts` (+ `useNowDate`), `useSize.ts`, `orientation.ts`, `autoHideChrome.ts` (fábrica de `fsChrome` y
+  `roundChrome`), `lru.ts`; `zoom.ts` usa el `clamp` de shared; el `formatBytes` de voz pasa a `formatBytesEs` (misma
+  salida). Tests unitarios de cada uno.
+- REQ-29: `pnpm check:unused` en verde. 101 exports locales dejan de exportarse (+ 23 en formations); borrados
+  `NotePill`, `REVIEW_RATES`, `FRAME_STEP`, `ReviewApi`, `Upkeep` y `CrewMember`. Barriles limpiados (`@/lib/backend`
+  solo tipos). `as unknown as` fuera de tests: 17 → 7, cada uno con su motivo (workers, supabase, snapshot, devSilence,
+  material de three en Stage3D, codificador de audio). Cachés de `useClipSource` (200) y `VoiceOnda` (16) con tope LRU. `docs/ARCHITECTURE.md` nuevo y `CLAUDE.md` al
+  día. `knip.json`: `ignoreBinaries` `vercel` (CLI global de `scripts/deploy.mjs`) y `vite` (lo ejecuta
+  `scripts/perf-bundle.mjs` con `pnpm exec` en apps/web); `ignoreDependencies` `vitest` (test de la Edge Function
+  `notify-calendar`, que lo toma del workspace). Queda un aviso informativo de knip sobre `.css`.
+- REQ-30: `eslint-disable` 15 → 9 (quitados con `useEffectEvent` sin cambiar cuándo corre cada efecto: ExportDialog,
+  useClapArm ×2, useImageControls (reabrir la cámara), TakeDialogs; los de TakesPanel y LinkFilePanel desaparecieron en
+  las divisiones). Conservados, cada uno con su motivo en el propio comentario: useBench:120, useImageControls:51 y :196,
+  useStudioSession:298, useTakeMachine:245, useCamera:489, ReviewScreen:124, CloudCopyStatus:45 (exhaustive-deps) y
+  runSeparation.ts:403 (no-useless-assignment). Avisos de lint 322 (línea base) → 246, 0 errores.
+
+**No hecho (motivo):**
+- REQ-30 «0 avisos react-hooks/*»: quedan 246 (168 refs, 47 set-state-in-effect, 17 immutability, 11 exhaustive-deps,
+  3 purity). Son reglas del React Compiler; arreglarlos cambia cuándo corren los efectos y la regla de oro manda no tocar
+  un efecto antes que arriesgar. Se cumple «total < línea base».
+- REQ-28 sin unir: `probeVideo` (record/studio y studio/cloudCopy) e `isDuplicate` comprueban cosas distintas y fallan de
+  forma distinta; los dos `useFullscreen` (studio y rpd) difieren en orientación y reajuste del viewport, y unirlos
+  exigiría probar con giro real en dispositivo.
+
+**Revisión:** r1 y r2 sin hallazgos de código ≥ 5; lo de spec (avisos react-hooks, duplicados sin unir) queda anotado
+arriba. Cerrada tras dos rondas limpias.
+
+**Pruebas:** typecheck, lint, test (142 + 1147), check:size y check:unused en verde. e2e chromium completo: 538 bien y 3
+mal, todos por el entorno: con la suite completa (8 workers) Chromium sin cabeza deja `document.timeline` hasta ~19 s por
+detrás de `performance.now()`, y las salidas WAAPI de motion quedan esperando, de modo que el elemento sigue en el DOM.
+Pasaba igual en fa9de58 (8/12 bajo carga). Arreglado solo en los tests, sin tocar `src`: localizador exacto de «Hoy» en
+`flows/shell/calendar.spec.ts` y `finishUnstartedAnimations` en `visual/record.spec.ts` (termina solo animaciones finitas
+sin empezar, como hacen las capturas con `animations: 'disabled'`). Ficheros enteros: 32/32 y 8/8.
 
 **Descartados (regla de oro / no necesarios):**
 - REQ-23.8 FrameBus: es condicional y no hacía falta.

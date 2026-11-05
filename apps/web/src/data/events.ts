@@ -20,7 +20,7 @@ import { writePositions } from './positionsRetry';
 export type { EventSongView, EventWithCount } from '@/lib/backend/events';
 
 /** F16 · Events (name, date and time, place) and their repertoire. Shared by the group; deleting archives. */
-export const eventKeys = {
+const eventKeys = {
   all: ['events'] as const,
   detail: (id: string | undefined) => ['event', id] as const,
   songs: (id: string | undefined) => ['event-songs', id] as const,

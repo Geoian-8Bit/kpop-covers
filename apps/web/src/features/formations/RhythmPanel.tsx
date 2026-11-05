@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Drum, Magnet, MapPin } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { jelly } from '@/lib/motion';
 import { usePlayer } from '@/player/store';
@@ -77,7 +77,12 @@ export function RhythmPanel({
   const [text, setText] = useState(bpm != null ? String(bpm) : '');
   const [taps, setTaps] = useState<number[]>([]);
   const tapped = useRef(0);
-  useEffect(() => setText(bpm != null ? String(bpm) : ''), [bpm]);
+  // REQ-30 · Adjusted while rendering (React's pattern for state that follows a prop) instead of in an effect.
+  const [textBpm, setTextBpm] = useState(bpm);
+  if (textBpm !== bpm) {
+    setTextBpm(bpm);
+    setText(bpm != null ? String(bpm) : '');
+  }
 
   async function saveBpm(value: string) {
     const trimmed = value.trim().replace(',', '.');

@@ -12,7 +12,7 @@ import type { EngineKind } from './separateRules';
  *   without half precision. The JS pre/post-processing of github.com/timcsy/demucs-web (MIT) is ported in dsp.ts.
  */
 
-export interface ModelPiece {
+interface ModelPiece {
   url: string;
   /** Tensor names in and out (from the manifest); empty for the single-file model (read from the session). */
   inputs: readonly string[];
@@ -115,7 +115,7 @@ export function expectedFileBytes(model: ModelDescriptor, url: string): number |
 }
 
 /** Cache Storage bucket for the model files (outside the service worker's precache, so installs stay light). */
-export const MODEL_CACHE = 'stem-models-v1';
+const MODEL_CACHE = 'stem-models-v1';
 
 export interface Manifest {
   pieces: { file: string; inputs: string[]; outputs: string[] }[];
@@ -256,7 +256,7 @@ export async function fetchModelFile(
 }
 
 /** REQ-26 · At most this often the worker tells the page how the download goes (~4 times a second). */
-export const MODEL_PROGRESS_MS = 250;
+const MODEL_PROGRESS_MS = 250;
 
 /**
  * REQ-26 · The model's overall download progress (all its files) for the page, at most every `intervalMs` (each

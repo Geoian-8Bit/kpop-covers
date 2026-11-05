@@ -12,7 +12,7 @@
  * Whatever stays unknown is offered as «Otra lente», never guessed.
  */
 
-export type LensRole = 'ultra' | 'main' | 'tele' | 'macro' | 'other';
+type LensRole = 'ultra' | 'main' | 'tele' | 'macro' | 'other';
 
 /** What a camera showed when it was open (getCapabilities), remembered per phone. */
 export interface LensProbe {
@@ -156,7 +156,7 @@ export function torchHint(lenses: Lens[], probes: Record<string, LensProbe | und
  * rear cameras nobody could identify already share one button (`otherLensStep`); beyond that «2×» goes first (a
  * pinch still reaches it), then the narrowest zooms from the end.
  */
-export const MAX_LENS_CHIPS = 4;
+const MAX_LENS_CHIPS = 4;
 
 export function fitChips<T extends { key: string }>(chips: T[], max = MAX_LENS_CHIPS, keep: string | null = null): T[] {
   let out = chips;

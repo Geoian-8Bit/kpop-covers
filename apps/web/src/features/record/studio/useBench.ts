@@ -117,7 +117,7 @@ export function useBench(S: Studio, open: boolean) {
       bench.current?.cancel();
       bench.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: re-runs only on what changes the rehearsal; the rest is read fresh and must not restart it mid-take
   }, [
     open,
     phase,

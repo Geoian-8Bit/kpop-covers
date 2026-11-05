@@ -275,7 +275,7 @@ async function readPieces(dir: FileSystemDirectoryHandle, type: string): Promise
 
 let persistAsked = false;
 /** Ask once that the browser doesn't clear the app's storage when the phone runs short (R2). */
-export function askPersistence(): void {
+function askPersistence(): void {
   if (persistAsked) return;
   persistAsked = true;
   void navigator.storage?.persist?.().catch(() => false);

@@ -142,9 +142,9 @@ export function bestLayout(
 /** The take never smaller than this (px of height) while the settings are open. */
 export const TAKE_MIN_HEIGHT = 120;
 /** The panel of settings and notes over the take (a phone on its side): this wide when it can be. */
-export const COVER_PANEL = { min: 300, max: 360 } as const;
+const COVER_PANEL = { min: 300, max: 360 } as const;
 /** The hinge between the two panels (px), as the stage draws it. */
-export const PANEL_GAP = 10;
+const PANEL_GAP = 10;
 
 /**
  * A phone on its side: how wide the panel of settings and notes is. It opens over the take's side and the take's

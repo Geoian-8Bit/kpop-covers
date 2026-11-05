@@ -29,7 +29,7 @@ function permission(): PushPermission {
   return Notification.permission;
 }
 
-export function readAvailability(): PushAvailability {
+function readAvailability(): PushAvailability {
   if (typeof window === 'undefined') return 'hidden';
   return pushAvailability({
     vapidKey: VAPID_KEY,

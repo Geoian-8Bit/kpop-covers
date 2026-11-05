@@ -84,12 +84,10 @@ function refreshPosters(queryClient: QueryClient, crewId: string): Promise<unkno
 }
 
 /** REQ-14 · The posters for rows that don't come from the library list (bag and event rows combine by id). */
-export function useVideoPosters(crewId: string | undefined, enabled = true): PosterMap | undefined {
+function useVideoPosters(crewId: string | undefined, enabled = true): PosterMap | undefined {
   const queryClient = useQueryClient();
   return useQuery({ ...postersQuery(queryClient, crewId), enabled: Boolean(crewId) && enabled }).data;
 }
-
-export { posterOf };
 
 /** Posters already asked for by id and revision this visit: each is asked once (no loops if the server lacks it). */
 const askedPosters = new Set<string>();

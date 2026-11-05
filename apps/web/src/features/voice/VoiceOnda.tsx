@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { cn } from '@/lib/cn';
+import { lruGet, lruSet } from '@/lib/lru';
 import { soft } from '@/lib/motion';
 import {
   DriftStrip,
@@ -59,12 +60,14 @@ function layers(h: number) {
   };
 }
 
+// REQ-29 · Capped (a handful of heights in practice: the strip's, and a few more after turning the phone).
+const CACHE_MAX = 16;
 const CACHE = new Map<number, ReturnType<typeof layers>>();
 function layersFor(h: number) {
-  let found = CACHE.get(h);
+  let found = lruGet(CACHE, h);
   if (!found) {
     found = layers(h);
-    CACHE.set(h, found);
+    lruSet(CACHE, h, found, CACHE_MAX);
   }
   return found;
 }

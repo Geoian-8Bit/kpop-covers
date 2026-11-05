@@ -70,7 +70,7 @@ async function install(): Promise<boolean> {
   return outcome === 'accepted';
 }
 
-export function useInstallApp() {
+function useInstallApp() {
   const prompt = useSyncExternalStore(subscribe, () => deferred);
   const done = useSyncExternalStore(subscribe, () => installed);
   return {

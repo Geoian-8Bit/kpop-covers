@@ -486,7 +486,7 @@ export function useCamera(open: boolean, onLost: () => void, busy: () => boolean
   }, []);
 
   /** P23 · The flash lives on one rear camera only: on another, the control says which one has it. */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: lens or camera changes are the cue to re-read backCams (a ref, not reactive)
   const probes = useMemo(() => (back ? lensProbes(backCams.current) : {}), [back, view.deviceId, view.lenses]);
   const flashElsewhere = back && !view.torchAvailable && Object.values(probes).some((p) => p?.torch);
   const noTorchHint = flashElsewhere ? torchHint(view.lenses, probes, view.deviceId) : null;

@@ -128,7 +128,8 @@ function TrackEditor({ track }: { track: Track }) {
     commit(next);
   }
 
-  function rename(event: FormEvent) {
+  // REQ-29 · Submit and blur both land here; only `preventDefault` is used, so either event fits without a cast.
+  function rename(event: Pick<FormEvent, 'preventDefault'>) {
     event.preventDefault();
     const clean = name.trim();
     if (!clean || clean === track.name) return setName(track.name);
@@ -170,7 +171,7 @@ function TrackEditor({ track }: { track: Track }) {
               value={name}
               maxLength={80}
               onChange={(e) => setName(e.target.value)}
-              onBlur={(e) => rename(e as unknown as FormEvent)}
+              onBlur={(e) => rename(e)}
               className="min-w-0 flex-1"
             />
             <Button

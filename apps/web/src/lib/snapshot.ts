@@ -9,7 +9,7 @@ import type { ClipWithVideo, EventWithCount, VideoWithClipCount } from './backen
  */
 
 /** Above this a snapshot isn't kept (and the old one goes): localStorage is small and synchronous. */
-export const SNAPSHOT_MAX_CHARS = 120_000;
+const SNAPSHOT_MAX_CHARS = 120_000;
 const PREFIX = 'oneshoot.snap.v1.';
 
 type SnapshotStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -248,6 +248,7 @@ function quickClip(v: unknown): ClipWithVideo | null {
   const video = v.video;
   if (video !== null && !(isRow(video) && str(video.id) && str(video.title) && str(video.source)))
     return null;
+  // REQ-29 · Kept: every field read above was checked by hand; TypeScript can't follow those guards.
   return v as unknown as ClipWithVideo;
 }
 

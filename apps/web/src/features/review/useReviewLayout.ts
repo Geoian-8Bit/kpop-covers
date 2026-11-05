@@ -8,25 +8,6 @@ export const WIDE_SCREEN = '(min-width: 1024px) and (min-height: 521px)';
 /** The one-row bar's height (px, without the safe area). */
 export const BAR_H = 56;
 
-export function useSize(ref: React.RefObject<HTMLElement | null>): { width: number; height: number } {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () =>
-      setSize((s) =>
-        s.width === el.clientWidth && s.height === el.clientHeight
-          ? s
-          : { width: el.clientWidth, height: el.clientHeight },
-      );
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return size;
-}
-
 /** The safe areas (px), read from an element padded by them; read again whenever the room changes (a turn). */
 export function useInsets(ref: React.RefObject<HTMLElement | null>, room: { width: number; height: number }) {
   const [insets, setInsets] = useState({ left: 0, right: 0, bottom: 0 });

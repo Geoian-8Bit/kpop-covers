@@ -8,7 +8,6 @@ export type {
   FormationPlanFull,
   FormationPlanPatch,
   FormationPlanSummary,
-  RevisionResult,
 } from '@/lib/backend/formations';
 
 /** REQ-06 · Formation plans of a song, shared by the group. */

@@ -295,7 +295,7 @@ export function useStudioSession(open: boolean, video: Video) {
       setLastStats(null);
       setPhase('idle');
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: the studio's open/close lifecycle; its cleanup must run on closing only
   }, [open]);
 
   return {

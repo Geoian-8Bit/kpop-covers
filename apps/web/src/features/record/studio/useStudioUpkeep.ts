@@ -92,5 +92,3 @@ export function useStudioUpkeep(S: Studio, open: boolean) {
 
   return { usesCanvas, canvasOnScreen, canChangeCamera, settingsAllowed, summary, explainDirectLock };
 }
-
-export type Upkeep = ReturnType<typeof useStudioUpkeep>;

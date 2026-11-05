@@ -7,13 +7,13 @@ import type { Keyframe, Stage } from '../formationRules';
 
 /** Margins around the floor in metres, the same as the editor's stage (room for names and «PÚBLICO»). */
 export const STAGE_PAD = 0.7;
-export const STAGE_AUDIENCE = 0.9;
+const STAGE_AUDIENCE = 0.9;
 
 /** Width of the PNG (px); its height follows the stage's proportion. */
-export const PNG_WIDTH = 1600;
+const PNG_WIDTH = 1600;
 /** Header (plan, time) and footer (note) bands of the PNG, px. */
 export const PNG_HEADER = 132;
-export const PNG_FOOTER = 120;
+const PNG_FOOTER = 120;
 
 /** A4 landscape page drawn at 150 dpi (px) and its size in mm. */
 export const PDF_PAGE_PX = { width: 1754, height: 1240 } as const;
@@ -22,7 +22,7 @@ export const PDF_PAGE_MM = { width: 297, height: 210 } as const;
 /** REQ-12 · The video: frames per second, longest plan and width of the picture. */
 export const VIDEO_FPS = 30;
 export const VIDEO_MAX_SECONDS = 600;
-export const VIDEO_WIDTH = 1280;
+const VIDEO_WIDTH = 1280;
 /** Seconds shown before the first formation and after the last one. */
 export const VIDEO_LEAD = 1;
 export const VIDEO_TAIL = 1.5;

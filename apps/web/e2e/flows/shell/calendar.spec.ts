@@ -29,7 +29,7 @@ test('los botones de mes y «Hoy» recorren los meses', async ({ page }) => {
   await expect(month).toHaveText('diciembre 2026');
   await page.getByRole('button', { name: 'Mes anterior' }).click();
   await expect(month).toHaveText('noviembre 2026');
-  await page.getByRole('button', { name: 'Hoy' }).click();
+  await page.getByRole('button', { name: 'Hoy', exact: true }).click();
   await expect(month).toHaveText('octubre 2026');
   guard.check();
 });

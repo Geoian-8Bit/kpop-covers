@@ -18,7 +18,7 @@ import type { NavigateFunction, NavigateOptions, To } from 'react-router';
  *   layer closes.
  */
 
-export interface HistoryLike {
+interface HistoryLike {
   readonly state: unknown;
   pushState(state: unknown, unused: string): void;
   replaceState(state: unknown, unused: string): void;

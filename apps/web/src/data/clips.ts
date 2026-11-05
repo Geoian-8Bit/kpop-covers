@@ -5,9 +5,9 @@ import { parseQuickClips, readSnapshot, writeSnapshot } from '@/lib/snapshot';
 import { invalidateAfterArchive, invalidateClipPickers } from './afterArchive';
 import { videoKeys, type VideoWithClipCount } from './videos';
 
-export type { ClipVideo, ClipWithVideo } from '@/lib/backend/core';
+export type { ClipWithVideo } from '@/lib/backend/core';
 
-export const clipKeys = {
+const clipKeys = {
   forVideo: (videoId: string | undefined) => ['clips', videoId] as const,
   quick: (crewId: string | undefined) => ['quick-clips', crewId] as const,
 };

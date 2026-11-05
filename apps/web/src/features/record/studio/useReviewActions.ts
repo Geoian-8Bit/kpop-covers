@@ -188,8 +188,6 @@ export function useReviewActions(S: Studio, video: Video, onClose: () => void) {
   fx.again = again;
   return { canKeep, keepInApp, again, confirmDiscard, save, share };
 }
-
-export type ReviewApi = ReturnType<typeof useReviewActions>;
 /**
  * REQ-23 · The «Guardar» mutation, made by the review strip (TakeReviewPane) so that the takes data
  * layer is not part of what the camera waits for.

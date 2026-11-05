@@ -1,7 +1,7 @@
 import type { FormationPlan, Video } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field } from '@/components/ui/Field';
@@ -200,12 +200,15 @@ export function PlanNameDialog({ plan, onClose }: { plan: FormationPlanSummary |
   const toast = useToast();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
+  // REQ-30 · Adjusted while rendering (React's pattern for state that follows a prop) instead of in an effect.
+  const [shownPlan, setShownPlan] = useState<FormationPlanSummary | null>(null);
+  if (shownPlan !== plan) {
+    setShownPlan(plan);
     if (plan) {
       setName(plan.name);
       setError(null);
     }
-  }, [plan]);
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();

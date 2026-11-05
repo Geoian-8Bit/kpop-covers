@@ -84,7 +84,7 @@ export function BagView({ bag }: { bag: BagWithCount }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const drawing = useRef(false);
 
-  const all = items.data ?? [];
+  const all = useMemo(() => items.data ?? [], [items.data]);
   const inBag = all.filter((i) => i.removed_at == null);
   const out = all.filter((i) => i.removed_at != null);
   const copy = KIND_COPY[bag.kind];

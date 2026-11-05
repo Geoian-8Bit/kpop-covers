@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { forgetVideoUrl, isStaleCopy, markLocalCopy, signedVideoUrl } from '@/data/videos';
 import type { PlayableVideo } from '@/lib/backend/bags';
 import { deleteLocalVideo, loadLocalVideo } from '@/lib/localVideos';
+import { lruGet, lruSet } from '@/lib/lru';
 
 /**
  * What plays a clip's song in a round: its own file when there is one (F1: no ads, no waiting), from this device
@@ -21,6 +22,8 @@ export type ClipSource =
 
 type Playable = PlayableVideo;
 
+// REQ-29 · Capped far above a round's songs (the whole cache is dropped when the round closes anyway).
+const CACHE_MAX = 200;
 const cache = new Map<string, Promise<ClipSource>>();
 const objectUrls = new Set<string>();
 /** REQ-15 · The cloud path behind each signed URL handed out this round (the signature is remembered for hours). */
@@ -71,9 +74,9 @@ async function resolveSource(video: Playable): Promise<{ source: ClipSource; las
   return { source: fallback, lasting: false };
 }
 
-export function clipSourceFor(video: Playable): Promise<ClipSource> {
+function clipSourceFor(video: Playable): Promise<ClipSource> {
   const key = cacheKey(video);
-  let pending = cache.get(key);
+  let pending = lruGet(cache, key);
   if (!pending) {
     const attempt: Promise<ClipSource> = resolveSource(video).then(({ source, lasting }) => {
       // A failure that may pass is not kept: the next clip of this song (or «Otra vez») asks again.
@@ -81,7 +84,7 @@ export function clipSourceFor(video: Playable): Promise<ClipSource> {
       return source;
     });
     pending = attempt;
-    cache.set(key, pending);
+    lruSet(cache, key, pending, CACHE_MAX);
   }
   return pending;
 }

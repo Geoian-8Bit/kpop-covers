@@ -12,8 +12,8 @@ export interface Fit {
   y: number;
 }
 export const NO_FIT: Fit = { scale: 1, x: 0, y: 0 };
-export const FIT_SCALE_MIN = 0.2;
-export const FIT_SCALE_MAX = 5;
+const FIT_SCALE_MIN = 0.2;
+const FIT_SCALE_MAX = 5;
 
 export function clampFit(fit: Fit): Fit {
   const scale = Number.isFinite(fit.scale) ? clamp(fit.scale, FIT_SCALE_MIN, FIT_SCALE_MAX) : 1;

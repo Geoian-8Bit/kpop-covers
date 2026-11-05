@@ -75,7 +75,7 @@ export function whoWords(who: readonly (string | null)[], nameOf: (id: string) =
 }
 
 /** The accessible name of an emoji button. */
-export const EMOJI_NAMES: Record<ReactionEmoji, string> = {
+const EMOJI_NAMES: Record<ReactionEmoji, string> = {
   '🔥': 'Fuego',
   '👏': 'Aplausos',
   '💯': 'Cien',

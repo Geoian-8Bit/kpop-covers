@@ -11,7 +11,7 @@ import { usePlayer } from '@/player/store';
 import { cssColor, cssFont } from '../cssTokens';
 import { positionsAt, propsAt, type Stage } from '../formationRules';
 import { PROP_SIZE } from '../propRules';
-import { initialOf, personColors } from '../StageView';
+import { initialOf, personColors } from '../stage/personStyle';
 import { CAMERA_LABELS, CAMERA_TARGET, cameraPosition, propYaw, toWorld, type CameraView } from './cameraRules';
 
 /**
@@ -220,18 +220,23 @@ function Scene({ stage, memberIds, people, list }: Stage3DProps) {
     }
   });
 
-  const keep = (map: Map<string, Group>, id: string) => (el: Group | null) => {
-    if (el) map.set(id, el);
-    else map.delete(id);
+  // REQ-30 · The maps are reached inside the callbacks (when React attaches the element), never during render.
+  const keepProp = (id: string) => (el: Group | null) => {
+    if (el) props.current.set(id, el);
+    else props.current.delete(id);
+  };
+  const keepBody = (id: string) => (el: Group | null) => {
+    if (el) bodies.current.set(id, el);
+    else bodies.current.delete(id);
   };
 
   return (
     <group>
       {allProps.map((p) => (
-        <PropBox key={p.id} prop={p} register={keep(props.current, p.id)} />
+        <PropBox key={p.id} prop={p} register={keepProp(p.id)} />
       ))}
       {memberIds.map((id) => (
-        <Person key={id} person={people.get(id)} register={keep(bodies.current, id)} />
+        <Person key={id} person={people.get(id)} register={keepBody(id)} />
       ))}
     </group>
   );

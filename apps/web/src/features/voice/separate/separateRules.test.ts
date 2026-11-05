@@ -8,7 +8,7 @@ import {
   estimateRemainingSeconds,
   estimateSeparationRange,
   estimateStemBytes,
-  formatBytes,
+  formatBytesEs,
   formatMinutes,
   formatRange,
   GROUP_STORAGE_BYTES,
@@ -236,9 +236,9 @@ describe('size of the tracks', () => {
   });
 
   it('formats sizes in Spanish', () => {
-    expect(formatBytes(8.4 * 1024 * 1024)).toBe('8,4 MB');
-    expect(formatBytes(126 * 1024 * 1024)).toBe('126 MB');
-    expect(formatBytes(1024 * 1024 * 1024)).toBe('1,0 GB');
+    expect(formatBytesEs(8.4 * 1024 * 1024)).toBe('8,4 MB');
+    expect(formatBytesEs(126 * 1024 * 1024)).toBe('126 MB');
+    expect(formatBytesEs(1024 * 1024 * 1024)).toBe('1,0 GB');
   });
 });
 

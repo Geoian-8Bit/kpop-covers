@@ -17,7 +17,7 @@ import {
  * (Chromium may kill a worker for memory without a word): whoever asked then does the work on the page, as before.
  */
 
-export interface EncodedSummary {
+interface EncodedSummary {
   bytes: number;
   /** Each encoded sample's duration (µs; 0 when the encoder gave none). */
   durations: number[];
@@ -48,7 +48,7 @@ export interface AudioWorkerClient<J> {
 /** How long a worker may take to start before the page does the work itself. */
 const READY_TIMEOUT_MS = 15_000;
 /** Base time any answer may take; a slow machine encoding ~4 s of sound or writing a small file fits easily. */
-export const ANSWER_BASE_MS = 30_000;
+const ANSWER_BASE_MS = 30_000;
 /** Extra time per transferred megabyte (a job's input), for jobs whose work grows with it. */
 const MS_PER_MB = 1_000;
 

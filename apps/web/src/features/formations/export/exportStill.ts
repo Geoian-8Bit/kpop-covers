@@ -1,6 +1,6 @@
 import type { FormationMember } from '@/data/formations';
 import { activeIndex, describePoint, positionsAt, propsAt, withDefaults, type Keyframe, type Stage } from '../formationRules';
-import { personColors } from '../StageView';
+import { personColors } from '../stage/personStyle';
 import { exportFileName, formatClock, PDF_PAGE_MM, PDF_PAGE_PX, pngSize, PNG_HEADER } from './exportRules';
 import { canvasBlob, cssColor, cssFont, fontsReady, makeCanvas, paintStage, wrapText, type StageScene } from './stagePainter';
 

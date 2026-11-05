@@ -55,6 +55,22 @@ async function showTakes(page: Page): Promise<void> {
 
 const stageVideo = (page: Page): Locator => page.locator('video');
 
+/**
+ * Headless Chromium under load (the full suite, 8 workers) lets `document.timeline` fall seconds behind
+ * `performance.now()`, while motion starts its Web Animations (the dialog's exit fade) at a `performance.now()` time:
+ * the closing dialog then waits, still in the page, until the timeline catches up, which can outlast the test. A real
+ * browser's timeline follows the clock. This jumps only those not-yet-started, finite animations to their end, as the
+ * screenshots already do with `animations: 'disabled'`.
+ */
+async function finishUnstartedAnimations(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      const end = animation.effect?.getComputedTiming().endTime;
+      if (Number(animation.currentTime) < 0 && typeof end === 'number' && Number.isFinite(end)) animation.finish();
+    }
+  });
+}
+
 test('grabador: inicio y cada panel (ajustes, imagen, visor, información, aplauso, inicio)', async ({
   page,
   browser,
@@ -276,6 +292,7 @@ test('tomas: toma recién grabada, diálogo de compartir y de borrar', async ({ 
   await expect(async () => {
     if (await share.isVisible())
       await share.getByRole('button', { name: 'Ahora no' }).click({ timeout: 2000 });
+    await finishUnstartedAnimations(page);
     await expect(share).toBeHidden({ timeout: 2000 });
   }).toPass({ timeout: 15_000 });
   await page.getByRole('button', { name: 'Borrar la toma' }).click();

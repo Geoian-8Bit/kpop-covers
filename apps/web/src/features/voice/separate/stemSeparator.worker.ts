@@ -29,6 +29,8 @@ import {
   type EngineKind,
 } from './separateRules';
 
+// REQ-29 · Kept: the app compiles with the DOM library only (no `DedicatedWorkerGlobalScope`), so the worker's
+// own `self` is typed by hand here.
 const scope = self as unknown as {
   postMessage(message: WorkerMessage, transfer?: Transferable[]): void;
   onmessage: ((event: MessageEvent<PageMessage>) => void) | null;

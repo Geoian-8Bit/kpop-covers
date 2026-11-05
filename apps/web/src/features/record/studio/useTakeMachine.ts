@@ -242,7 +242,7 @@ export function useTakeMachine(S: Studio, start: StartApi, open: boolean, video:
     S.reviewTiming.current = S.takeTiming.current;
     if (S.reviewTake.current && written?.failed()) S.reviewTake.current.noSpace = true;
     setPhase('review');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: once per finished recording; the take in progress is read as it was then
   }, [video]);
 
   /** Start the song and wait until it really moves (YouTube may still be loading) before rolling. */

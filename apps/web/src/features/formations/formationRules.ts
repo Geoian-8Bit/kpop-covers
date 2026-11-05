@@ -33,10 +33,10 @@ export const DEFAULT_STAGE: Stage = { width: 8, depth: 6, grid: 0.5 };
 export const DEFAULT_TRANSITION = 2;
 export const TRANSITION_MAX = 30;
 /** Two formations closer than this share a moment (the server rounds `at` to 0.01 s). */
-export const SAME_MOMENT = 0.05;
+const SAME_MOMENT = 0.05;
 /** How far a clashing formation is pushed (REQ-06: «se desplaza 0,1 s»). */
-export const CLASH_STEP = 0.1;
-export const FINE_STEP = 0.1;
+const CLASH_STEP = 0.1;
+const FINE_STEP = 0.1;
 
 export const roundTime = (t: number) => Math.round(t * 100) / 100;
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -51,7 +51,7 @@ export function ease(p: number): number {
   return c * c * (3 - 2 * c);
 }
 
-export function lerpPoint(a: StagePoint, b: StagePoint, p: number): StagePoint {
+function lerpPoint(a: StagePoint, b: StagePoint, p: number): StagePoint {
   return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p };
 }
 
@@ -59,7 +59,7 @@ export function clampPoint(p: StagePoint, stage: Pick<Stage, 'width' | 'depth'>)
   return { x: Math.min(stage.width, Math.max(0, p.x)), y: Math.min(stage.depth, Math.max(0, p.y)) };
 }
 
-export function snapValue(v: number, grid: number): number {
+function snapValue(v: number, grid: number): number {
   return grid > 0 ? round3(Math.round(v / grid) * grid) : round3(v);
 }
 
@@ -311,7 +311,7 @@ export function fitPositions(positions: FormationPositions, stage: Pick<Stage, '
   return out;
 }
 
-export function samePositions(a: FormationPositions, b: FormationPositions): boolean {
+function samePositions(a: FormationPositions, b: FormationPositions): boolean {
   const ka = Object.keys(a);
   if (ka.length !== Object.keys(b).length) return false;
   return ka.every(
@@ -319,7 +319,7 @@ export function samePositions(a: FormationPositions, b: FormationPositions): boo
   );
 }
 
-export function sameKeyframe(a: Keyframe, b: Keyframe): boolean {
+function sameKeyframe(a: Keyframe, b: Keyframe): boolean {
   return (
     a.id === b.id &&
     Math.abs(a.at - b.at) < 1e-6 &&
@@ -392,7 +392,7 @@ export interface History<T> {
   future: T[];
 }
 
-export const HISTORY_LIMIT = 100;
+const HISTORY_LIMIT = 100;
 
 export function historyStart<T>(present: T): History<T> {
   return { past: [], present, future: [] };

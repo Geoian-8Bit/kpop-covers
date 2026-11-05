@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 import { useReview } from '@/player/store';
-import { MessageSquarePlus, Volume2 } from 'lucide-react';
+import { Volume2 } from 'lucide-react';
 import { pill, pillIdle } from './reviewControlParts';
 import { useTapAnyFinger } from './tapAnyFinger';
 
@@ -27,24 +27,6 @@ function SoundPillButton({ takeHeard }: { takeHeard: boolean }) {
     >
       <Volume2 className="size-[18px]" />
       <span>{takeHeard ? 'Toma' : 'Original'}</span>
-    </button>
-  );
-}
-
-export function NotePill({ onNote }: { onNote: () => void }) {
-  const ready = useReview((s) => s.takeEngine != null);
-  const tap = useTapAnyFinger(onNote, !ready);
-  return (
-    <button
-      type="button"
-      aria-label="Nota en este momento (N)"
-      title="Nota en este momento (N)"
-      disabled={!ready}
-      {...tap}
-      className={cn(pill, 'text-kin-300 hover:bg-washi/[0.07]')}
-    >
-      <MessageSquarePlus className="size-[18px]" />
-      <span>Nota</span>
     </button>
   );
 }

@@ -87,7 +87,7 @@ export function FrameStep({ dir }: { dir: -1 | 1 }) {
 }
 
 /** The section of the take: A, B and repeat, together like the studio's tray. */
-export function LoopTray({ onLoopMissing }: { onLoopMissing: () => void }) {
+function LoopTray({ onLoopMissing }: { onLoopMissing: () => void }) {
   const loop = useReview((s) => s.loop);
   const trayBtn =
     "relative grid h-[38px] w-11 place-items-center rounded-[8px] transition-colors after:absolute after:inset-x-0 after:-inset-y-[3px] after:content-['']";

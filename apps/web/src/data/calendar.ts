@@ -211,7 +211,7 @@ function writeSeen(value: string) {
   }
 }
 
-export const useCalendarSeen = create<SeenState>()((set, get) => ({
+const useCalendarSeen = create<SeenState>()((set, get) => ({
   seenAt: typeof window === 'undefined' ? new Date(0).toISOString() : readSeen(),
   mark(next) {
     if (next <= get().seenAt) return;
@@ -221,7 +221,7 @@ export const useCalendarSeen = create<SeenState>()((set, get) => ({
 }));
 
 /** The changes after this device's mark (read when the app opens or comes back; no Realtime). */
-export function useCalendarChanges() {
+function useCalendarChanges() {
   const seenAt = useCalendarSeen((s) => s.seenAt);
   return useQuery({
     queryKey: calendarKeys.changesSince(seenAt),

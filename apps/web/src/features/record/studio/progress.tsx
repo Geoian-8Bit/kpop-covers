@@ -5,7 +5,7 @@ import { jelly } from '@/lib/motion';
 import { usePlayer } from '@/player/store';
 import { HEX, type Phase, type Span } from './types';
 
-export function songProgress(span: Span | null, time: number): number {
+function songProgress(span: Span | null, time: number): number {
   return span && Number.isFinite(span.end) && span.end > span.start
     ? clamp((time - span.start) / (span.end - span.start), 0, 1)
     : 0;
@@ -15,7 +15,7 @@ export function songProgress(span: Span | null, time: number): number {
  * P4 · The song's progress painted straight on the DOM (like the studio's FsProgress): playback never re-renders
  * the bar or the shutter. `paint` gets each new value; the render sets the value of that moment.
  */
-export function useSongProgressPaint(span: Span | null, paint: (progress: number) => void): void {
+function useSongProgressPaint(span: Span | null, paint: (progress: number) => void): void {
   const paintRef = useRef(paint);
   paintRef.current = paint;
   const start = span?.start;

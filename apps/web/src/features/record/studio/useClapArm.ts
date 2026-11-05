@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { unlockAudio } from '@/lib/metronome';
 import { openMic } from '../camera';
 import { createListeningContext } from '../clap/listeningContext';
@@ -103,19 +103,21 @@ export function useClapArm(S: Studio) {
 
   // Armed only while nothing else runs: a take started another way (a key on the shutter behind the overlay, the
   // recovery of a leftover) disarms, so the microphone and its analysis are never left open.
+  // REQ-30 · Keyed on «armed or not», as before; `disarmClap` only touches refs and a setter, so the effect event
+  // (always the latest one) does exactly what the captured one did.
+  const isArmed = clap != null;
+  const disarm = useEffectEvent(disarmClap);
   useEffect(() => {
-    if (clap && phase !== 'idle') disarmClap();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, clap != null]);
+    if (isArmed && phase !== 'idle') disarm();
+  }, [phase, isArmed]);
 
   // Back while armed disarms (the studio stays open).
   useEffect(() => {
-    if (!clap) return;
-    const onPop = () => disarmClap();
+    if (!isArmed) return;
+    const onPop = () => disarm();
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clap != null]);
+  }, [isArmed]);
 
   fx.armClap = armClap;
   fx.disarmClap = disarmClap;

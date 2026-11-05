@@ -40,10 +40,10 @@ import { useToast } from '@/providers/ToastProvider';
  * YouTube the row says how to get it.
  */
 
-export const ZOOM_NEEDS_FILE = 'Vincula el archivo del vídeo para ampliar.';
+const ZOOM_NEEDS_FILE = 'Vincula el archivo del vídeo para ampliar.';
 
 /** 44 · The zoom's buttons (row and fullscreen arrows) are for a mouse: hidden where the primary pointer is a finger. */
-export const ZOOM_UI_TOUCH_HIDDEN = 'pointer-coarse:hidden';
+const ZOOM_UI_TOUCH_HIDDEN = 'pointer-coarse:hidden';
 
 /** «Ampliar» in the row: one tap, one step (around the spot already zoomed, the centre the first time). */
 const ZOOM_STEP = 1.5;

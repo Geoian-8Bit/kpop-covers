@@ -9,12 +9,12 @@ import { VIDEO_BUCKET } from '@/lib/supabase';
 import { takeKeys } from './trackKeys';
 
 /** 18 · The separations (AI) of a song's file, shared by the group. */
-export const stemKeys = {
+const stemKeys = {
   forVideo: (videoId: string | undefined) => ['video-stems', videoId] as const,
   sources: (stemsId: string | undefined) => ['video-stems-urls', stemsId] as const,
 };
 
-export function useVideoStems(videoId: string | undefined, enabled = true) {
+function useVideoStems(videoId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: stemKeys.forVideo(videoId),
     enabled: Boolean(videoId) && enabled,
@@ -33,7 +33,7 @@ export function useCurrentStems(
 }
 
 /** Signed URLs (6 h) of a separation's two tracks. */
-export function useStemSources(stems: VideoStems | null): StemSources | null {
+function useStemSources(stems: VideoStems | null): StemSources | null {
   const urls = useQuery({
     queryKey: stemKeys.sources(stems?.id),
     enabled: Boolean(stems?.vocals_path && stems?.instrumental_path),

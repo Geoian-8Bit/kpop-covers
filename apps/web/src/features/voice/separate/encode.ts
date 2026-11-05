@@ -5,6 +5,7 @@ import {
   YIELD_EVERY_BLOCKS,
   yieldToPage,
 } from '@/lib/mp4/audioEncode';
+import { offlineAudioContextCtor } from '@/lib/audioCtor';
 import { AudioWorkerUnavailable, openAudioWorker } from '@/lib/mp4/audioWorkerClient';
 import type { Mp4Codec } from './mp4';
 import {
@@ -86,11 +87,8 @@ export async function pickCodec(durationSeconds: number, inputRate: number): Pro
   return null;
 }
 
-type OfflineCtor = typeof OfflineAudioContext;
-function offlineCtor(): OfflineCtor {
-  const Ctor =
-    window.OfflineAudioContext ??
-    (window as unknown as { webkitOfflineAudioContext?: OfflineCtor }).webkitOfflineAudioContext;
+function offlineCtor(): typeof OfflineAudioContext {
+  const Ctor = offlineAudioContextCtor();
   if (!Ctor) throw new Error('no OfflineAudioContext');
   return Ctor;
 }

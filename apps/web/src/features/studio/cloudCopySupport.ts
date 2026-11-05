@@ -1,3 +1,4 @@
+import { offlineAudioContextCtor } from '@/lib/audioCtor';
 import { avcLevel, COPY, type CopyEncoding } from './cloudCopyRules';
 
 /**
@@ -14,10 +15,7 @@ export const UNSUPPORTED_COPY =
 type OfflineCtor = typeof OfflineAudioContext;
 
 export function offlineAudio(): OfflineCtor | undefined {
-  if (typeof window === 'undefined') return undefined;
-  return (window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: OfflineCtor }).webkitOfflineAudioContext) as
-    | OfflineCtor
-    | undefined;
+  return offlineAudioContextCtor() ?? undefined;
 }
 
 export function hasApis(): boolean {

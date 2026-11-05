@@ -1,5 +1,5 @@
 /** Breathing room kept between a popover and the screen's edge, in px. */
-export const POPOVER_EDGE = 12;
+const POPOVER_EDGE = 12;
 
 /**
  * How far to slide a popover sideways so it stays on screen: positive moves it right, negative left.

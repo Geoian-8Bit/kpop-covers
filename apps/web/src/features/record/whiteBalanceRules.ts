@@ -159,8 +159,8 @@ export interface WhiteBalanceTrack {
 export type WhiteBalanceOutcome = 'applied' | 'ignored' | 'refused' | 'unsupported' | 'ended' | 'superseded';
 
 /** Pause after each step and between reads of the result (ms), and how long a camera gets to show it. */
-export const WB_STEP_WAIT = 150;
-export const WB_SETTLE_MS = 1200;
+const WB_STEP_WAIT = 150;
+const WB_SETTLE_MS = 1200;
 
 export async function runWhiteBalance(
   track: WhiteBalanceTrack,
@@ -269,8 +269,8 @@ export interface WbMemoryEntry {
   ua: string;
 }
 
-export const WB_HIDE_AFTER = 2;
-export const WB_TTL_MS = 30 * 24 * 60 * 60_000;
+const WB_HIDE_AFTER = 2;
+const WB_TTL_MS = 30 * 24 * 60 * 60_000;
 const WB_MAX_ENTRIES = 20;
 
 /** The stored list, without what expired or belongs to another browser version. The old format (a list of labels, one failure each) still reads. */

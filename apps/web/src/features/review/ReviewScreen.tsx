@@ -42,7 +42,8 @@ import { useTapAnyFinger } from './tapAnyFinger';
 import { useClipSave } from './useClipSave';
 import { useFitAndSplit } from './useFitAndSplit';
 import { useReviewKeys } from './useReviewKeys';
-import { BAR_H, LOW_SCREEN, useInsets, useMatch, useSize, WIDE_SCREEN } from './useReviewLayout';
+import { useSize } from '@/lib/useSize';
+import { BAR_H, LOW_SCREEN, useInsets, useMatch, WIDE_SCREEN } from './useReviewLayout';
 import { useReviewNotes } from './useReviewNotes';
 import { useSyncAdjust } from './useSyncAdjust';
 import { useTakeSaver } from './useTakeSaver';
@@ -120,7 +121,7 @@ export function ReviewScreen({
     });
     return () => useReview.getState().end();
     // Only when another take opens: fresh values of the same take come through `setTiming`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept (layout effect: the review must begin before paint)
   }, [take.id]);
   useEffect(() => {
     useReview.getState().setTiming({ onFile: source === 'file', offset });

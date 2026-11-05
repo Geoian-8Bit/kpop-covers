@@ -25,16 +25,6 @@ export function withMe(reason: string, members: Member[] | undefined, action: (m
   });
 }
 
-/** Re-renders every `ms` (closing times, «cierra en 5 min»). */
-export function useNow(ms = 30_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
-}
-
 /**
  * REQ-22 · «Now» for what only changes when a vote closes by time (open or closed, past results): it moves right
  * after the nearest closing (as PollView's timer does), not every 30 s, so the lists and their memoised cards don't

@@ -179,7 +179,7 @@ export function StudioPage() {
   /** A clip cut on a longer copy of the song may not fit this one: say so instead of a stray loop. */
   const applyClip = useCallback(
     (clip: Clip) => {
-      const ok = usePlayer.getState().applyClip(clip) as unknown as boolean | undefined;
+      const ok = usePlayer.getState().applyClip(clip);
       if (ok === false) toast('Este clip queda fuera de este vídeo', 'info');
       return ok !== false;
     },

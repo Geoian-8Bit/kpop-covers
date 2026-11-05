@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 
-export interface SegmentedOption<T extends string | number> {
+interface SegmentedOption<T extends string | number> {
   value: T;
   label: ReactNode;
   ariaLabel?: string;

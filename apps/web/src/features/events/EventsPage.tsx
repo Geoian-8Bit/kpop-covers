@@ -13,14 +13,14 @@ import { cn } from '@/lib/cn';
 import { fadeUpCapped } from '@/lib/motion';
 import { EventFormDialog } from './EventFormDialog';
 import { countdown, countdownHeadline, eventDateLabel, splitEvents } from './eventRules';
-import { useNow } from './useNow';
+import { useNowDate } from '@/lib/useNow';
 
 const cardIn = fadeUpCapped(0.05, 8);
 
 /** F16 · /eventos: the group's events (to come, then past ones) and «Nuevo evento». */
 export function EventsPage() {
   const events = useEvents();
-  const now = useNow();
+  const now = useNowDate();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const { upcoming, past } = splitEvents(events.data ?? [], now);

@@ -27,7 +27,7 @@ export interface ReviewTiming {
 }
 
 /** Which of the two is heard (the other is muted). */
-export type ReviewAudio = 'take' | 'original';
+type ReviewAudio = 'take' | 'original';
 
 interface ReviewStatus {
   playing: boolean;
@@ -110,7 +110,7 @@ const initialReview: ReviewStatus = {
 };
 
 /** performance.now() of the last seek sent to the original: the clock leaves it alone while it lands. */
-export const reviewAlignState = {
+const reviewAlignState = {
   at: 0,
   reset() {
     this.at = 0;

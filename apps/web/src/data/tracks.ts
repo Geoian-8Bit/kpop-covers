@@ -11,7 +11,7 @@ import type { RoundOptions } from '@/features/rpd/roundRules';
 import { writePositions } from './positionsRetry';
 import { optionsRow, trackKeys, videoPlayKey } from './trackKeys';
 
-export { optionsRow, trackKeys, videoPlayKey };
+export { trackKeys, videoPlayKey };
 
 export type { TrackItemView, TrackWithCount } from '@/lib/backend/bags';
 

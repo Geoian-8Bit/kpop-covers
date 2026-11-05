@@ -5,7 +5,7 @@ import { isSessionValid, type LegacySession, type LegacyUser } from '@/lib/backe
 import { legacySession, revokeSession, startupRefresh } from '@/lib/supabase';
 
 export type Session = LegacySession;
-export type User = LegacyUser;
+type User = LegacyUser;
 
 /** Local demo only (`VITE_DEMO=true` in dev): a fixed signed-in user, no login screen. */
 const DEMO_SESSION: Session = {

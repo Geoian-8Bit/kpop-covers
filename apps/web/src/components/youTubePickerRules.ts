@@ -29,9 +29,9 @@ export type PickerInput =
   | { kind: 'empty' };
 
 /** Searches shorter than this aren't sent (the server refuses them too). */
-export const MIN_QUERY = 2;
+const MIN_QUERY = 2;
 /** The server's limit. */
-export const MAX_QUERY = 100;
+const MAX_QUERY = 100;
 
 export function readPickerInput(text: string): PickerInput {
   const youtubeId = parseYouTubeId(text);

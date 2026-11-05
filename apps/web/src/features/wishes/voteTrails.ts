@@ -25,7 +25,7 @@ export function easeOut(x: number): number {
   return by((lo + hi) / 2);
 }
 
-export const TRAIL_MS = 500;
+const TRAIL_MS = 500;
 
 /** Both ends of a trail ending at `y`, `ms` after it starts. */
 export function trailEnds(y: number, ms: number): { y1: number; y2: number } {

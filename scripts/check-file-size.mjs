@@ -8,11 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIMIT = 600;
 const DIRS = ['apps/web/src', 'packages/shared/src'];
 
-// Files that exceed the limit today (baseline). Remove each one as it drops under 600 lines.
-const EXCEPTIONS = new Set([
-  'apps/web/src/features/formations/FormationEditor.tsx',
-  'apps/web/src/features/formations/StageView.tsx',
-]);
+// Files allowed over the limit. Empty since phase 9 (REQ-27): every file is at or under 600 lines.
+const EXCEPTIONS = new Set([]);
 
 function* walk(dir) {
   for (const name of readdirSync(dir)) {

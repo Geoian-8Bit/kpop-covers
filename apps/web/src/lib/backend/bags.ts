@@ -8,11 +8,7 @@ export const bagsBackend: BagsBackend = IS_DEMO ? demoBags : supabaseBags;
 
 export type {
   BagHoldingRef,
-  BagItemClip,
-  BagItemMember,
-  BagItemVideo,
   BagItemView,
-  BagItemWish,
   BagPatch,
   BagsBackend,
   BagWithCount,

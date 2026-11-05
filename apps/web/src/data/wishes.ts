@@ -19,7 +19,7 @@ import { useCreateVideo, videoKeys } from './videos';
  * F12 · Lista de deseos and F11 · votaciones: shared by the group. The lists are small (a group's wishes and
  * votes), so they load whole and every view reads from the same cache. Voting goes through `cast_vote`.
  */
-export const wishKeys = {
+const wishKeys = {
   wishes: ['wishes'] as const,
   interest: ['wish-interest'] as const,
   polls: ['polls'] as const,
@@ -90,7 +90,7 @@ async function downloadVotes(pollIds: string[], remember: boolean): Promise<Poll
 }
 
 /** How often someone looking at an open vote picks up the others' ballots. */
-export const POLL_TICK_MS = 8_000;
+const POLL_TICK_MS = 8_000;
 
 /**
  * The votes of these polls only. `live`: someone is looking at an open vote — every few seconds ask for the poll's

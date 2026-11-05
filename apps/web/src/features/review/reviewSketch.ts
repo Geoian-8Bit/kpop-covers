@@ -3,9 +3,9 @@ import type { Pt } from './reviewFit';
 // ───────────── The drawing over the frame ─────────────
 
 /** Same as the database (`notes_sketch_shape`). */
-export const SKETCH_MAX_CHARS = 60_000;
-export const SKETCH_PATTERN = /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/;
-export const SKETCH_WIDTHS = [320, 240, 160] as const;
+const SKETCH_MAX_CHARS = 60_000;
+const SKETCH_PATTERN = /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/;
+const SKETCH_WIDTHS = [320, 240, 160] as const;
 const QUALITIES = [0.8, 0.62, 0.45, 0.3] as const;
 
 export function isValidSketch(value: unknown): value is string {
@@ -13,7 +13,7 @@ export function isValidSketch(value: unknown): value is string {
 }
 
 /** How close (s) the take must stand to a note's moment for its drawing to show. */
-export const SKETCH_MOMENT = 0.2;
+const SKETCH_MOMENT = 0.2;
 /**
  * Whether the take stands at the note's moment (its drawing is a still of it). A boolean, so the screen subscribes
  * to this instead of the 60 Hz clock and only repaints when it flips.

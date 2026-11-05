@@ -75,7 +75,7 @@ export function bestLag(a: Float32Array, b: Float32Array, minLag: number, maxLag
 }
 
 /** Start of the loudest `length`-sample stretch of `x` (in `step` jumps), at least `margin` from both ends. */
-export function loudestStart(x: Float32Array, length: number, step: number, margin: number): number {
+function loudestStart(x: Float32Array, length: number, step: number, margin: number): number {
   let best = margin;
   let bestEnergy = -1;
   for (let s = margin; s + length + margin <= x.length; s += step) {

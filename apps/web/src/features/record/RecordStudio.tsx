@@ -76,9 +76,10 @@ export function RecordStudio({ open, onClose, video }: { open: boolean; onClose:
   const showCamera = phase !== 'review';
   const vertical = view.aspect < 1;
   // What the next take will use; asked again only when the camera or its shape changes.
+  const formatsVersion = badVersion();
   const nextFormat = useMemo(
     () => (camReady ? S.fx.plannedFormat() : null),
-    [S.fx, camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality, badVersion],
+    [S.fx, camReady, view.aspect, view.deviceId, view.mode, settings.codec, settings.quality, formatsVersion],
   );
   const spaceMinutes =
     S.free != null && nextFormat

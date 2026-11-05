@@ -37,7 +37,7 @@ import type {
 } from '@coverscape/shared';
 
 // No thumbnail: an uploaded video's poster is an inline data URL, and the quick row would repeat it once per clip.
-export type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
+type ClipVideo = Pick<Video, 'id' | 'title' | 'artist' | 'source' | 'youtube_id'>;
 export type ClipWithVideo = Clip & { video: ClipVideo | null };
 
 /**
@@ -74,7 +74,7 @@ export type VideoPosterRev = Pick<VideoPoster, 'id' | 'poster_rev'>;
 
 /** REQ-17 · A note as listed: no `sketch` (only `has_sketch`); a written note's answer does carry it. */
 export type ListedNote = Omit<Note, 'sketch'> & { sketch?: string | null };
-export type NoteSketch = { id: string; sketch: string };
+type NoteSketch = { id: string; sketch: string };
 
 /** Why a file stayed on this device instead of reaching the group's cloud. */
 /** 'exists': a file with that name is already there (a take's earlier upload that went through). */
@@ -107,7 +107,7 @@ export type NotePatch = Pick<
   'body' | 'at_seconds' | 'category' | 'for_member_id' | 'status' | 'sketch'
 >;
 
-export interface StorageUsage {
+interface StorageUsage {
   takes: number;
   total: number;
 }
@@ -171,21 +171,18 @@ export interface Backend {
 
 export type BagWithCount = Bag & { items: number };
 /** REQ-14 · `thumbnail_url` is `list_thumbnail_url` here (null for an inline poster, which comes by id). */
-export type BagItemVideo = Pick<
+type BagItemVideo = Pick<
   Video,
   'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id' | 'poster_inline' | 'poster_rev'
 >;
-export type BagItemClip = Pick<
+type BagItemClip = Pick<
   Clip,
   'id' | 'name' | 'video_id' | 'start_seconds' | 'end_seconds' | 'speed' | 'mirrored' | 'color'
 > & { video: ClipVideo | null };
-export type BagItemMember = Pick<Member, 'id' | 'name' | 'color'>;
+type BagItemMember = Pick<Member, 'id' | 'name' | 'color'>;
 /** A bag item with what it points at (songs, clips or people; archived ones never come back). */
 /** F12: a bag of songs also takes wishes from the list (not in the library yet). */
-export type BagItemWish = Pick<
-  Wish,
-  'id' | 'title' | 'artist' | 'thumbnail_url' | 'youtube_id' | 'added_video_id'
->;
+type BagItemWish = Pick<Wish, 'id' | 'title' | 'artist' | 'thumbnail_url' | 'youtube_id' | 'added_video_id'>;
 export type BagItemView = BagItem & {
   video: BagItemVideo | null;
   clip: BagItemClip | null;
@@ -346,7 +343,7 @@ export interface WishesBackend {
 
 export type EventWithCount = CrewEvent & { songs: number };
 /** REQ-14 · `thumbnail_url` is `list_thumbnail_url` here (null for an inline poster, which comes by id). */
-export type EventSongVideo = Pick<
+type EventSongVideo = Pick<
   Video,
   'id' | 'title' | 'artist' | 'thumbnail_url' | 'source' | 'youtube_id' | 'poster_inline' | 'poster_rev'
 >;
@@ -355,7 +352,7 @@ export type EventSongView = EventSong & { video: EventSongVideo | null };
 /** The granted columns of an event: name, starts_at, place. */
 export type NewEvent = Pick<CrewEvent, 'name' | 'starts_at' | 'place'>;
 export type EventPatch = Partial<NewEvent>;
-export type NewReaction = { take_id: string; member_id: string | null; emoji: ReactionEmoji };
+type NewReaction = { take_id: string; member_id: string | null; emoji: ReactionEmoji };
 
 /**
  * F16 · events and their repertoire, F15 · reactions on shared takes. Shared by the group; deleting archives.
@@ -382,7 +379,7 @@ export interface EventsBackend {
 /** One separation of a video's file: two tracks (voice, instrumental) in the `videos` bucket, shared by the group. */
 export type VideoStems = Tables<'video_stems'>;
 /** What the device that separated says about it (the database sets the group, the date and the files). */
-export type NewVideoStems = Pick<
+type NewVideoStems = Pick<
   VideoStems,
   | 'id'
   | 'video_id'

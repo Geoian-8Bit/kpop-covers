@@ -44,7 +44,7 @@ export interface YouTubePick {
 }
 
 /** A note on a result, e.g. «Ya en la biblioteca». `warn`: picking it will be refused or redirected by the form. */
-export interface YouTubeBadge {
+interface YouTubeBadge {
   label: string;
   tone?: 'warn' | 'info';
 }
@@ -86,7 +86,7 @@ const META_TIMEOUT_MS = 8000;
  * Searches YouTube through `/api/youtube-search` (the key stays on the server). One request per explicit search
  * (Enter, the magnifier or the parent's «Buscar»), never while typing: the API quota is 100 searches a day.
  */
-export function useYouTubeSearch() {
+function useYouTubeSearch() {
   const [state, setState] = useState<YouTubeSearchState>({ status: 'idle' });
   const stateRef = useRef(state);
   stateRef.current = state;

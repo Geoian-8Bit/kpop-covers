@@ -1,4 +1,6 @@
 import { formatBytes, pickMime, type Take } from '@coverscape/shared';
+import { abortError as cancelled } from '@/lib/async';
+import { audioContextCtor } from '@/lib/audioCtor';
 import { backend } from '@/lib/backend/core';
 import type { UploadFailure } from '@/lib/backend/types';
 import { formatMaxLength } from '@/features/studio/cloudCopyRules';
@@ -47,13 +49,12 @@ export interface ReduceOptions {
   onProgress?: (progress: number) => void;
 }
 
-const abortError = () => new DOMException('Compartir cancelado', 'AbortError');
+const abortError = () => cancelled('Compartir cancelado');
 
 type CaptureElement = HTMLVideoElement & {
   captureStream?: () => MediaStream;
   mozCaptureStream?: () => MediaStream;
 };
-type AudioCtor = typeof AudioContext;
 
 /**
  * Makes the 720p copy of a take. Starts playing synchronously (keep the tap: see above); resolves with the copy,
@@ -89,8 +90,7 @@ export async function reduceTake(source: Blob, opts: ReduceOptions = {}): Promis
   let audioCtx: AudioContext | null = null;
   let audioStream: MediaStream | null = null;
   try {
-    const Ctor = (window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: AudioCtor }).webkitAudioContext) as AudioCtor | undefined;
+    const Ctor = audioContextCtor();
     if (Ctor) {
       audioCtx = new Ctor();
       const node = audioCtx.createMediaElementSource(video);

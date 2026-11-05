@@ -111,7 +111,7 @@ function RoundBuilder() {
     writeRoundSetup({ kind, bagId, clipIds: [...manual], videoIds: [...songs], options });
   }, [kind, bagId, manual, songs, options]);
 
-  const all = clips.data ?? [];
+  const all = useMemo(() => clips.data ?? [], [clips.data]);
   const clipCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of all) m.set(c.video_id, (m.get(c.video_id) ?? 0) + 1);

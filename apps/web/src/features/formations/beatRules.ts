@@ -36,7 +36,7 @@ export function bpmFromTaps(taps: readonly number[]): number | null {
 }
 
 /** Taps further apart than this start a new count (the person stopped and started again). */
-export const TAP_RESET_SECONDS = 2;
+const TAP_RESET_SECONDS = 2;
 
 /** Adds a tap; a long pause starts over. Keeps the last 16. */
 export function addTap(taps: readonly number[], at: number): number[] {

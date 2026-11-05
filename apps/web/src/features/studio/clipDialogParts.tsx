@@ -11,7 +11,7 @@ import { CLIP_NAME_SUGGESTIONS } from './clipRules';
 
 /** Same words everywhere the pin appears (dialog, clip list): what it does, not how it's stored. */
 export const PIN_LABEL = 'Fijar en la portada';
-export const PIN_HINT = 'Sale el primero en Acceso rápido para repetirlo con un toque.';
+const PIN_HINT = 'Sale el primero en Acceso rápido para repetirlo con un toque.';
 
 /** The name, with the quick names in one row that slides sideways under it. */
 export function NameField({

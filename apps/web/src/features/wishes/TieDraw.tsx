@@ -11,7 +11,7 @@ export interface TieCandidate {
 }
 
 /** Waits between hops of the light: fast at first, slowing down onto the one drawn (~2.4 s). */
-export function hopDelays(steps: number): number[] {
+function hopDelays(steps: number): number[] {
   return Array.from({ length: steps }, (_, i) => 70 + Math.round(330 * (i / Math.max(1, steps - 1)) ** 2));
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { unlockOrientation } from '@/lib/orientation';
 import { refitViewport } from '@/lib/viewport';
 import { fullscreenStep, type FullscreenMode } from './fullscreenRules';
 
@@ -77,14 +78,5 @@ function lockLandscape() {
     void orientation.lock?.('landscape').catch(() => undefined);
   } catch {
     /* not supported */
-  }
-}
-
-/** Hand the rotation back, or the phone can stay stuck sideways after full screen. */
-function unlockOrientation() {
-  try {
-    screen.orientation?.unlock?.();
-  } catch {
-    /* not locked / not supported */
   }
 }

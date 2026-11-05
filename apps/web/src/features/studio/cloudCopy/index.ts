@@ -23,7 +23,7 @@ import { encodePicture, type PictureResult } from './picture';
 import { encodeAlignedSound, openSoundCoder } from './sound';
 
 export { isAbort, probeVideo } from './media';
-export type { CloudCopyOptions, CloudCopyResult, CopyPaceNow, CopyPhase, CopyProgress } from './media';
+export type { CloudCopyOptions, CloudCopyResult, CopyPaceNow, CopyPhase } from './media';
 
 /**
  * 13 · Makes, on this device, the reduced copy of a video for the group's cloud (under ~48 MB): same video, same

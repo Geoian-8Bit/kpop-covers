@@ -289,7 +289,7 @@ export function QuickNavScrim({ api, className }: { api: QuickNavApi; className?
 }
 
 /** Where the button sits: bottom right, inside the safe area, within reach of the right thumb. */
-export const TRIGGER_POSITION =
+const TRIGGER_POSITION =
   'right-[max(16px,calc(env(safe-area-inset-right)+12px))] bottom-[max(16px,calc(env(safe-area-inset-bottom)+12px))]';
 
 /**

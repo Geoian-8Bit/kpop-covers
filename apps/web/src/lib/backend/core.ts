@@ -8,13 +8,9 @@ export const backend: Backend = IS_DEMO ? demoBackend : supabaseBackend;
 
 export type {
   Backend,
-  ClipVideo,
   ClipWithVideo,
-  LibraryVideo,
   ListedNote,
-  NoteSketch,
   NotePatch,
-  StorageUsage,
   TakePatch,
   UploadFailure,
   UploadOptions,

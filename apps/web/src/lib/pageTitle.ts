@@ -1,4 +1,4 @@
-export const APP_NAME = 'One Shoot';
+const APP_NAME = 'One Shoot';
 
 /** Page names by route, most specific first (they're matched in order). */
 const PAGES: [RegExp, string][] = [

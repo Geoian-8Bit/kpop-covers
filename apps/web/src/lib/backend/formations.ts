@@ -14,5 +14,4 @@ export type {
   FormationPlanSummary,
   FormationsBackend,
   NewFormationPlan,
-  RevisionResult,
 } from './types';

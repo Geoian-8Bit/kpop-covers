@@ -1,4 +1,5 @@
 import { useBackToClose } from '@/lib/useBackToClose';
+import { useLandscape, unlockOrientation } from '@/lib/orientation';
 import { refitViewport } from '@/lib/viewport';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -20,7 +21,7 @@ export function useFullscreen() {
   // REQ-02 · Fixed orientation: automatic (the view follows the phone), upright or sideways.
   const [orientation, setOrientation] = useState<OrientationPref>('auto');
   const [lockHeld, setLockHeld] = useState(false);
-  const deviceLandscape = useDeviceLandscape();
+  const deviceLandscape = useLandscape();
   const touch = useCoarsePointer();
 
   const toggleFullscreen = useCallback(async () => {
@@ -50,11 +51,7 @@ export function useFullscreen() {
     const onChange = () => {
       if (document.fullscreenElement) return;
       // Hand the rotation back to the phone, or it can stay stuck sideways after leaving fullscreen.
-      try {
-        screen.orientation?.unlock?.();
-      } catch {
-        /* not locked / not supported */
-      }
+      unlockOrientation();
       setMode((m) => (m === 'native' ? 'none' : m));
       setOrientation('auto');
       setLockHeld(false);
@@ -138,11 +135,7 @@ export function useFullscreen() {
   useEffect(
     () => () => {
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-      try {
-        screen.orientation?.unlock?.();
-      } catch {
-        /* not locked / not supported */
-      }
+      unlockOrientation();
     },
     [],
   );
@@ -156,19 +149,6 @@ export function useFullscreen() {
     rotated,
     showOrientation: mode !== 'none' && showOrientationButton({ cssMode: mode === 'css', touch }),
   };
-}
-
-/** The device is held sideways (the window is wider than tall). */
-function useDeviceLandscape(): boolean {
-  const [landscape, setLandscape] = useState(() => window.matchMedia('(orientation: landscape)').matches);
-  useEffect(() => {
-    const query = window.matchMedia('(orientation: landscape)');
-    const onChange = () => setLandscape(query.matches);
-    onChange();
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, []);
-  return landscape;
 }
 
 /** A touch screen (a phone or tablet that can turn): the orientation button has something to do there. */

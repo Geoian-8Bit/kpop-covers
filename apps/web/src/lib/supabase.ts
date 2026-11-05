@@ -170,6 +170,7 @@ export async function withStorage<R>(
       status: undefined,
       originalError: cause,
     });
+    // REQ-29 · Kept: storage-js's own error class is in the chunk that failed to load; this has its shape.
     return { data: null, error: error as unknown as StorageError };
   }
   return run(storage);

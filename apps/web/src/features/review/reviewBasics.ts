@@ -14,12 +14,11 @@ export function clampSplit(value: number): number {
 /** Common speed of the review (applied to the take; the original follows in proportion). */
 export const REVIEW_RATE_MIN = 0.5;
 export const REVIEW_RATE_MAX = 1.25;
-export const REVIEW_RATES = [0.5, 0.75, 1, 1.25] as const;
 
 // ───────────── Quick controls (one tap, while dancing) ─────────────
 
 /** The speed button goes round these (1× → 0,75× → 0,5× → 1×). */
-export const QUICK_RATES = [1, 0.75, 0.5] as const;
+const QUICK_RATES = [1, 0.75, 0.5] as const;
 /** The next speed of the quick button: the next one down the list, or back to 1× from anything else. */
 export function nextQuickRate(rate: number): number {
   const i = QUICK_RATES.findIndex((r) => Math.abs(r - rate) < 0.001);
@@ -27,7 +26,7 @@ export function nextQuickRate(rate: number): number {
 }
 
 /** «Superpuesto»: how much of the original shows (its opacity), round these with one tap. */
-export const QUICK_OPACITIES = [0.5, 0.75, 0.25] as const;
+const QUICK_OPACITIES = [0.5, 0.75, 0.25] as const;
 export function nextQuickOpacity(opacity: number): number {
   const i = QUICK_OPACITIES.findIndex((o) => Math.abs(o - opacity) < 0.01);
   return i < 0 ? 0.5 : QUICK_OPACITIES[(i + 1) % QUICK_OPACITIES.length]!;
@@ -101,9 +100,6 @@ export function parseViewPrefs(raw: string | null): ViewPrefs {
     onTop: value.onTop === 'take' ? 'take' : 'original',
   };
 }
-
-/** One frame of a 30 fps phone video. */
-export const FRAME_STEP = 1 / 30;
 
 /**
  * Speed of the original for a take recorded at `takeSpeed`, played at the common `rate`: a take recorded at

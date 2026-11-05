@@ -24,9 +24,9 @@ export interface RoundOptions {
 
 export const MAX_ROUND = 50;
 export const PAUSE_MAX = 5;
-export const COUNTDOWN_SECONDS = 3;
+const COUNTDOWN_SECONDS = 3;
 /** Modo adivinar: the title appears after this long sounding (or halfway through a shorter clip). */
-export const GUESS_REVEAL_SECONDS = 4;
+const GUESS_REVEAL_SECONDS = 4;
 
 export const DEFAULT_ROUND_OPTIONS: RoundOptions = {
   count: 8,
@@ -357,7 +357,7 @@ export function leadIn(
   };
 }
 
-export type LeadPhase = 'pause' | 'countdown' | 'go';
+type LeadPhase = 'pause' | 'countdown' | 'go';
 
 export interface LeadStatus {
   phase: LeadPhase;

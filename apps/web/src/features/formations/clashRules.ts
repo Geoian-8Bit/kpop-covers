@@ -7,8 +7,8 @@ import { pointOnPath } from './pathRules';
  * included: a clash at the very first instant counts) along everybody's real route (paths too). Props never count.
  */
 
-export const CLASH_DISTANCE = 0.5;
-export const CLASH_SAMPLES = 24;
+const CLASH_DISTANCE = 0.5;
+const CLASH_SAMPLES = 24;
 
 export interface Clash {
   /** The formation the move leads to. */

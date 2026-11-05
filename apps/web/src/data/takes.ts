@@ -27,7 +27,7 @@ import { takeKeys } from './trackKeys';
  * copy; cloud files are never deleted from the app.
  */
 
-export type { TakeItem, TakeWhere } from '@/features/takes/takeRules';
+export type { TakeItem } from '@/features/takes/takeRules';
 export type { SharePhase } from '@/features/takes/shareSupport';
 
 /**
@@ -94,7 +94,7 @@ export async function takeUrl(take: TakeItem): Promise<string> {
 }
 
 /** Name for a downloaded take: the one it was saved with, or one made from the song and the date. */
-export function takeDownloadName(take: TakeItem, video: Pick<Video, 'title'>, extension?: string): string {
+function takeDownloadName(take: TakeItem, video: Pick<Video, 'title'>, extension?: string): string {
   const base = take.file_name || takeFileName(video, take.mime_type ?? '', take.recorded_at);
   if (!extension) return base;
   return `${base.replace(/\.[A-Za-z0-9]{1,10}$/, '')}-720p.${extension}`;

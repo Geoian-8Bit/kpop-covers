@@ -3,7 +3,9 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.mjs"],
-      "project": ["scripts/**/*.mjs", "supabase/tests/local/**/*.mjs"]
+      "project": ["scripts/**/*.mjs", "supabase/tests/local/**/*.mjs"],
+      "ignoreBinaries": ["vercel", "vite"],
+      "ignoreDependencies": ["vitest"]
     },
     "apps/web": {
       "entry": ["api/*.ts", "e2e/**/*.ts", "src/**/*.worker.ts", "src/**/*.test.{ts,tsx}"],

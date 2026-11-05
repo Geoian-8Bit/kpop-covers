@@ -22,7 +22,7 @@ export interface RevealWinner {
 }
 
 /** How long the reveal takes before everything is on screen (for `onDone`). */
-export const REVEAL_MS = 2600;
+const REVEAL_MS = 2600;
 
 export function VoteReveal({
   winner,

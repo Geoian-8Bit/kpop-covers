@@ -1,3 +1,4 @@
+import { abortError as cancelled } from '@/lib/async';
 import { FriendlyError } from '@/lib/supabase';
 import { COPY, type CopyHold } from '../cloudCopyRules';
 import { offlineAudio, SAMPLE_RATE, UNSUPPORTED_COPY } from '../cloudCopySupport';
@@ -46,17 +47,12 @@ export interface CloudCopyOptions {
 
 export const FREE: CopyPaceNow = { hold: null, maxRate: COPY.maxRate };
 
-export const abortError = () => new DOMException('Copia cancelada', 'AbortError');
-
-export function isAbort(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
+export const abortError = () => cancelled('Copia cancelada');
+export { isAbort, sleep } from '@/lib/async';
 
 export function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw abortError();
 }
-
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function toBytes(source: AllowSharedBufferSource | undefined): Uint8Array | undefined {
   if (!source) return undefined;

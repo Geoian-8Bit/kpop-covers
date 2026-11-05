@@ -11,7 +11,7 @@ import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 import type { SeparationPreview } from './separate/runSeparation';
 import {
-  formatBytes,
+  formatBytesEs,
   formatRange,
   progressLabel,
   progressMilestone,
@@ -292,16 +292,16 @@ export function SeparateVoiceButton({ video, available }: { video: Video; availa
               )}
               {state.preview.modelBytes > 0 && (
                 <li>
-                  La primera vez se baja el modelo de IA ({formatBytes(state.preview.modelBytes)}, de Hugging Face);
+                  La primera vez se baja el modelo de IA ({formatBytesEs(state.preview.modelBytes)}, de Hugging Face);
                   luego queda guardado en este dispositivo.
                 </li>
               )}
               <li className={cn(!state.preview.space.ok && 'text-shu-400')}>
                 {state.preview.space.ok
-                  ? `Las dos pistas ocuparán unos ${formatBytes(state.preview.space.needed)} en la nube del grupo${
-                      Number.isFinite(state.preview.space.free) ? ` (quedan ${formatBytes(state.preview.space.free)})` : ''
+                  ? `Las dos pistas ocuparán unos ${formatBytesEs(state.preview.space.needed)} en la nube del grupo${
+                      Number.isFinite(state.preview.space.free) ? ` (quedan ${formatBytesEs(state.preview.space.free)})` : ''
                     }.`
-                  : `No hay espacio en la nube del grupo: hacen falta unos ${formatBytes(state.preview.space.needed)} y quedan ${formatBytes(state.preview.space.free)}.`}
+                  : `No hay espacio en la nube del grupo: hacen falta unos ${formatBytesEs(state.preview.space.needed)} y quedan ${formatBytesEs(state.preview.space.free)}.`}
               </li>
               <li>No cierres esta pestaña mientras tanto.</li>
             </ul>

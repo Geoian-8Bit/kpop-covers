@@ -1,90 +1,28 @@
-import type { FormationPath, FormationPositions, FormationProp, FormationPropKind, MemberColor, StagePoint } from '@coverscape/shared';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import type { FormationPath, FormationPositions, FormationProp, StagePoint } from '@coverscape/shared';
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { FormationInput, FormationMember } from '@/data/formations';
 import { cn } from '@/lib/cn';
 import { usePlayer } from '@/player/store';
-import { clashingAt, type Clash } from './clashRules';
+import type { Clash } from './clashRules';
 import {
   activeIndex,
-  describePoint,
   formationAt,
   memberTrack,
   mirrorPoint,
   moveWindow,
   nextIndex,
   nudgePoint,
-  positionsAt,
-  propsAt,
   snapPoint,
   withDefaults,
   type Stage,
 } from './formationRules';
 import { movePathPoint, pathPolyline } from './pathRules';
-import { PROP_LABELS, PROP_SIZE } from './propRules';
-
-/** Member colours as the index.css tokens (SVG fills can't take the Tailwind bg classes). */
-const FILL: Record<MemberColor, { fill: string; ink: string }> = {
-  shu: { fill: 'var(--color-shu-500)', ink: 'var(--color-washi)' },
-  ai: { fill: 'var(--color-ai-500)', ink: 'var(--color-washi)' },
-  kin: { fill: 'var(--color-kin-400)', ink: 'var(--color-sumi-900)' },
-  enji: { fill: 'var(--color-enji-500)', ink: 'var(--color-washi)' },
-  murasaki: { fill: 'var(--color-murasaki)', ink: 'var(--color-washi)' },
-  fuji: { fill: 'var(--color-fuji)', ink: 'var(--color-sumi-900)' },
-  sakura: { fill: 'var(--color-sakura)', ink: 'var(--color-sumi-900)' },
-  rokusho: { fill: 'var(--color-rokusho)', ink: 'var(--color-washi)' },
-  kiji: { fill: 'var(--color-kiji-400)', ink: 'var(--color-sumi-900)' },
-  washi: { fill: 'var(--color-washi)', ink: 'var(--color-sumi-900)' },
-};
-const ARCHIVED = { fill: 'var(--color-sumi-600)', ink: 'var(--color-washi-subtle)' };
-const CLASH = 'var(--color-shu-400)';
-
-export function personColors(person: FormationMember | undefined) {
-  return !person || person.archived ? ARCHIVED : FILL[person.color];
-}
-
-export const initialOf = (name: string | undefined) => (name ?? '?').trim().charAt(0).toUpperCase() || '?';
-
-const PAD = 0.7;
-const AUDIENCE = 0.9;
-const DOT = 0.3;
-/** 0.5 m around the dot: about 44 px on a phone-wide 8 m stage. */
-const HIT = 0.5;
-const HANDLE = 0.2;
-
-interface Drag {
-  /** The point that was pressed. */
-  id: string;
-  pointerId: number;
-  ids: string[];
-  /** Where each dragged point started (stage metres) and where the pointer grabbed. */
-  from: FormationPositions;
-  grab: StagePoint;
-  delta: StagePoint;
-  moved: boolean;
-  shift: boolean;
-}
-
-interface PropDrag {
-  id: string;
-  pointerId: number;
-  from: StagePoint;
-  grab: StagePoint;
-  delta: StagePoint;
-  moved: boolean;
-}
-
-interface HandleDrag {
-  index: number;
-  pointerId: number;
-  point: StagePoint;
-  moved: boolean;
-}
-
-interface Box {
-  pointerId: number;
-  a: StagePoint;
-  b: StagePoint;
-}
+import { PROP_LABELS } from './propRules';
+import { CLASH, initialOf, personColors, shortName } from './stage/personStyle';
+import { PropShape } from './stage/PropShape';
+import { ClashLayer, GhostLayer, PathHandles, RouteLayer, StageFloor, type GridLine } from './stage/StageLayers';
+import { AUDIENCE, DOT, HIT, line, PAD, type Box, type HandleDrag } from './stage/stageDrag';
+import { useStagePainter } from './stage/useStagePainter';
 
 export interface StageViewProps {
   stage: Stage;
@@ -158,87 +96,20 @@ export function StageView({
 }: StageViewProps) {
   const mirrored = usePlayer((s) => s.mirrored);
   const svgRef = useRef<SVGSVGElement>(null);
-  const dotRefs = useRef(new Map<string, SVGGElement>());
-  const ringRefs = useRef(new Map<string, SVGCircleElement>());
-  const propRefs = useRef(new Map<string, SVGGElement>());
-  const drag = useRef<Drag | null>(null);
-  const propDrag = useRef<PropDrag | null>(null);
+  const { dotRefs, ringRefs, propRefs, drag, propDrag, currentPositions, currentProps, paint } = useStagePainter({
+    list,
+    memberIds,
+    stage,
+    mirrored,
+    snap,
+    clashes,
+  });
   const [handleDrag, setHandleDrag] = useState<HandleDrag | null>(null);
   const [stroke, setStroke] = useState<{ pointerId: number; points: StagePoint[] } | null>(null);
   const [box, setBox] = useState<Box | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const { width: W, depth: D } = stage;
-
-  // Latest inputs for the painter (it runs from the player's subscription).
-  const live = useRef({ list, memberIds, stage, mirrored, snap, clashes });
-  live.current = { list, memberIds, stage, mirrored, snap, clashes };
-
-  /** Where everybody is drawn right now (stage metres): the moment's positions, plus a drag in progress. */
-  const currentPositions = useCallback((): FormationPositions => {
-    const { list: l, memberIds: ids, stage: s, snap: sn } = live.current;
-    const at = positionsAt(l, usePlayer.getState().time, ids, s);
-    const d = drag.current;
-    if (d && d.moved) {
-      for (const id of d.ids) {
-        const from = d.from[id];
-        if (!from) continue;
-        at[id] = snapPoint({ x: from.x + d.delta.x, y: from.y + d.delta.y }, s, sn);
-      }
-    }
-    return at;
-  }, []);
-
-  const currentProps = useCallback(() => {
-    const { list: l, stage: s, snap: sn } = live.current;
-    const frames = propsAt(l, usePlayer.getState().time);
-    const d = propDrag.current;
-    if (d && d.moved) {
-      const p = snapPoint({ x: d.from.x + d.delta.x, y: d.from.y + d.delta.y }, s, sn);
-      for (const f of frames) if (f.id === d.id) Object.assign(f, p, { opacity: 1 });
-    }
-    return frames;
-  }, []);
-
-  const paint = useCallback(() => {
-    const { stage: s, mirrored: m, clashes: cl } = live.current;
-    const at = currentPositions();
-    const hot = clashingAt(cl, usePlayer.getState().time);
-    for (const [id, el] of dotRefs.current) {
-      const p = at[id];
-      if (!p) continue;
-      const shown = mirrorPoint(p, s, m);
-      el.setAttribute('transform', `translate(${shown.x.toFixed(3)} ${shown.y.toFixed(3)})`);
-      ringRefs.current.get(id)?.setAttribute('visibility', hot.has(id) ? 'visible' : 'hidden');
-    }
-    const frames = new Map(currentProps().map((f) => [f.id, f]));
-    for (const [id, el] of propRefs.current) {
-      const f = frames.get(id);
-      if (!f || f.opacity <= 0.01) {
-        el.setAttribute('opacity', '0');
-        el.setAttribute('pointer-events', 'none');
-        continue;
-      }
-      const shown = mirrorPoint(f, s, m);
-      el.setAttribute('transform', `translate(${shown.x.toFixed(3)} ${shown.y.toFixed(3)})`);
-      el.setAttribute('opacity', f.opacity.toFixed(2));
-      el.setAttribute('pointer-events', f.opacity >= 0.5 ? 'auto' : 'none');
-      // A mirrored stage turns the other way.
-      el.querySelector('[data-rot]')?.setAttribute('transform', `rotate(${(m ? -f.rot : f.rot).toFixed(1)})`);
-    }
-  }, [currentPositions, currentProps]);
-
-  useLayoutEffect(() => {
-    paint();
-  }, [paint, list, memberIds, stage, mirrored, clashes]);
-
-  useEffect(
-    () =>
-      usePlayer.subscribe((s, prev) => {
-        if (s.time !== prev.time || s.mirrored !== prev.mirrored) paint();
-      }),
-    [paint],
-  );
 
   // ── Pointer → stage metres (undoing the mirror) ──
   function toStage(clientX: number, clientY: number): StagePoint {
@@ -448,7 +319,7 @@ export function StageView({
 
   // ── Static layers: grid, centre line, «Mi recorrido» path, ghost of the next formation ──
   const gridLines = useMemo(() => {
-    const lines: { x1: number; y1: number; x2: number; y2: number; major: boolean }[] = [];
+    const lines: GridLine[] = [];
     const g = stage.grid > 0 ? stage.grid : 0.5;
     for (let x = 0, i = 0; x <= W + 1e-6; x += g, i++) lines.push({ x1: x, y1: 0, x2: x, y2: D, major: i % 2 === 0 });
     for (let y = 0, i = 0; y <= D + 1e-6; y += g, i++) lines.push({ x1: 0, y1: y, x2: W, y2: y, major: i % 2 === 0 });
@@ -513,14 +384,12 @@ export function StageView({
     return [...seen.values()];
   }, [list]);
 
-  const centre = W / 2;
   const boxRect = box && {
     x: Math.min(mirrorPoint(box.a, stage, mirrored).x, mirrorPoint(box.b, stage, mirrored).x),
     y: Math.min(box.a.y, box.b.y),
     w: Math.abs(box.a.x - box.b.x),
     h: Math.abs(box.a.y - box.b.y),
   };
-  const line = (pts: StagePoint[]) => pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(' ');
 
   return (
     <svg
@@ -541,31 +410,7 @@ export function StageView({
         dragging && 'cursor-grabbing',
       )}
     >
-      {/* Floor */}
-      <rect x={0} y={0} width={W} height={D} rx={0.12} fill="var(--color-sumi-850)" stroke={drawing ? 'var(--color-kin-300)' : 'var(--color-rule)'} strokeWidth={drawing ? 0.06 : 0.04} />
-      <g aria-hidden>
-        {gridLines.map((l, i) => (
-          <line
-            key={i}
-            x1={l.x1}
-            y1={l.y1}
-            x2={l.x2}
-            y2={l.y2}
-            stroke="var(--color-line)"
-            strokeWidth={l.major ? 0.022 : 0.012}
-            strokeOpacity={l.major ? 0.9 : 0.5}
-          />
-        ))}
-        <line x1={centre} y1={0} x2={centre} y2={D} stroke="var(--color-kin-300)" strokeOpacity={0.45} strokeWidth={0.035} strokeDasharray="0.18 0.14" />
-        {/* The audience's edge */}
-        <line x1={0} y1={D} x2={W} y2={D} stroke="var(--color-shu-400)" strokeWidth={0.06} />
-        <text x={centre} y={D + 0.62} textAnchor="middle" fontSize={0.34} fontWeight={700} letterSpacing={0.08} fill="var(--color-shu-300)">
-          PÚBLICO
-        </text>
-        <text x={0} y={-0.24} fontSize={0.24} fill="var(--color-washi-subtle)">
-          {mirrored ? 'Desde los bailarines' : 'Desde el público'}
-        </text>
-      </g>
+      <StageFloor W={W} D={D} gridLines={gridLines} drawing={drawing} mirrored={mirrored} />
 
       {/* REQ-10 · Props, under the people */}
       {allProps.map((p) => (
@@ -594,21 +439,7 @@ export function StageView({
         </g>
       ))}
 
-      {ghostLayer && (
-        <g aria-hidden pointerEvents="none">
-          {ghostLayer.map(({ id, to, from }) => {
-            const c = personColors(people.get(id));
-            return (
-              <g key={id}>
-                {from && Math.hypot(from.x - to.x, from.y - to.y) > 0.05 && (
-                  <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={c.fill} strokeOpacity={0.5} strokeWidth={0.04} strokeDasharray="0.12 0.1" />
-                )}
-                <circle cx={to.x} cy={to.y} r={DOT} fill={c.fill} fillOpacity={0.22} stroke={c.fill} strokeOpacity={0.6} strokeWidth={0.03} strokeDasharray="0.08 0.06" />
-              </g>
-            );
-          })}
-        </g>
-      )}
+      {ghostLayer && <GhostLayer ghostLayer={ghostLayer} people={people} />}
 
       {track.length > 1 && (
         <polyline
@@ -626,61 +457,10 @@ export function StageView({
       )}
 
       {/* REQ-08 · Routes into the formation being edited */}
-      {routes && (
-        <g aria-hidden pointerEvents="none">
-          {routes.map((r) => {
-            const c = personColors(people.get(r.id));
-            const mine = r.id === pathMember;
-            if (Math.hypot(r.from.x - r.to.x, r.from.y - r.to.y) < 0.05 && !r.path) return null;
-            return (
-              <polyline
-                key={r.id}
-                points={line(r.line)}
-                fill="none"
-                stroke={c.fill}
-                strokeWidth={mine ? 0.08 : 0.05}
-                strokeOpacity={pathMember ? (mine ? 0.95 : 0.25) : 0.7}
-                strokeDasharray={r.path ? undefined : '0.14 0.1'}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            );
-          })}
-          {/* The arms of a curve: from each end to its control point (an S: one arm per end). */}
-          {editing?.path?.kind === 'curve' &&
-            (editing.path.points.length >= 2
-              ? [
-                  [editing.from, editing.path.points[0]!],
-                  [editing.path.points[1]!, editing.to],
-                ]
-              : [[editing.from, editing.path.points[0]!, editing.to]]
-            ).map((arm, i) => (
-              <polyline
-                key={i}
-                points={line(arm.map((p) => mirrorPoint(p, stage, mirrored)))}
-                fill="none"
-                stroke="var(--color-washi-subtle)"
-                strokeWidth={0.02}
-                strokeDasharray="0.06 0.06"
-              />
-            ))}
-        </g>
-      )}
+      {routes && <RouteLayer routes={routes} editing={editing} pathMember={pathMember} people={people} stage={stage} mirrored={mirrored} />}
 
       {/* REQ-08 · Clashes: the stretch where two people pass too close */}
-      {shownClashes.length > 0 && (
-        <g aria-hidden pointerEvents="none">
-          {shownClashes.flatMap((c, i) =>
-            [c.routeA, c.routeB].map((route, k) =>
-              route.length > 1 ? (
-                <polyline key={`${i}-${k}`} points={line(route.map((p) => mirrorPoint(p, stage, mirrored)))} fill="none" stroke={CLASH} strokeWidth={0.13} strokeOpacity={0.85} strokeLinecap="round" strokeLinejoin="round" />
-              ) : (
-                <circle key={`${i}-${k}`} cx={mirrorPoint(route[0]!, stage, mirrored).x} cy={route[0]!.y} r={0.1} fill={CLASH} />
-              ),
-            ),
-          )}
-        </g>
-      )}
+      {shownClashes.length > 0 && <ClashLayer shownClashes={shownClashes} stage={stage} mirrored={mirrored} />}
 
       {/* People */}
       {memberIds.map((id) => {
@@ -735,30 +515,14 @@ export function StageView({
 
       {/* REQ-08 · Handles of the path being edited (above everybody: they are what the finger wants) */}
       {editing?.path && !drawing && editing.path.kind !== 'free' && (
-        <g>
-          {editing.path.points.map((pt, i) => {
-            const at = handleDrag?.index === i ? handleDrag.point : pt;
-            const shown = mirrorPoint(at, stage, mirrored);
-            const on = selectedHandle === i || handleDrag?.index === i;
-            return (
-              <g key={i} transform={`translate(${shown.x.toFixed(3)} ${shown.y.toFixed(3)})`}>
-                <circle
-                  r={HIT * 0.8}
-                  fill="transparent"
-                  className="cursor-grab touch-none"
-                  onPointerDown={(e) => onHandleDown(i, pt, e)}
-                />
-                <circle
-                  r={HANDLE}
-                  fill={on ? 'var(--color-kin-300)' : 'var(--color-washi)'}
-                  stroke="var(--color-sumi-950)"
-                  strokeWidth={0.04}
-                  pointerEvents="none"
-                />
-              </g>
-            );
-          })}
-        </g>
+        <PathHandles
+          path={editing.path}
+          handleDrag={handleDrag}
+          selectedHandle={selectedHandle}
+          stage={stage}
+          mirrored={mirrored}
+          onHandleDown={onHandleDown}
+        />
       )}
 
       {stroke && stroke.points.length > 1 && (
@@ -790,99 +554,4 @@ export function StageView({
       )}
     </svg>
   );
-}
-
-/**
- * REQ-10 · A prop seen from above, centred on 0,0 before turning: square-cornered and in neutral pigments, so it never
- * reads as a person (round, in a member's colour).
- */
-export function PropShape({ kind, selected = false }: { kind: FormationPropKind; selected?: boolean }) {
-  const { w, d } = PROP_SIZE[kind];
-  const hit = { w: Math.max(w, 0.9), d: Math.max(d, 0.9) };
-  return (
-    <>
-      <rect x={-hit.w / 2} y={-hit.d / 2} width={hit.w} height={hit.d} fill="transparent" />
-      {selected && (
-        <rect x={-w / 2 - 0.12} y={-d / 2 - 0.12} width={w + 0.24} height={d + 0.24} rx={0.06} fill="none" stroke="var(--color-kin-300)" strokeWidth={0.04} strokeDasharray="0.1 0.07" />
-      )}
-      {kind === 'chair' && (
-        <>
-          <rect data-shape x={-w / 2} y={-d / 2} width={w} height={d} rx={0.06} fill="var(--color-sumi-700)" stroke="var(--color-kiji-300)" strokeWidth={0.04} />
-          {/* The back of the chair */}
-          <rect x={-w / 2} y={-d / 2} width={w} height={0.11} rx={0.03} fill="var(--color-kiji-300)" />
-        </>
-      )}
-      {kind === 'bench' && (
-        <>
-          <rect data-shape x={-w / 2} y={-d / 2} width={w} height={d} rx={0.05} fill="var(--color-sumi-700)" stroke="var(--color-kiji-300)" strokeWidth={0.04} />
-          {[-0.4, 0, 0.4].map((x) => (
-            <line key={x} x1={x} y1={-d / 2 + 0.06} x2={x} y2={d / 2 - 0.06} stroke="var(--color-kiji-300)" strokeOpacity={0.6} strokeWidth={0.025} />
-          ))}
-        </>
-      )}
-      {kind === 'step' && (
-        <>
-          <rect data-shape x={-w / 2} y={-d / 2} width={w} height={d} rx={0.03} fill="var(--color-sumi-600)" stroke="var(--color-washi-muted)" strokeWidth={0.04} />
-          <line x1={-w / 2 + 0.05} y1={0} x2={w / 2 - 0.05} y2={0} stroke="var(--color-washi-muted)" strokeWidth={0.025} />
-          <line x1={-w / 2 + 0.05} y1={d / 4} x2={w / 2 - 0.05} y2={d / 4} stroke="var(--color-washi-muted)" strokeOpacity={0.6} strokeWidth={0.02} />
-        </>
-      )}
-      {kind === 'mark' && (
-        <g data-shape stroke="var(--color-kin-300)" strokeWidth={0.07} strokeLinecap="round">
-          <line x1={-w / 2} y1={-d / 2} x2={w / 2} y2={d / 2} />
-          <line x1={w / 2} y1={-d / 2} x2={-w / 2} y2={d / 2} />
-        </g>
-      )}
-    </>
-  );
-}
-
-/** The text alternative: where everybody (and every prop) is in the formation in force. */
-export function PositionsList({
-  list,
-  memberIds,
-  people,
-  stage,
-  index,
-}: {
-  list: FormationInput[];
-  memberIds: string[];
-  people: Map<string, FormationMember>;
-  stage: Stage;
-  index: number;
-}) {
-  const f = index >= 0 ? list[index] : null;
-  const positions = f ? withDefaults(f.positions, memberIds, stage) : null;
-  const props = f?.props ?? [];
-  return (
-    <details className="px-4 pb-3 text-sm text-washi-muted sm:px-5">
-      <summary className="flex h-11 cursor-pointer items-center font-medium text-washi-muted hover:text-washi">Posiciones en texto</summary>
-      {positions ? (
-        <ul className="space-y-1 pb-2">
-          {memberIds.map((id) => (
-            <li key={id}>
-              <span className="font-medium text-washi">{people.get(id)?.name ?? 'Alguien que ya no está'}</span>: {describePoint(positions[id]!, stage)}
-            </li>
-          ))}
-          {props.map((p) => (
-            <li key={p.id}>
-              <span className="font-medium text-washi">
-                {PROP_LABELS[p.kind]}
-                {p.label ? ` «${p.label}»` : ''}
-              </span>
-              : {describePoint(p, stage)}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="pb-2">Aún no hay formaciones.</p>
-      )}
-    </details>
-  );
-}
-
-/** The name under a point: its first word, cut to fit between neighbours. */
-export function shortName(name: string): string {
-  const first = name.trim().split(/\s+/)[0] ?? '';
-  return first.length > 7 ? `${first.slice(0, 6)}…` : first;
 }

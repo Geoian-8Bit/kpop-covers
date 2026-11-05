@@ -35,7 +35,7 @@ import { useToast } from '@/providers/ToastProvider';
 import { EventCountdown } from './EventCountdown';
 import { EventFormDialog } from './EventFormDialog';
 import { isShown, REPERTOIRE_MAX } from './eventRules';
-import { useNow } from './useNow';
+import { useNowDate } from '@/lib/useNow';
 
 /** F16 · /eventos/:eventId: the event (edit, delete), its countdown, its repertoire and the connections. */
 export function EventPage() {
@@ -76,7 +76,7 @@ function EventDetail({ event }: { event: CrewEvent }) {
   const makeTrack = useCreateChorusTrack();
   const toast = useToast();
   const navigate = useNavigate();
-  const now = useNow();
+  const now = useNowDate();
   // From the cache at once when it's there: no flash of «Aún no hay canciones».
   const [order, setOrder] = useState<EventSongView[]>(() => songs.data ?? []);
   const [announcement, announce] = useAnnouncer();

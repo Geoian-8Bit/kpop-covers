@@ -50,7 +50,7 @@ export function plainPass(config: AudioEncoderConfig, total: number): AudioPass 
 }
 
 /** Source sample range [from, to) that output frames [pos, pos + frames) read. */
-export function sourceRange(pass: AudioPass, pos: number, frames: number): [from: number, to: number] {
+function sourceRange(pass: AudioPass, pos: number, frames: number): [from: number, to: number] {
   const offset = pos - pass.pad + pass.skip;
   return [Math.min(pass.total, Math.max(0, offset)), Math.max(0, Math.min(pass.total, offset + frames))];
 }
@@ -279,6 +279,7 @@ export function createAudioEncodeHost<J>(
 
 /** REQ-26 · The whole worker entry point: wires `self` to the host above (both audio workers start the same way). */
 export function createAudioWorker<J>(runJob: AudioJobRunner<J>) {
+  // REQ-29 · Kept: the DOM library has no worker `self` type (see stemSeparator.worker.ts).
   const scope = self as unknown as {
     postMessage(message: unknown, transfer: Transferable[]): void;
     onmessage: ((event: MessageEvent<AudioPageMessage<J>>) => void) | null;

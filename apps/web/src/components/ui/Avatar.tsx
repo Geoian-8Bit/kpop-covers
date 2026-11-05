@@ -9,7 +9,7 @@ interface AvatarProps {
 
 const sizes = { sm: 'size-7 text-[11px]', md: 'size-9 text-[13px]', lg: 'size-12 text-base' } as const;
 
-export function initials(name: string): string {
+function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const letters = parts.length > 1 ? `${parts[0]![0]}${parts[1]![0]}` : (parts[0] ?? '?').slice(0, 2);
   return letters.toUpperCase();

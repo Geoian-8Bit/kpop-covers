@@ -82,7 +82,7 @@ interface GrabHandlers {
  * following click is swallowed; a plain tap still opens the clip. Items use `touch-action: pan-y`,
  * so on phones a sideways drag grabs the item at once while an up/down drag still scrolls the page.
  */
-export function useGrab(h: GrabHandlers) {
+function useGrab(h: GrabHandlers) {
   const handlers = useRef(h);
   handlers.current = h;
   const s = useRef({ down: false, moved: false, sx: 0, sy: 0 });

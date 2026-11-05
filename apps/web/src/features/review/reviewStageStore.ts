@@ -11,7 +11,7 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
  * (the stage, the settings, the note area), like the zooms in `useReview`: a drag never repaints the whole screen.
  * The screen keeps only the settled values it saves.
  */
-export interface StageLive {
+interface StageLive {
   fit: Fit;
   /** «Separados»: the share the hinge was dragged to (this visit only); null: the best for these two pictures. */
   split: ChosenSplit | null;

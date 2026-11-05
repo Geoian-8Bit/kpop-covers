@@ -37,7 +37,7 @@ export function trapFocusIndex(current: number, count: number, backwards: boolea
 
 // ───────────── Hanafuda: a hand of cards above the button ─────────────
 
-export interface CardPlace {
+interface CardPlace {
   x: number;
   y: number;
   rotate: number;

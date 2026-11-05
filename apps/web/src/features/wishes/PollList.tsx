@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { usePollOptions, usePolls, usePollVotes, useWishes } from '@/data/wishes';
 import { thumbCors } from '@/lib/thumbCors';
-import { useNow } from './identity';
+import { useNow } from '@/lib/useNow';
 import { closingLabel, isPollClosed, VOTE_TYPE_COPY } from './pollRules';
 import { cardIn } from './WishCard';
 

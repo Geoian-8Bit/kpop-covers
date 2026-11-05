@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef } from 'react';
 import { perfMark } from '@/lib/perfProbe';
 import {
   canLock,
@@ -48,7 +48,7 @@ export function useImageControls(S: Studio) {
   /** What this camera offers (read again when the camera or its mode changes). */
   const trackInfo = useMemo(
     () => (view.status === 'ready' ? readTrackInfo(cam.track()) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: the camera or mode changing is the cue to re-read the live track (cam.track() isn't reactive)
     [view.status, view.deviceId, view.mode],
   );
   const hasImageControls = Boolean(
@@ -193,15 +193,18 @@ export function useImageControls(S: Studio) {
       flashLost ? 'el flash se ha apagado' : null,
     ].filter(Boolean);
     if (lost.length) setNotice(`La cámara se ha reiniciado: ${lost.join(' y ')}.`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- REQ-30 · kept: restores the image only when the camera comes back; settings are read at that moment
   }, [view.status, trackInfo]);
   // P48 · Automatic colour is owed (it stuck during a take): the camera reopens as soon as the recorder is idle.
-  useEffect(() => {
-    if (!wbReopenLater.current || phase !== 'idle' || clap != null || view.status !== 'ready') return;
+  // REQ-30 · Same trigger as before (the recorder, the clap or the camera changed); the rest is read at that moment.
+  const reopenIfOwed = useEffectEvent(() => {
     if (cameraBusy.current()) return;
     wbReopenLater.current = false;
     reopenForColour();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    if (!wbReopenLater.current || phase !== 'idle' || clap != null || view.status !== 'ready') return;
+    reopenIfOwed();
   }, [phase, clap, view.status]);
   function changeLock(locked: boolean) {
     if (!trackInfo) return;

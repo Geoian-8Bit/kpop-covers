@@ -12,7 +12,8 @@ import { usePollOptions, usePolls, usePollVotes, useWishes, useWishInterest } fr
 import { snappy } from '@/lib/motion';
 import { thumbCors } from '@/lib/thumbCors';
 import { useToast } from '@/providers/ToastProvider';
-import { useClosingNow, useNow } from './identity';
+import { useClosingNow } from './identity';
+import { useNow } from '@/lib/useNow';
 import { closingLabel, isPollClosed, pastVotesOf, type PastVote } from './pollRules';
 import { interestByWish, liveWishes, selectionHint, sortByInterest } from './wishRules';
 
@@ -28,7 +29,7 @@ const NO_INTEREST: WishInterest[] = [];
 // ───────────────────────── Lista de deseos ─────────────────────────
 
 /** The open votes on top of the wish list (37): one tap to vote. */
-export function OpenPolls({
+function OpenPolls({
   polls,
   options,
   wishById,

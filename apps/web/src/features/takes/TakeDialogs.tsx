@@ -4,7 +4,7 @@ import type { TakeItem } from '@/data/takes';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 import { Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { takesCount } from './takeRules';
 
 // ───────────── Delete ─────────────
@@ -74,14 +74,15 @@ export function CleanupDialog({
   const [snapshot, setSnapshot] = useState<TakeItem[]>([]);
   const stop = useRef(false);
 
+  // Only when it opens (REQ-30 · the list is read at that moment, not followed).
+  const onOpen = useEffectEvent(() => {
+    setSnapshot(candidates);
+    setProgress(null);
+    stop.current = false;
+  });
   useEffect(() => {
-    if (open) {
-      setSnapshot(candidates);
-      setProgress(null);
-      stop.current = false;
-    }
-    // Only when it opens.
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (open) onOpen();
+  }, [open]);
 
   async function run() {
     const list = snapshot;

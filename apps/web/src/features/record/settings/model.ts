@@ -47,7 +47,7 @@ export type FieldKey =
   | 'level'
   | 'info';
 
-export interface ChoiceOption {
+interface ChoiceOption {
   value: string;
   label: string;
   /** Read by screen readers instead of the short label («60» → «60 fotogramas por segundo»). */

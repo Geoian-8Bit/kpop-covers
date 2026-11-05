@@ -20,7 +20,7 @@ import { cn } from '@/lib/cn';
 import { useToast } from '@/providers/ToastProvider';
 import { ActionMenu } from './ActionMenu';
 import { Ballot } from './Ballot';
-import { useNow } from './identity';
+import { useNow } from '@/lib/useNow';
 import { PollFormDialog, type PollPreset } from './PollFormDialog';
 import {
   ballotOf,

@@ -1,6 +1,6 @@
 import type { Formation, FormationPlan } from '@coverscape/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { formationErrorMessage, formationKeys, type FormationInput, type FormationPlanFull, type FormationPlanPatch } from '@/data/formations';
 import { formationsBackend } from '@/lib/backend/formations';
 import {
@@ -52,12 +52,15 @@ export function useFormationEditor(full: FormationPlanFull, onError: (message: s
   /** What the server has (as far as this editor knows): the diff against it is what gets written. */
   const saved = useRef<FormationInput[]>(history.present);
   const latest = useRef(history.present);
-  latest.current = history.present;
   const flushing = useRef<Promise<void> | null>(null);
   const again = useRef(false);
   const stopped = useRef(false);
   const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
+  // REQ-30 · Synced at commit: both are only read by writes that run after it (timers, awaits, unmount).
+  useLayoutEffect(() => {
+    latest.current = history.present;
+    onErrorRef.current = onError;
+  }, [history.present, onError]);
   const planId = plan.id;
 
   const flush = useCallback((): Promise<void> => {

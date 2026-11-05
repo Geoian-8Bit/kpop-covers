@@ -9,7 +9,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /** After it starts, an event keeps showing for a day; then it drops off the home on its own (nothing is deleted). */
-export const SHOWN_AFTER_START_MS = DAY;
+const SHOWN_AFTER_START_MS = DAY;
 
 export const EVENT_NAME_MAX = 80;
 export const EVENT_PLACE_MAX = 120;
@@ -59,7 +59,7 @@ export function isShown(startsAt: Date | string, now: Date): boolean {
 }
 
 /** An event that has started stays ahead of the next one for this long (it's on now); then the next one shows. */
-export const LIVE_FOR_MS = 3 * HOUR;
+const LIVE_FOR_MS = 3 * HOUR;
 
 /**
  * The event the home page counts down to:
@@ -144,7 +144,7 @@ export function rehearsalDetail(c: Countdown, r: RehearsalsLeft): string | null 
   return c.days === 1 ? 'El evento es mañana' : `El evento es en ${c.days} días`;
 }
 
-export function durationWords(hours: number, minutes: number): string {
+function durationWords(hours: number, minutes: number): string {
   if (hours === 0) return `${minutes} min`;
   if (minutes === 0) return `${hours} h`;
   return `${hours} h ${minutes} min`;
@@ -166,7 +166,7 @@ export function eventDateLabel(startsAt: string, withYear = false): string {
 // ───────────── Long countdown → lanterns ─────────────
 
 /** Chōchin covers the last seven days: six days before (one lantern lit) up to the day itself (all seven). */
-export const LANTERN_DAYS = 7;
+const LANTERN_DAYS = 7;
 
 /**
  * Which design the countdown wears: `long` (Tsuki, the moon filling up) while seven or more
@@ -195,7 +195,7 @@ export function ignitesFirstLantern(c: Countdown, previous: CountdownStage | nul
  * Tsuki: a lunar month of waiting. The moon is a first thin crescent 35 days before or more and full a week before
  * (then Chōchin).
  */
-export const MOON_SPAN_DAYS = 28;
+const MOON_SPAN_DAYS = 28;
 /** The least the current moon is lit: never a dark row, however far the event is (P39, the problem Chōchin had). */
 export const MOON_MIN_ILLUMINATION = 0.1;
 /** Moons in the row: new, three waxing steps, half, gibbous, full. */

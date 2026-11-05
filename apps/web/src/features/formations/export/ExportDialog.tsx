@@ -1,7 +1,7 @@
 import type { Video } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { Clapperboard, FileText, Image as ImageIcon } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/Spinner';
@@ -53,7 +53,10 @@ export function ExportDialog({
 
   // REQ-12 · Whether this browser has WebCodecs (asked once per opening, loading the encoder module only then).
   const stageKey = snap ? `${snap.stage.width}x${snap.stage.depth}` : '';
+  // REQ-30 · The plan is read through an effect event: the check reruns per opening and stage size, not per edit.
+  const readSnap = useEffectEvent(() => snap);
   useEffect(() => {
+    const snap = readSnap();
     if (!open || !snap) return;
     let cancelled = false;
     setSupport('checking');
@@ -68,7 +71,6 @@ export function ExportDialog({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opening and stage size
   }, [open, stageKey]);
 
   // Leaving the editor mid-export stops the encoder.
@@ -219,7 +221,7 @@ export function ExportDialog({
 }
 
 
-export function ExportOption({
+function ExportOption({
   icon,
   title,
   detail,
