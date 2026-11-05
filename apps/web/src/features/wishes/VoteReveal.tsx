@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { Seal } from '@/components/Seal';
 import { cn } from '@/lib/cn';
 import { easeOutExpo, inkReveal, jelly, soft } from '@/lib/motion';
@@ -106,6 +106,35 @@ const TRAIL_KEYFRAMES = trailKeyframes(BURSTS.map((burst) => burst.y));
  * Its own layer for the seal and the thumbnail while their entrance spring runs (and only then: at rest they are
  * rasterised crisp again), so they don't repaint the page under them every frame.
  */
+interface Petal {
+  burst: { x: number; y: number };
+  dx: number;
+  dy: number;
+  rotate: number;
+}
+
+/**
+ * REQ-22 · `@keyframes vote-petal-<i>` for each scrap: the `vote-petal` curve of `voteReveal.css` with `--u` (one
+ * viewBox unit, max(width, 360) / 360 px) and the scrap's own numbers already multiplied in. Keyframes that read
+ * `var()` are resolved again on every style recalc, and a running CSS animation is recalculated on every main-thread
+ * frame even while the compositor moves it: with 100 scraps that was most of each frame. Same geometry, plain numbers.
+ */
+function petalKeyframes(petals: readonly Petal[], u: number): string {
+  const at = (x: number, y: number, r: number, s: number) =>
+    `transform:translate(${x * u}px,${y * u}px) rotate(${r}deg) scale(${s})`;
+  return petals
+    .map(({ burst: { x: bx, y: by }, dx, dy, rotate: r }, i) =>
+      [
+        `@keyframes vote-petal-${i}{`,
+        `0%{opacity:0;${at(bx, by, 0, 0.3)}}`,
+        `30%{opacity:1;${at(bx + dx, by + dy, r, 1)}}`,
+        `70%{opacity:0.9;${at(bx + dx * 1.06, by + dy + 30, r * 1.6, 0.95)}}`,
+        `100%{opacity:0;${at(bx + dx * 1.1, by + dy + 70, r * 2.4, 0.8)}}}`,
+      ].join(''),
+    )
+    .join('\n');
+}
+
 function layerOn(el: HTMLElement | null) {
   if (el) el.style.willChange = 'transform';
 }
@@ -135,6 +164,23 @@ function Hanabi({ winner, reduce }: SceneProps) {
       ),
     [],
   );
+  // REQ-22 · The scraps' keyframes follow the sky's width as `--u` did: the observer's first call comes after layout
+  // and before the first paint, and again on every resize. Until then the scraps rest at opacity 0 with no animation.
+  const sky = useRef<HTMLDivElement>(null);
+  const petalStyle = useRef<HTMLStyleElement>(null);
+  useLayoutEffect(() => {
+    const box = sky.current;
+    const style = petalStyle.current;
+    if (!box || !style) return;
+    let width = -1;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      style.textContent = petalKeyframes(petals, Math.max(width, 360) / 360);
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [petals, reduce]);
   return (
     <div className="relative min-h-[300px] bg-gradient-to-b from-ai-900 via-sumi-950 to-sumi-950">
       <svg viewBox="0 0 360 200" className={SKY} aria-hidden preserveAspectRatio="xMidYMid slice">
@@ -153,8 +199,9 @@ function Hanabi({ winner, reduce }: SceneProps) {
       {/* REQ-22 · Everything that moves over the sky is HTML in the viewBox's own units (`voteReveal.css`), in the old
           SVG order: the rising trails, then the scraps, then the bursts' bright cores on top. */}
       {!reduce && (
-        <div aria-hidden className={cn(SKY, 'vote-petals')}>
+        <div ref={sky} aria-hidden className={cn(SKY, 'vote-petals')}>
           <style>{TRAIL_KEYFRAMES}</style>
+          <style ref={petalStyle} />
           <div className="vote-petals-box">
             {BURSTS.map((burst, b) => (
               <span
@@ -176,20 +223,11 @@ function Hanabi({ winner, reduce }: SceneProps) {
                 <span className="vote-trail-cap vote-trail-y2 bg-kin-300" />
               </span>
             ))}
-            {petals.map((p) => (
+            {petals.map((p, i) => (
               <span
                 key={p.key}
                 className={cn('vote-petal', p.tone)}
-                style={
-                  {
-                    '--bx': p.burst.x,
-                    '--by': p.burst.y,
-                    '--dx': p.dx,
-                    '--dy': p.dy,
-                    '--r': p.rotate,
-                    animationDelay: `${p.burst.delay}s`,
-                  } as CSSProperties
-                }
+                style={{ animationName: `vote-petal-${i}`, animationDelay: `${p.burst.delay}s` }}
               />
             ))}
             {BURSTS.map((burst, b) => (

@@ -21,7 +21,7 @@
 | 8 Cliente de Supabase ligero | Hecha | 8369aae |
 | 9 Limpieza transversal | Hecha | ver git log de perf/rendimiento-integral |
 | 10 motion perezoso (condicional) | Descartada | ver «Fase 10» abajo; parche en la carpeta de evidencias |
-| Cierre final | Pendiente | |
+| Cierre final | Hecho (con lo no alcanzado anotado) | ver git log de perf/rendimiento-integral |
 
 ## Instrucción del responsable sobre commits (01-11-2026)
 
@@ -548,13 +548,65 @@ fotogramas → se revierte), se revirtió entero; no se llegó a correr flows ni
 **Evidencias:** `C:/Users/iangi/oneshoot-rendimiento-integral-tmp/fase-10/` (m01-antes.txt, m01-despues.json,
 visual*.log, req12.patch con el cambio completo por si se quiere retomar).
 
+## Cierre final (§12) · 05-11-2026
+
+**Regresión completa:** `pnpm test` (142 + 1147), typecheck, lint (0 errores, 246 avisos), check:size (0 > 600),
+check:unused y `pnpm db:test` (34/34 migraciones, 23/23 ficheros, 189 PASS) en verde. Playwright completo (visual en los
+tres anchos + flows, móvil Chromium, escritorio Chromium y móvil WebKit): 563 bien, 279 saltados, 5 mal. Los 2 de
+WebKit son los conocidos (sin Web Audio en Windows, la app sale en blanco; ver fase 0). Los 3 de Chromium (ronda RPD en
+los dos proyectos, accesos rápidos con clips) pasan aislados; otra captura (menú de secciones) que falló en la
+repetición da 12/12 en serie: intermitencia por carga, no regresión.
+
+**Revisión global:** r1 riesgos sin hallazgos ≥ 7 (migraciones compatibles hacia atrás con el cliente actual; sesión,
+PWA, invalidaciones y datos bien). r2 sin hallazgos ≥ 7; arreglado su 6: `hasPieces` (`takeStore.ts`) daba «sin piezas»
+ante cualquier error, y una carpeta sin meta que no se pudiera listar se borraba a ciegas (ya pasaba antes de este
+trabajo); ahora solo una carpeta que ya no existe cuenta como vacía. Y su 3: el revelado de la votación vuelve a
+observar el tamaño si se desactiva «reducir movimiento» con él abierto. r1 spec: tabla REQ → estado → evidencia sin hallazgos ≥ 7; sus notas de 5–6 se
+anotan aquí.
+
+**Mediciones:** la línea base del 31-10 salió de un árbol con cambios sin commit y no es comparable en S-01. Se volvió a
+medir la base (efb2c1e) hoy en la misma máquina, y el final dos veces. Tabla «métrica · base hoy · final 1 · final 2 ·
+objetivo · cumple» en `cierre/comparacion-hoy.md` de la carpeta de evidencias; tabla frente a la base del 31-10 en
+`cierre/tabla-final.md`. Resumen frente a la base de hoy:
+- Cumplen: M-01 81,9 % (≤ 85 %), M-04 LCP repetido 3252 → 1396–1684 ms, M-06 lista de vídeos 3,4 %, M-12 0 ficheros
+  > 600, S-03 Paint/s 25 %, S-05, S-10 RoundRunner 2,0/s, S-15 LoAF 21 → 0–1 (frente a la base del 31-10, 3 → 1, se queda en −67 %), S-16 LoAF 0,
+  chunk del grabador −22,4 %.
+- Mejoran sin llegar: M-05 YouTube 88 % (≤ 85 %) y subido 87 % (≤ 75 %); S-04 p95 66 → 29–35 ms y S-11 67 → 30 ms
+  (≤ 20); S-07 Paint/s 51 % (≤ 50 %); S-04 PlayerZoomLayer 0,9/s y S-11 RecordStudio 2,6/s (piden 0;
+  lo que queda tiene cambio visible).
+- No cumplen: M-02 entrada 67,49 kB, −4,08 kB (pide −6; la fase 3 lo dejó en 62,60 y las fases 8–9 lo subieron); M-03
+  LCP frío 98 % (5864 → 5676–5784): lo limita el póster `data:` de ~470 kB de la tarjeta destacada, igual en la base;
+  p95 ≤ 20 ms en ningún escenario; S-08 y S-09 Paint/s; camera-ready sin base comparable (S-18/S-19 no existían en la
+  fase 0; 86–90 % estimado).
+- Empeoraba de verdad S-08 (revelado del ganador: p95 34 → 44–49 ms). Causa: los `@keyframes vote-petal` con `var()`
+  obligaban a Chromium a resolver ~130 animaciones por fotograma. Arreglado: `VoteReveal.tsx` escribe un keyframe por
+  papelito con los números ya calculados (se reescriben al cambiar de tamaño); misma geometría (0 px de diferencia en 8
+  instantes y 3 anchos), `group.spec.ts` 174/174. Ahora p95 31,8–32,0 ms.
+- S-14 (repaso) p95 53 → 57–61 ms: leve, dentro de lo que varía con una sola toma de base; sin causa encontrada.
+- No medibles: S-12, S-13 (toma de 20 s) y S-17: la cámara falsa cuelga Chromium al parar tomas de más de ~4 s.
+
+**Requisitos (tabla completa en `cierre/tabla-req.md`):** 32 hechos, 22 hechos en parte (sobre todo por los objetivos
+numéricos de arriba), 5 descartados con motivo (REQ-12 con medición; 22.1, 22.6, 22.9 por diferencia visual; 23.8
+FrameBus, condicional: no se implementó y no hay medición que lo respalde, el descarte más flojo), 1 no hecho (S-12/S-17
+de REQ-24, no medibles). Falta además: e2e de actualización con versión nueva de la PWA y traza guardada de «precache
+tras el LCP» (REQ-04/05; el código está); tabla fila a fila de los `eslint-disable` originales (resumen en la fase 9);
+246 avisos react-hooks (REQ-30 pide 0).
+
 ## Diferencias visuales y su justificación
+
+Ninguna conservada: todo lo que movía un píxel se revirtió (REQ-22.1, 22.6, 22.9 y REQ-12).
 
 ## Sugerencias para el responsable (no implementadas)
 
+- Pedir primero solo el póster de la tarjeta destacada y después el resto (`data/videos/posters.ts`): es lo que limita
+  el LCP en frío. Sin medir.
+- Comprobación previa en `scripts/deploy.mjs`: antes de `vercel`, un `GET rest/v1/videos?select=poster_inline&limit=0`
+  con la clave pública que aborte si responde 400 (migraciones sin aplicar).
+- Borrar la caché antigua `thumbnails` del service worker en los dispositivos (pendiente de decisión).
+
 ## Para el responsable: migraciones, despliegue y pruebas en dispositivo
 
-(Borrador de la fase 2; se completa en el cierre final.)
+El implementador no ha desplegado ni aplicado nada en producción. Orden:
 
 1. Copia de seguridad del proyecto `pevbjaowyctqqldvzovz` antes de nada (backup/PITR del panel o `pg_dump` de `public`).
 2. Aplicar en Supabase, **en este orden y antes de desplegar el cliente** (el cliente nuevo las necesita: sin ellas
@@ -572,4 +624,25 @@ visual*.log, req12.patch con el cambio completo por si se quiere retomar).
    invoker` con `search_path=''`; un aviso de índice sin uso al principio es normal).
 5. Regenerar `packages/shared/src/database.types.ts` desde el proyecto y comprobar que coincide con el editado a mano
    (salvo orden; si el generador añade las generadas en Insert/Update como `?: never`, aceptar lo generado).
-6. Desplegar con `pnpm deploy:prod` desde la raíz (`docs/DEPLOY.md`) solo después de los pasos 2 y 3.
+6. Desplegar con `pnpm deploy:prod` desde la raíz (`docs/DEPLOY.md`) solo después de los pasos 2 y 3. **Aviso:** los
+   visitantes nuevos reciben el cliente nuevo al momento (la PWA solo pregunta a quien ya la tiene instalada); si se
+   despliega antes de las migraciones, la biblioteca, las notas y el reordenado responden 400. Al revés no hay
+   problema: las migraciones solo añaden y el cliente actual sigue funcionando contra la base nueva.
+7. Comprobaciones en dispositivos reales (Android de gama media e iPhone, en el navegador y con la app instalada):
+   - LCP y fluidez percibida en la biblioteca y el estudio (en frío y al volver).
+   - Pellizco de zoom en el estudio y en el grabador; el chip y el aviso «Zoom digital».
+   - Grabar, guardar en «Tomas», compartir (en iPhone el vídeo debe sonar al tocar «Compartir») y borrar.
+   - Repaso con gestos: bisagra, encaje superpuesto, notas con dibujo.
+   - Armar el aplauso, también con la app recién abierta y sin conexión.
+   - Separación de voz y copia para la nube con el estudio en uso (la interfaz no debe trabarse).
+   - Votación: revelado del ganador (los papelitos) y barras de resultados.
+   - Cerrar sesión y volver a entrar; dejar la app abierta más de una hora (renovación del token).
+   - Actualización de la PWA: desplegar, abrir la app instalada y aceptar la versión nueva.
+   Cómo medir: conectar el móvil por USB, abrir `chrome://inspect` en el ordenador, inspeccionar la pestaña y, en la
+   consola, `performance.getEntriesByType('mark').filter(m => m.name.startsWith('oneshoot:'))` (marcas
+   `oneshoot:library-painted`, `player-ready`, `camera-ready`, `take-saved`, `review-ready`); el panel Performance da
+   LCP y fotogramas. En iPhone, Safari > Desarrollo con el cable.
+8. Evidencias temporales (capturas, trazas, JSON de medición, tablas del cierre):
+   `C:\Users\iangi\oneshoot-rendimiento-integral-tmp\` (subcarpeta `cierre\` para las tablas finales). No entran en el
+   repositorio; revisarlas si se quiere y borrar la carpeta después. Ahí quedan también copias de trabajo y
+   `node_modules` de los worktrees de medición, si alguno no se borró (`fase-10\head`).

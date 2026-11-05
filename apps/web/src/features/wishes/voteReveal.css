@@ -8,7 +8,8 @@
  *
  * The animation is the motion one it replaces: 2 s from the burst's delay, keyframes at 0 / 30 / 70 / 100 %, and
  * easeOutExpo (cubic-bezier(0.16, 1, 0.3, 1)) on every segment, as motion applies a single `ease` per segment.
- * Only transform and opacity animate, so the compositor moves the scraps without repainting.
+ * Only transform and opacity animate, so the compositor moves the scraps without repainting. The keyframes carry
+ * plain numbers, not `var()` (VoteReveal.tsx `petalKeyframes`): a running animation is restyled on every main frame.
  */
 .vote-petals {
   container-type: inline-size;
@@ -36,35 +37,8 @@
   margin-top: calc(-2.2 * var(--u));
   border-radius: calc(0.8 * var(--u));
   opacity: 0;
-  animation: vote-petal 2s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes vote-petal {
-  0% {
-    opacity: 0;
-    transform: translate(calc(var(--bx) * var(--u)), calc(var(--by) * var(--u))) rotate(0deg) scale(0.3);
-  }
-  30% {
-    opacity: 1;
-    transform: translate(calc((var(--bx) + var(--dx)) * var(--u)), calc((var(--by) + var(--dy)) * var(--u)))
-      rotate(calc(var(--r) * 1deg)) scale(1);
-  }
-  70% {
-    opacity: 0.9;
-    transform: translate(
-        calc((var(--bx) + var(--dx) * 1.06) * var(--u)),
-        calc((var(--by) + var(--dy) + 30) * var(--u))
-      )
-      rotate(calc(var(--r) * 1.6deg)) scale(0.95);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(
-        calc((var(--bx) + var(--dx) * 1.1) * var(--u)),
-        calc((var(--by) + var(--dy) + 70) * var(--u))
-      )
-      rotate(calc(var(--r) * 2.4deg)) scale(0.8);
-  }
+  /* The name is per scrap (`vote-petal-<i>`, written by VoteReveal.tsx with the sky's width in plain numbers). */
+  animation: 2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /*

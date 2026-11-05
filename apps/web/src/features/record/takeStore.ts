@@ -108,7 +108,9 @@ export function holdTake(id: string): void {
   let release = () => undefined as void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   held.set(id, release);
-  void locks()?.request(lockName(id), () => gate).catch(() => undefined);
+  void locks()
+    ?.request(lockName(id), () => gate)
+    .catch(() => undefined);
 }
 
 export function releaseTake(id: string): void {
@@ -182,7 +184,9 @@ async function names(dir: FileSystemDirectoryHandle): Promise<string[]> {
 }
 
 async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
-  const raw = JSON.parse(await (await (await dir.getFileHandle(META)).getFile()).text()) as Partial<TakeMeta> & {
+  const raw = JSON.parse(
+    await (await (await dir.getFileHandle(META)).getFile()).text(),
+  ) as Partial<TakeMeta> & {
     saved?: boolean;
   };
   return {
@@ -191,7 +195,7 @@ async function readMeta(dir: FileSystemDirectoryHandle): Promise<TakeMeta> {
     title: String(raw.title ?? ''),
     mimeType: String(raw.mimeType ?? ''),
     startedAt: String(raw.startedAt ?? ''),
-    savedAt: raw.savedAt ?? (raw.saved ? raw.startedAt ?? null : null),
+    savedAt: raw.savedAt ?? (raw.saved ? (raw.startedAt ?? null) : null),
     noSpace: Boolean(raw.noSpace),
     kept: Boolean(raw.kept),
     timing: readTiming(raw.timing),
@@ -413,7 +417,8 @@ export async function listLeftovers(): Promise<Leftover[]> {
         // holds video pieces is never deleted blind: it may be a saved take whose meta got damaged.
         if (!locked && !(await hasPieces(root, id))) {
           const empty = { startedAt: new Date(0).toISOString(), savedAt: null, bytes: 0, locked };
-          if (leftoverAction(empty, now) === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
+          if (leftoverAction(empty, now) === 'delete')
+            await root.removeEntry(id, { recursive: true }).catch(() => undefined);
         }
         return null;
       }
@@ -429,7 +434,14 @@ export async function listLeftovers(): Promise<Leftover[]> {
         unreadable = !(err instanceof DOMException && err.name === 'NotFoundError');
       }
       const action = leftoverAction(
-        { startedAt: meta.startedAt, savedAt: meta.savedAt, bytes: size, locked, unreadable, kept: meta.kept },
+        {
+          startedAt: meta.startedAt,
+          savedAt: meta.savedAt,
+          bytes: size,
+          locked,
+          unreadable,
+          kept: meta.kept,
+        },
         now,
       );
       if (action === 'delete') await root.removeEntry(id, { recursive: true }).catch(() => undefined);
@@ -497,8 +509,9 @@ async function setKept(id: string, kept: boolean): Promise<TakeMeta | null> {
 async function hasPieces(root: FileSystemDirectoryHandle, id: string): Promise<boolean> {
   try {
     return (await names(await root.getDirectoryHandle(id))).some((n) => n.endsWith('.part'));
-  } catch {
-    return false;
+  } catch (error) {
+    // Only a folder that is already gone has no pieces; one that cannot be read is never deleted blind.
+    return !(error instanceof DOMException && error.name === 'NotFoundError');
   }
 }
 
