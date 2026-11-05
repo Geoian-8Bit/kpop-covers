@@ -16,6 +16,18 @@ describe('must (REQ-29)', () => {
       expect(e).toBe(error);
     }
   });
+
+  it('keeps the answer status on the error without changing its shape', () => {
+    expect.assertions(3);
+    const error = { message: 'TypeError: Failed to fetch', code: '' };
+    try {
+      must({ data: null, error, status: 0 });
+    } catch (e) {
+      expect(e).toBe(error);
+      expect((e as { status?: number }).status).toBe(0);
+      expect(Object.keys(e as object)).toEqual(['message', 'code']);
+    }
+  });
 });
 
 describe('toJson / fromJson (REQ-29)', () => {

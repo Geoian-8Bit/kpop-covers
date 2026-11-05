@@ -11,6 +11,8 @@ import {
   type PollPatch,
   type WishPatch,
 } from '@/lib/backend/wishes';
+import { pendingOf, pendingReady, submitWrite } from '@/lib/pendingWrites';
+import { overlayBallots, type PendingBallot } from '@/lib/pendingWritesRules';
 import { friendlyError } from '@/lib/supabase';
 import { bagKeys } from './bags';
 import { useCreateVideo, videoKeys } from './videos';
@@ -35,7 +37,9 @@ export const NEXT_COREO_BAG = 'Próxima coreo';
 /** Wish and vote errors in the group's words (falls back to the app's general mapping). */
 export function wishError(error: unknown): string {
   const message =
-    typeof error === 'object' && error && 'message' in error ? String((error as { message: unknown }).message) : '';
+    typeof error === 'object' && error && 'message' in error
+      ? String((error as { message: unknown }).message)
+      : '';
   if (/wishes_crew_youtube_key/.test(message)) return 'Esa canción ya está en la lista de deseos.';
   if (/wish_interest_once_key/.test(message)) return 'Ya te habías apuntado.';
   if (/wish_interest_invalid/.test(message))
@@ -44,11 +48,13 @@ export function wishError(error: unknown): string {
   if (/wishes_.*_check/.test(message)) return 'Revisa los datos: alguno no es válido.';
   if (/poll_closed/.test(message)) return 'La votación ya está cerrada.';
   if (/poll_not_found/.test(message)) return 'Esta votación ya no existe: otro móvil la ha borrado.';
-  if (/poll_option_invalid|poll_options_once_key/.test(message)) return 'Alguna candidata ya no está en la lista.';
+  if (/poll_option_invalid|poll_options_once_key/.test(message))
+    return 'Alguna candidata ya no está en la lista.';
   if (/poll_winner_invalid/.test(message)) return 'La ganadora tiene que ser una de las candidatas.';
   if (/poll_has_votes/.test(message)) return 'Ya hay votos: no se puede cambiar el tipo.';
   if (/poll_options_cap_reached/.test(message)) return 'Una votación admite hasta 50 canciones.';
-  if (/vote_member_invalid/.test(message)) return 'Ese nombre ya no está en el grupo. Elige quién eres otra vez.';
+  if (/vote_member_invalid/.test(message))
+    return 'Ese nombre ya no está en el grupo. Elige quién eres otra vez.';
   if (/vote_options_invalid/.test(message)) return 'Ese voto no vale: revisa lo que has marcado.';
   if (/polls_title_check/.test(message)) return 'El título no puede quedar vacío.';
   if (/(wishes|wish_interest|polls|poll_options|poll_votes)_cap_reached|row_cap/.test(message))
@@ -75,8 +81,22 @@ export function usePollOptions() {
 /** REQ-19 · The signature of the ballots each live poll query last downloaded, to tell if a poll tick found news. */
 const seenSignature = new Map<string, string | null>();
 
+/** A ballot row shown before the server has it (the same shape the optimistic vote always used). */
+function optimisticVote(ballot: PendingBallot, option_id: string, i: number): PollVote {
+  return {
+    id: `optimistic-${option_id}-${ballot.memberId}`,
+    crew_id: '',
+    poll_id: ballot.pollId,
+    option_id,
+    member_id: ballot.memberId,
+    rank: ballot.ranked ? i + 1 : null,
+    created_at: new Date().toISOString(),
+    archived_at: null,
+  };
+}
+
 /** The ballots as the server holds them, remembering their signature (taken first, so a vote in between is not lost). */
-async function downloadVotes(pollIds: string[], remember: boolean): Promise<PollVote[]> {
+async function serverVotes(pollIds: string[], remember: boolean): Promise<PollVote[]> {
   const pollId = pollIds[0];
   if (!remember || pollIds.length !== 1 || !pollId) return wishesBackend.listPollVotes(pollIds);
   const signature = await wishesBackend.pollVotesSignature(pollId).then(
@@ -87,6 +107,17 @@ async function downloadVotes(pollIds: string[], remember: boolean): Promise<Poll
   if (signature) seenSignature.set(pollId, signature.value);
   else seenSignature.delete(pollId);
   return votes;
+}
+
+/** The server's ballots with this device's waiting ones laid over them (a refetch never undoes them). */
+async function downloadVotes(
+  queryClient: QueryClient,
+  pollIds: string[],
+  remember: boolean,
+): Promise<PollVote[]> {
+  const [votes] = await Promise.all([serverVotes(pollIds, remember), pendingReady(queryClient)]);
+  const out = overlayBallots(votes, pendingOf('vote'), pollIds, optimisticVote);
+  return out === votes ? votes : [...out];
 }
 
 /** How often someone looking at an open vote picks up the others' ballots. */
@@ -111,13 +142,14 @@ export function usePollVotes<T = PollVote[]>(
   const query = useQuery({
     queryKey: key,
     enabled,
-    queryFn: () => downloadVotes(pollIds, live),
+    queryFn: () => downloadVotes(queryClient, pollIds, live),
     select,
   });
 
   useEffect(() => {
     if (!live || !enabled || !pollId) return;
-    const refetch = () => void queryClient.refetchQueries({ queryKey: wishKeys.pollVotes([pollId]), exact: true });
+    const refetch = () =>
+      void queryClient.refetchQueries({ queryKey: wishKeys.pollVotes([pollId]), exact: true });
     const id = setInterval(() => {
       // Like refetchInterval: nothing while the page is in the background.
       if (document.visibilityState === 'hidden') return;
@@ -147,7 +179,9 @@ export function useProposeWish() {
   return useMutation({
     mutationFn: (row: NewWish) => wishesBackend.insertWish(row),
     onSuccess: (wish) => {
-      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) => (current ? [...current, wish] : current));
+      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) =>
+        current ? [...current, wish] : current,
+      );
       void queryClient.invalidateQueries({ queryKey: wishKeys.wishes });
     },
   });
@@ -158,7 +192,9 @@ export function useUpdateWish() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: WishPatch }) => wishesBackend.updateWish(id, patch),
     onSuccess: (wish) => {
-      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) => current?.map((w) => (w.id === wish.id ? wish : w)));
+      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) =>
+        current?.map((w) => (w.id === wish.id ? wish : w)),
+      );
     },
   });
 }
@@ -171,7 +207,9 @@ export function useDeleteWish() {
       return wish;
     },
     onSuccess: (wish) => {
-      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) => current?.filter((w) => w.id !== wish.id));
+      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) =>
+        current?.filter((w) => w.id !== wish.id),
+      );
       void queryClient.invalidateQueries({ queryKey: wishKeys.interest });
       void queryClient.invalidateQueries({ queryKey: ['bag-items'] });
     },
@@ -182,7 +220,15 @@ export function useDeleteWish() {
 export function useToggleInterest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ wishId, memberId, row }: { wishId: string; memberId: string; row: WishInterest | null }) => {
+    mutationFn: async ({
+      wishId,
+      memberId,
+      row,
+    }: {
+      wishId: string;
+      memberId: string;
+      row: WishInterest | null;
+    }) => {
       if (row) await wishesBackend.removeInterest(row.id);
       else await wishesBackend.addInterest(wishId, memberId);
     },
@@ -239,7 +285,9 @@ export function useUpdatePoll() {
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: PollPatch }) => wishesBackend.updatePoll(id, patch),
     onSuccess: (poll) => {
-      queryClient.setQueryData<Poll[]>(wishKeys.polls, (current) => current?.map((p) => (p.id === poll.id ? poll : p)));
+      queryClient.setQueryData<Poll[]>(wishKeys.polls, (current) =>
+        current?.map((p) => (p.id === poll.id ? poll : p)),
+      );
     },
     // Another phone may have closed it first: show what the group has now.
     onError: () => void queryClient.invalidateQueries({ queryKey: wishKeys.polls }),
@@ -254,8 +302,15 @@ export function useUpdatePoll() {
 export function useClosePoll() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ pollId, resolve, winner = null }: { pollId: string; resolve: CloseResolve; winner?: string | null }) =>
-      wishesBackend.closePoll(pollId, resolve, winner),
+    mutationFn: ({
+      pollId,
+      resolve,
+      winner = null,
+    }: {
+      pollId: string;
+      resolve: CloseResolve;
+      winner?: string | null;
+    }) => wishesBackend.closePoll(pollId, resolve, winner),
     onSettled: () => refreshPolls(queryClient),
   });
 }
@@ -278,25 +333,43 @@ export function useDeletePoll() {
 export function useCastVote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ pollId, memberId, optionIds }: { pollId: string; memberId: string; optionIds: string[] }) =>
-      wishesBackend.castVote(pollId, memberId, optionIds),
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
+    // A whole ballot replaces the previous one, so sending it again (a lost answer, a retry) changes nothing.
+    mutationFn: async ({
+      pollId,
+      memberId,
+      optionIds,
+    }: {
+      pollId: string;
+      memberId: string;
+      optionIds: string[];
+    }) => {
+      const ranked =
+        queryClient.getQueryData<Poll[]>(wishKeys.polls)?.find((p) => p.id === pollId)?.vote_type ===
+        'ranking';
+      const ballot: PendingBallot = { pollId, memberId, optionIds, ranked };
+      const outcome = await submitWrite<number>(queryClient, {
+        kind: 'vote',
+        action: 'set',
+        id: `${pollId}:${memberId}`,
+        data: { ...ballot },
+        invalidate: [wishKeys.votes],
+      });
+      return outcome.sent ? outcome.result : optionIds.length;
+    },
     onMutate: async ({ pollId, memberId, optionIds }) => {
       const key = wishKeys.pollVotes([pollId]);
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<PollVote[]>(key);
-      const ranked = queryClient.getQueryData<Poll[]>(wishKeys.polls)?.find((p) => p.id === pollId)?.vote_type === 'ranking';
+      const ranked =
+        queryClient.getQueryData<Poll[]>(wishKeys.polls)?.find((p) => p.id === pollId)?.vote_type ===
+        'ranking';
       queryClient.setQueryData<PollVote[]>(key, (current = []) => [
         ...current.filter((v) => !(v.poll_id === pollId && v.member_id === memberId)),
-        ...optionIds.map((option_id, i) => ({
-          id: `optimistic-${option_id}-${memberId}`,
-          crew_id: '',
-          poll_id: pollId,
-          option_id,
-          member_id: memberId,
-          rank: ranked ? i + 1 : null,
-          created_at: new Date().toISOString(),
-          archived_at: null,
-        })),
+        ...optionIds.map((option_id, i) =>
+          optimisticVote({ pollId, memberId, optionIds, ranked }, option_id, i),
+        ),
       ]);
       return { previous };
     },
@@ -328,13 +401,21 @@ export function useAddWishToLibrary(crewId: string | undefined) {
       const existing = list.find((v) => v.youtube_id === wish.youtube_id);
       const videoId =
         existing?.id ??
-        (await createVideo.mutateAsync({ crewId, title: wish.title, artist: wish.artist, youtubeId: wish.youtube_id }))
-          .video.id;
+        (
+          await createVideo.mutateAsync({
+            crewId,
+            title: wish.title,
+            artist: wish.artist,
+            youtubeId: wish.youtube_id,
+          })
+        ).video.id;
       const updated = await wishesBackend.updateWish(wish.id, { added_video_id: videoId });
       return { wish: updated, videoId, existed: Boolean(existing) };
     },
     onSuccess: ({ wish }) => {
-      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) => current?.map((w) => (w.id === wish.id ? wish : w)));
+      queryClient.setQueryData<Wish[]>(wishKeys.wishes, (current) =>
+        current?.map((w) => (w.id === wish.id ? wish : w)),
+      );
     },
   });
 }
@@ -351,7 +432,15 @@ export function useAddToNextCoreo() {
         if (bags.some((b) => b.name.trim().toLowerCase() === wanted)) {
           throw new Error(`Ya hay una bolsa «${NEXT_COREO_BAG}» que no es de canciones.`);
         }
-        bag = { ...(await bagsBackend.insertBag({ name: NEXT_COREO_BAG, kind: 'songs', draw_mode: 'remove', no_repeat: false })), items: 0 };
+        bag = {
+          ...(await bagsBackend.insertBag({
+            name: NEXT_COREO_BAG,
+            kind: 'songs',
+            draw_mode: 'remove',
+            no_repeat: false,
+          })),
+          items: 0,
+        };
       }
       const items = await bagsBackend.listBagItems(bag.id);
       // The same song by either reference: the wish itself, or the library video it became.
@@ -360,7 +449,9 @@ export function useAddToNextCoreo() {
       );
       if (already) return { bag, already: true };
       await bagsBackend.insertBagItem(
-        wish.added_video_id ? { bag_id: bag.id, video_id: wish.added_video_id } : { bag_id: bag.id, wish_id: wish.id },
+        wish.added_video_id
+          ? { bag_id: bag.id, video_id: wish.added_video_id }
+          : { bag_id: bag.id, wish_id: wish.id },
       );
       return { bag, already: false };
     },

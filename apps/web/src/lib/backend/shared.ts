@@ -33,8 +33,25 @@ type Ok<R> = R extends { error: null; data: infer D } ? D : never;
  * `if (error) throw error` (same error object, same moment).
  */
 export function must<R extends { data: unknown; error: unknown }>(res: R): Ok<R> {
-  if (res.error) throw res.error;
+  if (res.error) throw withStatus(res.error, (res as { status?: unknown }).status);
   return res.data as Ok<R>;
+}
+
+/**
+ * The answer's HTTP status rides on the thrown error (non-enumerable, never replacing one it has), so a failed
+ * write can tell «no answer / 5xx» (0, 502…) from a real «no» (4xx). Same error object as before.
+ */
+function withStatus(error: unknown, status: unknown): unknown {
+  if (
+    typeof status === 'number' &&
+    error &&
+    typeof error === 'object' &&
+    Object.isExtensible(error) &&
+    !('status' in error)
+  ) {
+    Object.defineProperty(error, 'status', { value: status, enumerable: false, configurable: true });
+  }
+  return error;
 }
 
 /**

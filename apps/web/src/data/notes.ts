@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { useCallback } from 'react';
 import { backend, type ListedNote, type NotePatch } from '@/lib/backend/core';
 import { whenIdle } from '@/lib/idle';
+import { pendingOf, pendingReady, submitWrite } from '@/lib/pendingWrites';
+import { overlayRows } from '@/lib/pendingWritesRules';
 
 export const noteKeys = {
   forVideo: (videoId: string | undefined) => ['notes', videoId] as const,
@@ -66,15 +68,57 @@ export function sketchesOutdated(
 const notesQuery = (queryClient: QueryClient, videoId: string | undefined) => ({
   queryKey: noteKeys.forVideo(videoId),
   queryFn: async () => {
-    const list = await backend.listNotes(videoId!);
+    const [list] = await Promise.all([backend.listNotes(videoId!), pendingReady(queryClient)]);
     const known = queryClient.getQueryData<SketchMap>(noteKeys.sketches(videoId));
     const previous = queryClient.getQueryData<ListedNote[]>(noteKeys.forVideo(videoId));
     if (known && sketchesOutdated(list, previous, known)) {
       void queryClient.invalidateQueries({ queryKey: noteKeys.sketches(videoId) });
     }
-    return list;
+    return withPendingNotes(list, videoId!);
   },
 });
+
+/** A note written on this device and still waiting to reach the server, with the database's defaults. */
+function localNote(row: Record<string, unknown>): Note {
+  const now = new Date().toISOString();
+  return {
+    created_at: now,
+    updated_at: now,
+    archived_at: null,
+    created_by: null,
+    author_member_id: null,
+    take_id: null,
+    take_seconds: null,
+    category: null,
+    for_member_id: null,
+    status: 'open',
+    sketch: null,
+    ...row,
+    has_sketch: row.sketch != null,
+  } as Note;
+}
+
+/** A patch as the cached note shows it: a drawing in it sets `has_sketch` to match. */
+const patched = <T extends ListedNote>(note: T, patch: Record<string, unknown>): T => ({
+  ...note,
+  ...patch,
+  ...('sketch' in patch ? { has_sketch: patch.sketch != null } : {}),
+});
+
+/** The fetched notes with this device's waiting writes laid over them (a refetch never undoes them). */
+function withPendingNotes(list: ListedNote[], videoId: string): ListedNote[] {
+  const out = overlayRows<ListedNote>(list, pendingOf('note'), {
+    belongs: (data) => data.video_id === videoId,
+    toRow: localNote,
+    patch: patched,
+  });
+  return out === list ? list : [...out].sort(byTime);
+}
+
+const noteLists = (note: Pick<Note, 'video_id'>) => [
+  noteKeys.forVideo(note.video_id),
+  noteKeys.sketches(note.video_id),
+];
 
 const anySketch = (list: ListedNote[]) => list.some((n) => n.has_sketch);
 
@@ -146,11 +190,25 @@ export interface NewNote {
 export function useCreateNote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (note: NewNote) => backend.insertNote(note),
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
+    // The id is made here, so a write retried after a lost answer finds its row instead of making a second one.
+    mutationFn: async (note: NewNote) => {
+      const row = { ...note, id: crypto.randomUUID() };
+      const outcome = await submitWrite<Note | undefined>(queryClient, {
+        kind: 'note',
+        action: 'create',
+        id: row.id,
+        data: row,
+        invalidate: noteLists(row),
+      });
+      return (outcome.sent && outcome.result) || localNote(row);
+    },
     onSuccess: (note) => {
       keepSketch(queryClient, note);
+      // A refetch while it was on its way may already show it (laid over from the queue).
       queryClient.setQueryData<ListedNote[]>(noteKeys.forVideo(note.video_id), (current = []) =>
-        [...current, note].sort(byTime),
+        [...current.filter((n) => n.id !== note.id), note].sort(byTime),
       );
     },
   });
@@ -164,7 +222,18 @@ export function useCreateNote() {
 export function useUpdateNote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ note, patch }: { note: Note; patch: NotePatch }) => backend.updateNote(note.id, patch),
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
+    mutationFn: async ({ note, patch }: { note: Note; patch: NotePatch }) => {
+      const outcome = await submitWrite<Note>(queryClient, {
+        kind: 'note',
+        action: 'update',
+        id: note.id,
+        data: patch,
+        invalidate: noteLists(note),
+      });
+      return outcome.sent ? outcome.result : patched(note, patch);
+    },
     onMutate: async ({ note, patch }) => {
       const key = noteKeys.forVideo(note.video_id);
       await queryClient.cancelQueries({ queryKey: key });
@@ -190,7 +259,16 @@ export function useUpdateNote() {
 export function useDeleteNote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (note: Note) => backend.deleteNote(note.id),
+    // Offline too: the write goes to the pending queue instead of waiting, paused, for the network.
+    networkMode: 'always',
+    mutationFn: async (note: Note) => {
+      await submitWrite(queryClient, {
+        kind: 'note',
+        action: 'delete',
+        id: note.id,
+        invalidate: noteLists(note),
+      });
+    },
     onMutate: async (note) => {
       // A refetch already in flight would bring the deleted note back.
       await queryClient.cancelQueries({ queryKey: noteKeys.forVideo(note.video_id) });
