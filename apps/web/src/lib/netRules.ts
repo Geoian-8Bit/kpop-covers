@@ -16,7 +16,7 @@ const RETRY_BASE_MS = 1000;
 const RETRY_CAP_MS = 10_000;
 
 /** A read that receives nothing (no headers, no body bytes) for this long is aborted (its retry gets a new socket). */
-export const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 12_000;
 
 export type ErrorKind = 'transient' | 'permanent' | 'unknown';
 

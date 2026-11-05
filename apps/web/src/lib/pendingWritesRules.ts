@@ -5,7 +5,7 @@
  */
 
 export type PendingKind = 'clip' | 'note' | 'vote';
-export type PendingAction = 'create' | 'update' | 'delete' | 'set';
+type PendingAction = 'create' | 'update' | 'delete' | 'set';
 
 export interface PendingOp {
   /** Unique per queued write (waiters and removal go by it). */
@@ -188,7 +188,7 @@ export interface PendingBallot {
 }
 
 /** A ballot write as queued. */
-export const ballotOf = (op: PendingOp): PendingBallot | null =>
+const ballotOf = (op: PendingOp): PendingBallot | null =>
   op.kind === 'vote' && op.action === 'set' && op.data ? (op.data as unknown as PendingBallot) : null;
 
 /**
