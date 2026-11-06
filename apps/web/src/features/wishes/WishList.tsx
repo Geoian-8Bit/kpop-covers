@@ -7,6 +7,7 @@ import { guardNav } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { Button } from '@/components/ui/Button';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { useMembers } from '@/data/members';
 import { usePollOptions, usePolls, usePollVotes, useWishes, useWishInterest } from '@/data/wishes';
 import { snappy } from '@/lib/motion';
@@ -88,9 +89,11 @@ function OpenPolls({
                   })}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-bold text-washi">{poll.title}</span>
-                  <span className="block truncate text-[12px] text-ai-200">
-                    {closingLabel(poll, now)} · {candidates.length} candidatas
+                  <span className="block break-words text-[15px] font-bold leading-snug text-washi">
+                    {poll.title}
+                  </span>
+                  <span className="block text-[12px] text-ai-200">
+                    <MetaLine parts={[closingLabel(poll, now), `${candidates.length} candidatas`]} />
                   </span>
                 </span>
                 <span className="inline-flex h-10 shrink-0 items-center gap-1 rounded-[9px] bg-washi px-3 text-[14px] font-bold text-sumi-900">

@@ -266,8 +266,12 @@ function CandidateRow({
           <img src={wish.thumbnail_url} crossOrigin={thumbCors(wish.thumbnail_url)} alt="" loading="lazy" className="aspect-video w-16 shrink-0 rounded-[6px] object-cover" />
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-bold text-washi">{wish.title}</span>
-          {wish.artist && <span className="block truncate text-[12px] text-washi-subtle">{wish.artist}</span>}
+          <span className="block break-words text-[14px] font-bold leading-snug text-washi">
+            {wish.title}
+          </span>
+          {wish.artist && (
+            <span className="block break-words text-[12px] text-washi-subtle">{wish.artist}</span>
+          )}
         </span>
       </motion.button>
     </li>

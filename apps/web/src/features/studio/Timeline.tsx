@@ -417,7 +417,10 @@ function TimelineView({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className={cn('hidden truncate px-2 font-sans', !compact && 'sm:inline')}
+              className={cn(
+                'hidden min-w-0 text-balance px-2 text-center font-sans',
+                !compact && 'sm:inline',
+              )}
             >
               Toca para saltar · arrastra en la franja de clips para marcar un tramo · los puntos son notas
             </motion.span>

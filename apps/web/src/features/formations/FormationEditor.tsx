@@ -24,7 +24,7 @@ import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
 import { activeIndex, formationAt, nextIndex, sortKeyframes, type Stage } from './formationRules';
 import { FormationTimeline } from './FormationTimeline';
-import { movePathPoint } from './pathRules';
+import { bendThrough, movePathPoint } from './pathRules';
 import { PanelHead, ToolDock, useSheetRoom, useWideLayout, type ToolTab } from './EditorTools';
 import { PlanForm } from './PlanDialogs';
 import { patchProp } from './propRules';
@@ -401,6 +401,9 @@ function EditorBody({
                 onMovePathPoint={(i, to) => {
                   if (pathEnds?.path) setPath(movePathPoint(pathEnds.path, i, to, stage));
                 }}
+                onBendStraight={(through) => {
+                  if (pathEnds && !pathEnds.path) setPath(bendThrough(pathEnds.from, pathEnds.to, through, stage));
+                }}
                 drawing={drawMode && pathMember != null}
                 onStroke={onStroke}
                 selectedProp={selectedProp}
@@ -465,6 +468,12 @@ function EditorBody({
             onMoveMarker={moveMarker}
             clashes={ranges}
             locked={conflict}
+            onAdd={addHere}
+            onOpenMarker={() => {
+              setTab('formation');
+              // Once the sheet is open: straight into the note.
+              window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-formation-note]')?.focus({ preventScroll: true }), 260);
+            }}
             underlay={(span) => <RhythmUnderlay span={span} bpm={ed.plan.bpm} firstBeat={ed.plan.first_beat} wave={playsFile ? wave : null} />}
           />
           <FormationTransport />

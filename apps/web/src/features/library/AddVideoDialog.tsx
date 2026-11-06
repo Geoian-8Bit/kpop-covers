@@ -259,7 +259,7 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                       {probe?.poster ? <img src={probe.poster} alt="" className="size-full object-cover" /> : <div className="skeleton size-full" />}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{file.name}</p>
+                      <p className="break-all text-sm font-medium">{file.name}</p>
                       <p className="tabular mt-0.5 text-xs text-washi-muted">
                         {formatBytes(file.size)} · {formatDuration(probe?.duration)}
                       </p>
@@ -338,8 +338,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                         >
                           {v.thumbnail_url && <img src={v.thumbnail_url} crossOrigin={thumbCors(v.thumbnail_url)} alt="" className="h-9 w-16 shrink-0 rounded-[6px] object-cover" />}
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[14px] font-bold">{v.title}</span>
-                            {v.artist && <span className="block truncate text-[12px] text-washi-subtle">{v.artist}</span>}
+                            <span className="block break-words text-[14px] font-bold leading-snug">{v.title}</span>
+                            {v.artist && <span className="block break-words text-[12px] text-washi-subtle">{v.artist}</span>}
                           </span>
                           <span className="shrink-0 text-[12px] font-bold text-kin-300">Vincular</span>
                         </motion.button>

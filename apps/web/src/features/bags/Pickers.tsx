@@ -132,8 +132,8 @@ export function SongPickList({
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[15px] font-medium text-washi">{v.title}</span>
-              <span className="block truncate text-[12px] text-washi-subtle">
+              <span className="block break-words text-[15px] font-medium text-washi">{v.title}</span>
+              <span className="block break-words text-[12px] text-washi-subtle">
                 {taken?.has(v.id) ? takenLabel : v.artist || 'Artista sin especificar'}
               </span>
             </span>
@@ -180,7 +180,7 @@ export function ClipPickList({
       {items.length > 6 && <SearchBox value={q} onChange={setQ} placeholder="Buscar clip o canción" />}
       {groups.map(([videoId, group]) => (
         <section key={videoId} aria-label={group.title} className="mb-2">
-          <h4 className="truncate px-2.5 pb-1 pt-2 text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">
+          <h4 className="break-words px-2.5 pb-1 pt-2 text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">
             {group.title}
           </h4>
           <ul className="space-y-1">
@@ -197,8 +197,8 @@ export function ClipPickList({
                   className={cn('size-7 shrink-0 rotate-[-3deg] rounded-[5px]', CLIP_SWATCH[clip.color].dot)}
                 />
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-medium text-washi">{clip.name}</span>
-                  <span className="tabular block truncate font-mono text-[12px] text-washi-subtle">
+                  <span className="block break-words text-[15px] font-medium text-washi">{clip.name}</span>
+                  <span className="tabular block break-words font-mono text-[12px] text-washi-subtle">
                     {taken?.has(clip.id)
                       ? takenLabel
                       : `${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`}
@@ -238,7 +238,7 @@ export function MemberPickList({
         >
           <MemberSeal member={m} />
           <span className="min-w-0">
-            <span className="block truncate text-[15px] font-medium text-washi">{m.name}</span>
+            <span className="block break-words text-[15px] font-medium text-washi">{m.name}</span>
             {taken?.has(m.id) && <span className="block text-[12px] text-washi-subtle">{takenLabel}</span>}
           </span>
         </Row>

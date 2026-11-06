@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router';
 import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { prefetchEvent, useEvents, type EventWithCount } from '@/data/events';
 import { navigateFromLayer } from '@/lib/backLayers';
@@ -128,9 +129,12 @@ function EventCard({ event, index, now, past }: { event: EventWithCount; index: 
           <span className="font-display text-[24px] font-extrabold leading-9">{date.getDate()}</span>
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-display text-[18px] font-bold text-washi">{event.name}</span>
-          <span className="mt-0.5 block truncate text-[13px] text-washi-muted">
-            {eventDateLabel(event.starts_at, past)}
+          <span className="block break-words font-display text-[18px] font-bold leading-snug text-washi">
+            {event.name}
+          </span>
+          {/* Long dates («Domingo, 1 de noviembre de 2026 · 18:30») wrap before the time, never cut. */}
+          <span className="mt-0.5 block text-[13px] text-washi-muted">
+            <MetaLine parts={eventDateLabel(event.starts_at, past).split(' · ')} />
           </span>
           <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 text-[12px] text-washi-subtle">
             {!past && <span className={cn('font-bold', c.kind === 'today' ? 'text-shu-400' : 'text-kin-300')}>{countdownHeadline(c)}</span>}
@@ -138,7 +142,7 @@ function EventCard({ event, index, now, past }: { event: EventWithCount; index: 
             {event.place && (
               <span className="flex min-w-0 items-center gap-1">
                 <MapPin aria-hidden className="size-3 shrink-0" />
-                <span className="truncate">{event.place}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{event.place}</span>
               </span>
             )}
           </span>

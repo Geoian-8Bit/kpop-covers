@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { useIdentity, useMembers } from '@/data/members';
 import { useAddWishToLibrary, useDeleteWish, useToggleInterest, wishError } from '@/data/wishes';
 import { BagIcon } from '@/features/bags/BagIcon';
@@ -24,6 +25,8 @@ import { DIFFICULTY_COPY, membersLabel } from './wishRules';
 // REQ-27 · Split out of WishesPage.tsx: one wish of the list.
 
 export const cardIn = fadeUpCapped(0.05, 8);
+// A chip's words wrap inside it (it grows a line) instead of being cut.
+const CHIP_TEXT = 'min-w-0 py-1 leading-snug [overflow-wrap:anywhere]';
 // The bags' own dialog (F13), loaded only when someone opens it.
 const AddToBagDialog = lazy(() =>
   import('@/features/bags/AddToBagDialog').then((m) => ({ default: m.AddToBagDialog })),
@@ -168,14 +171,19 @@ export const WishCard = memo(function WishCard({
             </a>
           )}
           <div className="min-w-0 flex-1">
-            <h3 className="line-clamp-2 break-words font-display text-[17px] font-bold leading-snug text-washi">
+            <h3 className="break-words font-display text-[17px] font-bold leading-snug text-washi">
               {wish.title}
             </h3>
             {details.length > 0 && (
-              <p className="mt-0.5 truncate text-[13px] text-washi-muted">{details.join(' · ')}</p>
+              <p className="mt-0.5 text-[13px] text-washi-muted">
+                <MetaLine parts={details} />
+              </p>
             )}
             {wish.comment && !selecting && (
-              <p className="mt-1 line-clamp-2 break-words text-[13px] italic text-washi-subtle">
+              <p
+                title={wish.comment}
+                className="mt-1 line-clamp-3 break-words text-[13px] italic text-washi-subtle"
+              >
                 «{wish.comment}»
               </p>
             )}
@@ -281,19 +289,19 @@ export const WishCard = memo(function WishCard({
               <Link
                 to={`/deseos/votacion/${openPoll.id}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full bg-ai-700/60 px-2.5 font-bold text-ai-200 hover:bg-ai-600/60"
+                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] bg-ai-700/60 px-2.5 font-bold text-ai-200 hover:bg-ai-600/60"
               >
                 <Vote aria-hidden className="size-3.5 shrink-0" />
-                <span className="truncate">En votación: {openPoll.title}</span>
+                <span className={CHIP_TEXT}>En votación: {openPoll.title}</span>
               </Link>
             )}
             {won && (
               <Link
                 to={`/deseos/votacion/${won.id}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full bg-kin-400/15 px-2.5 font-bold text-kin-200 hover:bg-kin-400/25"
+                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] bg-kin-400/15 px-2.5 font-bold text-kin-200 hover:bg-kin-400/25"
               >
-                <span className="truncate">Ganó «{won.title}»</span>
+                <span className={CHIP_TEXT}>Ganó «{won.title}»</span>
               </Link>
             )}
             {past.slice(0, 2).map((p) => (
@@ -301,16 +309,18 @@ export const WishCard = memo(function WishCard({
                 key={p.pollId}
                 to={`/deseos/votacion/${p.pollId}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full border border-line px-2.5 hover:border-line-strong hover:text-washi-muted"
+                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] border border-line px-2.5 hover:border-line-strong hover:text-washi-muted"
                 title="Sus votos en una votación anterior"
               >
-                <span className="truncate">
+                <span className={CHIP_TEXT}>
                   <span className="tabular font-bold text-kin-300">{scoreLabel(p.type, p.score)}</span> en «
                   {p.title}»
                 </span>
               </Link>
             ))}
-            {proposer && <span className="truncate">Propuesta por {proposer.name}</span>}
+            {proposer && (
+              <span className="min-w-0 [overflow-wrap:anywhere]">Propuesta por {proposer.name}</span>
+            )}
           </div>
         )}
       </article>

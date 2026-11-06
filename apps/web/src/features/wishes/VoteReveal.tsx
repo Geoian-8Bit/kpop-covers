@@ -68,7 +68,7 @@ function WinnerText({ winner, delay, reduce }: SceneProps & { delay: number }) {
         initial={reduce ? false : INK_HIDDEN}
         animate={INK_SHOWN}
         transition={{ duration: 0.9, ease: easeOutExpo, delay: reduce ? 0 : delay }}
-        className="line-clamp-3 font-display text-[24px] font-extrabold leading-tight text-washi sm:text-[28px]"
+        className="break-words font-display text-[24px] font-extrabold leading-tight text-washi sm:text-[28px]"
       >
         {winner.title}
       </motion.p>
@@ -77,7 +77,7 @@ function WinnerText({ winner, delay, reduce }: SceneProps & { delay: number }) {
           initial={reduce ? false : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...soft, delay: reduce ? 0 : delay + 0.35 }}
-          className="mt-1 truncate text-[14px] text-washi-muted"
+          className="mt-1 break-words text-[14px] text-washi-muted"
         >
           {[winner.artist, winner.score].filter(Boolean).join(' · ')}
         </motion.p>

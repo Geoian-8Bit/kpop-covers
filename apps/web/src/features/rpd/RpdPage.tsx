@@ -8,6 +8,7 @@ import { guardNav, Page } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { useStickyBarPadding } from '@/components/stickyBarPadding';
 import { Button } from '@/components/ui/Button';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
@@ -52,9 +53,10 @@ export function RpdPage() {
   return (
     <Page className="px-2.5 py-3 sm:px-5 sm:py-5 lg:px-6 lg:py-6">
       <div className="paper mx-auto max-w-4xl rounded-[10px] sm:rounded-[12px]">
-        {/* 53 · Just the title, on one line: the round's options and «Empezar» are what matters here. */}
+        {/* 53 · Just the title (it wraps on a narrow phone rather than being cut): the round's options and «Empezar»
+            are what matters here. */}
         <header className="flex min-w-0 items-center gap-2 px-5 pb-1 pt-3 sm:px-9 sm:pt-6">
-          <h1 className="min-w-0 flex-1 truncate font-display text-[22px] font-bold leading-tight sm:text-[30px]">
+          <h1 className="min-w-0 flex-1 text-balance break-words font-display text-[22px] font-bold leading-tight sm:text-[30px]">
             Random Play Dance
           </h1>
           {saved > 0 && (
@@ -221,7 +223,7 @@ function RoundBuilder() {
                   >
                     <BagIcon className={on ? 'text-kin-300' : 'text-washi-subtle'} />
                     <span className="min-w-0">
-                      <span className="block truncate font-bold text-washi">{b.name}</span>
+                      <span className="block break-words font-bold leading-snug text-washi">{b.name}</span>
                       <span className="block text-[12px] text-washi-subtle">
                         {countLabel('clips', b.items)}
                       </span>
@@ -290,11 +292,13 @@ function RoundBuilder() {
                   className={cn('size-5 shrink-0 rotate-[-3deg] rounded-[5px]', CLIP_SWATCH[clip.color].dot)}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium text-washi">
+                  <span className="block break-words text-[15px] font-medium leading-snug text-washi">
                     {clip.video?.title}
                   </span>
-                  <span className="tabular block truncate text-[12px] text-washi-subtle">
-                    {clip.name} · {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
+                  <span className="tabular block text-[12px] text-washi-subtle">
+                    <MetaLine
+                      parts={[clip.name, `${formatTime(clip.start_seconds)}–${formatTime(clip.end_seconds)}`]}
+                    />
                   </span>
                 </span>
               </motion.li>
@@ -367,7 +371,7 @@ function RoundBuilder() {
             {round.length ? (
               <>
                 <span className="block font-bold text-washi">{countLabel('clips', round.length)}</span>
-                <span className="block truncate">{fromLabel}</span>
+                <span className="block break-words">{fromLabel}</span>
               </>
             ) : poolLoading ? (
               'Cargando…'
@@ -461,13 +465,18 @@ function TrackList() {
                 className="group flex min-h-11 min-w-0 flex-1 items-center gap-3"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-display text-[16px] font-bold text-washi">
+                  <span className="block break-words font-display text-[16px] font-bold leading-snug text-washi">
                     {track.name}
                   </span>
-                  <span className="block truncate text-[12px] text-washi-subtle">
-                    {countLabel('clips', track.items)} · pausa {Number(track.pause_seconds)} s
-                    {track.countdown ? ' · cuenta atrás' : ''}
-                    {track.title_mode === 'after' ? ' · adivinar' : ''}
+                  <span className="block text-[12px] text-washi-subtle">
+                    <MetaLine
+                      parts={[
+                        countLabel('clips', track.items),
+                        `pausa ${Number(track.pause_seconds)} s`,
+                        ...(track.countdown ? ['cuenta atrás'] : []),
+                        ...(track.title_mode === 'after' ? ['adivinar'] : []),
+                      ]}
+                    />
                   </span>
                 </span>
                 <Pencil aria-hidden className="size-4 shrink-0 text-washi-subtle group-hover:text-washi" />

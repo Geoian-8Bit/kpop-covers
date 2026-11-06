@@ -11,7 +11,7 @@ import { orientationButtonLabel, orientationLabel, type OrientationPref } from '
 import { useUnlessCovered } from '../studioAsleep';
 import { GapPicker } from '../popover';
 import { GapBadge } from '../transportButtons';
-import { useLongPress } from '../useLongPress';
+import { useLongPress } from '@/lib/useLongPress';
 import { useMenuFocus } from '../useMenuFocus';
 import { FsPanArrows } from '../ZoomControls';
 import { FsProgress } from './FsProgress';

@@ -63,31 +63,46 @@ describe('trapFocusIndex', () => {
 });
 
 describe('handLayout', () => {
-  it('keeps every card on screen and above the button', () => {
-    for (const w of [320, 390, 430, 844]) {
-      const { cardW, cardH, cards } = handLayout(6, w, 772);
-      expect(cardH).toBeGreaterThanOrEqual(cardW);
+  /** The button's centre: bottom right, 16 px in, 56 px round. */
+  const deck = (w: number, h: number) => ({ ax: w - 44, ay: h - 44 });
+  /** Horizontal extent of a tilted card. */
+  const half = (cardW: number, cardH: number, rotate: number) => {
+    const r = (Math.abs(rotate) * Math.PI) / 180;
+    return (cardW / 2) * Math.cos(r) + (cardH / 2) * Math.sin(r);
+  };
+
+  it('keeps every tilted card on screen, under the top bar and no lower than the button', () => {
+    for (const [w, h] of [
+      [320, 640],
+      [360, 740],
+      [390, 844],
+      [430, 932],
+      [844, 390],
+    ] as const) {
+      const { ax, ay } = deck(w, h);
+      const { cardW, cardH, cards } = handLayout(6, w, ax, ay, 76);
+      expect(cardH).toBeGreaterThan(cardW);
       for (const card of cards) {
-        expect(card.x - cardW / 2).toBeGreaterThanOrEqual(9);
-        expect(card.x + cardW / 2).toBeLessThanOrEqual(w - 9);
-        expect(card.y + cardH / 2).toBeLessThan(772 + 20);
+        expect(card.x - half(cardW, cardH, card.rotate)).toBeGreaterThanOrEqual(4);
+        expect(card.x + half(cardW, cardH, card.rotate)).toBeLessThanOrEqual(w - 4);
+        expect(card.y - cardH / 2).toBeGreaterThanOrEqual(76 - cardH * 0.1);
+        expect(card.y + cardH / 2).toBeLessThanOrEqual(ay + 28 + 0.5);
       }
     }
   });
 
-  it('fits the six sections and «¿Quién eres?» (7 cards) from 320 px, each card showing most of its face', () => {
-    for (const w of [320, 375, 390]) {
-      const { cardW, cards } = handLayout(7, w, 772);
-      expect(cards[0]!.x - cardW / 2).toBeGreaterThanOrEqual(9);
-      expect(cards[6]!.x + cardW / 2).toBeLessThanOrEqual(w - 9);
-      // Neighbours overlap like a hand of cards, but never hide more than a third of the card below.
-      for (let i = 1; i < cards.length; i++) expect(cards[i]!.x - cards[i - 1]!.x).toBeGreaterThan(cardW * 0.66);
+  it('spreads out of the deck to the left: the last card next to the button, each one higher and more tilted', () => {
+    const { ax, ay } = deck(390, 844);
+    const { cardW, cards } = handLayout(6, 390, ax, ay, 76);
+    expect(cards[5]!.x).toBeLessThan(ax);
+    expect(cards[5]!.x + cardW / 2).toBeGreaterThan(ax - 22);
+    for (let i = 1; i < cards.length; i++) {
+      expect(cards[i - 1]!.x).toBeLessThan(cards[i]!.x);
+      expect(cards[i - 1]!.y).toBeLessThan(cards[i]!.y);
+      expect(cards[i - 1]!.rotate).toBeLessThan(cards[i]!.rotate);
+      // Neighbours overlap like a spread deck, but most of each card shows.
+      expect(cards[i]!.x - cards[i - 1]!.x).toBeGreaterThan(cardW * 0.6);
+      expect(cards[i]!.x - cards[i - 1]!.x).toBeLessThan(cardW);
     }
-  });
-
-  it('fans the cards symmetrically', () => {
-    const { cards } = handLayout(6, 390, 772);
-    expect(cards[0]!.rotate).toBeCloseTo(-cards[5]!.rotate);
-    expect(cards[0]!.x).toBeLessThan(cards[1]!.x);
   });
 });

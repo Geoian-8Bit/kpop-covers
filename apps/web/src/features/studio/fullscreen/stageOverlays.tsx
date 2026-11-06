@@ -136,7 +136,7 @@ export function StageSpinner({ loading }: { loading: boolean }) {
 export function FsTopBar({ video }: { video: Video }) {
   return (
     <div className="absolute inset-x-0 top-0 flex items-start gap-3 bg-[linear-gradient(to_bottom,rgb(0_0_0/0.7),transparent)] pb-10 pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[max(12px,env(safe-area-inset-top))] sm:pl-[max(24px,env(safe-area-inset-left))] sm:pr-[max(24px,env(safe-area-inset-right))]">
-      <p className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-washi sm:text-xl">
+      <p className="min-w-0 flex-1 break-words font-display text-[17px] font-bold leading-tight text-washi sm:text-xl">
         {video.title}
       </p>
       {video.source === 'youtube' && video.youtube_id && (

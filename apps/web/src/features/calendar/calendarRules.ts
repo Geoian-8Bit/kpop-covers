@@ -141,6 +141,16 @@ export function rangeLabel(from: string, to: string): string {
   return fm === tm ? `${fd}–${td} ${MONTHS_SHORT[tm! - 1]}` : `${fd} ${MONTHS_SHORT[fm! - 1]} – ${td} ${MONTHS_SHORT[tm! - 1]}`;
 }
 
+/** «del 8 al 12 de diciembre», «del 30 de diciembre al 2 de enero», or «miércoles 9 de diciembre» (full months). */
+export function rangeLabelLong(from: string, to: string): string {
+  if (from >= to) return dayLabelLong(from);
+  const [, fm, fd] = from.split('-').map(Number);
+  const [, tm, td] = to.split('-').map(Number);
+  return fm === tm
+    ? `del ${fd} al ${td} de ${MONTHS_LONG[tm! - 1]}`
+    : `del ${fd} de ${MONTHS_LONG[fm! - 1]} al ${td} de ${MONTHS_LONG[tm! - 1]}`;
+}
+
 /** The database's `HH:MM:SS` as `HH:MM`; anything unreadable as ''. */
 export function hhmm(time: string | null | undefined): string {
   const m = time ? HHMM.exec(time) : null;
@@ -192,11 +202,11 @@ export function dayDots<T>(people: readonly T[]): { shown: T[]; extra: number } 
   return { shown: people.slice(0, DOTS_MAX - 1), extra: people.length - (DOTS_MAX - 1) };
 }
 
-/** «No puede», «Llega a las 19:00», «Se va a las 20:30». */
+/** «No puede venir», «Llega tarde · 19:00», «Se va antes · 20:30». */
 export function absenceKindLabel(kind: AbsenceKind, atTime: string | null): string {
-  if (kind === 'arrives') return `Llega a las ${hhmm(atTime)}`;
-  if (kind === 'leaves') return `Se va a las ${hhmm(atTime)}`;
-  return 'No puede';
+  if (kind === 'arrives') return `Llega tarde · ${hhmm(atTime)}`;
+  if (kind === 'leaves') return `Se va antes · ${hhmm(atTime)}`;
+  return 'No puede venir';
 }
 
 export interface AbsenceDraft {

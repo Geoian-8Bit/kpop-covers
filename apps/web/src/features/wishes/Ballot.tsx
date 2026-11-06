@@ -222,8 +222,8 @@ function WishLine({ wish, compact = false }: { wish: Wish | undefined; compact?:
         <span aria-hidden className={cn(thumb, 'bg-sumi-950')} />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-bold text-washi">{wish?.title ?? 'Ya no está en la lista'}</span>
-        {wish?.artist && <span className="block truncate text-[12px] text-washi-subtle">{wish.artist}</span>}
+        <span className="block break-words text-[15px] font-bold leading-snug text-washi">{wish?.title ?? 'Ya no está en la lista'}</span>
+        {wish?.artist && <span className="block break-words text-[12px] text-washi-subtle">{wish.artist}</span>}
       </span>
     </>
   );

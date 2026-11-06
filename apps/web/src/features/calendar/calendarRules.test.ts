@@ -17,6 +17,7 @@ import {
   monthGrid,
   monthLabel,
   rangeLabel,
+  rangeLabelLong,
   shiftMonth,
   type AbsenceDraft,
   type AbsenceLike,
@@ -84,14 +85,17 @@ describe('labels', () => {
     expect(rangeLabel('2026-12-08', '2026-12-12')).toBe('8–12 dic');
     expect(rangeLabel('2026-12-30', '2027-01-02')).toBe('30 dic – 2 ene');
     expect(rangeLabel('2026-12-08', '2026-12-08')).toBe('mar 8 dic');
+    expect(rangeLabelLong('2026-12-08', '2026-12-12')).toBe('del 8 al 12 de diciembre');
+    expect(rangeLabelLong('2026-12-30', '2027-01-02')).toBe('del 30 de diciembre al 2 de enero');
+    expect(rangeLabelLong('2026-12-08', '2026-12-08')).toBe('martes 8 de diciembre');
   });
 
   it('formats times and absence kinds', () => {
     expect(hhmm('19:00:00')).toBe('19:00');
     expect(hhmm(null)).toBe('');
-    expect(absenceKindLabel('all_day', null)).toBe('No puede');
-    expect(absenceKindLabel('arrives', '19:00:00')).toBe('Llega a las 19:00');
-    expect(absenceKindLabel('leaves', '20:30')).toBe('Se va a las 20:30');
+    expect(absenceKindLabel('all_day', null)).toBe('No puede venir');
+    expect(absenceKindLabel('arrives', '19:00:00')).toBe('Llega tarde · 19:00');
+    expect(absenceKindLabel('leaves', '20:30')).toBe('Se va antes · 20:30');
   });
 });
 

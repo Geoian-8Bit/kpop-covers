@@ -61,7 +61,7 @@ export function SourceRow({ video, copyLabel }: { video: Video; copyLabel: strin
           );
         })}
       </div>
-      <span className="min-w-0 flex-1 truncate text-[12px] text-washi-subtle">
+      <span className="min-w-0 flex-1 break-words text-[12px] text-washi-subtle">
         {stage === 'file' ? (copyLabel ?? video.file_name ?? '') : 'Con el archivo: sin anuncios ni esperas'}
       </span>
     </div>

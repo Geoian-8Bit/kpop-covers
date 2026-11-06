@@ -21,13 +21,13 @@ const members = (page: Page) => liveRows<MemberRow>(page, 'members');
 const identity = (page: Page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem('oneshoot.me.v1') ?? 'null') as unknown);
 
-/** «Eres Hana»: in the side rail from lg, in the Hanafuda quick menu on phones. */
+/** «Eres Hana»: in the side rail from lg, in the top bar's «Más opciones» menu on phones. */
 async function openWho(page: Page) {
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
     await page.getByRole('button', { name: 'Eres Hana' }).click();
   } else {
-    await page.getByRole('button', { name: /^Secciones/ }).click();
-    await page.getByRole('dialog', { name: 'Secciones' }).getByRole('button', { name: /^Eres Hana/ }).click();
+    await page.getByRole('button', { name: 'Más opciones' }).click();
+    await page.getByRole('menu', { name: 'Más opciones' }).getByRole('menuitem', { name: /^Eres Hana/ }).click();
   }
   await expect(page.getByRole('dialog', { name: '¿Quién eres?' })).toBeVisible();
 }

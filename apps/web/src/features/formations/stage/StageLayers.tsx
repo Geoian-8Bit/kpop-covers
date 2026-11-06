@@ -213,3 +213,38 @@ export function PathHandles({
     </g>
   );
 }
+
+/**
+ * REQ-08 · The middle of a straight route being edited: grab it and drag to bend the line (it becomes a curve whose
+ * middle follows the finger). A hollow white ring, so it reads as «something to pull», unlike a person.
+ */
+export function BendHandle({
+  at,
+  active,
+  stage,
+  mirrored,
+  onDown,
+}: {
+  at: StagePoint;
+  active: boolean;
+  stage: Stage;
+  mirrored: boolean;
+  onDown: (e: ReactPointerEvent<SVGCircleElement>) => void;
+}) {
+  const shown = mirrorPoint(at, stage, mirrored);
+  return (
+    <g transform={`translate(${shown.x.toFixed(3)} ${shown.y.toFixed(3)})`}>
+      <circle r={HIT * 0.8} fill="transparent" data-drag="" className="cursor-grab touch-none" onPointerDown={onDown} />
+      {!active && (
+        <circle r={HANDLE + 0.14} fill="none" stroke="var(--color-washi)" strokeWidth={0.03} strokeOpacity={0.6} strokeDasharray="0.08 0.07" pointerEvents="none" />
+      )}
+      <circle
+        r={HANDLE}
+        fill={active ? 'var(--color-kin-300)' : 'var(--color-washi)'}
+        stroke="var(--color-sumi-950)"
+        strokeWidth={0.04}
+        pointerEvents="none"
+      />
+    </g>
+  );
+}

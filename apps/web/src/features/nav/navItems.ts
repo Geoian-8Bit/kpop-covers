@@ -37,6 +37,3 @@ export const MAIN_NAV: NavSection[] = [
   { to: '/calendario', label: 'Calendario', short: 'Calendario', kanji: '暦', Icon: CalendarRange, tone: { field: 'bg-murasaki', ink: 'text-washi' } },
 ];
 
-/** «¿Quién eres?»: the last entry of the quick menu. */
-export const WHO_KANJI = '誰';
-export const WHO_TONE: NavTone = { field: 'bg-sumi-700', ink: 'text-washi-muted' };

@@ -10,19 +10,28 @@ const AddToBagDialog = lazy(() => import('./AddToBagDialog').then((m) => ({ defa
 
 /**
  * The small «Añadir a una bolsa» button for a library card or a clip row. The visible crest can be small; the
- * hit area is always at least 44 px.
+ * hit area is always at least 44 px. `open`/`onOpenChange` let a row open the same dialog from elsewhere (a
+ * swipe action); without them the button keeps its own state.
  */
 export function AddToBagButton({
   target,
   className,
   look = 'plain',
+  open: openProp,
+  onOpenChange,
 }: {
   target: BagTarget;
   className?: string;
   look?: 'plain' | 'crest';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [loaded, setLoaded] = useState(false);
+  // Opened from outside (a swipe action): mount the dialog and keep it, so its exit still plays.
+  if (open && !loaded) setLoaded(true);
   return (
     <>
       <motion.button

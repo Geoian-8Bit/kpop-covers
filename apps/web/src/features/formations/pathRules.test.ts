@@ -3,6 +3,7 @@ import { findClashes, clashingAt, clashRanges } from './clashRules';
 import { DEFAULT_STAGE, diffKeyframes, formationError, fitPositions, keepPaths, memberTrack, positionsAt, withoutPaths, type Keyframe } from './formationRules';
 import {
   addPathPoint,
+  bendThrough,
   convertPath,
   curvePath,
   curveShape,
@@ -17,6 +18,7 @@ import {
   setCurveShape,
   simplifyStroke,
   splineThrough,
+  straightMiddle,
   strokeToPath,
 } from './pathRules';
 
@@ -149,6 +151,23 @@ describe('path edits', () => {
     const c = curvePath(from, to, stage);
     expect(c.points[0]!.x).toBeCloseTo(3);
     expect(c.points[0]!.y).not.toBeCloseTo(1);
+  });
+
+  it('dragging the middle of a straight move bends it into an arc that passes under the finger', () => {
+    expect(straightMiddle(from, to)).toEqual({ x: 3, y: 1 });
+    const bent = bendThrough(from, to, { x: 3, y: 2 }, stage);
+    expect(bent.kind).toBe('curve');
+    expect(bent.points).toEqual([{ x: 3, y: 3 }]);
+    const middle = pointOnPath(from, to, bent, 0.5);
+    expect(middle.x).toBeCloseTo(3);
+    expect(middle.y).toBeCloseTo(2);
+    expect(pathValid(bent, stage)).toBe(true);
+  });
+
+  it('a bend dragged off the stage keeps its control point inside', () => {
+    const bent = bendThrough(from, to, { x: 3, y: -4 }, stage);
+    expect(bent.points[0]!.y).toBe(0);
+    expect(pathValid(bent, stage)).toBe(true);
   });
 
   it('adds points in the longest stretch and removing the last one makes it straight', () => {

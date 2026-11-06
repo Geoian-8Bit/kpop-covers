@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { GapPicker } from './popover';
 import { GapBadge, gapSuffix } from './transportButtons';
-import { useLongPress } from './useLongPress';
+import { useLongPress } from '@/lib/useLongPress';
 
 /** Contextual row for the current A–B selection. */
 export function RangeBar() {

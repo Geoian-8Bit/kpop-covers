@@ -1,7 +1,7 @@
 import type { Absence, RehearsalRule } from '@coverscape/shared';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, type PanInfo } from 'motion/react';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +19,7 @@ import {
 import { askWho, MEMBER_SWATCH } from '@/data/members';
 import { useMarkCalendarSeen } from '@/data/calendar';
 import { useEvents } from '@/data/events';
+import { useLongPress } from '@/lib/useLongPress';
 import { useNowDate } from '@/lib/useNow';
 import { cn } from '@/lib/cn';
 import { snappy, soft } from '@/lib/motion';
@@ -27,6 +28,7 @@ import { AbsenceFormDialog } from './AbsenceFormDialog';
 import {
   absencesOn,
   absentMembers,
+  addDays,
   dayDots,
   dayKey,
   dayLabelLong,
@@ -62,7 +64,9 @@ export function CalendarPage() {
   const now = useNowDate();
   const today = madridToday(now);
   const [params, setParams] = useSearchParams();
-  const [month, setMonth] = useState<MonthRef>(() => monthOf(isDayKey(params.get('dia')) ? params.get('dia')! : today));
+  const [month, setMonth] = useState<MonthRef>(() =>
+    monthOf(isDayKey(params.get('dia')) ? params.get('dia')! : today),
+  );
   const [direction, setDirection] = useState(0);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [layer, setLayer] = useState<Layer | null>(null);
@@ -121,13 +125,30 @@ export function CalendarPage() {
     setDirection(by);
     setMonth((m) => shiftMonth(m, by));
   };
+  const todayMonth = monthOf(today);
+  const onTodayMonth = todayMonth.year === month.year && todayMonth.month === month.month;
+  /** A sideways swipe just ended: the tap that ends it must not open a day. */
+  const swiped = useRef(false);
+  const onSwipeEnd = (_: unknown, info: PanInfo) => {
+    const { offset, velocity } = info;
+    if (Math.abs(offset.x) < Math.abs(offset.y)) return;
+    const by =
+      offset.x < -SWIPE_PX || velocity.x < -SWIPE_SPEED
+        ? 1
+        : offset.x > SWIPE_PX || velocity.x > SWIPE_SPEED
+          ? -1
+          : 0;
+    if (Math.abs(offset.x) > 8) swiped.current = true;
+    if (by) go(by);
+  };
   const goToday = () => {
-    const target = monthOf(today);
+    const target = todayMonth;
     setDirection(target.year * 12 + target.month > month.year * 12 + month.month ? 1 : -1);
     setMonth(target);
   };
 
-  const markAbsence = (day: string) => askWho('Así la ausencia sale con tu nombre.', () => setLayer({ kind: 'absence', absence: null, day }));
+  const markAbsence = (day: string) =>
+    askWho('Así la ausencia sale con tu nombre.', () => setLayer({ kind: 'absence', absence: null, day }));
   const closeLayer = () => setLayer(null);
   const dayShown = openDay ?? today;
 
@@ -137,19 +158,29 @@ export function CalendarPage() {
         <h1 className="sr-only">Calendario</h1>
 
         <section aria-labelledby="calendar-month" className="px-2 pb-3 pt-3 sm:px-6 sm:pb-6 sm:pt-5">
-          <div className="mb-2 flex items-center gap-1 px-1">
-            <h2 id="calendar-month" aria-live="polite" className="min-w-0 flex-1 truncate font-display text-[22px] font-bold capitalize text-washi">
-              {monthLabel(month)}
+          <div className="mb-2 flex min-h-11 items-center gap-1 px-1">
+            <h2
+              id="calendar-month"
+              aria-live="polite"
+              className="min-w-0 flex-1 font-display text-[22px] font-bold leading-tight text-washi"
+            >
+              <span className="capitalize">{monthLabel(month).split(' ')[0]}</span>{' '}
+              <span className="tabular text-[17px] font-semibold text-washi-muted">{month.year}</span>
             </h2>
-            <Button size="sm" variant="ghost" onClick={goToday}>
-              Hoy
-            </Button>
-            <Button size="icon" variant="ghost" aria-label="Mes anterior" onClick={() => go(-1)}>
-              <ChevronLeft aria-hidden className="size-5" />
-            </Button>
-            <Button size="icon" variant="ghost" aria-label="Mes siguiente" onClick={() => go(1)}>
-              <ChevronRight aria-hidden className="size-5" />
-            </Button>
+            {!onTodayMonth && (
+              <Button size="sm" variant="ghost" onClick={goToday}>
+                Hoy
+              </Button>
+            )}
+            {/* Phones swipe the month sideways; the arrows stay for a mouse (and the keyboard). */}
+            <span className="hidden gap-1 [@media(hover:hover)_and_(pointer:fine)]:flex">
+              <Button size="icon" variant="ghost" aria-label="Mes anterior" onClick={() => go(-1)}>
+                <ChevronLeft aria-hidden className="size-5" />
+              </Button>
+              <Button size="icon" variant="ghost" aria-label="Mes siguiente" onClick={() => go(1)}>
+                <ChevronRight aria-hidden className="size-5" />
+              </Button>
+            </span>
           </div>
 
           {failed ? (
@@ -170,7 +201,10 @@ export function CalendarPage() {
             </div>
           ) : (
             <>
-              <div aria-hidden className="grid grid-cols-7 gap-1 px-0.5 pb-1 text-center text-[11px] font-bold uppercase tracking-[0.06em] text-washi-subtle">
+              <div
+                aria-hidden
+                className="grid grid-cols-7 gap-1 px-0.5 pb-1 text-center text-[11px] font-bold uppercase tracking-[0.06em] text-washi-subtle"
+              >
                 {WEEKDAYS_SHORT.map((d) => (
                   <span key={d}>{d}</span>
                 ))}
@@ -178,7 +212,10 @@ export function CalendarPage() {
               {loading ? (
                 <div role="status" aria-label="Cargando el calendario" className="grid grid-cols-7 gap-1">
                   {Array.from({ length: 35 }, (_, i) => (
-                    <div key={i} className="skeleton h-[68px] rounded-[8px] sm:h-[84px] [@media(max-height:500px)]:h-[58px]" />
+                    <div
+                      key={i}
+                      className="skeleton h-[68px] rounded-[8px] sm:h-[84px] [@media(max-height:500px)]:h-[58px]"
+                    />
                   ))}
                 </div>
               ) : (
@@ -190,9 +227,23 @@ export function CalendarPage() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: direction * -24, transition: snappy }}
                     transition={soft}
+                    // Swipe left for the next month, right for the previous one (vertical scrolling stays the page's).
+                    drag="x"
+                    dragDirectionLock
+                    dragConstraints={{ left: 0, right: 0 }}
+                    dragElastic={0.35}
+                    dragSnapToOrigin
+                    onDragEnd={onSwipeEnd}
+                    onPointerDownCapture={() => (swiped.current = false)}
+                    onClickCapture={(e) => {
+                      if (!swiped.current) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     role="grid"
                     aria-labelledby="calendar-month"
-                    className="space-y-1"
+                    aria-roledescription="calendario, desliza para cambiar de mes"
+                    className="space-y-1 touch-pan-y"
                   >
                     {monthGrid(month).map((week) => (
                       <div key={week[0]!.day} role="row" className="grid grid-cols-7 gap-1">
@@ -207,6 +258,7 @@ export function CalendarPage() {
                             events={eventsByDay.get(day) ?? []}
                             absent={absentMembers(absenceList, day).map((id) => peopleById.get(id) ?? null)}
                             onOpen={() => setOpenDay(day)}
+                            onHold={() => markAbsence(day)}
                           />
                         ))}
                       </div>
@@ -214,8 +266,13 @@ export function CalendarPage() {
                   </motion.div>
                 </AnimatePresence>
               )}
-              {!loading && !monthHasAbsences && (
-                <p className="mt-3 px-2 text-center text-[13px] text-washi-muted">Nadie ha marcado ausencias este mes. Toca un día para marcar una.</p>
+              {!loading && (
+                <p className="mt-3 px-2 text-center text-[13px] text-washi-muted">
+                  {!monthHasAbsences && 'Nadie ha marcado ausencias este mes. Toca un día para marcar una. '}
+                  <span className="[@media(hover:hover)_and_(pointer:fine)]:hidden">
+                    Desliza a los lados para cambiar de mes; mantén pulsado un día para marcar que faltas.
+                  </span>
+                </p>
               )}
             </>
           )}
@@ -247,6 +304,15 @@ export function CalendarPage() {
         onEditAbsence={(absence) => setLayer({ kind: 'absence', absence, day: dayShown })}
         onRemoveAbsence={(absence) => setLayer({ kind: 'remove', absence })}
         onAddExtra={() => setLayer({ kind: 'extra', day: dayShown })}
+        onShiftDay={(by) => {
+          const next = addDays(dayShown, by);
+          setOpenDay(next);
+          const m = monthOf(next);
+          if (m.year !== month.year || m.month !== month.month) {
+            setDirection(by);
+            setMonth(m);
+          }
+        }}
       />
 
       <AbsenceFormDialog
@@ -256,7 +322,12 @@ export function CalendarPage() {
         day={layer?.kind === 'absence' ? layer.day : today}
         people={people.data ?? []}
       />
-      <ExtraFormDialog open={layer?.kind === 'extra'} onClose={closeLayer} day={layer?.kind === 'extra' ? layer.day : today} sessions={sessions} />
+      <ExtraFormDialog
+        open={layer?.kind === 'extra'}
+        onClose={closeLayer}
+        day={layer?.kind === 'extra' ? layer.day : today}
+        sessions={sessions}
+      />
       <RuleFormDialog
         open={layer?.kind === 'rule'}
         onClose={closeLayer}
@@ -301,6 +372,9 @@ export function CalendarPage() {
 }
 
 const CHIPS_MAX = 2;
+/** A swipe changes month past this distance (px) or this speed (px/s). */
+const SWIPE_PX = 56;
+const SWIPE_SPEED = 450;
 
 function DayCell({
   day,
@@ -311,6 +385,7 @@ function DayCell({
   events,
   absent,
   onOpen,
+  onHold,
 }: {
   day: string;
   inMonth: boolean;
@@ -320,9 +395,17 @@ function DayCell({
   events: DayEvent[];
   absent: (CalendarMember | null)[];
   onOpen: () => void;
+  /** Press and hold: mark your own absence that day straight away. */
+  onHold: () => void;
 }) {
+  const press = useLongPress(onHold, onOpen, 500);
   const chips = [
-    ...sessions.map((s) => ({ key: s.key, kind: 'rehearsal' as const, text: s.starts, cancelled: s.cancelled })),
+    ...sessions.map((s) => ({
+      key: s.key,
+      kind: 'rehearsal' as const,
+      text: s.starts,
+      cancelled: s.cancelled,
+    })),
     ...events.map((e) => ({ key: e.id, kind: 'event' as const, text: e.name, cancelled: false })),
   ];
   const shown = chips.slice(0, CHIPS_MAX);
@@ -344,14 +427,16 @@ function DayCell({
     <div role="gridcell" className="min-w-0">
       <motion.button
         type="button"
-        onClick={onOpen}
+        {...press}
         aria-label={summary}
         aria-current={today ? 'date' : undefined}
         whileTap={{ scale: 0.94 }}
         transition={snappy}
         className={cn(
-          'flex h-[68px] w-full min-w-0 flex-col items-stretch overflow-hidden rounded-[8px] border p-1 text-left transition-colors sm:h-[84px] [@media(max-height:500px)]:h-[58px] sm:p-1.5',
-          inMonth ? 'border-line bg-sumi-900/60 hover:border-line-strong' : 'border-transparent bg-sumi-900/20 opacity-55',
+          'flex h-[68px] w-full min-w-0 select-none flex-col items-stretch overflow-hidden rounded-[8px] border p-1 text-left transition-colors [-webkit-touch-callout:none] sm:h-[84px] [@media(max-height:500px)]:h-[58px] sm:p-1.5',
+          inMonth
+            ? 'border-line bg-sumi-900/60 hover:border-line-strong'
+            : 'border-transparent bg-sumi-900/20 opacity-55',
           today && 'border-kin-300 bg-washi/[0.06]',
           past && inMonth && !today && 'bg-sumi-900/35',
         )}
@@ -387,10 +472,17 @@ function DayCell({
             {dots.map((p, i) => (
               <span
                 key={p?.id ?? `gone-${i}`}
-                className={cn('size-1.5 shrink-0 rounded-full sm:size-2', p && !p.archived ? MEMBER_SWATCH[p.color].dot : 'bg-sumi-600')}
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full sm:size-2',
+                  p && !p.archived ? MEMBER_SWATCH[p.color].dot : 'bg-sumi-600',
+                )}
               />
             ))}
-            {extra > 0 && <span className="text-[9px] font-bold leading-none text-washi-muted sm:text-[10px]">+{extra}</span>}
+            {extra > 0 && (
+              <span className="text-[9px] font-bold leading-none text-washi-muted sm:text-[10px]">
+                +{extra}
+              </span>
+            )}
           </span>
         )}
       </motion.button>
@@ -450,15 +542,32 @@ function RehearsalSchedule({
       ) : current.length ? (
         <ul className="space-y-2">
           {current.map((rule) => (
-            <li key={rule.id} className="flex min-h-14 items-center gap-2 rounded-[12px] border border-line bg-sumi-900/60 py-1.5 pl-4 pr-1.5">
+            <li
+              key={rule.id}
+              className="flex min-h-14 items-center gap-2 rounded-[12px] border border-line bg-sumi-900/60 py-1.5 pl-4 pr-1.5"
+            >
               <span className="min-w-0 flex-1">
                 <span className="tabular block truncate font-bold text-washi">{ruleLabel(rule)}</span>
-                {rule.valid_from > today && <span className="block text-[12px] text-washi-subtle">Empieza el {dayLabelLong(rule.valid_from)}</span>}
+                {rule.valid_from > today && (
+                  <span className="block text-[12px] text-washi-subtle">
+                    Empieza el {dayLabelLong(rule.valid_from)}
+                  </span>
+                )}
               </span>
-              <Button size="icon" variant="ghost" aria-label={`Editar ${ruleLabel(rule)}`} onClick={() => onEdit(rule)}>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={`Editar ${ruleLabel(rule)}`}
+                onClick={() => onEdit(rule)}
+              >
                 <Pencil aria-hidden className="size-4.5" />
               </Button>
-              <Button size="icon" variant="ghost" aria-label={`Quitar ${ruleLabel(rule)}`} onClick={() => onEnd(rule)}>
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label={`Quitar ${ruleLabel(rule)}`}
+                onClick={() => onEnd(rule)}
+              >
                 <Trash2 aria-hidden className="size-4.5" />
               </Button>
             </li>
