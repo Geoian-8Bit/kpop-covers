@@ -16,10 +16,11 @@ export function ProposeBar({ onClick }: { onClick: () => void }) {
       whileTap={{ scale: 0.98 }}
       transition={jelly}
       aria-haspopup="dialog"
-      className="well mt-4 flex h-13 w-full min-w-0 items-center gap-3 rounded-[12px] pl-4 pr-1.5 text-left transition-colors hover:border-kin-300/50"
+      // Narrow phones: the hint wraps to two lines (the bar grows) rather than being cut.
+      className="well mt-4 flex min-h-13 w-full min-w-0 items-center gap-3 rounded-[12px] py-1.5 pl-4 pr-1.5 text-left transition-colors hover:border-kin-300/50"
     >
       <Search aria-hidden className="size-5 shrink-0 text-washi-subtle" />
-      <span className="min-w-0 flex-1 truncate text-[15px] text-washi-subtle">
+      <span className="min-w-0 flex-1 text-balance text-[15px] leading-snug text-washi-subtle">
         Busca una canción o pega un enlace
       </span>
       <span className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[9px] bg-shu-700 px-3.5 text-[14px] font-bold text-washi">

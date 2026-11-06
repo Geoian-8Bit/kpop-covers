@@ -16,12 +16,12 @@ import {
   withDefaults,
   type Stage,
 } from './formationRules';
-import { movePathPoint, pathPolyline } from './pathRules';
+import { BEND_MIN, bendThrough, movePathPoint, pathPolyline, straightMiddle } from './pathRules';
 import { PROP_LABELS } from './propRules';
 import { CLASH, initialOf, personColors, shortName } from './stage/personStyle';
 import { PropShape } from './stage/PropShape';
-import { ClashLayer, GhostLayer, PathHandles, RouteLayer, StageFloor, type GridLine } from './stage/StageLayers';
-import { AUDIENCE, DOT, HIT, holdsTouch, line, PAD, type Box, type HandleDrag } from './stage/stageDrag';
+import { BendHandle, ClashLayer, GhostLayer, PathHandles, RouteLayer, StageFloor, type GridLine } from './stage/StageLayers';
+import { AUDIENCE, BEND, DOT, HIT, holdsTouch, line, PAD, type Box, type HandleDrag } from './stage/stageDrag';
 import { useStagePainter } from './stage/useStagePainter';
 
 export interface StageViewProps {
@@ -51,6 +51,8 @@ export interface StageViewProps {
   selectedHandle: number | null;
   onSelectHandle: (index: number | null) => void;
   onMovePathPoint: (index: number, to: StagePoint) => void;
+  /** A straight route's middle dragged to `through`: it becomes a curve (REQ-08). */
+  onBendStraight?: (through: StagePoint) => void;
   /** «A mano»: a drag on the stage draws the route instead of moving or selecting. */
   drawing: boolean;
   onStroke: (points: StagePoint[]) => void;
@@ -87,6 +89,7 @@ export function StageView({
   selectedHandle,
   onSelectHandle,
   onMovePathPoint,
+  onBendStraight,
   drawing,
   onStroke,
   selectedProp,
@@ -238,6 +241,11 @@ export function StageView({
     }
     if (handleDrag && handleDrag.pointerId === e.pointerId) {
       setHandleDrag(null);
+      // BEND: the middle of a straight route, dragged to bend it.
+      if (handleDrag.index === BEND) {
+        if (handleDrag.moved) onBendStraight?.(handleDrag.point);
+        return;
+      }
       onSelectHandle(handleDrag.index);
       if (handleDrag.moved) onMovePathPoint(handleDrag.index, handleDrag.point);
       return;
@@ -364,7 +372,10 @@ export function StageView({
     const to = withDefaults(list[pathIndex]!.positions, memberIds, stage);
     return memberIds.map((id) => {
       let path: FormationPath | undefined = to[id]!.path;
-      if (id === pathMember && path && handleDrag?.moved) path = movePathPoint(path, handleDrag.index, handleDrag.point, stage);
+      if (id === pathMember && handleDrag?.moved) {
+        if (handleDrag.index === BEND) path = bendThrough(from[id]!, to[id]!, handleDrag.point, stage);
+        else if (path) path = movePathPoint(path, handleDrag.index, handleDrag.point, stage);
+      }
       return {
         id,
         from: from[id]!,
@@ -375,6 +386,9 @@ export function StageView({
     });
   }, [showPaths, pathIndex, list, memberIds, stage, mirrored, pathMember, handleDrag]);
   const editing = routes?.find((r) => r.id === pathMember) ?? null;
+  const bending = handleDrag?.index === BEND;
+  /** A straight route long enough to grab: its middle can be dragged to bend it. */
+  const canBend = editing && onBendStraight && (!editing.path || bending) && Math.hypot(editing.to.x - editing.from.x, editing.to.y - editing.from.y) >= BEND_MIN;
 
   // ── REQ-08: the clashes of the move shown (the formation at the playhead, or the move under way) ──
   const clashTarget = usePlayer((s) => {
@@ -528,7 +542,7 @@ export function StageView({
       })}
 
       {/* REQ-08 · Handles of the path being edited (above everybody: they are what the finger wants) */}
-      {editing?.path && !drawing && editing.path.kind !== 'free' && (
+      {editing?.path && !drawing && !bending && editing.path.kind !== 'free' && (
         <PathHandles
           path={editing.path}
           handleDrag={handleDrag}
@@ -536,6 +550,16 @@ export function StageView({
           stage={stage}
           mirrored={mirrored}
           onHandleDown={onHandleDown}
+        />
+      )}
+
+      {canBend && !drawing && !locked && (
+        <BendHandle
+          at={bending ? handleDrag.point : straightMiddle(editing.from, editing.to)}
+          active={bending}
+          stage={stage}
+          mirrored={mirrored}
+          onDown={(e) => onHandleDown(BEND, straightMiddle(editing.from, editing.to), e)}
         />
       )}
 

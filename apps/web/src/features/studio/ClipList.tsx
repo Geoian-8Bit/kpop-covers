@@ -4,8 +4,10 @@ import { FlipHorizontal2, Pencil, Pin, Plus, Repeat, Trash2, ZoomIn } from 'luci
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
+import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { CLIP_SWATCH, useDeleteClip, useUpdateClip } from '@/data/clips';
 import { AddToBagButton } from '@/features/bags/AddToBagButton';
+import { BagIcon } from '@/features/bags/BagIcon';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { friendlyError } from '@/lib/supabase';
@@ -18,6 +20,8 @@ import { EditClipDialog } from './EditClipDialog';
 /** Row actions: a 36 px mark with a 44 px hit area (the pseudo-element reaches into the gaps). */
 const rowAction =
   'relative grid size-9 shrink-0 place-items-center rounded-[8px] text-washi-subtle before:absolute before:-inset-1 before:content-[""] hover:bg-washi/[0.06] hover:text-washi';
+/** On touch screens the swipe actions replace these buttons: hidden from sight, still there for keyboard and readers. */
+const swipeHidden = 'touch:sr-only touch:focus-visible:not-sr-only';
 
 interface ClipListProps {
   clips: Clip[];
@@ -135,6 +139,7 @@ export function ClipList({ clips, loading, onApply, onNew }: ClipListProps) {
  * two rows that change, not the whole list.
  */
 const ClipRow = memo(function ClipRow({
+  index,
   clip,
   active,
   confirming,
@@ -153,12 +158,41 @@ const ClipRow = memo(function ClipRow({
   onTogglePin: (clip: Clip) => void;
   onDelete: (clip: Clip) => void;
   /**
-   * Not read: a row that moves in the list (a clip added or removed above it, or one that finished leaving) re-renders
+   * Read only for the swipe hint (first row). Also: a row that moves in the list (a clip added or removed above it, or one that finished leaving) re-renders
    * with the move, so `layout` still glides it to its new place.
    */
   index: number;
   exitTick: number;
 }) {
+  const [bagOpen, setBagOpen] = useState(false);
+  // Touch: slide the row left for these (the small buttons go out of sight; see `swipeHidden`).
+  const swipeActions: SwipeAction[] = [
+    {
+      key: 'edit',
+      label: 'Editar',
+      ariaLabel: `Editar ${clip.name}`,
+      icon: <Pencil />,
+      onSelect: () => onEdit(clip.id),
+    },
+    {
+      key: 'bag',
+      label: 'Bolsa',
+      ariaLabel: `Añadir «${clip.name}» a una bolsa`,
+      icon: <BagIcon />,
+      tone: 'accent',
+      onSelect: () => setBagOpen(true),
+    },
+    {
+      key: 'delete',
+      label: confirming ? '¿Seguro?' : 'Borrar',
+      ariaLabel: confirming ? `Confirmar borrar ${clip.name}` : `Borrar ${clip.name}`,
+      icon: <Trash2 />,
+      tone: 'danger',
+      // Same two taps as the row's button: the first arms it, the second (within a moment) deletes.
+      keepOpen: !confirming,
+      onSelect: () => onDelete(clip),
+    },
+  ];
   return (
     <motion.li
       layout
@@ -175,96 +209,111 @@ const ClipRow = memo(function ClipRow({
           className="absolute inset-0 rounded-[12px] border border-ai-400/60 bg-ai-700/45"
         />
       )}
-      <div
-        className={cn(
-          'relative flex items-center gap-2 rounded-[12px] p-2',
-          !active && 'hover:bg-washi/[0.04]',
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => onApply(clip)}
-          disabled={!ready}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left transition-[opacity,scale] duration-150 active:scale-[0.98] disabled:opacity-60"
-          aria-current={active || undefined}
-        >
-          <span
-            className={cn(
-              'grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]',
-              CLIP_SWATCH[clip.color].dot,
-            )}
-          >
-            {active ? <Repeat className="size-4 text-sumi-900" /> : null}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{clip.name}</span>
-            <span className="tabular mt-0.5 flex items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-xs text-washi-muted">
-              {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
-              <span className="text-washi-subtle">·</span>
-              {formatSpeed(clip.speed)}
-              {clip.mirrored && (
-                <FlipHorizontal2 className="size-3 shrink-0 text-ai-300" aria-label="espejo" />
-              )}
-              {clipHasZoom(clip) && (
-                <ZoomIn
-                  className="size-3 shrink-0 text-kin-300"
-                  aria-label={`ampliado ${zoomLabel(zoomOfClip(clip))}`}
-                />
-              )}
-            </span>
-          </span>
-        </button>
-
-        <motion.button
-          type="button"
-          aria-label={`Editar ${clip.name}`}
-          title="Editar el clip"
-          onClick={() => onEdit(clip.id)}
-          whileTap={{ scale: 0.85, rotate: -8 }}
-          transition={jelly}
-          className={rowAction}
-        >
-          <Pencil className="size-4" />
-        </motion.button>
-
-        <motion.button
-          type="button"
-          // aria-pressed carries the state: the name stays the same either way.
-          aria-label={`${PIN_LABEL}: ${clip.name}`}
-          title={
-            clip.is_pinned
-              ? 'Fijado en la portada · toca para quitarlo'
-              : `${PIN_LABEL} (sale el primero en Acceso rápido)`
-          }
-          aria-pressed={clip.is_pinned}
-          onClick={() => onTogglePin(clip)}
-          whileTap={{ scale: 0.7, rotate: -20 }}
-          transition={jelly}
-          className={rowAction}
-        >
-          <Pin className={cn('size-4', clip.is_pinned && 'fill-shu-500 text-shu-500')} />
-        </motion.button>
-
-        <AddToBagButton className="size-9" target={{ kind: 'clips', clipId: clip.id, label: clip.name }} />
-
-        <motion.button
-          type="button"
-          layout
-          aria-label={confirming ? `Confirmar borrar ${clip.name}` : `Borrar ${clip.name}`}
-          onClick={() => onDelete(clip)}
-          whileTap={{ scale: 0.85 }}
-          transition={jelly}
+      <SwipeRow actions={swipeActions} hint={index === 0} className="rounded-[12px]">
+        <div
           className={cn(
-            'relative flex h-9 shrink-0 items-center justify-center gap-1 rounded-[8px] text-xs font-medium before:absolute before:-inset-1 before:content-[""]',
-            confirming
-              ? 'bg-enji-500 px-3 text-washi'
-              : 'w-9 text-washi-subtle hover:bg-washi/[0.06] hover:text-enji-300',
+            // A narrow column (phones) drops the row's actions to a second line, so the name never gets squeezed.
+            'relative flex flex-wrap items-center gap-2 rounded-[12px] p-2',
+            !active && 'hover:bg-washi/[0.04]',
           )}
         >
-          <Trash2 className="size-4" />
-          {confirming && <span>Borrar</span>}
-        </motion.button>
-      </div>
+          <button
+            type="button"
+            onClick={() => onApply(clip)}
+            disabled={!ready}
+            className="flex min-w-[11rem] flex-1 items-center gap-3 rounded-[10px] text-left transition-[opacity,scale] duration-150 active:scale-[0.98] disabled:opacity-60"
+            aria-current={active || undefined}
+          >
+            <span
+              className={cn(
+                'grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]',
+                CLIP_SWATCH[clip.color].dot,
+              )}
+            >
+              {active ? <Repeat className="size-4 text-sumi-900" /> : null}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block break-words font-medium leading-snug">{clip.name}</span>
+              {/* Wraps between pieces (range · speed · marks) on a narrow column, never clipped. */}
+              <span className="tabular mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-xs text-washi-muted">
+                <span className="whitespace-nowrap">
+                  {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
+                </span>
+                <span className="whitespace-nowrap">
+                  <span className="text-washi-subtle">·</span> {formatSpeed(clip.speed)}
+                </span>
+                {clip.mirrored && (
+                  <FlipHorizontal2 className="size-3 shrink-0 text-ai-300" aria-label="espejo" />
+                )}
+                {clipHasZoom(clip) && (
+                  <ZoomIn
+                    className="size-3 shrink-0 text-kin-300"
+                    aria-label={`ampliado ${zoomLabel(zoomOfClip(clip))}`}
+                  />
+                )}
+              </span>
+            </span>
+          </button>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <motion.button
+              type="button"
+              aria-label={`Editar ${clip.name}`}
+              title="Editar el clip"
+              onClick={() => onEdit(clip.id)}
+              whileTap={{ scale: 0.85, rotate: -8 }}
+              transition={jelly}
+              className={cn(rowAction, swipeHidden)}
+            >
+              <Pencil className="size-4" />
+            </motion.button>
+
+            <motion.button
+              type="button"
+              // aria-pressed carries the state: the name stays the same either way.
+              aria-label={`${PIN_LABEL}: ${clip.name}`}
+              title={
+                clip.is_pinned
+                  ? 'Fijado en la portada · toca para quitarlo'
+                  : `${PIN_LABEL} (sale el primero en Acceso rápido)`
+              }
+              aria-pressed={clip.is_pinned}
+              onClick={() => onTogglePin(clip)}
+              whileTap={{ scale: 0.7, rotate: -20 }}
+              transition={jelly}
+              className={rowAction}
+            >
+              <Pin className={cn('size-4', clip.is_pinned && 'fill-shu-500 text-shu-500')} />
+            </motion.button>
+
+            <AddToBagButton
+              className={cn('size-9', swipeHidden)}
+              open={bagOpen}
+              onOpenChange={setBagOpen}
+              target={{ kind: 'clips', clipId: clip.id, label: clip.name }}
+            />
+
+            <motion.button
+              type="button"
+              layout
+              aria-label={confirming ? `Confirmar borrar ${clip.name}` : `Borrar ${clip.name}`}
+              onClick={() => onDelete(clip)}
+              whileTap={{ scale: 0.85 }}
+              transition={jelly}
+              className={cn(
+                'relative flex h-9 shrink-0 items-center justify-center gap-1 rounded-[8px] text-xs font-medium before:absolute before:-inset-1 before:content-[""]',
+                swipeHidden,
+                confirming
+                  ? 'bg-enji-500 px-3 text-washi'
+                  : 'w-9 text-washi-subtle hover:bg-washi/[0.06] hover:text-enji-300',
+              )}
+            >
+              <Trash2 className="size-4" />
+              {confirming && <span>Borrar</span>}
+            </motion.button>
+          </div>
+        </div>
+      </SwipeRow>
     </motion.li>
   );
 });

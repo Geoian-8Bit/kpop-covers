@@ -194,6 +194,40 @@ export function NewPlanDialog({
   );
 }
 
+/** «Borrar» from the list's «⋯» menu: one clear question before the plan goes (archived, not erased). */
+export function DeletePlanDialog({
+  plan,
+  onClose,
+  onConfirm,
+}: {
+  plan: FormationPlanSummary | null;
+  onClose: () => void;
+  onConfirm: (plan: FormationPlanSummary) => void;
+}) {
+  // Kept while the dialog animates out, so its text doesn't blank.
+  const [shown, setShown] = useState<FormationPlanSummary | null>(null);
+  if (plan && shown !== plan) setShown(plan);
+  return (
+    <Dialog
+      open={plan != null}
+      onClose={onClose}
+      title="¿Borrar este plan?"
+      description={shown ? `«${shown.name}» y sus formaciones dejarán de verse.` : undefined}
+      size="sm"
+      hideClose
+    >
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button type="button" variant="danger" onClick={() => plan && onConfirm(plan)}>
+          Borrar
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
 /** «Renombrar» from the list. */
 export function PlanNameDialog({ plan, onClose }: { plan: FormationPlanSummary | null; onClose: () => void }) {
   const update = useUpdateFormationPlan();

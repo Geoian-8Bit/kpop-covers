@@ -1,5 +1,6 @@
 import { clamp, formatTime } from '@coverscape/shared';
 import { motion } from 'motion/react';
+import { Plus } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import type { FormationInput } from '@/data/formations';
 import { cn } from '@/lib/cn';
@@ -15,6 +16,9 @@ interface MarkerDrag {
   moved: boolean;
 }
 
+/** Two taps on the same marker within this time (ms) open it. */
+const DOUBLE_TAP_MS = 320;
+
 /** The span the timeline draws: the player's duration once known, else enough to show every formation. */
 function timelineSpan(duration: number, list: readonly FormationInput[]): number {
   if (duration > 0) return duration;
@@ -25,7 +29,8 @@ function timelineSpan(duration: number, list: readonly FormationInput[]): number
 /**
  * REQ-06 · The editor's timeline: a marker per formation (tap jumps to it, drag moves its moment) with its transition
  * drawn before it, and the track (dragging it moves the time; only a marker grabs, like the A/B seals of REQ-01).
- * `underlay` draws beneath the track (REQ-09: beats and the wave).
+ * `underlay` draws beneath the track (REQ-09: beats and the wave). `onAdd` puts a «+» beside it: a new formation at the
+ * playhead in one tap, with no sheet to open.
  */
 export function FormationTimeline({
   list,
@@ -34,6 +39,8 @@ export function FormationTimeline({
   underlay,
   clashes = [],
   locked = false,
+  onAdd,
+  onOpenMarker,
 }: {
   list: FormationInput[];
   selectedId: string | null;
@@ -43,7 +50,13 @@ export function FormationTimeline({
   clashes?: { start: number; end: number }[];
   /** A save conflict: markers still take you to their moment but can't be dragged. */
   locked?: boolean;
+  /** «Añadir formación en este momento» (disabled while `locked`). */
+  onAdd?: () => void;
+  /** Double tap on a marker: go to that formation and open its details (transition, note). */
+  onOpenMarker?: (id: string) => void;
 }) {
+  /** The last tap on a marker, to tell a double tap. */
+  const lastTap = useRef<{ id: string; at: number } | null>(null);
   const duration = usePlayer((s) => s.duration);
   const loop = usePlayer((s) => s.loop);
   const span = timelineSpan(duration, list);
@@ -131,8 +144,18 @@ export function FormationTimeline({
       const f = list.find((x) => x.id === marker.id);
       setMarker(null);
       if (!f) return;
-      if (marker.moved && !locked) onMoveMarker(f.id, marker.at);
-      else usePlayer.getState().seek(f.at);
+      if (marker.moved && !locked) {
+        onMoveMarker(f.id, marker.at);
+        lastTap.current = null;
+        return;
+      }
+      usePlayer.getState().seek(f.at);
+      const now = performance.now();
+      const prev = lastTap.current;
+      if (onOpenMarker && prev && prev.id === f.id && now - prev.at < DOUBLE_TAP_MS) {
+        lastTap.current = null;
+        onOpenMarker(f.id);
+      } else lastTap.current = { id: f.id, at: now };
       return;
     }
     if (scrub.current === e.pointerId) {
@@ -155,6 +178,7 @@ export function FormationTimeline({
 
   return (
     <div className="select-none px-4 pb-2 pt-3 sm:px-5">
+      <div className="flex items-stretch gap-1.5">
       <div
         ref={trackRef}
         data-track
@@ -175,7 +199,7 @@ export function FormationTimeline({
         onPointerUp={trackUp}
         onPointerCancel={trackUp}
         className={cn(
-          'well relative h-[68px] touch-none rounded-[10px] outline-none focus-visible:ring-2 focus-visible:ring-kin-300',
+          'well relative h-[68px] min-w-0 flex-1 touch-none rounded-[10px] outline-none focus-visible:ring-2 focus-visible:ring-kin-300',
           ready ? 'cursor-pointer' : 'cursor-wait',
         )}
       >
@@ -218,7 +242,7 @@ export function FormationTimeline({
               <motion.button
                 key={f.id}
                 type="button"
-                aria-label={`Formación ${i + 1} en ${formatMoment(f.at)}${f.note ? `: ${f.note}` : ''}. Toca para ir${locked ? '' : '; arrastra para moverla'}.`}
+                aria-label={`Formación ${i + 1} en ${formatMoment(f.at)}${f.note ? `: ${f.note}` : ''}. Toca para ir${onOpenMarker ? ', doble toque para abrir su nota' : ''}${locked ? '' : '; arrastra para moverla'}.`}
                 title={f.note ?? undefined}
                 onPointerDown={(e) => markerDown(f.id, e)}
                 onKeyDown={(e) => {
@@ -248,6 +272,22 @@ export function FormationTimeline({
             <div className="absolute inset-y-0 -left-px w-0.5 bg-shu-400 shadow-[0_0_8px_rgb(226_103_77/0.7)]" />
           </div>
         </div>
+      </div>
+      {onAdd && (
+        <motion.button
+          type="button"
+          aria-label="Añadir formación en este momento"
+          title="Añadir formación en este momento"
+          disabled={locked}
+          onClick={onAdd}
+          whileTap={locked ? undefined : { scale: 0.88 }}
+          transition={jelly}
+          className="flex w-12 shrink-0 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-shu-400/70 bg-shu-700 text-washi transition-colors hover:bg-shu-600 disabled:opacity-40"
+        >
+          <Plus className="size-5" aria-hidden />
+          <span className="text-[10px] font-bold leading-none">Añadir</span>
+        </motion.button>
+      )}
       </div>
       {marker?.moved && (
         <p className="tabular mt-1 text-center font-mono text-xs text-kin-200" aria-live="polite">

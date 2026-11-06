@@ -77,7 +77,7 @@ export function TieDraw({
               )}
             >
               {c.thumbnail && <img src={c.thumbnail} crossOrigin={thumbCors(c.thumbnail)} alt="" className="aspect-video w-20 shrink-0 rounded-[6px] object-cover" />}
-              <span className="min-w-0 flex-1 truncate font-bold text-washi">{c.title}</span>
+              <span className="min-w-0 flex-1 break-words font-bold leading-snug text-washi">{c.title}</span>
               {on && landed && (
                 <motion.span
                   initial={{ scale: 1.8, rotate: -18, opacity: 0 }}

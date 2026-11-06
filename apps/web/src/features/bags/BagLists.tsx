@@ -242,7 +242,7 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
                 <span className="min-w-0 flex-1">
                   <span
                     className={cn(
-                      'block truncate text-[15px] font-medium leading-snug',
+                      'block break-words text-[15px] font-medium leading-snug',
                       out ? 'text-washi-muted line-through decoration-washi-subtle/60' : 'text-washi',
                     )}
                   >
@@ -250,7 +250,7 @@ function ItemList({ items, out = false }: { items: BagItemView[]; out?: boolean 
                   </span>
                   <span
                     className={cn(
-                      'block truncate text-[12px]',
+                      'block break-words text-[12px]',
                       out ? 'text-washi-muted' : 'text-washi-subtle',
                     )}
                   >

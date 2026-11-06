@@ -28,14 +28,15 @@ import type { useToast } from '@/providers/ToastProvider';
 import { snapFormationsToBeats } from '../beatRules';
 import { applyTemplate, flipHorizontal, flipVertical, rotate, ROTATE_STEP, scale, swap, TEMPLATES } from '../formationEditRules';
 import { formatMoment, NOTE_MAX, TRANSITION_MAX, type Stage } from '../formationRules';
-import { addPathPoint, flipPath, removePathPoint, setCurveShape } from '../pathRules';
-import { ChoiceGroup, Hint, IconTool, PathTools, PropTools, tool, toolIdle, toolOn, toolPrimary, type ToolTab } from '../EditorTools';
+import { addPathPoint, BEND_MIN, flipPath, removePathPoint, setCurveShape } from '../pathRules';
+import { ChoiceGroup, Hint, IconTool, PropTools, tool, toolIdle, toolOn, toolPrimary, type ToolTab } from '../EditorTools';
 import { relabelProp } from '../propRules';
 import { RhythmPanel } from '../RhythmPanel';
 import type { FormationEditorState } from '../useFormationEditor';
 import type { useWaveform } from '../useWaveform';
 import { NO_WEBGL } from '../three/webgl';
 import { ClashNotice, TemplateButton } from './panelParts';
+import { PathTools } from './PathTools';
 import type { useEditorActions } from './useEditorActions';
 import type { usePathEditing } from './usePathEditing';
 
@@ -172,6 +173,7 @@ export function ToolPanelBody({
                   Nota de la formación {currentIndex + 1} ({formatMoment(current.at)})
                 </span>
                 <textarea
+                  data-formation-note
                   key={`${current.id}-${current.note ?? ''}`}
                   defaultValue={current.note ?? ''}
                   maxLength={NOTE_MAX}
@@ -277,6 +279,7 @@ export function ToolPanelBody({
             pathIndex={pathIndex}
             memberName={pathMember ? (people.get(pathMember)?.name ?? 'Alguien que ya no está') : null}
             path={pathEnds?.path}
+            canBend={pathEnds != null && Math.hypot(pathEnds.to.x - pathEnds.from.x, pathEnds.to.y - pathEnds.from.y) >= BEND_MIN}
             drawMode={drawMode}
             selectedHandle={selectedHandle}
             disabled={conflict}

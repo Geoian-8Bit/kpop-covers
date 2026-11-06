@@ -22,12 +22,24 @@ export type PathChoice = 'straight' | FormationPathKind;
 /** The two shapes of a `curve`: one control point (arc) or two bending opposite ways (S). */
 export type CurveShape = 'arc' | 's';
 
+/** Short names (under a little drawing of each shape in «Recorridos»). */
 export const PATH_LABELS: Record<PathChoice, string> = {
   straight: 'Recto',
-  curve: 'Curvo',
-  points: 'Puntos',
+  curve: 'Curva',
+  points: 'Por puntos',
   free: 'A mano',
 };
+
+/** What each kind does, for screen readers and the tooltip. */
+export const PATH_HINTS: Record<PathChoice, string> = {
+  straight: 'En línea recta',
+  curve: 'Se dobla en arco o en S',
+  points: 'Pasa por los puntos que pongas',
+  free: 'Dibujas el camino con el dedo',
+};
+
+/** A move shorter than this (metres) has no line to grab and bend on the stage. */
+export const BEND_MIN = 0.3;
 
 interface Size {
   width: number;
@@ -217,6 +229,20 @@ export function curvePath(from: StagePoint, to: StagePoint, stage: Size): Format
   return { kind: 'curve', points: [inside({ x: mid.x + nx * bend, y: mid.y + ny * bend }, stage)] };
 }
 
+/** The middle of the straight move: where the stage offers a handle to bend it. */
+export function straightMiddle(from: StagePoint, to: StagePoint): StagePoint {
+  return lerp(from, to, 0.5);
+}
+
+/**
+ * Dragging the middle of a straight move: an arc (quadratic) whose middle passes under the finger. A quadratic's
+ * middle is (from + 2·k + to) / 4, so the control point is k = 2·through − middle.
+ */
+export function bendThrough(from: StagePoint, to: StagePoint, through: StagePoint, stage: Size): FormationPath {
+  const mid = lerp(from, to, 0.5);
+  return { kind: 'curve', points: [inside({ x: 2 * through.x - mid.x, y: 2 * through.y - mid.y }, stage)] };
+}
+
 /**
  * A fresh S bend: a cubic curve whose two control points sit at a third and two thirds of the move, on opposite
  * sides, so it swings one way and then the other.
@@ -242,7 +268,7 @@ export function curveShape(path: FormationPath | undefined | null): CurveShape |
 }
 
 /**
- * «Arco» / «En S» inside «Curvo». Arc → S makes a fresh S; S → arc keeps the bend: the quadratic control point whose
+ * «Arco» / «En S» inside «Curva». Arc → S makes a fresh S; S → arc keeps the bend: the quadratic control point whose
  * curve has the same middle as the cubic one.
  */
 export function setCurveShape(

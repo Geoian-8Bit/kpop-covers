@@ -299,10 +299,10 @@ function ResultPanel({
               </span>
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-kin-300">¡Premio!</p>
-                <p className="truncate font-display text-[22px] font-bold leading-tight text-washi">
+                <p className="break-words font-display text-[22px] font-bold leading-tight text-washi">
                   {first.label}
                 </p>
-                {first.sub && <p className="truncate text-[13px] text-washi-muted">{first.sub}</p>}
+                {first.sub && <p className="break-words text-[13px] text-washi-muted">{first.sub}</p>}
               </div>
             </motion.div>
             {rest.length > 0 && (
@@ -317,7 +317,7 @@ function ResultPanel({
                     className="flex max-w-[220px] items-center gap-1.5 rounded-full border border-line bg-sumi-850 py-1 pl-1 pr-2.5 text-[13px] text-washi"
                   >
                     <span aria-hidden className={cn('size-4 shrink-0 rounded-full', TONE[r.tone].bg)} />
-                    <span className="truncate">{r.sub ? `${r.label} · ${r.sub}` : r.label}</span>
+                    <span className="min-w-0 break-words">{r.sub ? `${r.label} · ${r.sub}` : r.label}</span>
                   </li>
                 ))}
               </motion.ol>

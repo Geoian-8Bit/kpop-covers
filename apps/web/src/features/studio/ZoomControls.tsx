@@ -152,7 +152,9 @@ function ZoomRowView({ video, clips, onLink }: { video: Video; clips: Clip[]; on
             onClick={saveWithClip}
           >
             <Bookmark className="size-4 shrink-0" />{' '}
-            <span className="truncate">Guardar el zoom en «{clip.name}»</span>
+            <span className="min-w-0 whitespace-normal break-words text-left">
+              Guardar el zoom en «{clip.name}»
+            </span>
           </Button>
         )}
         {clip && clipHasZoom(clip) && (

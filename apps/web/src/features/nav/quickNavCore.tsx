@@ -13,12 +13,10 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useCalendarUnseen } from '@/data/calendar';
-import { openWho, useMe } from '@/data/members';
-import { MemberSeal } from '@/features/members/MembersUI';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
-import { MAIN_NAV, WHO_KANJI, WHO_TONE, type NavIcon, type NavTone } from './navItems';
+import { MAIN_NAV, type NavIcon, type NavTone } from './navItems';
 import { activeSectionIndex, quickNavLabel, trapFocusIndex } from './navRules';
 
 /**
@@ -32,9 +30,8 @@ export interface NavEntry {
   label: string;
   short: string;
   kanji: string;
-  Icon: NavIcon | null;
-  /** null for «¿Quién eres?» (opens the picker). */
-  to: string | null;
+  Icon: NavIcon;
+  to: string;
   active: boolean;
   tone: NavTone;
   /** REQ-05 · Unseen changes there (the calendar): a dot on its card and on the button. */
@@ -45,7 +42,7 @@ export interface QuickNavApi {
   open: boolean;
   toggle: () => void;
   close: (returnFocus?: boolean) => void;
-  /** Goes to the entry (after `delay` ms, for a closing flourish) or opens «¿Quién eres?». */
+  /** Goes to the entry (after `delay` ms, for a closing flourish). */
   pick: (entry: NavEntry, delay?: number) => void;
   entries: NavEntry[];
   current: NavEntry | null;
@@ -72,7 +69,6 @@ export function useQuickNav(): QuickNavApi {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const me = useMe();
   const calendarUnseen = useCalendarUnseen();
   const reduce = useReducedMotion() ?? false;
   const [stage, setStage] = useState<QuickNavApi['stage']>(null);
@@ -87,8 +83,8 @@ export function useQuickNav(): QuickNavApi {
 
   const activeIndex = activeSectionIndex(pathname, MAIN_NAV);
   const entries = useMemo<NavEntry[]>(
-    () => [
-      ...MAIN_NAV.map((s, i) => ({
+    () =>
+      MAIN_NAV.map((s, i) => ({
         id: s.to,
         label: s.label,
         short: s.short,
@@ -99,18 +95,7 @@ export function useQuickNav(): QuickNavApi {
         tone: s.tone,
         dot: s.to === '/calendario' && calendarUnseen,
       })),
-      {
-        id: 'who',
-        label: me ? `Eres ${me.name}` : '¿Quién eres?',
-        short: me ? me.name : '¿Quién eres?',
-        kanji: me ? me.name.trim().charAt(0).toUpperCase() : WHO_KANJI,
-        Icon: null,
-        to: null,
-        active: false,
-        tone: WHO_TONE,
-      },
-    ],
-    [activeIndex, me, calendarUnseen],
+    [activeIndex, calendarUnseen],
   );
   const current = entries[activeIndex] ?? null;
 
@@ -132,12 +117,6 @@ export function useQuickNav(): QuickNavApi {
   const pick = useCallback(
     (entry: NavEntry, delay = 0) => {
       if (picking.current) return;
-      if (entry.to == null) {
-        close(true);
-        // After focus is back on the button, so the dialog hands it back there too.
-        requestAnimationFrame(() => requestAnimationFrame(openWho));
-        return;
-      }
       if (window.location.pathname === entry.to) {
         close(true);
         return;
@@ -146,7 +125,7 @@ export function useQuickNav(): QuickNavApi {
       const go = () => {
         pickTimer.current = undefined;
         // Replaces the menu's own history entry: back from the new page returns where it was opened, in one press.
-        navigate(entry.to!, { replace: true });
+        navigate(entry.to, { replace: true });
         setOpen(false);
         picking.current = false;
       };
@@ -335,10 +314,11 @@ export function QuickNavTrigger({
           <motion.span
             key="close"
             aria-hidden
-            className="absolute inset-0 grid place-items-center rounded-full border-2 border-kin-400 bg-sumi-950 text-washi shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)]"
-            initial={reduce ? { opacity: 0 } : { opacity: 0, rotate: -90, scale: 0.7 }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, rotate: 0, scale: 1 }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, rotate: 90, scale: 0.7 }}
+            // Still the deck while open: the same straight card, face down, with the close mark.
+            className="absolute inset-x-1.5 inset-y-0 grid place-items-center rounded-[7px] border-2 border-kin-400 bg-sumi-950 text-washi shadow-[0_8px_18px_-8px_rgb(0_0_0/0.9)]"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, rotateY: 90 }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, rotateY: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, rotateY: -90 }}
             transition={jelly}
           >
             <X className="size-6" />
@@ -402,7 +382,7 @@ type EntryLinkProps = Omit<HTMLMotionProps<'a'>, 'href' | 'onClick' | 'ref'> & {
 };
 
 /**
- * One destination: a real link for a section (aria-current on yours), a button for «¿Quién eres?». Picking goes
+ * One destination: a real link for a section (aria-current on yours). Picking goes
  * through the shared `pick`, so closing, history and focus behave the same however it is picked.
  */
 export function EntryLink({ api, entry, delay, onPicked, children, ref, ...rest }: EntryLinkProps) {
@@ -417,13 +397,6 @@ export function EntryLink({ api, entry, delay, onPicked, children, ref, ...rest 
     'aria-current': entry.active ? ('page' as const) : undefined,
     ...rest,
   };
-  if (entry.to == null) {
-    return (
-      <motion.button ref={ref} type="button" {...(shared as HTMLMotionProps<'button'>)} onClick={onClick}>
-        {children}
-      </motion.button>
-    );
-  }
   return (
     <motion.a ref={ref} href={entry.to} {...shared} onClick={onClick}>
       {children}
@@ -431,9 +404,7 @@ export function EntryLink({ api, entry, delay, onPicked, children, ref, ...rest 
   );
 }
 
-/** Icon of an entry: its section icon, or the member's seal for «¿Quién eres?». */
+/** Icon of an entry: its section icon. */
 export function EntryIcon({ entry, className }: { entry: NavEntry; className?: string }) {
-  const me = useMe();
-  if (entry.Icon) return <entry.Icon className={cn('size-[18px] shrink-0', className)} />;
-  return <MemberSeal member={me} size="sm" />;
+  return <entry.Icon className={cn('size-[18px] shrink-0', className)} />;
 }

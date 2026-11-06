@@ -31,9 +31,9 @@ export function EditorHeader({
         <ButtonSkin kind="back" />
       </Link>
       <div className="min-w-0 flex-1">
-        <h1 className="truncate font-display text-[17px] font-bold leading-tight lg:text-[24px]">{title}</h1>
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="min-w-0 truncate text-sm text-washi-muted">Formaciones · {subtitle}</p>
+        <h1 title={title} className="line-clamp-2 break-words font-display text-[17px] font-bold leading-tight lg:text-[24px]">{title}</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2">
+          <p className="min-w-0 break-words text-sm leading-snug text-washi-muted">Formaciones · {subtitle}</p>
           {status}
         </div>
       </div>

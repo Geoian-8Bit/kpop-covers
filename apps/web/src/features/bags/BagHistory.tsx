@@ -27,11 +27,11 @@ export function History({
           <li key={d.id} className="flex items-start gap-2.5 rounded-[10px] px-1.5 py-1.5">
             <span aria-hidden className="mt-2 size-1.5 shrink-0 rotate-45 bg-kin-400/70" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-display text-[15px] font-bold leading-snug text-washi">
+              <span className="block break-words font-display text-[15px] font-bold leading-snug text-washi">
                 {d.label}
                 {state && <span className="font-sans text-[13px] font-normal text-shu-300"> {state}</span>}
               </span>
-              <span className="block truncate text-[12px] text-washi-subtle">
+              <span className="block break-words text-[12px] text-washi-subtle">
                 {historyDay(d.drawn_at)} ·{' '}
                 {new Date(d.drawn_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                 {who ? ` · lo sacó ${who.name}` : ''}

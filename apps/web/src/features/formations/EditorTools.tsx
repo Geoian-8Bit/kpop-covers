@@ -1,4 +1,4 @@
-import type { FormationPath, FormationPropKind } from '@coverscape/shared';
+import type { FormationPropKind } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Armchair,
@@ -6,12 +6,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Ellipsis,
-  FlipHorizontal2,
   Layers,
   Pause,
-  Pencil,
   Play,
-  Plus,
   RotateCcw,
   RotateCw,
   Spline,
@@ -25,7 +22,6 @@ import { cn } from '@/lib/cn';
 import { jelly, snappy } from '@/lib/motion';
 import { usePlayer } from '@/player/store';
 import { formatMoment } from './formationRules';
-import { curveShape, PATH_LABELS, PATH_POINTS_MAX, type CurveShape, type PathChoice } from './pathRules';
 import { PROP_KINDS, PROP_LABEL_MAX, PROP_LABELS, PROP_ROTATE_STEP } from './propRules';
 import { PropShape } from './stage/PropShape';
 
@@ -320,114 +316,6 @@ export function Hint({ children, live }: { children: ReactNode; live?: boolean }
     <p className="text-[12px] leading-snug text-washi-subtle" aria-live={live ? 'polite' : undefined}>
       {children}
     </p>
-  );
-}
-
-// ───────────── REQ-08 · Recorridos ─────────────
-
-export function PathTools({
-  pathIndex,
-  memberName,
-  path,
-  drawMode,
-  selectedHandle,
-  disabled,
-  onChoose,
-  onShape,
-  onFlip,
-  onCancelDraw,
-  onAddPoint,
-  onRemovePoint,
-}: {
-  pathIndex: number;
-  memberName: string | null;
-  path: FormationPath | undefined;
-  drawMode: boolean;
-  selectedHandle: number | null;
-  disabled: boolean;
-  onChoose: (choice: PathChoice) => void;
-  onShape: (shape: CurveShape) => void;
-  onFlip: () => void;
-  onCancelDraw: () => void;
-  onAddPoint: () => void;
-  onRemovePoint: () => void;
-}) {
-  const choices: PathChoice[] = ['straight', 'curve', 'points', 'free'];
-  if (pathIndex < 1) {
-    return <Hint>Ve a una formación que no sea la primera (flechas de arriba o la línea de tiempo) para ver cómo llega cada persona.</Hint>;
-  }
-  if (!memberName) return <Hint>Toca a una persona en el escenario para elegir cómo llega a la formación {pathIndex + 1}.</Hint>;
-  const shape = curveShape(path);
-  return (
-    <div className="space-y-2.5">
-      <p className="text-[13px] text-washi">
-        Recorrido de <span className="font-bold">{memberName}</span> hasta la formación {pathIndex + 1}
-      </p>
-      <ChoiceGroup
-        label="Tipo de recorrido"
-        layoutId="path-kind"
-        value={drawMode ? 'free' : (path?.kind ?? 'straight')}
-        disabled={disabled}
-        onChange={onChoose}
-        options={choices.map((c) => ({ value: c, label: PATH_LABELS[c] }))}
-      />
-      {drawMode && (
-        <div className="flex items-center gap-2">
-          <p className="min-w-0 flex-1 text-[13px] text-kin-200" aria-live="polite">
-            Dibuja con el dedo en el escenario el camino de {memberName}: se suaviza solo.
-          </p>
-          <button type="button" className={cn(tool, toolIdle)} onClick={onCancelDraw}>
-            Cancelar
-          </button>
-        </div>
-      )}
-      {!drawMode && path?.kind === 'curve' && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <ChoiceGroup
-            label="Forma de la curva"
-            layoutId="curve-shape"
-            className="min-w-[11rem] flex-1"
-            value={shape}
-            disabled={disabled}
-            onChange={onShape}
-            options={[
-              { value: 'arc', label: 'Arco' },
-              { value: 's', label: 'En S' },
-            ]}
-          />
-          <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onFlip}>
-            <FlipHorizontal2 className="size-4" aria-hidden /> Invertir
-          </button>
-          <Hint>{shape === 's' ? 'Arrastra los dos puntos blancos para ajustar la S.' : 'Arrastra el punto blanco para abrir o cerrar la curva.'}</Hint>
-        </div>
-      )}
-      {!drawMode && path?.kind === 'free' && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={() => onChoose('free')}>
-            <Pencil className="size-4" aria-hidden /> Dibujar otra vez
-          </button>
-          <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onFlip}>
-            <FlipHorizontal2 className="size-4" aria-hidden /> Invertir
-          </button>
-        </div>
-      )}
-      {!drawMode && path?.kind === 'points' && (
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button type="button" className={cn(tool, toolIdle)} disabled={disabled || path.points.length >= PATH_POINTS_MAX} onClick={onAddPoint}>
-              <Plus className="size-4" aria-hidden /> Añadir punto
-            </button>
-            <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onRemovePoint}>
-              <Trash2 className="size-4" aria-hidden /> {selectedHandle != null ? `Quitar punto ${selectedHandle + 1}` : 'Quitar el último'}
-            </button>
-            <button type="button" className={cn(tool, toolIdle)} disabled={disabled} onClick={onFlip}>
-              <FlipHorizontal2 className="size-4" aria-hidden /> Invertir
-            </button>
-          </div>
-          <Hint>La línea pasa suave por cada punto. Arrástralos; toca uno para elegirlo.</Hint>
-        </div>
-      )}
-    </div>
   );
 }
 

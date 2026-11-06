@@ -173,10 +173,18 @@ export const Norigae = memo(function Norigae({ clip }: { clip: ClipWithVideo }) 
           />
         </svg>
         <div className="absolute inset-x-[20px] top-[60px] flex h-[68px] flex-col items-center justify-center text-center text-washi">
-          <span className="line-clamp-2 font-display text-[14px] font-extrabold leading-[1.15] [text-shadow:0_1px_2px_rgb(0_0_0/0.45)]">
+          {/* The medallion has room for two lines of name and two of song: the song wraps instead of clipping. A
+              longer name (rare) is clamped with the full text in `title`. */}
+          <span
+            title={clip.name}
+            className="line-clamp-2 max-w-full font-display text-[14px] font-extrabold leading-[1.15] [overflow-wrap:anywhere] [text-shadow:0_1px_2px_rgb(0_0_0/0.45)]"
+          >
             {clip.name}
           </span>
-          <span className="mt-1 line-clamp-1 max-w-full text-[10.5px] font-medium text-washi/80">
+          <span
+            title={clip.video?.title}
+            className="mt-0.5 line-clamp-2 max-w-full text-[10.5px] font-medium leading-[1.15] text-washi/80 [overflow-wrap:anywhere]"
+          >
             {clip.video?.title}
           </span>
         </div>

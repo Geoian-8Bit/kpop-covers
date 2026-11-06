@@ -6,6 +6,7 @@ import { jelly } from '@/lib/motion';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { useAuth } from '@/providers/AuthProvider';
 import { useCrew } from '@/providers/CrewProvider';
+import { WhoButton } from '@/features/members/MembersUI';
 import { VersionCheck } from '@/features/nav/version/VersionCheck';
 import { InstallAppButton } from '../InstallApp';
 import { ButtonSkin } from '../ui/ButtonSkin';
@@ -121,6 +122,9 @@ export function MobileBar({ onAdd }: { onAdd: () => void }) {
                       <div className="my-1 h-px bg-line" />
                     </>
                   )}
+                  {/* Who this phone is: here, with the rest of «you» settings (the quick menu keeps only sections). */}
+                  <WhoButton inMenu onPick={() => setMenuOpen(false)} className="font-bold" />
+                  <div className="my-1 h-px bg-line" />
                   <Link
                     role="menuitem"
                     to="/ajustes"

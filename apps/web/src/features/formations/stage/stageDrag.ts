@@ -29,6 +29,9 @@ export interface PropDrag {
   moved: boolean;
 }
 
+/** REQ-08 · The handle index of a straight route's middle (a path's real handles count from 0). */
+export const BEND = -1;
+
 export interface HandleDrag {
   index: number;
   pointerId: number;

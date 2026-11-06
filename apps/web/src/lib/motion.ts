@@ -9,6 +9,12 @@ export const soft: Transition = { type: 'spring', stiffness: 260, damping: 28, m
 
 export const easeOutExpo = [0.16, 1, 0.3, 1] as const;
 
+/**
+ * A card dealt out of a deck: every card leaves together and the ones going farther take longer, so they peel off
+ * one after another like a croupier's spread. `k` = how many places from the deck.
+ */
+export const dealt = (k: number): Transition => ({ type: 'tween', ease: easeOutExpo, duration: 0.22 + k * 0.05 });
+
 export const fadeUp: Variants = {
   hidden: { opacity: 0, y: 14 },
   show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: easeOutExpo } },

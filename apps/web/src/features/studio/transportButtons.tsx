@@ -18,7 +18,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { GapPicker, Popover } from './popover';
 import { useUnlessCovered } from './studioAsleep';
-import { useLongPress } from './useLongPress';
+import { useLongPress } from '@/lib/useLongPress';
 
 const tool =
   'relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3 text-sm font-bold transition-colors disabled:opacity-40';

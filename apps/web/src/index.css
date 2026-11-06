@@ -1,6 +1,9 @@
 @import 'tailwindcss' source('./');
 @import './fonts.css';
 
+/* Touch screens (no mouse with hover): rows that swipe hide the small buttons the swipe replaces (see SwipeRow). */
+@custom-variant touch (@media not all and (hover: hover) and (pointer: fine));
+
 /* ───────────── Tokens · sumi ink & urushi lacquer, washi paper, ai indigo, shu seal vermilion ───────────── */
 @theme {
   --color-sumi-950: #121110;

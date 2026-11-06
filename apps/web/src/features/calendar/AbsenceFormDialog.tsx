@@ -14,9 +14,9 @@ import { useToast } from '@/providers/ToastProvider';
 import { ABSENCE_NOTE_MAX, checkAbsenceDraft, hhmm, type AbsenceCheck, type AbsenceDraft } from './calendarRules';
 
 const KINDS = [
-  { value: 'all_day', label: 'No puede' },
-  { value: 'arrives', label: 'Llega a las…' },
-  { value: 'leaves', label: 'Se va a las…' },
+  { value: 'all_day', label: 'No puede venir' },
+  { value: 'arrives', label: 'Llega tarde' },
+  { value: 'leaves', label: 'Se va antes' },
 ] as const satisfies readonly { value: AbsenceKind; label: string }[];
 
 type FieldName = Extract<AbsenceCheck, { ok: false }>['field'];

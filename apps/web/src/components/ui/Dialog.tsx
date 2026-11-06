@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -25,6 +25,9 @@ interface DialogProps {
 }
 
 const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' } as const;
+/** Pulling the sheet down past this distance (px) or this speed (px/s) closes it. */
+const PULL_CLOSE_PX = 90;
+const PULL_CLOSE_SPEED = 600;
 const FOCUSABLE = [
   'a[href]',
   'button:not([disabled])',
@@ -35,7 +38,17 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export function Dialog({ open, onClose, title, description, children, size = 'md', busy = false, hideClose = false, footer }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  size = 'md',
+  busy = false,
+  hideClose = false,
+  footer,
+}: DialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
@@ -47,6 +60,7 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
   };
   useBackToClose(open, onClose, busy);
   const container = useOverlayContainer(open);
+  const dragControls = useDragControls();
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +81,10 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
       const nodes = focusables();
       // Never the corner X, never a destructive action: confirmations put «Cancelar» first, forms their field.
       const at = initialFocusIndex(
-        nodes.map((node) => ({ autofocus: node.hasAttribute('data-autofocus'), close: node.hasAttribute('data-dialog-close') })),
+        nodes.map((node) => ({
+          autofocus: node.hasAttribute('data-autofocus'),
+          close: node.hasAttribute('data-dialog-close'),
+        })),
       );
       (preferred ?? nodes[at] ?? panel)?.focus();
     });
@@ -136,27 +153,69 @@ export function Dialog({ open, onClose, title, description, children, size = 'md
             initial={{ opacity: 0, y: 36, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: soft }}
             exit={{ opacity: 0, y: 14, scale: 0.98, transition: { duration: 0.15, ease: 'easeIn' } }}
+            // Phones: pull the sheet down by its top to close it (the body keeps its own scroll).
+            drag={busy ? false : 'y'}
+            dragListener={false}
+            dragControls={dragControls}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.7 }}
+            dragSnapToOrigin
+            onDragEnd={(_, info) => {
+              if (info.offset.y > PULL_CLOSE_PX || info.velocity.y > PULL_CLOSE_SPEED) dismiss();
+            }}
           >
-            <div className="shrink-0 px-6 pb-5 pt-6 sm:px-7 sm:pt-7">
+            <div
+              className="relative shrink-0 touch-none px-6 pb-5 pt-6 sm:touch-auto sm:px-7 sm:pt-7"
+              onPointerDown={(event) => {
+                // Not from the X button (or any control in the header): a tap there must stay a tap.
+                if (busy || event.pointerType === 'mouse' || (event.target as HTMLElement).closest('button'))
+                  return;
+                dragControls.start(event);
+              }}
+            >
+              <span
+                aria-hidden
+                className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-washi/25 sm:hidden"
+              />
               <div className="flex items-center gap-3">
                 <span aria-hidden className="size-2.5 shrink-0 rotate-45 bg-shu-500" />
                 {/* The title may wrap on narrow phones; it never pushes the close button out of the panel. */}
-                <h2 id={titleId} className="min-w-0 font-display text-[26px] font-bold leading-tight text-washi">
+                <h2
+                  id={titleId}
+                  className="min-w-0 font-display text-[26px] font-bold leading-tight text-washi"
+                >
                   {title}
                 </h2>
                 <span aria-hidden className="h-px min-w-6 flex-1 bg-gradient-to-r from-washi/25 to-washi/5" />
                 {!hideClose && (
-                  <Button data-dialog-close variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={dismiss} disabled={busy} className="-mr-2 shrink-0">
+                  <Button
+                    data-dialog-close
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Cerrar"
+                    onClick={dismiss}
+                    disabled={busy}
+                    className="-mr-2 shrink-0"
+                  >
                     <X className="size-5" />
                   </Button>
                 )}
               </div>
-              {description && <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>}
+              {description && (
+                <p className="mt-2 pl-[22px] text-sm leading-relaxed text-washi-muted">{description}</p>
+              )}
             </div>
-            <div className={cn('min-h-0 overflow-y-auto overscroll-contain px-6 pt-1 sm:px-7', footer ? 'pb-3' : 'pb-6 sm:pb-7')}>
+            <div
+              className={cn(
+                'min-h-0 overflow-y-auto overscroll-contain px-6 pt-1 sm:px-7',
+                footer ? 'pb-3' : 'pb-6 sm:pb-7',
+              )}
+            >
               {children}
             </div>
-            {footer && <div className="shrink-0 border-t border-line px-6 py-2.5 sm:px-7 sm:py-4">{footer}</div>}
+            {footer && (
+              <div className="shrink-0 border-t border-line px-6 py-2.5 sm:px-7 sm:py-4">{footer}</div>
+            )}
           </motion.div>
         </div>
       )}

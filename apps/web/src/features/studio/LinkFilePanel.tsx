@@ -85,7 +85,7 @@ export function LinkFilePanel({
                 <div className="well flex items-center gap-3 rounded-[12px] p-3">
                   <FileVideo className="size-6 shrink-0 text-kin-300" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold">{video.file_name}</p>
+                    <p className="break-all font-bold">{video.file_name}</p>
                     <p className="text-[13px] text-washi-muted">
                       {video.storage_path
                         ? // A copy is only ever made of a file over the per-file limit (without room in the
@@ -141,7 +141,7 @@ export function LinkFilePanel({
             <div className="well flex items-center gap-3 rounded-[12px] p-3">
               <FileVideo className="size-6 shrink-0 text-kin-300" />
               <div className="min-w-0">
-                <p className="truncate font-bold">{step.file.name}</p>
+                <p className="break-all font-bold">{step.file.name}</p>
                 <p className="tabular text-[13px] text-washi-muted">
                   {(step.file.size / 1_048_576).toFixed(1).replace('.', ',')} MB
                   {step.duration ? ` · ${formatTime(step.duration)}` : ''}

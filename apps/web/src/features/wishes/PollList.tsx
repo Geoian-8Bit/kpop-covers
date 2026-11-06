@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { guardNav } from '@/components/AppShell';
 import { Seal } from '@/components/Seal';
 import { Button } from '@/components/ui/Button';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { usePollOptions, usePolls, usePollVotes, useWishes } from '@/data/wishes';
 import { thumbCors } from '@/lib/thumbCors';
@@ -99,14 +100,19 @@ export function PollList({ onCreate }: { onCreate: () => void }) {
                       className="group flex min-h-[96px] items-center gap-3 rounded-[12px] border border-line bg-sumi-900/60 px-4 py-3 transition-colors hover:border-line-strong hover:bg-washi/[0.04]"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-display text-[18px] font-bold text-washi">
+                        <span className="block break-words font-display text-[18px] font-bold leading-snug text-washi">
                           {poll.title}
                         </span>
-                        <span className="mt-0.5 block truncate text-[13px] text-washi-muted">
-                          {VOTE_TYPE_COPY[poll.vote_type].label} · {pollOptions.length} candidatas ·{' '}
-                          {voters === 1 ? '1 persona ha votado' : `${voters} personas han votado`}
+                        <span className="mt-0.5 block text-[13px] text-washi-muted">
+                          <MetaLine
+                            parts={[
+                              VOTE_TYPE_COPY[poll.vote_type].label,
+                              `${pollOptions.length} candidatas`,
+                              voters === 1 ? '1 persona ha votado' : `${voters} personas han votado`,
+                            ]}
+                          />
                         </span>
-                        <span className="mt-1 block truncate text-[12px] font-bold text-kin-300">
+                        <span className="mt-1 block break-words text-[12px] font-bold text-kin-300">
                           {winner ? `Ganadora: ${winner.title}` : closingLabel(poll, now)}
                         </span>
                       </span>

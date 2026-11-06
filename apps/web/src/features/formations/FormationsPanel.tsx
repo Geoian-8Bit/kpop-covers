@@ -1,7 +1,7 @@
 import type { Video } from '@coverscape/shared';
 import { AnimatePresence, motion } from 'motion/react';
 import { Copy, Pencil, Plus, Trash2, Users } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
@@ -12,14 +12,11 @@ import {
   useFormationPlans,
   type FormationPlanSummary,
 } from '@/data/formations';
-import { cn } from '@/lib/cn';
+import { ActionMenu } from '@/features/wishes/ActionMenu';
 import { jelly } from '@/lib/motion';
 import { useToast } from '@/providers/ToastProvider';
-import { PlanNameDialog, NewPlanDialog } from './PlanDialogs';
+import { DeletePlanDialog, NewPlanDialog, PlanNameDialog } from './PlanDialogs';
 import { formationPath } from './formationLinks';
-
-const rowAction =
-  'relative grid size-9 shrink-0 place-items-center rounded-[8px] text-washi-subtle before:absolute before:-inset-1 before:content-[""] hover:bg-washi/[0.06] hover:text-washi';
 
 /** REQ-06 · The studio's «Formaciones» tab: the plans of this song, a new one, rename, duplicate and delete. */
 export function FormationsPanel({ video }: { video: Video }) {
@@ -30,14 +27,7 @@ export function FormationsPanel({ video }: { video: Video }) {
   const remove = useDeleteFormationPlan();
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<FormationPlanSummary | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const armedAt = useRef(0);
-
-  useEffect(() => {
-    if (!confirmId) return;
-    const timer = setTimeout(() => setConfirmId(null), 2600);
-    return () => clearTimeout(timer);
-  }, [confirmId]);
+  const [deleting, setDeleting] = useState<FormationPlanSummary | null>(null);
 
   const list = plans.data ?? [];
 
@@ -50,13 +40,7 @@ export function FormationsPanel({ video }: { video: Video }) {
   }
 
   function onDelete(plan: FormationPlanSummary) {
-    if (confirmId !== plan.id) {
-      armedAt.current = performance.now();
-      setConfirmId(plan.id);
-      return;
-    }
-    if (performance.now() - armedAt.current < 400) return;
-    setConfirmId(null);
+    setDeleting(null);
     remove
       .mutateAsync({ planId: plan.id, videoId: video.id })
       .then(() => toast(`«${plan.name}» borrado`, 'info'))
@@ -103,80 +87,71 @@ export function FormationsPanel({ video }: { video: Video }) {
       ) : (
         <ul className="-mx-1 mt-3 space-y-1 px-1 pb-1">
           <AnimatePresence initial={false}>
-            {list.map((plan) => {
-              const confirming = confirmId === plan.id;
-              return (
-                <motion.li
-                  key={plan.id}
-                  layout
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: -30, transition: { duration: 0.16 } }}
-                  transition={jelly}
-                >
-                  <div className="flex items-center gap-2 rounded-[12px] p-2 hover:bg-washi/[0.04]">
-                    <button
-                      type="button"
-                      onClick={() => navigate(formationPath(video.id, plan.id))}
-                      className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left transition-[scale] duration-150 active:scale-[0.98]"
-                    >
-                      <span className="grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] bg-ai-600 font-display text-lg font-extrabold text-washi shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]">
-                        陣
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{plan.name}</span>
-                        <span className="tabular mt-0.5 flex items-center gap-1.5 whitespace-nowrap font-mono text-xs text-washi-muted">
+            {list.map((plan) => (
+              <motion.li
+                key={plan.id}
+                layout
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -30, transition: { duration: 0.16 } }}
+                transition={jelly}
+              >
+                {/* The name and its details get the whole width; the actions live behind one «⋯» button. */}
+                <div className="flex items-center gap-1 rounded-[12px] p-2 hover:bg-washi/[0.04]">
+                  <button
+                    type="button"
+                    onClick={() => navigate(formationPath(video.id, plan.id))}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left transition-[scale] duration-150 active:scale-[0.98]"
+                  >
+                    <span className="grid size-10 shrink-0 rotate-[-3deg] place-items-center rounded-[5px] bg-ai-600 font-display text-lg font-extrabold text-washi shadow-[inset_0_0_0_3px_rgb(0_0_0/0.08),inset_0_0_0_4px_rgb(243_236_223/0.4)]">
+                      陣
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words font-medium leading-snug">{plan.name}</span>
+                      {/* Wraps on a narrow phone instead of being cut. */}
+                      <span className="tabular mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-xs text-washi-muted">
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
                           <Users className="size-3" aria-hidden />
                           {plan.members.length}
-                          <span className="text-washi-subtle">·</span>
+                        </span>
+                        {/* Each «·» travels with what follows it, so a wrapped line never ends in one. */}
+                        <span className="whitespace-nowrap">
+                          <span className="text-washi-subtle" aria-hidden>
+                            ·{' '}
+                          </span>
                           {plan.formationCount === 1 ? '1 formación' : `${plan.formationCount} formaciones`}
-                          <span className="text-washi-subtle">·</span>
+                        </span>
+                        <span className="whitespace-nowrap">
+                          <span className="text-washi-subtle" aria-hidden>
+                            ·{' '}
+                          </span>
                           {plan.stage_width}×{plan.stage_depth} m
                         </span>
                       </span>
-                    </button>
-                    <motion.button
-                      type="button"
-                      aria-label={`Renombrar ${plan.name}`}
-                      title="Renombrar"
-                      onClick={() => setRenaming(plan)}
-                      whileTap={{ scale: 0.85, rotate: -8 }}
-                      transition={jelly}
-                      className={rowAction}
-                    >
-                      <Pencil className="size-4" />
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      aria-label={`Duplicar ${plan.name}`}
-                      title="Duplicar"
-                      disabled={duplicate.isPending}
-                      onClick={() => onDuplicate(plan)}
-                      whileTap={{ scale: 0.85 }}
-                      transition={jelly}
-                      className={cn(rowAction, 'disabled:opacity-40')}
-                    >
-                      <Copy className="size-4" />
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      layout
-                      aria-label={confirming ? `Confirmar borrar ${plan.name}` : `Borrar ${plan.name}`}
-                      onClick={() => onDelete(plan)}
-                      whileTap={{ scale: 0.85 }}
-                      transition={jelly}
-                      className={cn(
-                        'relative flex h-9 shrink-0 items-center justify-center gap-1 rounded-[8px] text-xs font-medium before:absolute before:-inset-1 before:content-[""]',
-                        confirming ? 'bg-enji-500 px-3 text-washi' : 'w-9 text-washi-subtle hover:bg-washi/[0.06] hover:text-enji-300',
-                      )}
-                    >
-                      <Trash2 className="size-4" />
-                      {confirming && <span>Borrar</span>}
-                    </motion.button>
-                  </div>
-                </motion.li>
-              );
-            })}
+                    </span>
+                  </button>
+                  <ActionMenu
+                    className="shrink-0"
+                    label={`Acciones de ${plan.name}`}
+                    actions={[
+                      { label: 'Renombrar', icon: <Pencil className="size-4" aria-hidden />, onSelect: () => setRenaming(plan) },
+                      {
+                        label: 'Duplicar',
+                        icon: <Copy className="size-4" aria-hidden />,
+                        onSelect: () => onDuplicate(plan),
+                        disabled: duplicate.isPending,
+                      },
+                      {
+                        label: 'Borrar',
+                        icon: <Trash2 className="size-4" aria-hidden />,
+                        onSelect: () => setDeleting(plan),
+                        tone: 'danger',
+                      },
+                    ]}
+                  />
+                </div>
+              </motion.li>
+            ))}
           </AnimatePresence>
         </ul>
       )}
@@ -188,6 +163,7 @@ export function FormationsPanel({ video }: { video: Video }) {
         onCreated={(plan) => navigate(formationPath(video.id, plan.id))}
       />
       <PlanNameDialog plan={renaming} onClose={() => setRenaming(null)} />
+      <DeletePlanDialog plan={deleting} onClose={() => setDeleting(null)} onConfirm={onDelete} />
     </aside>
   );
 }

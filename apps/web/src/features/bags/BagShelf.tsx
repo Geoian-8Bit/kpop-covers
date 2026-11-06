@@ -54,13 +54,13 @@ function Name({ bag, className }: { bag: BagCardData; className?: string }) {
     <>
       <span
         className={cn(
-          'line-clamp-2 break-words px-1.5 text-center font-display text-[16px] font-bold leading-tight text-washi',
+          'break-words px-1.5 text-center font-display text-[16px] font-bold leading-tight text-balance text-washi',
           className,
         )}
       >
         {bag.name}
       </span>
-      <span className="mt-0.5 line-clamp-2 px-1.5 text-center text-[12px] leading-snug text-washi-subtle">
+      <span className="mt-0.5 break-words px-1.5 text-center text-[12px] leading-snug text-washi-subtle">
         {meta(bag)}
       </span>
     </>

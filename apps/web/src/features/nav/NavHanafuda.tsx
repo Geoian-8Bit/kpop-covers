@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { cn } from '@/lib/cn';
-import { jelly, snappy, soft } from '@/lib/motion';
+import { dealt, jelly, snappy, soft } from '@/lib/motion';
 import { handLayout } from './navRules';
 import {
   CurrentGlyph,
@@ -16,9 +16,9 @@ import {
 } from './quickNavCore';
 
 /**
- * P1 · The quick menu «Hanafuda» (chosen by the product owner): a hand of flower cards fans out of the button. Slide
- * the thumb over them: the card under it rises; let go and it flies to the centre and takes you there. A plain tap
- * works the same.
+ * P1 · The quick menu «Hanafuda» (chosen by the product owner): the button is a deck of flower cards, standing
+ * straight; opening it, a croupier spreads the cards out of it towards the left. Slide the thumb over them: the card
+ * under it rises; let go and it flies to the centre and takes you there. A plain tap works the same.
  */
 export default function NavHanafuda() {
   const api = useQuickNav();
@@ -29,7 +29,7 @@ export default function NavHanafuda() {
       <QuickNavTrigger
         api={api}
         face={
-          <span className="relative grid h-14 w-11 rotate-[-8deg] place-items-center rounded-[7px] border-2 border-kin-400 bg-enji-700 shadow-[0_10px_20px_-8px_rgb(0_0_0/0.95)]">
+          <span className="relative grid h-14 w-11 place-items-center rounded-[7px] border-2 border-kin-400 bg-enji-700 shadow-[0_10px_20px_-8px_rgb(0_0_0/0.95)]">
             <span aria-hidden className="absolute inset-[3px] rounded-[4px] border border-kin-300/40" />
             <CurrentGlyph api={api} className="text-[20px] text-washi" />
           </span>
@@ -43,7 +43,10 @@ const FLY_MS = 340;
 
 function Hand({ api }: { api: QuickNavApi }) {
   const stage = api.stage!;
-  const { cardW, cardH, cards } = handLayout(api.entries.length, stage.w, stage.buttonTop);
+  const { cardW, cardH, cards } = handLayout(api.entries.length, stage.w, stage.ax, stage.ay, api.top);
+  const n = cards.length;
+  /** The band the hand takes: from above the highest card (room to lift one) down to the bottom of the screen. */
+  const offsetTop = Math.max(0, Math.min(...cards.map((c) => c.y)) - cardH / 2 - 40);
   // Under 66 px (360 px screens, a zoomed page) a card can't hold kanji, icon and a two-line name: the icon goes.
   const narrow = cardW < 66;
   const [lifted, setLiftedState] = useState<number | null>(null);
@@ -134,7 +137,7 @@ function Hand({ api }: { api: QuickNavApi }) {
       // No name of its own: the dialog around it is already «Secciones».
       role="group"
       className="pointer-events-auto absolute inset-x-0 touch-none"
-      style={{ top: Math.max(0, cards[0]!.y - cardH), height: cardH * 2 + 40 }}
+      style={{ top: offsetTop, bottom: 0 }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -152,7 +155,8 @@ function Hand({ api }: { api: QuickNavApi }) {
     >
       {api.entries.map((entry, i) => {
         const place = cards[i]!;
-        const offsetTop = Math.max(0, cards[0]!.y - cardH);
+        /** Places from the deck: 0 next to the button. */
+        const k = n - 1 - i;
         const up = lifted === i && flying == null;
         const isFlying = flying === i;
         const target = isFlying
@@ -166,24 +170,40 @@ function Hand({ api }: { api: QuickNavApi }) {
                 scale: up ? 1.08 : 1,
                 opacity: 1,
               };
-        const from = { x: stage.ax - cardW / 2, y: stage.ay - cardH / 2 - offsetTop, rotate: 0, scale: 0.35, opacity: 0 };
+        // Out of the deck: each card starts tucked under the button, straight and at its size.
+        const from = { x: stage.ax - cardW / 2, y: stage.ay - cardH / 2 - offsetTop, rotate: 0, scale: 44 / cardW, opacity: 0 };
         return (
           <motion.div
             key={entry.id}
             data-card={i}
             className="absolute left-0 top-0"
-            style={{ width: cardW, height: cardH, zIndex: isFlying ? 30 : up ? 20 : i }}
+            // Farther from the deck lies on top, so the next card never covers a name.
+            style={{ width: cardW, height: cardH, zIndex: isFlying ? 30 : up ? 20 : k + 1 }}
             initial={reduce ? { ...target, opacity: 0 } : from}
             animate={target}
-            exit={reduce ? { opacity: 0, transition: { duration: 0.15 } } : { ...from, transition: snappy }}
-            transition={reduce ? { duration: 0.2 } : isFlying ? soft : { ...jelly, delay: flying == null && !up ? i * 0.03 : 0 }}
+            exit={
+              reduce
+                ? { opacity: 0, transition: { duration: 0.15 } }
+                : // Gathered back into the deck, the far ones first.
+                  { ...from, opacity: [1, 1, 0], transition: { ...snappy, delay: (n - 1 - k) * 0.02, opacity: { duration: 0.22, times: [0, 0.7, 1] } } }
+            }
+            transition={
+              reduce
+                ? { duration: 0.2 }
+                : isFlying
+                  ? soft
+                  : flying != null || up || lifted != null
+                    ? jelly
+                    : { ...dealt(k), opacity: { duration: 0.08 } }
+            }
           >
             <EntryLink
               api={api}
               entry={entry}
               delay={reduce ? 0 : FLY_MS}
               onPicked={() => setFlying(i)}
-              onFocus={() => setLifted(i)}
+              // Keyboard focus lifts its card; the focus put on your section when the menu opens doesn't (it would hide a name).
+              onFocus={(e) => e.currentTarget.matches(':focus-visible') && setLifted(i)}
               aria-label={entry.dot ? `${entry.label}. Hay cambios sin ver` : entry.label}
               className={cn(
                 narrow ? 'px-0.5' : 'px-1',

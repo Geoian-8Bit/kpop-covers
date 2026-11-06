@@ -1,6 +1,7 @@
 import { Page } from '@/components/AppShell';
 import { Button } from '@/components/ui/Button';
 import { ButtonSkin } from '@/components/ui/ButtonSkin';
+import { MetaLine } from '@/components/ui/MetaLine';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { useClips } from '@/data/clips';
@@ -329,12 +330,16 @@ export function StudioPage() {
               <ButtonSkin kind="back" />
             </Link>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate font-display text-[20px] font-bold leading-tight sm:text-[26px]">
+              <h1 className="break-words font-display text-[20px] font-bold leading-tight sm:text-[26px]">
                 {current.title}
               </h1>
-              <p className="truncate text-sm text-washi-muted">
-                {current.artist || 'Artista sin especificar'} ·{' '}
-                {current.source === 'youtube' ? 'YouTube' : current.file_name}
+              <p className="text-sm text-washi-muted">
+                <MetaLine
+                  parts={[
+                    current.artist || 'Artista sin especificar',
+                    current.source === 'youtube' ? 'YouTube' : current.file_name,
+                  ]}
+                />
               </p>
             </div>
             {current.source === 'youtube' && current.youtube_id && (
