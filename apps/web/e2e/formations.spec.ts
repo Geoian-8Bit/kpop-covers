@@ -16,7 +16,7 @@ async function newPlanWithFormation(page: Page): Promise<string> {
 
   await expect(page).toHaveURL(/\/formaciones\//);
   await expect(page.getByRole('heading', { level: 1, name: 'PRUEBA plan' })).toBeVisible();
-  await page.getByRole('button', { name: 'Añade la primera formación' }).click();
+  await page.getByRole('button', { name: 'Añadir la primera formación' }).click();
   await expect(page.getByRole('button', { name: /^Formación 1 en / })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Guardado' })).toBeVisible();
   return page.url().split('/formaciones/')[1]!;

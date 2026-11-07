@@ -65,13 +65,7 @@ describe('trapFocusIndex', () => {
 describe('handLayout', () => {
   /** The button's centre: bottom right, 16 px in, 56 px round. */
   const deck = (w: number, h: number) => ({ ax: w - 44, ay: h - 44 });
-  /** Horizontal extent of a tilted card. */
-  const half = (cardW: number, cardH: number, rotate: number) => {
-    const r = (Math.abs(rotate) * Math.PI) / 180;
-    return (cardW / 2) * Math.cos(r) + (cardH / 2) * Math.sin(r);
-  };
-
-  it('keeps every tilted card on screen, under the top bar and no lower than the button', () => {
+  it('keeps every card on screen, under the top bar and no lower than the button', () => {
     for (const [w, h] of [
       [320, 640],
       [360, 740],
@@ -83,26 +77,34 @@ describe('handLayout', () => {
       const { cardW, cardH, cards } = handLayout(6, w, ax, ay, 76);
       expect(cardH).toBeGreaterThan(cardW);
       for (const card of cards) {
-        expect(card.x - half(cardW, cardH, card.rotate)).toBeGreaterThanOrEqual(4);
-        expect(card.x + half(cardW, cardH, card.rotate)).toBeLessThanOrEqual(w - 4);
-        expect(card.y - cardH / 2).toBeGreaterThanOrEqual(76 - cardH * 0.1);
+        expect(card.x - cardW / 2).toBeGreaterThanOrEqual(4);
+        expect(card.x + cardW / 2).toBeLessThanOrEqual(w - 4);
+        expect(card.y - cardH / 2).toBeGreaterThanOrEqual(76);
         expect(card.y + cardH / 2).toBeLessThanOrEqual(ay + 28 + 0.5);
       }
     }
   });
 
-  it('spreads out of the deck to the left: the last card next to the button, each one higher and more tilted', () => {
-    const { ax, ay } = deck(390, 844);
-    const { cardW, cards } = handLayout(6, 390, ax, ay, 76);
-    expect(cards[5]!.x).toBeLessThan(ax);
-    expect(cards[5]!.x + cardW / 2).toBeGreaterThan(ax - 22);
-    for (let i = 1; i < cards.length; i++) {
-      expect(cards[i - 1]!.x).toBeLessThan(cards[i]!.x);
-      expect(cards[i - 1]!.y).toBeLessThan(cards[i]!.y);
-      expect(cards[i - 1]!.rotate).toBeLessThan(cards[i]!.rotate);
-      // Neighbours overlap like a spread deck, but most of each card shows.
-      expect(cards[i]!.x - cards[i - 1]!.x).toBeGreaterThan(cardW * 0.6);
-      expect(cards[i]!.x - cards[i - 1]!.x).toBeLessThan(cardW);
-    }
+  for (const [w, h] of [
+    [360, 740],
+    [844, 390],
+  ] as const) {
+    it(`lays a straight row out of the deck to the left, side by side (${w}×${h})`, () => {
+      const { ax, ay } = deck(w, h);
+      const { cardW, cards } = handLayout(6, w, ax, ay, 76);
+      expect(cards[5]!.x).toBeLessThan(ax + 28);
+      for (let i = 1; i < cards.length; i++) {
+        expect(cards[i]!.rotate).toBe(0);
+        expect(cards[i]!.y).toBe(cards[0]!.y);
+        // Never over each other: every name shows whole.
+        expect(cards[i]!.x - cards[i - 1]!.x).toBeGreaterThanOrEqual(cardW);
+      }
+    });
+  }
+
+  it('sits beside the deck when the phone is on its side', () => {
+    const { ax, ay } = deck(844, 390);
+    const { cardW, cards } = handLayout(6, 844, ax, ay, 76);
+    expect(cards[5]!.x + cardW / 2).toBeLessThanOrEqual(ax - 28);
   });
 });

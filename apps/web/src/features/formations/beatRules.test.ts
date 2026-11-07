@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addTap, beatsBetween, bpmFromTaps, countAt, nearestBeat, snapFormationsToBeats, validBpm } from './beatRules';
+import { addTap, beatsBetween, bpmFromTaps, countAt, eightLabelStep, nearestBeat, snapFormationsToBeats, validBpm } from './beatRules';
 
 describe('bpmFromTaps', () => {
   it('needs at least 4 taps', () => {
@@ -56,5 +56,16 @@ describe('beats', () => {
       ['c', 2],
       ['b', 2.1],
     ]);
+  });
+});
+
+describe('eightLabelStep', () => {
+  it('numbers every eight when they fit', () => {
+    expect(eightLabelStep(57)).toBe(1);
+    expect(eightLabelStep(80)).toBe(1);
+  });
+  it('skips eights on a long stretch so numbers never touch', () => {
+    expect(eightLabelStep(342)).toBe(5);
+    expect(eightLabelStep(88)).toBe(2);
   });
 });

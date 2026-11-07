@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE } from '../support/seed';
+import { pressRowButton } from '../support/swipeRow';
 import { atWidths, cssFrames, FRAME_TIMES, snap } from '../support/visual';
 import { openStudio, shortClips, skipWithoutWebAudio, studioVideo } from '../flows/studio/studio';
 
@@ -168,7 +169,7 @@ test('diálogo guardar clip con el tramo repetido (aviso)', async ({ page }) => 
 
 test('diálogo editar clip', async ({ page }) => {
   await openFile(page);
-  await page.getByRole('button', { name: 'Editar Giro final' }).click();
+  await pressRowButton(page, 'Editar Giro final');
   await expect(page.getByRole('dialog', { name: 'Editar clip' })).toBeVisible();
   await shoot(page, 'estudio-dialogo-editar');
 });
@@ -185,7 +186,7 @@ test('clip activo (la píldora) y clip en borrado', async ({ page }) => {
   await page.waitForTimeout(3000);
   await shoot(page, 'estudio-clip-activo', { fullPage: true });
   // The delete confirmation disarms itself after a few seconds: one picture, at the project's own width.
-  await page.getByRole('button', { name: 'Borrar Giro final' }).click();
+  await pressRowButton(page, 'Borrar Giro final');
   await expect(page.getByRole('button', { name: 'Confirmar borrar Giro final' })).toBeVisible();
   await snap(page, `estudio-clip-borrar-${page.viewportSize()!.width}`, { fullPage: true });
 });

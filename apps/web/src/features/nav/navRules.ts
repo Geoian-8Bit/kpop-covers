@@ -49,46 +49,38 @@ export interface HandLayout {
   cards: CardPlace[];
 }
 
-/** Horizontal step between neighbours, as a share of a card's width (the rest overlaps, like a spread deck). */
-const STEP_X = 0.66;
-/** Vertical climb per card, as a share of a card's height. */
-const STEP_Y = 0.34;
-/** Tilt of the card next to the deck and of the last one (degrees, leaning left). */
-const TILT_NEAR = 3;
-const TILT_FAR = 14;
-/** Half-width of the deck (the 44 px button card) plus the strip a card stays tucked under it. */
-const DECK_TUCK = 14;
-const EDGE = 9;
+/** Gap between neighbouring cards (px): they lie side by side, never over each other's names. */
+const GAP = 4;
+/** Half of the deck (the 56 px button) and the margin kept from the screen's sides. */
+const DECK_HALF = 28;
+const EDGE = 6;
+const MAX_W = 80;
+/** Narrower than this, the row can't sit beside the deck: it lies just above it, across the screen. */
+const MIN_BESIDE = 60;
 
 /**
- * Cards spread like a croupier opening a deck: they slide out from under the button (the deck, bottom right, at
- * `ax`,`ay`) towards the left, each one a little higher and more tilted than the last. `cards[0]` lies farthest
- * left (reading order), the last next to the deck. Every card, tilted, keeps `EDGE` px from the sides and stays
- * below `top` (the phone's top bar).
+ * Cards spread like a croupier sliding a deck open on the table: a straight horizontal row, no tilt, coming out of
+ * the button (the deck, bottom right, at `ax`,`ay`) towards the left. With room (a phone on its side) the row lies
+ * level with the deck, beside it; on a narrow phone it lies just above it, its right edge flush with the deck's.
+ * `cards[0]` lies farthest left (reading order), the last next to the deck. Every card keeps `EDGE` px from the
+ * sides and stays below `top` (the phone's top bar).
  */
 export function handLayout(n: number, w: number, ax: number, ay: number, top = 0): HandLayout {
-  const tiltFar = (TILT_FAR * Math.PI) / 180;
-  // Room from the deck to the left edge; the last card's tilt pushes its corner out by about a quarter of its width.
-  const reach = Math.max(0, ax - DECK_TUCK - EDGE);
-  const cardW = Math.round(Math.max(44, Math.min(80, reach / (1 + STEP_X * Math.max(0, n - 1) + 1.55 * Math.sin(tiltFar)))));
-  const cardH = Math.round(cardW * 1.55);
-  // With room to spare (a phone on its side) the cards spread wider and climb less; on a narrow phone they overlap
-  // more and climb more, so each name still shows.
-  const spare = n > 1 ? (reach - cardW * (1 + 1.55 * Math.sin(tiltFar))) / (n - 1) : 0;
-  const stepX = Math.max(cardW * STEP_X, Math.min(cardW * 0.92, spare));
-  const open = (stepX / cardW - STEP_X) / (0.92 - STEP_X);
-  const bottom = ay + 28;
-  const climb = Math.max(0, Math.min(cardH * STEP_Y * (1 - 0.6 * open) * (n - 1), bottom - cardH - top - 8));
+  const count = Math.max(1, n);
+  const fit = (room: number) => (room - GAP * (count - 1)) / count;
+  const besideW = fit(ax - DECK_HALF - GAP - EDGE);
+  const beside = besideW >= MIN_BESIDE;
+  const right = beside ? ax - DECK_HALF - GAP : Math.min(w - EDGE, ax + DECK_HALF);
+  const cardW = Math.floor(Math.max(36, Math.min(MAX_W, beside ? besideW : fit(right - EDGE))));
+  // Narrow cards (a phone upright) drop the icon and give the name two lines: a taller card holds them.
+  const cardH = Math.round(cardW * (cardW < 66 ? 1.8 : 1.7));
+  const y = beside
+    ? Math.max(top + cardH / 2 + 8, ay + DECK_HALF - cardH / 2)
+    : Math.max(top + cardH / 2 + 8, ay - DECK_HALF - 10 - cardH / 2);
   const cards = Array.from({ length: n }, (_, i) => {
     // k: 0 next to the deck … n-1 farthest left.
     const k = n - 1 - i;
-    const t = n > 1 ? k / (n - 1) : 0;
-    return {
-      x: Math.min(w - EDGE - cardW / 2, ax - DECK_TUCK - cardW / 2 - k * stepX),
-      // A touch steeper towards the end, like a ribbon spread curling up.
-      y: bottom - cardH / 2 - climb * t * (0.7 + 0.3 * t),
-      rotate: -(TILT_NEAR + (TILT_FAR - TILT_NEAR) * t),
-    };
+    return { x: right - cardW / 2 - k * (cardW + GAP), y, rotate: 0 };
   });
   return { cardW, cardH, cards };
 }

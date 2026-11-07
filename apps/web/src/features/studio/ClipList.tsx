@@ -212,8 +212,8 @@ const ClipRow = memo(function ClipRow({
       <SwipeRow actions={swipeActions} hint={index === 0} className="rounded-[12px]">
         <div
           className={cn(
-            // A narrow column (phones) drops the row's actions to a second line, so the name never gets squeezed.
-            'relative flex flex-wrap items-center gap-2 rounded-[12px] p-2',
+            // One line of row: on touch only the pin shows (the rest is in the swipe), so the name keeps the width.
+            'relative flex items-center gap-2 rounded-[12px] p-2',
             !active && 'hover:bg-washi/[0.04]',
           )}
         >
@@ -221,7 +221,7 @@ const ClipRow = memo(function ClipRow({
             type="button"
             onClick={() => onApply(clip)}
             disabled={!ready}
-            className="flex min-w-[11rem] flex-1 items-center gap-3 rounded-[10px] text-left transition-[opacity,scale] duration-150 active:scale-[0.98] disabled:opacity-60"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-[10px] text-left transition-[opacity,scale] duration-150 active:scale-[0.98] disabled:opacity-60"
             aria-current={active || undefined}
           >
             <span
@@ -233,9 +233,11 @@ const ClipRow = memo(function ClipRow({
               {active ? <Repeat className="size-4 text-sumi-900" /> : null}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block break-words font-medium leading-snug">{clip.name}</span>
-              {/* Wraps between pieces (range · speed · marks) on a narrow column, never clipped. */}
-              <span className="tabular mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-xs text-washi-muted">
+              {/* Two lines of name at most (the whole name in `title`); the meta stays on one line. */}
+              <span title={clip.name} className="line-clamp-2 break-words font-medium leading-snug">
+                {clip.name}
+              </span>
+              <span className="tabular mt-0.5 flex items-center gap-x-1.5 overflow-hidden whitespace-nowrap font-mono text-xs text-washi-muted">
                 <span className="whitespace-nowrap">
                   {formatTime(clip.start_seconds)}–{formatTime(clip.end_seconds)}
                 </span>

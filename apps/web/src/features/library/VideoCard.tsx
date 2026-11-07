@@ -170,32 +170,33 @@ export const VideoCard = memo(function VideoCard({
             >
               <div className="@container min-w-0 flex-1">
                 <h3
+                  title={video.title}
                   className={cn(
-                    'font-display font-bold leading-snug text-washi [overflow-wrap:anywhere]',
-                    featured ? 'text-[21px] sm:text-[26px]' : 'text-[16px] sm:text-[17px]',
+                    'line-clamp-2 font-display font-bold leading-snug text-washi [overflow-wrap:anywhere]',
+                    featured ? 'text-[19px] sm:text-[26px]' : 'text-[15px] sm:text-[17px]',
                   )}
                 >
                   {video.title}
                 </h3>
-                {/* P38 · Source + artist wrap and «con archivo» drops to its own line when a phone row has no room
-                for it: nothing here is a single line that can't fit, and nothing is cut. */}
-                <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px] text-washi-muted">
-                  <span className="flex min-w-0 max-w-full items-center gap-1.5">
+                {/* P38 · One line: the artist ends in «…» (whole in `title`), «con archivo» keeps only its icon in a
+                narrow column and the clip count never wraps. */}
+                <p className="mt-0.5 flex items-center gap-x-2 text-[12.5px] text-washi-muted sm:mt-1 sm:text-[13px]">
+                  <span title={video.artist || undefined} className="flex min-w-0 items-center gap-1.5">
                     {video.source === 'youtube' ? (
                       <Youtube className="size-3.5 shrink-0 text-enji-300" aria-label="YouTube" />
                     ) : (
                       <HardDrive className="size-3.5 shrink-0 text-kin-300" aria-label="Archivo" />
                     )}
-                    <span className="min-w-0 [overflow-wrap:anywhere]">
-                      {video.artist || 'Artista sin especificar'}
-                    </span>
+                    <span className="truncate">{video.artist || 'Artista sin especificar'}</span>
                   </span>
                   {hasLinkedFile(video) && (
-                    <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-kin-300/15 px-2 py-0.5 text-[11px] font-bold text-kin-300">
+                    <span
+                      title="Con archivo"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-kin-300/15 px-2 py-0.5 text-[11px] font-bold text-kin-300"
+                    >
                       <HardDrive className="size-3 shrink-0" aria-hidden />
-                      {/* Too narrow for the words (small phones, big system font): the icon stays, the words go to the
-                      screen reader only — never a clipped «con arc…». */}
-                      <span className="whitespace-nowrap @max-[6.5rem]:sr-only">con archivo</span>
+                      {/* Too narrow for the words (phone rows): the icon stays, the words go to the screen reader. */}
+                      <span className="whitespace-nowrap @max-[16rem]:sr-only">con archivo</span>
                     </span>
                   )}
                   {/* Phone rows: the clip count joins this line so the title keeps the column's width. */}

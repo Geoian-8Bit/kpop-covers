@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE, guardConsole } from '../../support/seed';
+import { pressRowButton } from '../../support/swipeRow';
 import { testVideo } from '../../support/testVideo';
 import { allRows, liveRows, openApp, ready } from './support';
 
@@ -119,14 +120,14 @@ test('subir un archivo guarda el vídeo y lo abre', async ({ page, browser }) =>
 test('archivar un vídeo lo quita de la biblioteca', async ({ page }) => {
   const guard = guardConsole(page);
   await openApp(page);
-  await page.getByRole('button', { name: 'Eliminar Dynamite' }).click();
+  await pressRowButton(page, 'Eliminar Dynamite');
   const dialog = page.getByRole('dialog', { name: '¿Eliminar vídeo?' });
   await expect(dialog).toContainText('Dynamite');
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
   await expect(dialog).toBeHidden();
   expect((await liveRows(page, 'videos')).length).toBe(30);
 
-  await page.getByRole('button', { name: 'Eliminar Dynamite' }).click();
+  await pressRowButton(page, 'Eliminar Dynamite');
   await dialog.getByRole('button', { name: 'Eliminar' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('button', { name: 'Eliminar Dynamite' })).toHaveCount(0);

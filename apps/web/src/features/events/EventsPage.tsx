@@ -104,6 +104,7 @@ export function EventsPage() {
 
 function EventCard({ event, index, now, past }: { event: EventWithCount; index: number; now: Date; past?: boolean }) {
   const date = new Date(event.starts_at);
+  const weekday = date.toLocaleDateString('es-ES', { weekday: 'long' });
   const c = countdown(event.starts_at, now);
   const queryClient = useQueryClient();
   return (
@@ -129,20 +130,32 @@ function EventCard({ event, index, now, past }: { event: EventWithCount; index: 
           <span className="font-display text-[24px] font-extrabold leading-9">{date.getDate()}</span>
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block break-words font-display text-[18px] font-bold leading-snug text-washi">
+          <span title={event.name} className="line-clamp-2 break-words font-display text-[17px] font-bold leading-snug text-washi">
             {event.name}
           </span>
-          {/* Long dates («Domingo, 1 de noviembre de 2026 · 18:30») wrap before the time, never cut. */}
-          <span className="mt-0.5 block text-[13px] text-washi-muted">
-            <MetaLine parts={eventDateLabel(event.starts_at, past).split(' · ')} />
+          {/* One line. Phones: the leaf already shows day and month, so only the weekday, the time (and the
+              year of a past one); the whole date is in `title`. */}
+          <span className="mt-0.5 block text-[13px] text-washi-muted" title={eventDateLabel(event.starts_at, past)}>
+            <span className="sm:hidden">
+              <MetaLine
+                parts={[
+                  weekday.charAt(0).toUpperCase() + weekday.slice(1),
+                  date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+                  past ? String(date.getFullYear()) : null,
+                ]}
+              />
+            </span>
+            <span className="max-sm:hidden">
+              <MetaLine parts={eventDateLabel(event.starts_at, past).split(' · ')} />
+            </span>
           </span>
-          <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 text-[12px] text-washi-subtle">
-            {!past && <span className={cn('font-bold', c.kind === 'today' ? 'text-shu-400' : 'text-kin-300')}>{countdownHeadline(c)}</span>}
-            <span>{event.songs === 1 ? '1 canción' : `${event.songs} canciones`}</span>
+          <span className="mt-0.5 flex min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap text-[12px] text-washi-subtle">
+            {!past && <span className={cn('shrink-0 font-bold', c.kind === 'today' ? 'text-shu-400' : 'text-kin-300')}>{countdownHeadline(c)}</span>}
+            <span className="shrink-0">{event.songs === 1 ? '1 canción' : `${event.songs} canciones`}</span>
             {event.place && (
               <span className="flex min-w-0 items-center gap-1">
                 <MapPin aria-hidden className="size-3 shrink-0" />
-                <span className="min-w-0 [overflow-wrap:anywhere]">{event.place}</span>
+                <span className="min-w-0 truncate">{event.place}</span>
               </span>
             )}
           </span>

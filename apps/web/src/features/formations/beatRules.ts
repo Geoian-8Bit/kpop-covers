@@ -99,3 +99,12 @@ export function snapFormationsToBeats<T extends Keyframe>(list: readonly T[], bp
   }
   return out;
 }
+
+/**
+ * Every how many eights the timeline numbers one, so the numbers never touch: at most ~10 labels across the track
+ * (`beats` = the beats drawn in the stretch shown).
+ */
+export function eightLabelStep(beats: number, maxLabels = 10): number {
+  const eights = Math.ceil(beats / 8);
+  return eights <= maxLabels ? 1 : Math.ceil(eights / maxLabels);
+}

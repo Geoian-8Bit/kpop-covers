@@ -71,7 +71,7 @@ export function Results({
                   className="aspect-video w-14 shrink-0 rounded-[5px] object-cover"
                 />
               )}
-              <span className="min-w-0 flex-1 break-words text-[14px] font-bold leading-snug text-washi">
+              <span className="min-w-0 flex-1 line-clamp-2 break-words text-[14px] font-bold leading-snug text-washi">
                 {wish?.title ?? 'Ya no está en la lista'}
               </span>
               <span

@@ -1,9 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { guardConsole } from '../../support/seed';
+import { touchSwipe } from '../../support/swipeRow';
 import { openApp } from './support';
 
 // REQ-02 · Shell · Calendario: the screen and its basic states (month, navigation, today, empty month, day detail).
 // Marking an absence end to end is already covered by e2e/calendar.spec.ts and is not repeated here.
+
+/** Swipes the month grid with a real finger: `-1` left (next month), `1` right (previous). */
+async function swipe(page: Page, dir: 1 | -1) {
+  // While a month slides out, two grids coexist for a moment: wait for the new one alone.
+  await expect(page.getByRole('grid')).toHaveCount(1);
+  const box = await page.getByRole('grid').boundingBox();
+  if (!box) throw new Error('calendar grid not found');
+  await touchSwipe(page, { x: box.x + box.width / 2 - dir * 80, y: box.y + 40 }, dir * 160);
+}
 
 test.beforeEach(({ browserName }) => {
   // The Playwright WebKit build here has no Web Audio (`AudioNode` is undefined), so the app throws on load and stays blank.
@@ -19,18 +29,27 @@ test('el calendario abre en el mes de hoy con el día marcado', async ({ page })
   guard.check();
 });
 
-test('los botones de mes y «Hoy» recorren los meses', async ({ page }) => {
+test('los botones de mes y «Hoy» recorren los meses', async ({ page, hasTouch }) => {
   const guard = guardConsole(page);
   await openApp(page, '/calendario');
   const month = page.getByRole('heading', { level: 2 }).first();
-  await page.getByRole('button', { name: 'Mes siguiente' }).click();
+  const hoy = page.getByRole('button', { name: 'Hoy', exact: true });
+  // Touch: no arrows, the grid is swiped sideways. Mouse: the arrows.
+  const next = () =>
+    hasTouch ? swipe(page, -1) : page.getByRole('button', { name: 'Mes siguiente' }).click();
+  const previous = () =>
+    hasTouch ? swipe(page, 1) : page.getByRole('button', { name: 'Mes anterior' }).click();
+  await expect(hoy).toHaveCount(0);
+  if (hasTouch) await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeHidden();
+  await next();
   await expect(month).toHaveText('noviembre 2026');
-  await page.getByRole('button', { name: 'Mes siguiente' }).click();
+  await next();
   await expect(month).toHaveText('diciembre 2026');
-  await page.getByRole('button', { name: 'Mes anterior' }).click();
+  await previous();
   await expect(month).toHaveText('noviembre 2026');
-  await page.getByRole('button', { name: 'Hoy', exact: true }).click();
+  await hoy.click();
   await expect(month).toHaveText('octubre 2026');
+  await expect(hoy).toHaveCount(0);
   guard.check();
 });
 

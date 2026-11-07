@@ -203,8 +203,8 @@ export function PanelHead({
         <ChevronLeft className="size-5" />
       </IconButton>
       <div className="min-w-0 flex-1 text-center leading-tight">
-        <p className="truncate text-[13px] font-bold text-washi">{where}</p>
-        <p className="tabular truncate font-mono text-[11px] text-washi-subtle">
+        <p className="text-[13px] font-bold text-washi">{where}</p>
+        <p className="tabular font-mono text-[11px] text-washi-subtle">
           {toolTabLabel(tab)} · {formatMoment(second)}
         </p>
       </div>
