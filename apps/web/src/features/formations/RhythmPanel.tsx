@@ -5,32 +5,36 @@ import { Button } from '@/components/ui/Button';
 import { jelly } from '@/lib/motion';
 import { usePlayer } from '@/player/store';
 import { useToast } from '@/providers/ToastProvider';
-import { addTap, beatsBetween, BPM_MAX, BPM_MIN, bpmFromTaps, MIN_TAPS, validBpm } from './beatRules';
+import { addTap, beatsBetween, BPM_MAX, BPM_MIN, bpmFromTaps, eightLabelStep, MIN_TAPS, validBpm } from './beatRules';
 import { formatMoment } from './formationRules';
+import type { TimelineView } from './timelineRules';
 import type { Wave } from './useWaveform';
 
-/** REQ-09 · Beats (counts of eight numbered) and the file's wave, drawn under the editor's timeline. */
-export function RhythmUnderlay({ span, bpm, firstBeat, wave }: { span: number; bpm: number | null; firstBeat: number | null; wave: Wave | null }) {
+/** REQ-09 · Beats (counts of eight numbered) and the file's wave, drawn under the stretch of the timeline shown. */
+export function RhythmUnderlay({ view, bpm, firstBeat, wave }: { view: TimelineView; bpm: number | null; firstBeat: number | null; wave: Wave | null }) {
+  const { from, to } = view;
+  const len = to - from;
   const beats = useMemo(
-    () => (validBpm(bpm) && span > 0 ? beatsBetween(bpm, firstBeat ?? 0, 0, span, 4000) : []),
-    [bpm, firstBeat, span],
+    () => (validBpm(bpm) && len > 0 ? beatsBetween(bpm, firstBeat ?? 0, from, to, 4000) : []),
+    [bpm, firstBeat, from, to, len],
   );
-  // Crowded (a long song on a phone): only the «1» of each eight keeps its tick.
+  // Crowded (a long stretch on a phone): only the «1» of each eight keeps its tick, and only some eights their number.
   const dense = beats.length > 240;
+  const labelEvery = eightLabelStep(beats.length);
   const wavePath = useMemo(() => {
-    if (!wave || wave.peaks.length === 0 || span <= 0) return null;
+    if (!wave || wave.peaks.length === 0 || len <= 0) return null;
     const n = wave.peaks.length;
     const step = wave.seconds / n;
     let d = '';
     wave.peaks.forEach((v, i) => {
       const t = wave.offset * -1 + i * step;
-      if (t < 0 || t > span) return;
-      const x = (t / span) * 1000;
+      if (t < from || t > to) return;
+      const x = ((t - from) / len) * 1000;
       const h = Math.max(0.6, v * 46);
       d += `M${x.toFixed(2)} ${50 - h / 2}v${h.toFixed(2)}`;
     });
     return d;
-  }, [wave, span]);
+  }, [wave, from, to, len]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -41,13 +45,9 @@ export function RhythmUnderlay({ span, bpm, firstBeat, wave }: { span: number; b
       )}
       {beats.map((b) =>
         dense && b.count !== 1 ? null : (
-          <div
-            key={b.t}
-            className="absolute top-0"
-            style={{ left: `${(b.t / span) * 100}%` }}
-          >
-            <div className={b.count === 1 ? 'h-[68px] w-px bg-kin-300/45' : 'h-2.5 w-px bg-washi/25'} />
-            {b.count === 1 && (
+          <div key={b.t} className="absolute inset-y-0" style={{ left: `${((b.t - from) / len) * 100}%` }}>
+            <div className={b.count === 1 ? 'h-full w-px bg-kin-300/40' : 'h-2.5 w-px bg-washi/25'} />
+            {b.count === 1 && b.eight % labelEvery === 0 && (
               <span className="tabular absolute left-0.5 top-0.5 font-mono text-[9px] font-bold text-kin-200/80">{b.eight + 1}</span>
             )}
           </div>

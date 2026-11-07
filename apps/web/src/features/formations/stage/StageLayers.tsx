@@ -236,7 +236,7 @@ export function BendHandle({
     <g transform={`translate(${shown.x.toFixed(3)} ${shown.y.toFixed(3)})`}>
       <circle r={HIT * 0.8} fill="transparent" data-drag="" className="cursor-grab touch-none" onPointerDown={onDown} />
       {!active && (
-        <circle r={HANDLE + 0.14} fill="none" stroke="var(--color-washi)" strokeWidth={0.03} strokeOpacity={0.6} strokeDasharray="0.08 0.07" pointerEvents="none" />
+        <circle r={HANDLE + 0.15} fill="none" stroke="var(--color-kin-300)" strokeWidth={0.045} strokeOpacity={0.9} strokeDasharray="0.09 0.06" pointerEvents="none" />
       )}
       <circle
         r={HANDLE}

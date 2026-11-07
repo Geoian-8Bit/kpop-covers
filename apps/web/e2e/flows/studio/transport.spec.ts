@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEMO_KEY } from '../../demo';
 import { FIXTURE, guardConsole } from '../../support/seed';
+import { pressRowButton, rowButton } from '../../support/swipeRow';
 import { media, openStudio, shortClips, studioVideo, skipWithoutWebAudio } from './studio';
 
 // REQ-02 · Studio flows on an uploaded video (a real <video>, so playback, speed, loops and clips are checked on the
@@ -103,7 +104,7 @@ test('marcar A y B y repetir el tramo en bucle', async ({ page }) => {
   const row = page.getByRole('button', { name: /^Repetir el tramo/ });
   await expect(page.getByTitle('Mover el inicio aquí (A)')).toContainText('0:00.5');
   await expect(page.getByTitle('Mover el final aquí (B)')).toContainText('0:01.5');
-  if ((await row.getAttribute('aria-pressed')) !== 'true') await row.click();
+  if ((await row.getAttribute('aria-pressed')) !== 'true') await (await rowButton(page, 'Editar PRUEBA gancho')).click();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Home'); // goes to the start of the range
   await expect(timer(page)).toHaveText('0:00.5');
@@ -187,7 +188,7 @@ test('guardar un clip, editarlo y borrarlo', async ({ page }) => {
     .toBeCloseTo(0.5, 1);
 
   // Edit: new name and slower.
-  await row.click();
+  await (await rowButton(page, 'Editar PRUEBA gancho')).click();
   const edit = page.getByRole('dialog', { name: 'Editar clip' });
   await edit.getByRole('textbox', { name: 'Nombre del clip' }).fill('PRUEBA gancho 2');
   await edit.getByRole('button', { name: 'Más lento' }).click();
@@ -198,8 +199,8 @@ test('guardar un clip, editarlo y borrarlo', async ({ page }) => {
     .toBeCloseTo(0.95, 2);
 
   // Delete with the two-step confirmation.
-  await page.getByRole('button', { name: 'Borrar PRUEBA gancho 2' }).click();
-  const confirm = page.getByRole('button', { name: 'Confirmar borrar PRUEBA gancho 2' });
+  await pressRowButton(page, 'Borrar PRUEBA gancho 2');
+  const confirm = await rowButton(page, 'Confirmar borrar PRUEBA gancho 2');
   await expect(confirm).toBeVisible();
   await page.waitForTimeout(450);
   await confirm.click();

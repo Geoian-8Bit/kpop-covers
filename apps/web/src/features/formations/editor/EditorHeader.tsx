@@ -22,7 +22,7 @@ export function EditorHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className={cn('sep-b flex items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-4 lg:px-6 lg:py-4', className)}>
+    <div className={cn('sep-b flex items-center gap-1.5 px-2 py-1 sm:gap-3 sm:px-4 lg:px-6 lg:py-4', className)}>
       <Link
         to={back}
         aria-label="Volver a la canción"
@@ -31,9 +31,9 @@ export function EditorHeader({
         <ButtonSkin kind="back" />
       </Link>
       <div className="min-w-0 flex-1">
-        <h1 title={title} className="line-clamp-2 break-words font-display text-[17px] font-bold leading-tight lg:text-[24px]">{title}</h1>
+        <h1 className="break-words font-display text-[15px] font-bold leading-tight lg:text-[24px]">{title}</h1>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2">
-          <p className="min-w-0 break-words text-sm leading-snug text-washi-muted">Formaciones · {subtitle}</p>
+          <p className="min-w-0 break-words text-[12px] leading-snug text-washi-muted lg:text-sm">{subtitle}</p>
           {status}
         </div>
       </div>

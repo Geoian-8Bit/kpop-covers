@@ -330,10 +330,13 @@ export function StudioPage() {
               <ButtonSkin kind="back" />
             </Link>
             <div className="min-w-0 flex-1">
-              <h1 className="break-words font-display text-[20px] font-bold leading-tight sm:text-[26px]">
+              <h1
+                title={current.title}
+                className="line-clamp-2 break-words font-display text-[18px] font-bold leading-tight sm:text-[26px]"
+              >
                 {current.title}
               </h1>
-              <p className="text-sm text-washi-muted">
+              <p className="text-[13px] text-washi-muted sm:text-sm">
                 <MetaLine
                   parts={[
                     current.artist || 'Artista sin especificar',

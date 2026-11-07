@@ -119,6 +119,7 @@ export function PathTools({
   onCancelDraw,
   onAddPoint,
   onRemovePoint,
+  onGoSecond,
 }: {
   pathIndex: number;
   memberName: string | null;
@@ -134,20 +135,31 @@ export function PathTools({
   onCancelDraw: () => void;
   onAddPoint: () => void;
   onRemovePoint: () => void;
+  /** Jumps to the second formation (the first one that has routes into it); null with fewer than two. */
+  onGoSecond: (() => void) | null;
 }) {
   if (pathIndex < 1 || !memberName) {
     return (
       <ol className="space-y-1.5" aria-label="Cómo cambiar un recorrido">
         <Step n={1} done={pathIndex >= 1} active={pathIndex < 1}>
-          {pathIndex >= 1
-            ? `Formación ${pathIndex + 1}`
-            : 'Ve a una formación que no sea la primera (flechas de arriba o la línea de tiempo).'}
+          {pathIndex >= 1 ? (
+            `Formación ${pathIndex + 1}`
+          ) : onGoSecond ? (
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <span>Ve a una formación que no sea la primera: el recorrido es cómo se llega a ella.</span>
+              <button type="button" className={cn(tool, toolIdle, 'text-washi')} onClick={onGoSecond}>
+                Ir a la formación 2
+              </button>
+            </span>
+          ) : (
+            'Añade al menos dos formaciones: un recorrido es cómo se pasa de una a la siguiente.'
+          )}
         </Step>
         <Step n={2} done={false} active={pathIndex >= 1}>
           Toca a una persona en el escenario.
         </Step>
         <Step n={3} done={false} active={false}>
-          Elige cómo llega: recto, en curva, por puntos o a mano.
+          Elige cómo llega. Truco: arrastra el centro de una línea recta para curvarla.
         </Step>
       </ol>
     );
@@ -159,6 +171,9 @@ export function PathTools({
       <p className="text-[13px] text-washi">
         Cómo llega <span className="font-bold">{memberName}</span> a la formación {pathIndex + 1}
       </p>
+      {/* First what to do on the stage (seen without scrolling the sheet), then the shapes. */}
+      {!drawMode && !path && canBend && <Callout>Arrastra el círculo dorado del centro de la línea para curvarla, o elige «Curva».</Callout>}
+      {!drawMode && !path && !canBend && <Hint>{memberName} apenas se mueve aquí: no hay línea que curvar. Elige a otra persona.</Hint>}
       <KindPicker value={value} disabled={disabled} onChange={onChoose} />
       {drawMode && (
         <div className="flex items-center gap-2">
@@ -170,7 +185,6 @@ export function PathTools({
           </button>
         </div>
       )}
-      {!drawMode && !path && canBend && <Callout>Arrastra el punto blanco del centro de la línea para doblarla, o elige «Curva».</Callout>}
       {!drawMode && path?.kind === 'curve' && (
         <div className="space-y-1.5">
           <Callout>

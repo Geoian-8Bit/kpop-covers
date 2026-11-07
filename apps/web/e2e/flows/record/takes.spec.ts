@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { FIXTURE, fixClock, seedFixture } from '../../support/seed';
+import { pressRowButton } from '../../support/swipeRow';
 import {
   guard as guardConsole,
   keepAndOpenTakes,
@@ -147,17 +148,17 @@ test('descarga, comparte con el grupo y borra una toma grabada', async ({ page, 
 
   // Download.
   const download = page.waitForEvent('download', { timeout: 15_000 });
-  await page.getByRole('button', { name: 'Descargar la toma' }).click();
+  await pressRowButton(page, 'Descargar la toma');
   expect((await download).suggestedFilename()).toMatch(/\.(webm|mp4)$/);
 
   // Share with the group: the dialog warns, then (demo) uploads a reduced copy.
-  await page.getByRole('button', { name: 'Compartir con el grupo' }).click();
+  await pressRowButton(page, 'Compartir con el grupo');
   const share = page.getByRole('dialog', { name: 'Compartir con el grupo' });
   await expect(share).toBeVisible();
   await expect(share.getByText('Se sube una copia reducida a 720p')).toBeVisible();
   await share.getByRole('button', { name: 'Ahora no' }).click();
   await expect(share).toBeHidden();
-  await page.getByRole('button', { name: 'Compartir con el grupo' }).click();
+  await pressRowButton(page, 'Compartir con el grupo');
   await share.getByRole('button', { name: 'Compartir' }).click();
   // The demo has no cloud (REQ-03 adds a local one): the copy is reduced, the upload fails and the dialog says so
   // without touching the take. The successful upload is not covered here.
@@ -169,12 +170,12 @@ test('descarga, comparte con el grupo y borra una toma grabada', async ({ page, 
   expect(mine?.['shared_path'] ?? null).toBeNull();
 
   // Delete: the dialog says what happens; confirming archives it (the store keeps the row, hidden).
-  await page.getByRole('button', { name: 'Borrar la toma' }).click();
+  await pressRowButton(page, 'Borrar la toma');
   const del = page.getByRole('dialog', { name: '¿Borrar esta toma?' });
   await expect(del).toContainText('Se borra de este móvil');
   await del.getByRole('button', { name: 'Cancelar' }).click();
   await expect(del).toBeHidden();
-  await page.getByRole('button', { name: 'Borrar la toma' }).click();
+  await pressRowButton(page, 'Borrar la toma');
   await del.getByRole('button', { name: 'Borrar', exact: true }).click();
   await expect(page.getByText('Toma borrada')).toBeVisible();
   await expect(page.getByText('Aún no hay tomas')).toBeVisible();

@@ -219,7 +219,10 @@ export function SwipeRow({
     <div ref={rootRef} className={cn('relative', enabled && 'overflow-hidden', className)}>
       {enabled && (
         <motion.div
+          data-swipe-actions=""
+          // Closed: out of the accessibility tree too (the row's own buttons stay for keyboard and readers).
           inert={!open}
+          aria-hidden={!open}
           style={{ clipPath: reveal }}
           className="absolute inset-0 flex justify-end bg-sumi-800"
         >

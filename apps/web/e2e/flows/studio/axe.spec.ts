@@ -3,6 +3,7 @@ import path from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { test, type Page } from '@playwright/test';
 import { FIXTURE, guardConsole } from '../../support/seed';
+import { pressRowButton } from '../../support/swipeRow';
 import { EVIDENCE } from '../../support/visual';
 import { openStudio, shortClips, skipWithoutWebAudio, studioVideo } from './studio';
 
@@ -58,7 +59,7 @@ test('axe: estudio, diálogos y panel de archivo', async ({ page }) => {
   results.push(await scan(page, 'estudio-dialogo-guardar'));
   await page.getByRole('button', { name: 'Cancelar' }).click();
 
-  await page.getByRole('button', { name: 'Editar Intro 5' }).click();
+  await pressRowButton(page, 'Editar Intro 5');
   await page.getByRole('dialog', { name: 'Editar clip' }).waitFor();
   results.push(await scan(page, 'estudio-dialogo-editar'));
   await page.getByRole('button', { name: 'Cancelar' }).click();

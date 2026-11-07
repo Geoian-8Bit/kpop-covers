@@ -208,7 +208,7 @@ export function BagView({ bag }: { bag: BagWithCount }) {
           >
             <ArrowLeft aria-hidden className="size-5" />
           </Link>
-          <h1 className="min-w-0 flex-1 text-balance break-words px-1 font-display text-[20px] font-bold leading-tight sm:text-[24px]">
+          <h1 className="min-w-0 flex-1 line-clamp-2 text-balance break-words px-1 font-display text-[20px] font-bold leading-tight sm:text-[24px]">
             {bag.name}
           </h1>
           <Button

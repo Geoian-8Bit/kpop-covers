@@ -56,7 +56,7 @@ export function RpdPage() {
         {/* 53 · Just the title (it wraps on a narrow phone rather than being cut): the round's options and «Empezar»
             are what matters here. */}
         <header className="flex min-w-0 items-center gap-2 px-5 pb-1 pt-3 sm:px-9 sm:pt-6">
-          <h1 className="min-w-0 flex-1 text-balance break-words font-display text-[22px] font-bold leading-tight sm:text-[30px]">
+          <h1 className="min-w-0 flex-1 line-clamp-2 text-balance break-words font-display text-[22px] font-bold leading-tight sm:text-[30px]">
             Random Play Dance
           </h1>
           {saved > 0 && (
@@ -223,7 +223,7 @@ function RoundBuilder() {
                   >
                     <BagIcon className={on ? 'text-kin-300' : 'text-washi-subtle'} />
                     <span className="min-w-0">
-                      <span className="block break-words font-bold leading-snug text-washi">{b.name}</span>
+                      <span className="line-clamp-2 break-words font-bold leading-snug text-washi">{b.name}</span>
                       <span className="block text-[12px] text-washi-subtle">
                         {countLabel('clips', b.items)}
                       </span>
@@ -292,7 +292,7 @@ function RoundBuilder() {
                   className={cn('size-5 shrink-0 rotate-[-3deg] rounded-[5px]', CLIP_SWATCH[clip.color].dot)}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words text-[15px] font-medium leading-snug text-washi">
+                  <span className="line-clamp-2 break-words text-[15px] font-medium leading-snug text-washi">
                     {clip.video?.title}
                   </span>
                   <span className="tabular block text-[12px] text-washi-subtle">
@@ -371,7 +371,7 @@ function RoundBuilder() {
             {round.length ? (
               <>
                 <span className="block font-bold text-washi">{countLabel('clips', round.length)}</span>
-                <span className="block break-words">{fromLabel}</span>
+                <span className="block truncate">{fromLabel}</span>
               </>
             ) : poolLoading ? (
               'Cargando…'
@@ -465,7 +465,7 @@ function TrackList() {
                 className="group flex min-h-11 min-w-0 flex-1 items-center gap-3"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words font-display text-[16px] font-bold leading-snug text-washi">
+                  <span className="line-clamp-2 break-words font-display text-[16px] font-bold leading-snug text-washi">
                     {track.name}
                   </span>
                   <span className="block text-[12px] text-washi-subtle">

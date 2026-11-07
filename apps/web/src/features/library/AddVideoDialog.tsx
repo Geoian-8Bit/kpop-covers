@@ -338,8 +338,8 @@ export function AddVideoDialog({ open, onClose }: { open: boolean; onClose: () =
                         >
                           {v.thumbnail_url && <img src={v.thumbnail_url} crossOrigin={thumbCors(v.thumbnail_url)} alt="" className="h-9 w-16 shrink-0 rounded-[6px] object-cover" />}
                           <span className="min-w-0 flex-1">
-                            <span className="block break-words text-[14px] font-bold leading-snug">{v.title}</span>
-                            {v.artist && <span className="block break-words text-[12px] text-washi-subtle">{v.artist}</span>}
+                            <span className="line-clamp-2 break-words text-[14px] font-bold leading-snug">{v.title}</span>
+                            {v.artist && <span className="block truncate text-[12px] text-washi-subtle">{v.artist}</span>}
                           </span>
                           <span className="shrink-0 text-[12px] font-bold text-kin-300">Vincular</span>
                         </motion.button>

@@ -29,10 +29,12 @@ describe('library containment (P38)', () => {
     expect(page).not.toMatch(/className="paper [^"]*overflow-hidden/);
   });
 
-  it('lets a card shrink below its caption and never truncates the whole caption line', () => {
+  it('lets a card shrink below its caption: the caption is one line where only the artist gives way', () => {
     expect(card).toContain("cn('group relative min-w-0', className)");
-    // The caption line wraps («con archivo» drops below) instead of being one nowrap line.
-    expect(card).toMatch(/<p className="mt-1 flex flex-wrap/);
+    // One flex line (never a nowrap block that pushes the card wider): the artist shrinks and ends in «…».
+    expect(card).toMatch(/<p className="mt-0\.5 flex items-center/);
+    expect(card).toContain('className="flex min-w-0 items-center gap-1.5"');
+    expect(card).toContain("<span className=\"truncate\">{video.artist || 'Artista sin especificar'}</span>");
   });
 
   it('only animates card positions while the user filters', () => {

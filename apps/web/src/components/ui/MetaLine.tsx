@@ -1,30 +1,20 @@
-import { Fragment, type ReactNode } from 'react';
-
-/** Pieces up to this long never split; longer ones («Domingo, 1 de noviembre de 2026») wrap between words. */
-const KEEP_WHOLE = 16;
+import type { ReactNode } from 'react';
 
 /**
- * A «a · b · c» meta line that wraps between pieces instead of being cut: the «·» is glued to the piece after
- * it (never left hanging at a line's end), short pieces stay whole and a long one wraps like normal text.
+ * A «a · b · c» meta line kept to ONE line on a phone: what doesn't fit ends in «…» and the whole line is in
+ * `title` (and read whole by screen readers). Secondary text never grows a card by a line.
  */
 export function MetaLine({ parts }: { parts: ReactNode[] }) {
+  const shown = parts.filter((p) => p !== null && p !== undefined && p !== false && p !== '');
+  const text = shown.every((p) => typeof p === 'string' || typeof p === 'number') ? shown.join(' · ') : undefined;
   return (
-    <>
-      {parts.map((part, i) => (
-        <Fragment key={i}>
-          {i > 0 && ' '}
-          <span
-            className={
-              typeof part === 'string' && part.length > KEEP_WHOLE
-                ? '[overflow-wrap:anywhere]'
-                : 'whitespace-nowrap'
-            }
-          >
-            {i > 0 && '· '}
-            {part}
-          </span>
-        </Fragment>
+    <span className="block truncate" title={text}>
+      {shown.map((part, i) => (
+        <span key={i}>
+          {i > 0 && ' · '}
+          {part}
+        </span>
       ))}
-    </>
+    </span>
   );
 }

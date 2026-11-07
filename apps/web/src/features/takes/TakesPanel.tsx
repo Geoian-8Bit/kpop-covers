@@ -10,14 +10,15 @@ import { PerfProbe } from '@/lib/perfProbe';
 import { friendlyError } from '@/lib/supabase';
 import { useToast } from '@/providers/ToastProvider';
 import type { Clip, Member, Video } from '@coverscape/shared';
-import { CloudOff, Eraser, TriangleAlert } from 'lucide-react';
+import { CloudOff, Eraser, TriangleAlert, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { CloudNotice } from './CloudNotice';
 import { CleanupDialog, DeleteDialog } from './TakeDialogs';
 import { Filters } from './TakeFilters';
 import { TakeRow } from './TakeRow';
 import { useTakeActions } from './useTakeActions';
+import { useUploadTake } from './useUploadTake';
 import {
   canDeleteTake,
   cleanupCandidates,
@@ -79,6 +80,9 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
   const memberById = useMemo(() => new Map((members.data ?? []).map((m) => [m.id, m])), [members.data]);
   const clipById = useMemo(() => new Map(clips.map((c) => [c.id, c])), [clips]);
 
+  const uploader = useUploadTake(video);
+  const fileInput = useRef<HTMLInputElement>(null);
+
   const { busy, rowActions } = useTakeActions(video, onPlay, {
     share: setShareTarget,
     remove: setConfirmDelete,
@@ -112,6 +116,37 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
       >
         Tomas
       </SectionTitle>
+
+      {/* A video file (camera roll, a group run-through sent by someone) becomes a shared take of this song. */}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="video/*"
+        hidden
+        data-take-upload
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (!file) return;
+          void uploader.upload(file).then((result) =>
+            result.ok ? toast('Vídeo subido a «Tomas»', 'success') : toast(result.error, 'error'),
+          );
+        }}
+      />
+      <Button
+        variant="secondary"
+        size="md"
+        onClick={() => fileInput.current?.click()}
+        loading={uploader.busy}
+        className="mt-3 self-start"
+      >
+        {!uploader.busy && <Upload className="size-4" aria-hidden />}
+        {uploader.phase === 'reducing'
+          ? `Preparando ${Math.round(uploader.progress * 100)} %`
+          : uploader.busy
+            ? 'Subiendo…'
+            : 'Subir vídeo'}
+      </Button>
 
       {/* 50 · The group's cloud only speaks up when it is filling. */}
       <CloudNotice />
@@ -177,8 +212,7 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
         <div className="mt-6 px-2 pb-4 text-center">
           <p className="font-display text-lg font-bold">Aún no hay tomas</p>
           <p className="mt-2 text-sm leading-relaxed text-washi-muted">
-            Graba una con «Grabar» y pulsa «Guardar». Se queda en este móvil; si quieres, la compartes con el
-            grupo.
+            Graba una con «Grabar» y pulsa «Guardar», o sube un vídeo que ya tengas con «Subir vídeo».
           </p>
         </div>
       ) : (

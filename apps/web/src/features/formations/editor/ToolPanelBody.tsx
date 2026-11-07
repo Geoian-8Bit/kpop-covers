@@ -14,6 +14,7 @@ import {
   Plus,
   RotateCcw,
   RotateCw,
+  Settings2,
   Shuffle,
   Timer,
   Trash2,
@@ -27,7 +28,7 @@ import { usePlayer } from '@/player/store';
 import type { useToast } from '@/providers/ToastProvider';
 import { snapFormationsToBeats } from '../beatRules';
 import { applyTemplate, flipHorizontal, flipVertical, rotate, ROTATE_STEP, scale, swap, TEMPLATES } from '../formationEditRules';
-import { formatMoment, NOTE_MAX, TRANSITION_MAX, type Stage } from '../formationRules';
+import { formatMoment, NOTE_MAX, sortKeyframes, TRANSITION_MAX, type Stage } from '../formationRules';
 import { addPathPoint, BEND_MIN, flipPath, removePathPoint, setCurveShape } from '../pathRules';
 import { ChoiceGroup, Hint, IconTool, PropTools, tool, toolIdle, toolOn, toolPrimary, type ToolTab } from '../EditorTools';
 import { relabelProp } from '../propRules';
@@ -72,6 +73,8 @@ export interface ToolPanelBodyProps {
   focusMember: string | null;
   setFocusMember: Dispatch<SetStateAction<string | null>>;
   setExporting: Dispatch<SetStateAction<boolean>>;
+  /** «Ajustes del plan»: name, who dances, stage size. */
+  openSettings: () => void;
   playsFile: boolean;
   wave: ReturnType<typeof useWaveform>;
   savePlan: (patch: Parameters<FormationEditorState['updatePlan']>[0]) => Promise<boolean>;
@@ -114,6 +117,7 @@ export function ToolPanelBody({
   focusMember,
   setFocusMember,
   setExporting,
+  openSettings,
   playsFile,
   wave,
   savePlan,
@@ -125,23 +129,35 @@ export function ToolPanelBody({
     case 'formation':
       return (
         <div className="space-y-2.5">
-          <div className="flex gap-1.5">
-            <motion.button
+          <motion.button
+            type="button"
+            onClick={addHere}
+            disabled={conflict}
+            whileTap={conflict ? undefined : { scale: 0.95 }}
+            transition={jelly}
+            className={cn(tool, toolPrimary, 'w-full')}
+          >
+            <Plus className="size-4 shrink-0" aria-hidden /> Añadir formación aquí
+          </motion.button>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
               type="button"
-              onClick={addHere}
-              disabled={conflict}
-              whileTap={conflict ? undefined : { scale: 0.95 }}
-              transition={jelly}
-              className={cn(tool, toolPrimary, 'min-w-0 flex-1')}
+              aria-label="Duplicar la formación"
+              onClick={duplicate}
+              disabled={conflict || list.length === 0}
+              className={cn(tool, toolIdle)}
             >
-              <Plus className="size-4 shrink-0" aria-hidden /> <span className="truncate">Añadir formación aquí</span>
-            </motion.button>
-            <IconTool label="Duplicar la formación" onClick={duplicate} disabled={conflict || list.length === 0}>
-              <Copy className="size-4" />
-            </IconTool>
-            <IconTool label="Borrar la formación de este momento" onClick={removeCurrent} disabled={conflict || !current}>
-              <Trash2 className="size-4" />
-            </IconTool>
+              <Copy className="size-4" aria-hidden /> Duplicar
+            </button>
+            <button
+              type="button"
+              aria-label="Borrar la formación de este momento"
+              onClick={removeCurrent}
+              disabled={conflict || !current}
+              className={cn(tool, toolIdle)}
+            >
+              <Trash2 className="size-4" aria-hidden /> Borrar
+            </button>
           </div>
           {current ? (
             <>
@@ -187,6 +203,7 @@ export function ToolPanelBody({
                   className="well w-full resize-none rounded-[10px] px-3 py-2 text-[14px] text-washi outline-none focus:border-kin-300/70"
                 />
               </label>
+              <Hint>Atajo: toca dos veces un número de la línea de tiempo para abrir aquí su nota.</Hint>
             </>
           ) : (
             <Hint>
@@ -284,6 +301,14 @@ export function ToolPanelBody({
             selectedHandle={selectedHandle}
             disabled={conflict}
             onChoose={choosePath}
+            onGoSecond={
+              list.length >= 2
+                ? () => {
+                    pause();
+                    usePlayer.getState().seek(sortKeyframes(list)[1]!.at);
+                  }
+                : null
+            }
             onShape={(shape) => {
               if (!pathEnds) return;
               pause();
@@ -319,6 +344,12 @@ export function ToolPanelBody({
     case 'more':
       return (
         <div className="space-y-4">
+          <section className="space-y-2">
+            <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">Plan</h3>
+            <button type="button" className={cn(tool, toolIdle, 'h-auto min-h-11 w-full whitespace-normal py-2 text-washi')} disabled={conflict} onClick={openSettings}>
+              <Settings2 className="size-4 shrink-0" aria-hidden /> Ajustes del plan: nombre, quién baila y escenario
+            </button>
+          </section>
           <section className="space-y-2">
             <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-washi-subtle">Vista</h3>
             <ChoiceGroup

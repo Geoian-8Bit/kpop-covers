@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { DEMO_KEY } from '../demo';
 import { FIXED_NOW, FIXTURE, fixClock, seedFixture } from '../support/seed';
+import { pressRowButton } from '../support/swipeRow';
 import { atWidths, cssFrames, snap } from '../support/visual';
 import {
   hideCamera,
@@ -281,7 +282,7 @@ test('tomas: toma recién grabada, diálogo de compartir y de borrar', async ({ 
     await showTakes(page);
     await snap(page, `tomas-grabada-${w}`, { mask });
   });
-  await page.getByRole('button', { name: 'Compartir con el grupo' }).click();
+  await pressRowButton(page, 'Compartir con el grupo');
   const share = page.getByRole('dialog', { name: 'Compartir con el grupo' });
   await expect(share.getByRole('button', { name: 'Compartir' })).toBeEnabled();
   await atWidths(page, async (w) => {
@@ -295,7 +296,7 @@ test('tomas: toma recién grabada, diálogo de compartir y de borrar', async ({ 
     await finishUnstartedAnimations(page);
     await expect(share).toBeHidden({ timeout: 2000 });
   }).toPass({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Borrar la toma' }).click();
+  await pressRowButton(page, 'Borrar la toma');
   await expect(page.getByRole('dialog', { name: '¿Borrar esta toma?' })).toBeVisible();
   await atWidths(page, async (w) => {
     await settle(page, 900);

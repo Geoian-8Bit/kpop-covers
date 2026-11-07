@@ -100,7 +100,10 @@ export function PollList({ onCreate }: { onCreate: () => void }) {
                       className="group flex min-h-[96px] items-center gap-3 rounded-[12px] border border-line bg-sumi-900/60 px-4 py-3 transition-colors hover:border-line-strong hover:bg-washi/[0.04]"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block break-words font-display text-[18px] font-bold leading-snug text-washi">
+                        <span
+                          title={poll.title}
+                          className="line-clamp-2 break-words font-display text-[17px] font-bold leading-snug text-washi"
+                        >
                           {poll.title}
                         </span>
                         <span className="mt-0.5 block text-[13px] text-washi-muted">
@@ -112,7 +115,7 @@ export function PollList({ onCreate }: { onCreate: () => void }) {
                             ]}
                           />
                         </span>
-                        <span className="mt-1 block break-words text-[12px] font-bold text-kin-300">
+                        <span className="mt-0.5 block truncate text-[12px] font-bold text-kin-300">
                           {winner ? `Ganadora: ${winner.title}` : closingLabel(poll, now)}
                         </span>
                       </span>

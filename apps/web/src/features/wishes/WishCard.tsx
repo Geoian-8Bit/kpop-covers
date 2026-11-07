@@ -25,8 +25,8 @@ import { DIFFICULTY_COPY, membersLabel } from './wishRules';
 // REQ-27 · Split out of WishesPage.tsx: one wish of the list.
 
 export const cardIn = fadeUpCapped(0.05, 8);
-// A chip's words wrap inside it (it grows a line) instead of being cut.
-const CHIP_TEXT = 'min-w-0 py-1 leading-snug [overflow-wrap:anywhere]';
+// A chip stays one line: a long poll name ends in «…» (whole in the chip's `title`).
+const CHIP_TEXT = 'min-w-0 truncate';
 // The bags' own dialog (F13), loaded only when someone opens it.
 const AddToBagDialog = lazy(() =>
   import('@/features/bags/AddToBagDialog').then((m) => ({ default: m.AddToBagDialog })),
@@ -171,7 +171,10 @@ export const WishCard = memo(function WishCard({
             </a>
           )}
           <div className="min-w-0 flex-1">
-            <h3 className="break-words font-display text-[17px] font-bold leading-snug text-washi">
+            <h3
+              title={wish.title}
+              className="line-clamp-2 break-words font-display text-[16px] sm:text-[17px] font-bold leading-snug text-washi"
+            >
               {wish.title}
             </h3>
             {details.length > 0 && (
@@ -182,7 +185,7 @@ export const WishCard = memo(function WishCard({
             {wish.comment && !selecting && (
               <p
                 title={wish.comment}
-                className="mt-1 line-clamp-3 break-words text-[13px] italic text-washi-subtle"
+                className="mt-0.5 line-clamp-2 break-words text-[13px] italic text-washi-subtle"
               >
                 «{wish.comment}»
               </p>
@@ -289,27 +292,35 @@ export const WishCard = memo(function WishCard({
               <Link
                 to={`/deseos/votacion/${openPoll.id}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] bg-ai-700/60 px-2.5 font-bold text-ai-200 hover:bg-ai-600/60"
+                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full bg-ai-700/60 px-2.5 font-bold text-ai-200 hover:bg-ai-600/60"
               >
                 <Vote aria-hidden className="size-3.5 shrink-0" />
-                <span className={CHIP_TEXT}>En votación: {openPoll.title}</span>
+                <span title={openPoll.title} className={CHIP_TEXT}>
+                  En votación: {openPoll.title}
+                </span>
               </Link>
             )}
             {won && (
               <Link
                 to={`/deseos/votacion/${won.id}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] bg-kin-400/15 px-2.5 font-bold text-kin-200 hover:bg-kin-400/25"
+                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full bg-kin-400/15 px-2.5 font-bold text-kin-200 hover:bg-kin-400/25"
               >
-                <span className={CHIP_TEXT}>Ganó «{won.title}»</span>
+                <span title={won.title} className={CHIP_TEXT}>
+                  Ganó «{won.title}»
+                </span>
               </Link>
             )}
-            {past.slice(0, 2).map((p) => (
+            {past.slice(0, 2).map((p, i) => (
               <Link
                 key={p.pollId}
                 to={`/deseos/votacion/${p.pollId}`}
                 onClick={guardNav}
-                className="relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-[16px] border border-line px-2.5 hover:border-line-strong hover:text-washi-muted"
+                // Phones show only the latest past vote: each chip is a row of its own there.
+                className={cn(
+                  "relative inline-flex min-h-8 max-w-full items-center before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] gap-1 rounded-full border border-line px-2.5 hover:border-line-strong hover:text-washi-muted",
+                  i > 0 && 'max-sm:hidden',
+                )}
                 title="Sus votos en una votación anterior"
               >
                 <span className={CHIP_TEXT}>
@@ -318,9 +329,7 @@ export const WishCard = memo(function WishCard({
                 </span>
               </Link>
             ))}
-            {proposer && (
-              <span className="min-w-0 [overflow-wrap:anywhere]">Propuesta por {proposer.name}</span>
-            )}
+            {proposer && <span className="min-w-0 truncate">Propuesta por {proposer.name}</span>}
           </div>
         )}
       </article>

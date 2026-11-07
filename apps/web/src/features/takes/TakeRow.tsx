@@ -47,6 +47,8 @@ interface TakeRowProps {
   actions: TakeRowActions;
 }
 
+/** On touch screens the swipe actions replace these buttons: hidden from sight, still there for keyboard and readers. */
+const swipeHidden = 'touch:sr-only touch:focus-visible:not-sr-only';
 const ELSEWHERE_REASON =
   'Esta toma está en otro móvil: solo se puede ver allí, o si la comparte con el grupo.';
 
@@ -104,7 +106,26 @@ function TakeRowView({
       if (refused) onRefused(refused);
       else if (!blocked) action();
     };
-  // Touch: slide the take left for these too (the bar below stays: it also holds the star).
+  /** The «best take» star: in the bottom bar with a mouse, beside the play button on touch. */
+  const starButton = (className: string) => (
+    <motion.button
+      type="button"
+      aria-pressed={take.is_best}
+      aria-label={take.is_best ? 'Quitar de mejor toma' : 'Marcar como mejor toma'}
+      title="Mejor toma: una por persona y tramo"
+      onClick={onStar}
+      whileTap={{ scale: 0.7, rotate: -18 }}
+      transition={jelly}
+      className={cn(
+        'flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[8px] px-2 text-[13px] font-medium text-washi-muted hover:bg-washi/[0.06] hover:text-washi',
+        className,
+      )}
+    >
+      <Star className={cn('size-[18px]', take.is_best && 'fill-kin-300 text-kin-300')} />
+      <span className="hidden sm:inline">{take.is_best ? 'La mejor' : 'Mejor'}</span>
+    </motion.button>
+  );
+  // Touch: slide the take left for these (the bar's own buttons go out of sight there; see `swipeHidden`).
   const swipeActions: SwipeAction[] = [
     {
       key: 'download',
@@ -157,7 +178,7 @@ function TakeRowView({
             Para repasar · {take.is_best ? 'la mejor' : 'la última'}
           </p>
         )}
-        <div className={cn('flex items-center gap-3', !playable && 'opacity-60')}>
+        <div className={cn('flex items-center gap-2.5 sm:gap-3', !playable && 'opacity-60')}>
           <span className="relative shrink-0">
             <MemberSeal member={member} />
             {take.is_best && (
@@ -168,21 +189,36 @@ function TakeRowView({
           </span>
           <div className="min-w-0 flex-1">
             <p className="flex min-w-0 items-baseline gap-1.5">
-              <span className="truncate text-[15px] font-bold">{memberName}</span>
-              <span className="shrink-0 text-[13px] text-washi-muted">{takeDateLabel(take.recorded_at)}</span>
+              <span className="max-w-[65%] shrink-0 truncate text-[15px] font-bold">{memberName}</span>
+              <span className="truncate text-[12.5px] text-washi-muted">
+                {takeDateLabel(take.recorded_at)}
+              </span>
             </p>
-            <p className="tabular mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-xs text-washi-muted">
+            {/* Meta lines stay one line each on a phone: what doesn't fit ends in «…», the row never grows. */}
+            <p className="tabular mt-0.5 flex items-center gap-x-1 overflow-hidden whitespace-nowrap font-mono text-[11px] tracking-tight text-washi-muted sm:gap-x-1.5 sm:text-xs sm:tracking-normal">
               <span>{formatDuration(Number(take.duration_seconds))}</span>
               <span className="text-washi-subtle">·</span>
               <span>{formatSpeed(Number(take.speed))}</span>
               <span className="text-washi-subtle">·</span>
               {/* The start as planned, to the second (the saved one may be a few hundredths earlier: where it really rolled). */}
-              <span>desde {formatTime(Math.round(Number(take.song_start_seconds)))}</span>
-              {take.mirrored && <FlipHorizontal2 className="size-3 text-ai-300" aria-label="espejo" />}
+              {/* Phones: «→0:44» (the word stays for readers and in `title`), so the line fits a 360 px row. */}
+              <span
+                className="truncate"
+                title={`desde ${formatTime(Math.round(Number(take.song_start_seconds)))}`}
+              >
+                <span aria-hidden className="sm:hidden">
+                  →
+                </span>
+                <span className="max-sm:sr-only">desde </span>
+                {formatTime(Math.round(Number(take.song_start_seconds)))}
+              </span>
+              {take.mirrored && (
+                <FlipHorizontal2 className="size-3 shrink-0 text-ai-300" aria-label="espejo" />
+              )}
             </p>
-            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
+            <p className="mt-0.5 flex items-center gap-x-2.5 overflow-hidden whitespace-nowrap text-[12px]">
               {hasClipId && (
-                <span className="flex min-w-0 items-center gap-1.5 text-washi-muted">
+                <span className="flex min-w-0 shrink items-center gap-1.5 text-washi-muted">
                   <span
                     aria-hidden
                     className={cn(
@@ -190,12 +226,15 @@ function TakeRowView({
                       clip ? CLIP_SWATCH[clip.color].dot : 'bg-sumi-600',
                     )}
                   />
-                  <span className="truncate">{clip?.name ?? 'Clip borrado'}</span>
+                  <span className="truncate" title={clip?.name}>
+                    {clip?.name ?? 'Clip borrado'}
+                  </span>
                 </span>
               )}
               <span
+                title={where}
                 className={cn(
-                  'flex items-center gap-1',
+                  'flex shrink-0 items-center gap-1',
                   take.where === 'here'
                     ? 'text-ai-300'
                     : take.where === 'cloud'
@@ -203,11 +242,12 @@ function TakeRowView({
                       : 'text-washi-subtle',
                 )}
               >
-                <WhereIcon className="size-3.5" aria-hidden />
-                {where}
+                <WhereIcon className="size-3.5 shrink-0" aria-hidden />
+                {/* Phones: the icon says it (its colour too); the words stay for readers and in `title`. */}
+                <span className="max-sm:sr-only">{where}</span>
               </span>
               {notes > 0 && (
-                <span className="flex items-center gap-1 text-kin-300">
+                <span className="flex shrink-0 items-center gap-1 text-kin-300">
                   <MessageSquare className="size-3.5" aria-hidden />
                   {notesCount(notes)}
                 </span>
@@ -228,6 +268,7 @@ function TakeRowView({
               {busy !== 'play' && <Play className="size-5 translate-x-px fill-current" />}
             </Button>
           )}
+          {starButton('hidden touch:flex -mx-1.5 min-w-10')}
         </div>
 
         {featured && (
@@ -246,21 +287,12 @@ function TakeRowView({
           </Button>
         )}
 
-        <div className="mt-2 flex items-center justify-end gap-0.5 border-t border-line pt-1.5">
-          <motion.button
-            type="button"
-            aria-pressed={take.is_best}
-            aria-label={take.is_best ? 'Quitar de mejor toma' : 'Marcar como mejor toma'}
-            title="Mejor toma: una por persona y tramo"
-            onClick={onStar}
-            whileTap={{ scale: 0.7, rotate: -18 }}
-            transition={jelly}
-            className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[8px] px-2 text-[13px] font-medium text-washi-muted hover:bg-washi/[0.06] hover:text-washi"
-          >
-            <Star className={cn('size-[18px]', take.is_best && 'fill-kin-300 text-kin-300')} />
-            <span className="hidden sm:inline">{take.is_best ? 'La mejor' : 'Mejor'}</span>
-          </motion.button>
+        {/* Touch: download, share and delete live in the swipe (out of sight here, still there for readers), and
+            the star moves up to the row, so the bar takes no height. */}
+        <div className="mt-2 flex items-center justify-end gap-0.5 border-t border-line pt-1.5 touch:mt-0 touch:border-0 touch:pt-0">
+          {starButton('touch:hidden')}
           <RowAction
+            className={swipeHidden}
             icon={busy === 'download' ? <Spinner className="size-4" /> : <Download className="size-[18px]" />}
             label="Descargar"
             ariaLabel={take.where === 'cloud' ? 'Descargar la copia de la nube (720p)' : 'Descargar la toma'}
@@ -270,6 +302,7 @@ function TakeRowView({
             onRefused={onRefused}
           />
           <RowAction
+            className={swipeHidden}
             icon={
               take.shared_path ? (
                 <Cloud className="size-[18px] text-ai-300" />
@@ -284,6 +317,7 @@ function TakeRowView({
             onRefused={onRefused}
           />
           <RowAction
+            className={swipeHidden}
             icon={<Trash2 className="size-[18px]" />}
             label="Borrar"
             ariaLabel="Borrar la toma"
@@ -304,6 +338,7 @@ function TakeRowView({
  * An action that, when it can't run, stays focusable and says why on tap (a tooltip never shows on a phone).
  */
 function RowAction({
+  className,
   icon,
   label,
   ariaLabel,
@@ -313,6 +348,7 @@ function RowAction({
   onClick,
   onRefused,
 }: {
+  className?: string;
   icon: ReactNode;
   label: string;
   ariaLabel: string;
@@ -334,6 +370,7 @@ function RowAction({
       transition={jelly}
       className={cn(
         'flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[8px] px-2 text-[13px] font-medium transition-colors disabled:opacity-40',
+        className,
         refused
           ? 'text-washi-subtle/50'
           : danger

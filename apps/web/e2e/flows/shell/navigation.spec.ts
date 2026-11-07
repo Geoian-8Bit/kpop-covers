@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { guardConsole } from '../../support/seed';
+import { pressRowButton } from '../../support/swipeRow';
 import { openApp } from './support';
 
 // REQ-02 · Shell · Navegación: the Hanafuda quick menu on phones, the side rail on desktop (Tailwind `lg`, 64rem),
@@ -141,7 +142,7 @@ test('«Atrás» del sistema cierra el diálogo «Añadir vídeo» y se queda en
 test('«Atrás» cierra el diálogo de eliminar vídeo y se queda en la biblioteca', async ({ page }) => {
   const guard = guardConsole(page);
   await openApp(page);
-  await page.getByRole('button', { name: 'Eliminar Dynamite' }).click();
+  await pressRowButton(page, 'Eliminar Dynamite');
   const dialog = page.getByRole('dialog', { name: '¿Eliminar vídeo?' });
   await expect(dialog).toBeVisible();
   await page.goBack();
