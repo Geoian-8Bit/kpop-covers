@@ -45,7 +45,7 @@ import { useReviewKeys } from './useReviewKeys';
 import { useSize } from '@/lib/useSize';
 import { BAR_H, LOW_SCREEN, useInsets, useMatch, WIDE_SCREEN } from './useReviewLayout';
 import { useReviewNotes } from './useReviewNotes';
-import { useSongLead } from './useSongLead';
+import { useSyncPoint } from './useSyncPoint';
 import { useSyncAdjust } from './useSyncAdjust';
 import { useTakeSaver } from './useTakeSaver';
 
@@ -140,7 +140,7 @@ export function ReviewScreen({
     stage.setState({ fitStatus }),
   );
   const onAdjust = useSyncAdjust(timing.adjust, adjustSaver.save);
-  const onLead = useSongLead(adjustSaver.save);
+  const { onLead, onSongStart } = useSyncPoint(adjustSaver.save);
   const fitAndSplit = useFitAndSplit(stage, take, fitSaver.save);
 
   // ── Notes of this take ──
@@ -274,6 +274,7 @@ export function ReviewScreen({
     onResetFit: fitAndSplit.onResetFit,
     onAdjust,
     onLead,
+    onSongStart,
     hasOriginal,
     originalIsYouTube: source === 'youtube',
     practisedMirrored: take.mirrored,

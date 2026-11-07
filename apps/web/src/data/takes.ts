@@ -307,7 +307,13 @@ export function useSetBestTake() {
 /** What the review saves on a take: the fine sync (±0.3 s) and how the original sits over it («Superpuesto»). */
 export type TakeReviewPatch = Pick<
   TakePatch,
-  'sync_adjust_seconds' | 'fit_scale' | 'fit_x' | 'fit_y' | 'song_lead_seconds'
+  | 'sync_adjust_seconds'
+  | 'fit_scale'
+  | 'fit_x'
+  | 'fit_y'
+  | 'song_lead_seconds'
+  | 'song_start_seconds'
+  | 'song_end_seconds'
 >;
 
 /**

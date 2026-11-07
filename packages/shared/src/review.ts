@@ -104,8 +104,57 @@ export function takeRangeToSong(
 
 /** The song's start in the take, with hundredths, as the review shows it: 12.57 → «0:12,57». */
 export function formatLead(seconds: number): string {
-  const cents = Math.round(clampLead(seconds) * 100);
+  return formatCents(clampLead(seconds));
+}
+
+/** A second with hundredths: 65.3 → «1:05,30» (the sync point's seconds, in the take or in the song). */
+export function formatCents(seconds: number): string {
+  const cents = Math.round((Number.isFinite(seconds) && seconds > 0 ? seconds : 0) * 100);
   const m = Math.floor(cents / 6000);
   const s = Math.floor((cents % 6000) / 100);
   return `${m}:${String(s).padStart(2, '0')},${String(cents % 100).padStart(2, '0')}`;
+}
+
+/**
+ * A second typed by hand: «1:05,30», «1:05.3», «65,3», or «1.05,30» (a phone's number pad has no colon: the dot
+ * stands for it when a comma follows). Null when it can't be read.
+ */
+export function parseCents(input: string): number | null {
+  let raw = input.trim().replace(/\s+/g, '');
+  if (!raw) return null;
+  if (!raw.includes(':') && raw.includes('.') && raw.includes(',')) raw = raw.replace('.', ':');
+  raw = raw.replace(',', '.');
+  const parts = raw.split(':');
+  if (parts.length > 2) return null;
+  const last = parts[parts.length - 1]!;
+  if (!/^\d+(\.\d+)?$/.test(last)) return null;
+  if (parts.length === 2) {
+    if (!/^\d+$/.test(parts[0]!) || Number(last) >= 60) return null;
+    return Math.round((Number(parts[0]) * 60 + Number(last)) * 1000) / 1000;
+  }
+  return Math.round(Number(last) * 1000) / 1000;
+}
+
+/** The song's second that matches the take's sync point: at least 0, at most the original's length when known. */
+export function clampSongStart(value: number, songLength?: number | null): number {
+  if (!Number.isFinite(value)) return 0;
+  const top = songLength != null && Number.isFinite(songLength) && songLength > 0 ? songLength : Infinity;
+  return Math.round(Math.min(top, Math.max(0, value)) * 1000) / 1000;
+}
+
+/**
+ * Where the take ends in the song, saved with its start (the database asks end ≥ start): from the sync point to the
+ * take's end at its speed. Null when the take's length isn't known.
+ */
+export function songEndFor(take: {
+  songStart: number;
+  lead?: number | null;
+  speed: number;
+  duration: number | null | undefined;
+}): number | null {
+  const duration = Number(take.duration);
+  if (!Number.isFinite(duration) || duration <= 0) return null;
+  const end =
+    take.songStart + Math.max(0, duration - clampLead(take.lead)) * (take.speed > 0 ? take.speed : 1);
+  return Math.round(end * 1000) / 1000;
 }

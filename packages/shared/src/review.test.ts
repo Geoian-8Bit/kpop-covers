@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   clampAdjust,
   clampLead,
+  clampSongStart,
+  formatCents,
   clipInTake,
   followCorrection,
   formatLead,
   originalTime,
+  parseCents,
+  songEndFor,
   SONG_LEAD_LIMIT,
   songTimeAt,
   takeRangeToSong,
@@ -108,5 +112,49 @@ describe('the song starts later in the take (lead)', () => {
     expect(formatLead(0)).toBe('0:00,00');
     expect(formatLead(75.051)).toBe('1:15,05');
     expect(formatLead(-1)).toBe('0:00,00');
+  });
+});
+
+describe('the sync point in the song (partial takes)', () => {
+  it('reads seconds typed by hand, also from a number pad without a colon', () => {
+    expect(parseCents('1:05,30')).toBe(65.3);
+    expect(parseCents('1:05.3')).toBe(65.3);
+    expect(parseCents('65,3')).toBe(65.3);
+    expect(parseCents(' 1.05,30 ')).toBe(65.3);
+    expect(parseCents('0:12,57')).toBe(12.57);
+    expect(parseCents('1:75')).toBeNull();
+    expect(parseCents('abc')).toBeNull();
+    expect(parseCents('')).toBeNull();
+    expect(parseCents('1:2:3')).toBeNull();
+  });
+
+  it('shows seconds with hundredths, past ten minutes too', () => {
+    expect(formatCents(65.3)).toBe('1:05,30');
+    expect(formatCents(725.5)).toBe('12:05,50');
+    expect(formatCents(-2)).toBe('0:00,00');
+  });
+
+  it('keeps the song second within 0 and the original length', () => {
+    expect(clampSongStart(-1)).toBe(0);
+    expect(clampSongStart(65.30001)).toBe(65.3);
+    expect(clampSongStart(400, 210)).toBe(210);
+    expect(clampSongStart(400, 0)).toBe(400);
+    expect(clampSongStart(Number.NaN, 210)).toBe(0);
+  });
+
+  it('recomputes the end in the song from the sync point', () => {
+    expect(songEndFor({ songStart: 65.3, lead: 12.57, speed: 1, duration: 40 })).toBe(92.73);
+    expect(songEndFor({ songStart: 10, lead: 0, speed: 0.5, duration: 20 })).toBe(20);
+    // The lead past the take's end: the take covers nothing of the song after it.
+    expect(songEndFor({ songStart: 10, lead: 50, speed: 1, duration: 20 })).toBe(10);
+    expect(songEndFor({ songStart: 10, lead: 0, speed: 1, duration: 0 })).toBeNull();
+    expect(songEndFor({ songStart: 10, lead: 0, speed: 1, duration: null })).toBeNull();
+  });
+
+  it('maps a partial take: lead in the take, song start in the song', () => {
+    const partial = { songStart: 65.3, speed: 1, lead: 12.57 };
+    expect(songTimeAt(partial, 12.57)).toBeCloseTo(65.3);
+    expect(songTimeAt(partial, 0)).toBeCloseTo(52.73); // before the point the original just plays earlier
+    expect(takeTimeAt(partial, 70)).toBeCloseTo(17.27);
   });
 });
