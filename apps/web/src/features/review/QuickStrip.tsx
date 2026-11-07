@@ -2,7 +2,14 @@ import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { useReview } from '@/player/store';
 import { formatSpeed } from '@coverscape/shared';
-import { Columns2, FlipHorizontal2, Layers, MessageSquarePlus, Repeat } from 'lucide-react';
+import {
+  Columns2,
+  FlipHorizontal2,
+  Layers,
+  MessageSquarePlus,
+  RectangleVertical,
+  Repeat,
+} from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { type CompareMode, nextQuickOpacity, nextQuickRate } from './reviewRules';
@@ -59,7 +66,7 @@ function QuickButton({
  * The quick strip: what is used most while reviewing a dance, one tap each, always at hand (a column by the take's
  * side of the stage on a phone on its side, a row over the controls in portrait). Never over YouTube.
  * Speed (1 → 0,75 → 0,5), A, B, repeat, the original in a mirror, separate / overlaid (files only), how much of the
- * original shows (overlaid only) and a note at this moment.
+ * original shows (overlaid only), «Solo toma» (the take alone, big) and a note at this moment.
  */
 export function QuickStrip({
   orientation,
@@ -101,8 +108,10 @@ export function QuickStrip({
   const loop = useReview((s) => s.loop);
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
   const ready = useReview((s) => s.takeEngine != null);
+  const solo = useReview((s) => s.solo);
   const review = useReview.getState;
-  const overlay = mode === 'overlay';
+  const overlay = mode === 'overlay' && !solo;
+  const comparing = hasOriginal && !solo;
   const topName = onTop === 'take' ? 'La toma' : 'El original';
 
   // A column taller than the room scrolls: a fade at its foot says there is more below.
@@ -189,6 +198,16 @@ export function QuickStrip({
         )}
         {hasOriginal && (
           <QuickButton
+            label={solo ? 'Volver a comparar con el original' : 'Ver solo la toma, sin el original'}
+            title={solo ? 'Volver a comparar' : 'Solo la toma'}
+            pressed={solo}
+            onClick={() => review().setSolo(!solo)}
+          >
+            <RectangleVertical className="size-[18px]" />
+          </QuickButton>
+        )}
+        {comparing && (
+          <QuickButton
             label="Original en espejo"
             pressed={mirrorOriginal}
             onClick={() => review().toggleMirrorOriginal()}
@@ -196,7 +215,7 @@ export function QuickStrip({
             <FlipHorizontal2 className="size-[18px]" />
           </QuickButton>
         )}
-        {withMode && canOverlay && (
+        {withMode && canOverlay && !solo && (
           <QuickButton
             label="Superpuesto"
             title="Superpuesto (si no, separados)"

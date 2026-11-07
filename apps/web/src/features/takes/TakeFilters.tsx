@@ -6,11 +6,12 @@ import { jelly } from '@/lib/motion';
 import type { Clip, Member } from '@coverscape/shared';
 import { motion } from 'motion/react';
 import { type ReactNode, useMemo } from 'react';
+import { takeOwnTitle } from './takeNames';
 import { isFiltered, NO_FILTER, type TakeFilter } from './takeRules';
 
 // ───────────── Filters ─────────────
 
-function Chip({
+export function Chip({
   active,
   onClick,
   children,
@@ -73,6 +74,8 @@ export function Filters({
     return ids.sort((a, b) => Number(b === meId) - Number(a === meId));
   }, [all, meId]);
   const hasUnnamed = all.some((t) => !t.member_id);
+  // Takes of nobody in particular that carry their own name («Grupo 1 · Primera versión») are the group's.
+  const unnamedLabel = all.some((t) => !t.member_id && takeOwnTitle(t)) ? 'Grupo / sin nombre' : 'Sin nombre';
   const clipIds = useMemo(
     () => [...new Set(all.map((t) => t.clip_id).filter((id): id is string => Boolean(id)))],
     [all],
@@ -100,7 +103,7 @@ export function Filters({
           {hasUnnamed && (
             <Chip active={filter.member === 'none'} onClick={() => set({ member: 'none' })}>
               <MemberSeal member={null} size="sm" />
-              Sin nombre
+              {unnamedLabel}
             </Chip>
           )}
         </ChipRow>

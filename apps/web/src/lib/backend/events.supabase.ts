@@ -1,6 +1,6 @@
-import type { CrewEvent, TakeReaction } from '@coverscape/shared';
+import type { CrewEvent } from '@coverscape/shared';
 import { supabase } from '../supabase';
-import { fetchAll, must } from './shared';
+import { must } from './shared';
 import type { EventSongView, EventsBackend } from './types';
 
 const EVENT_SONG_SELECT =
@@ -63,24 +63,5 @@ export const supabaseEvents: EventsBackend = {
   async setEventSongPositions(eventId, ids) {
     // REQ-20 · One call, all or nothing (it was one PATCH per song).
     must(await supabase.rpc('set_event_song_positions', { p_event: eventId, p_ids: ids }));
-  },
-  async listReactions(videoId) {
-    const rows = await fetchAll<TakeReaction & { take: unknown }>((from, to) =>
-      supabase
-        .from('take_reactions')
-        .select('id, crew_id, take_id, member_id, emoji, created_at, archived_at, take:takes!inner(video_id)')
-        .eq('take.video_id', videoId)
-        .order('created_at')
-        .order('id')
-        .range(from, to),
-    );
-    return rows.map(({ take: _take, ...row }) => row);
-  },
-  async addReaction(row) {
-    const data = must(await supabase.from('take_reactions').insert(row).select().single());
-    return data as TakeReaction;
-  },
-  async removeReaction(id) {
-    must(await supabase.from('take_reactions').delete().eq('id', id));
   },
 };

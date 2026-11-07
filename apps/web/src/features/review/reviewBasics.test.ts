@@ -43,7 +43,7 @@ describe('layout limits', () => {
 
   it('reads an old demo take without the review columns', () => {
     const timing = takeTiming({ song_start_seconds: 12, speed: 0.75, duration_seconds: 30 } as never);
-    expect(timing).toEqual({ songStart: 12, speed: 0.75, adjust: 0, duration: 30 });
+    expect(timing).toEqual({ songStart: 12, speed: 0.75, adjust: 0, lead: 0, duration: 30 });
   });
 });
 
@@ -88,6 +88,22 @@ describe('clips inside a take', () => {
 
   it('is empty without a length', () => {
     expect(clipsInTake([clip('a', 12, 14)], { ...take, duration_seconds: 0 })).toEqual([]);
+  });
+
+  it('places clips after the song starts in the take (a video from the gallery)', () => {
+    const gallery = { song_start_seconds: 0, speed: 1, sync_adjust_seconds: 0, duration_seconds: 60 };
+    const out = clipsInTake([clip('a', 5, 10)], { ...gallery, song_lead_seconds: 12.57 });
+    expect(out.map((c) => [c.start, c.end])).toEqual([[17.57, 22.57]]);
+  });
+});
+
+describe('take timing', () => {
+  it('reads the song start in the take, clamped (old rows have none)', () => {
+    const row = { song_start_seconds: 3, speed: 1, sync_adjust_seconds: 0.1, duration_seconds: 20 };
+    expect(takeTiming(row).lead).toBe(0);
+    expect(takeTiming({ ...row, song_lead_seconds: 12.57 }).lead).toBe(12.57);
+    expect(takeTiming({ ...row, song_lead_seconds: -4 }).lead).toBe(0);
+    expect(takeTiming({ ...row, song_lead_seconds: 9999 }).lead).toBe(600);
   });
 });
 

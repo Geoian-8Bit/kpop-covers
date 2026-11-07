@@ -17,6 +17,20 @@ export interface TakeTiming {
   speed: number;
   /** Fine adjustment saved with the take (seconds of song, ±0.3). */
   adjust?: number | null;
+  /**
+   * The take's second where the song starts (a video uploaded from the gallery: the dance starts 12,57 s in).
+   * Before it the song time is below `songStart` (negative for a take of the whole song): the original waits.
+   */
+  lead?: number | null;
+}
+
+/** Most a take may run before the song starts (s). */
+export const SONG_LEAD_LIMIT = 600;
+
+export function clampLead(value: number | null | undefined): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.min(SONG_LEAD_LIMIT, Math.max(0, n)) * 1000) / 1000;
 }
 
 export function clampAdjust(value: number): number {
@@ -26,16 +40,24 @@ export function clampAdjust(value: number): number {
 
 /** The song's second shown at a moment of the take. */
 export function songTimeAt(take: TakeTiming, takeSeconds: number): number {
-  return take.songStart + takeSeconds * (take.speed || 1) + clampAdjust(take.adjust ?? 0);
+  return (
+    take.songStart + (takeSeconds - clampLead(take.lead)) * (take.speed || 1) + clampAdjust(take.adjust ?? 0)
+  );
 }
 
 /** The take's moment for a second of the song (inverse of songTimeAt). */
 export function takeTimeAt(take: TakeTiming, songSeconds: number): number {
-  return (songSeconds - take.songStart - clampAdjust(take.adjust ?? 0)) / (take.speed || 1);
+  return (
+    (songSeconds - take.songStart - clampAdjust(take.adjust ?? 0)) / (take.speed || 1) + clampLead(take.lead)
+  );
 }
 
 /** Where the original plays: the YouTube timeline itself, or the linked file ahead by its offset (F1). */
-export function originalTime(songSeconds: number, fileOffset: number | null | undefined, onFile: boolean): number {
+export function originalTime(
+  songSeconds: number,
+  fileOffset: number | null | undefined,
+  onFile: boolean,
+): number {
   return onFile ? songSeconds + (fileOffset ?? 0) : songSeconds;
 }
 
@@ -71,8 +93,19 @@ export function clipInTake(
 }
 
 /** A range marked on the take as a song range (to save it as a clip of the song, F8). */
-export function takeRangeToSong(take: TakeTiming, range: { start: number; end: number }): { start: number; end: number } {
+export function takeRangeToSong(
+  take: TakeTiming,
+  range: { start: number; end: number },
+): { start: number; end: number } {
   const s = songTimeAt(take, Math.min(range.start, range.end));
   const e = songTimeAt(take, Math.max(range.start, range.end));
   return { start: Math.max(0, Math.round(s * 1000) / 1000), end: Math.max(0, Math.round(e * 1000) / 1000) };
+}
+
+/** The song's start in the take, with hundredths, as the review shows it: 12.57 → «0:12,57». */
+export function formatLead(seconds: number): string {
+  const cents = Math.round(clampLead(seconds) * 100);
+  const m = Math.floor(cents / 6000);
+  const s = Math.floor((cents % 6000) / 100);
+  return `${m}:${String(s).padStart(2, '0')},${String(cents % 100).padStart(2, '0')}`;
 }

@@ -1,19 +1,16 @@
-import type { CrewEvent, EventSong, TakeReaction } from '@coverscape/shared';
+import type { CrewEvent, EventSong } from '@coverscape/shared';
 import { withGenerated } from './core.demo';
 import { demoError, isLive, mutate, now, query } from './demoDb';
 import type { DemoDb } from './demoDb';
 import type { EventSongView, EventsBackend, NewEvent } from './types';
 
 // Demo twin: the same rules as the database (name 1–80, place ≤ 120, a song once per event and only from the
-// library, positions 0–999, reactions only on shared takes, one of each per person or «sin nombre», known emoji).
+// library, positions 0–999).
 
 type EventsDemoDb = DemoDb & {
   events?: CrewEvent[];
   event_songs?: EventSong[];
-  take_reactions?: TakeReaction[];
 };
-
-const DEMO_EMOJIS = ['🔥', '👏', '💯', '😂'];
 
 function checkEventRow(row: Partial<NewEvent>) {
   if (row.name != null && (row.name.trim().length < 1 || row.name.trim().length > 80)) {
@@ -168,55 +165,5 @@ export const demoEvents: EventsBackend = {
         const song = mine.find((s) => s.id === id);
         if (song) song.position = position;
       });
-    }),
-  listReactions: (videoId) =>
-    query((raw) => {
-      const db = raw as EventsDemoDb;
-      const takes = new Set(
-        (db.takes ?? []).filter((t) => t.video_id === videoId && t.archived_at == null).map((t) => t.id),
-      );
-      return (db.take_reactions ?? [])
-        .filter((r) => isLive(r) && takes.has(r.take_id))
-        .sort((a, b) => a.created_at.localeCompare(b.created_at));
-    }),
-  addReaction: async (row) =>
-    mutate((raw) => {
-      const db = raw as EventsDemoDb;
-      if (!DEMO_EMOJIS.includes(row.emoji)) {
-        throw demoError(
-          'new row for relation "take_reactions" violates check constraint "take_reactions_emoji_check"',
-          '23514',
-        );
-      }
-      const take = (db.takes ?? []).find(
-        (t) => t.id === row.take_id && t.archived_at == null && t.shared_path != null,
-      );
-      if (!take) throw demoError('reaction_take_invalid');
-      const member =
-        row.member_id && (db.members ?? []).some((m) => m.id === row.member_id) ? row.member_id : null;
-      const reactions = (db.take_reactions ??= []);
-      if (
-        reactions.some(
-          (r) => isLive(r) && r.take_id === take.id && r.member_id === member && r.emoji === row.emoji,
-        )
-      ) {
-        throw demoError('duplicate key value violates unique constraint "take_reactions_once_key"', '23505');
-      }
-      const reaction: TakeReaction = {
-        id: crypto.randomUUID(),
-        crew_id: take.crew_id,
-        take_id: take.id,
-        member_id: member,
-        emoji: row.emoji,
-        created_at: now(),
-        archived_at: null,
-      };
-      reactions.push(reaction);
-      return reaction;
-    }),
-  removeReaction: async (id) =>
-    mutate((raw) => {
-      const reaction = (raw as EventsDemoDb).take_reactions?.find((r) => r.id === id);
-      if (reaction && isLive(reaction)) reaction.archived_at = now();
     }),
 };

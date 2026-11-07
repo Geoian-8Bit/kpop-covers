@@ -14,6 +14,8 @@ export interface TakeRowActions {
   toggleBest: (take: TakeItem) => void;
   share: (take: TakeItem) => void;
   remove: (take: TakeItem) => void;
+  /** «Editar»: its name and who dances it. */
+  rename: (take: TakeItem) => void;
   refused: (reason: string) => void;
 }
 
@@ -25,7 +27,7 @@ export interface TakeRowActions {
 export function useTakeActions(
   video: Video,
   onPlay: (take: TakeItem, url: string) => void,
-  more: Pick<TakeRowActions, 'share' | 'remove'>,
+  more: Pick<TakeRowActions, 'share' | 'remove' | 'rename'>,
 ) {
   const setBest = useSetBestTake();
   const toast = useToast();
@@ -77,6 +79,7 @@ export function useTakeActions(
       toggleBest,
       share: more.share,
       remove: more.remove,
+      rename: more.rename,
       refused: (reason) => toast(reason, 'info'),
     };
   });
@@ -87,6 +90,7 @@ export function useTakeActions(
       toggleBest: (take) => latest.current?.toggleBest(take),
       share: (take) => latest.current?.share(take),
       remove: (take) => latest.current?.remove(take),
+      rename: (take) => latest.current?.rename(take),
       refused: (reason) => latest.current?.refused(reason),
     }),
     [],

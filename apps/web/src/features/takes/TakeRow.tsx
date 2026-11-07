@@ -4,7 +4,6 @@ import { SwipeRow, type SwipeAction } from '@/components/ui/SwipeRow';
 import { CLIP_SWATCH } from '@/data/clips';
 import type { TakeItem } from '@/data/takes';
 import { MemberSeal } from '@/features/members/MembersUI';
-import { TakeReactions } from '@/features/reactions/TakeReactions';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { type Clip, formatDuration, formatSpeed, formatTime, type Member } from '@coverscape/shared';
@@ -16,10 +15,12 @@ import {
   Download,
   FlipHorizontal2,
   MessageSquare,
+  Pencil,
   Play,
   Smartphone,
   Star,
   Trash2,
+  User,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { memo, type ReactNode } from 'react';
@@ -36,7 +37,10 @@ interface TakeRowProps {
   /** Notes on this take (F6). */
   notes: number;
   member: Member | null;
-  memberName: string;
+  /** Its name, else who dances it, else the uploaded file's name, else «Sin nombre» (`takeTitle`). */
+  title: string;
+  /** Who dances it, when the title is the take's own name. */
+  person: string | null;
   clip: Clip | null;
   hasClipId: boolean;
   where: string;
@@ -74,7 +78,8 @@ function TakeRowView({
   featured,
   notes,
   member,
-  memberName,
+  title,
+  person,
   clip,
   hasClipId,
   where,
@@ -88,6 +93,7 @@ function TakeRowView({
   const onStar = () => actions.toggleBest(take);
   const onShare = () => actions.share(take);
   const onDelete = () => actions.remove(take);
+  const onRename = () => actions.rename(take);
   const onRefused = actions.refused;
   const playable = take.where !== 'elsewhere';
   const shareReason = take.shared_path
@@ -127,6 +133,13 @@ function TakeRowView({
   );
   // Touch: slide the take left for these (the bar's own buttons go out of sight there; see `swipeHidden`).
   const swipeActions: SwipeAction[] = [
+    {
+      key: 'rename',
+      label: 'Editar',
+      ariaLabel: 'Editar el nombre y quién baila',
+      icon: <Pencil />,
+      onSelect: onRename,
+    },
     {
       key: 'download',
       label: 'Descargar',
@@ -188,9 +201,26 @@ function TakeRowView({
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="flex min-w-0 items-baseline gap-1.5">
-              <span className="max-w-[65%] shrink-0 truncate text-[15px] font-bold">{memberName}</span>
-              <span className="truncate text-[12.5px] text-washi-muted">
+            {/* A long name (a group run-through) takes two lines and the date goes under it: never cut to «…». */}
+            <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+              {/* Tapping the name edits it (also «Editar» in the swipe and, with a mouse, in the bar). */}
+              <button
+                type="button"
+                onClick={onRename}
+                aria-label={`${title}. Editar el nombre`}
+                className="-my-1 line-clamp-2 min-w-0 max-w-full break-words rounded-[6px] py-1 text-left text-[15px] font-bold leading-snug hover:text-kin-300"
+              >
+                {title}
+              </button>
+              <span className="whitespace-nowrap text-[12.5px] text-washi-muted">
+                {/* Who dances it, when the title is the take's own name. */}
+                {person && (
+                  <>
+                    <User className="mr-0.5 inline size-3.5 -translate-y-px" aria-hidden />
+                    <span className="font-medium text-washi">{person}</span>
+                    <span className="text-washi-subtle"> · </span>
+                  </>
+                )}
                 {takeDateLabel(take.recorded_at)}
               </span>
             </p>
@@ -279,7 +309,7 @@ function TakeRowView({
             onClick={onPlay}
             aria-label={
               playable
-                ? `Repasar con el original: toma de ${memberName} (${takeDateLabel(take.recorded_at)})`
+                ? `Repasar con el original: ${title} (${takeDateLabel(take.recorded_at)})`
                 : 'Repasar con el original: no se puede, está en otro móvil'
             }
           >
@@ -291,6 +321,15 @@ function TakeRowView({
             the star moves up to the row, so the bar takes no height. */}
         <div className="mt-2 flex items-center justify-end gap-0.5 border-t border-line pt-1.5 touch:mt-0 touch:border-0 touch:pt-0">
           {starButton('touch:hidden')}
+          <RowAction
+            className={swipeHidden}
+            icon={<Pencil className="size-[18px]" />}
+            label="Editar"
+            ariaLabel="Editar el nombre y quién baila"
+            refused={null}
+            onClick={onRename}
+            onRefused={onRefused}
+          />
           <RowAction
             className={swipeHidden}
             icon={busy === 'download' ? <Spinner className="size-4" /> : <Download className="size-[18px]" />}
@@ -327,8 +366,6 @@ function TakeRowView({
             onRefused={onRefused}
           />
         </div>
-        {/* F15 · Quick reactions, only on takes shared with the group. */}
-        {take.shared_path && <TakeReactions take={take} />}
       </SwipeRow>
     </motion.li>
   );

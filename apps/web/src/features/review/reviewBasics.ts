@@ -1,5 +1,5 @@
 import type { TakeItem } from '@/features/takes/takeRules';
-import { clamp, clampAdjust, type Clip, clipInTake, type Take } from '@coverscape/shared';
+import { clamp, clampAdjust, clampLead, type Clip, clipInTake, type Take } from '@coverscape/shared';
 
 // ───────────── Layout and transport ─────────────
 
@@ -117,14 +117,20 @@ export function takeLength(mediaSeconds: number, savedSeconds: number | null | u
   return Number.isFinite(saved) && saved > 0 ? saved : 0;
 }
 
-/** Song timing of a take (old demo rows may lack the adjustment). */
-export function takeTiming(
-  take: Pick<Take, 'song_start_seconds' | 'speed' | 'sync_adjust_seconds' | 'duration_seconds'>,
-) {
+/** What the review reads of a take to place it on the song. */
+export type TakeTimingRow = Pick<
+  Take,
+  'song_start_seconds' | 'speed' | 'sync_adjust_seconds' | 'duration_seconds'
+> &
+  Partial<Pick<Take, 'song_lead_seconds'>>;
+
+/** Song timing of a take (old demo rows may lack the adjustment or the song's start in the take). */
+export function takeTiming(take: TakeTimingRow) {
   return {
     songStart: Number(take.song_start_seconds) || 0,
     speed: Number(take.speed) > 0 ? Number(take.speed) : 1,
     adjust: clampAdjust(Number(take.sync_adjust_seconds ?? 0)),
+    lead: clampLead(take.song_lead_seconds),
     duration: Number(take.duration_seconds) || 0,
   };
 }
@@ -134,7 +140,7 @@ export { takeSongZero } from '@/features/takes/takeRules';
 /** The song's clips that fall inside the take, as ranges of the take (to loop them in both). */
 export function clipsInTake(
   clips: readonly Clip[],
-  take: Pick<Take, 'song_start_seconds' | 'speed' | 'sync_adjust_seconds' | 'duration_seconds'>,
+  take: TakeTimingRow,
   duration?: number,
 ): { clip: Clip; start: number; end: number }[] {
   const timing = takeTiming(take);

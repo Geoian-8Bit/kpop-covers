@@ -6,6 +6,7 @@ import { useReview } from '@/player/store';
 import { NO_FIT, type Fit } from './reviewRules';
 import { createStageStore } from './reviewStageStore';
 import { useFitAndSplit } from './useFitAndSplit';
+import { useSongLead } from './useSongLead';
 import { useSyncAdjust } from './useSyncAdjust';
 import { useTakeSaver } from './useTakeSaver';
 
@@ -33,7 +34,11 @@ function setup() {
       () => undefined,
       (fitStatus) => stage.setState({ fitStatus }),
     );
-    return { onAdjust: useSyncAdjust(0, adjustSaver.save), ...useFitAndSplit(stage, take, fitSaver.save) };
+    return {
+      onAdjust: useSyncAdjust(0, adjustSaver.save),
+      onLead: useSongLead(adjustSaver.save),
+      ...useFitAndSplit(stage, take, fitSaver.save),
+    };
   });
   return { stage, ...hook };
 }
@@ -46,7 +51,7 @@ describe('review saving (REQ-25)', () => {
     align.mockReset();
     useReview.setState({
       alignOriginal: align,
-      timing: { songStart: 0, speed: 1, adjust: 0, offset: 0, onFile: false },
+      timing: { songStart: 0, speed: 1, adjust: 0, lead: 0, offset: 0, onFile: false },
     } as never);
   });
   afterEach(() => vi.useRealTimers());
@@ -77,6 +82,26 @@ describe('review saving (REQ-25)', () => {
     act(() => vi.advanceTimersByTime(300));
     expect(mutate).toHaveBeenCalledTimes(2);
     expect(mutate.mock.calls[1]![0]).toEqual({ take, patch: { sync_adjust_seconds: 0.27 } });
+  });
+
+  it('song start in the take: live at once, one jump after the taps, saved with the fine sync', () => {
+    const { result } = setup();
+    act(() => {
+      result.current.onLead(12.57);
+      result.current.onLead(12.67);
+      result.current.onAdjust(0.05, true);
+    });
+    expect(useReview.getState().timing.lead).toBe(12.67);
+    act(() => vi.advanceTimersByTime(300));
+    expect(align).toHaveBeenCalledTimes(2); // the fine sync's let-go, then the lead once
+    act(() => result.current.onLead(-1)); // clamped to 0
+    expect(useReview.getState().timing.lead).toBe(0);
+    act(() => vi.advanceTimersByTime(600));
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      take,
+      patch: { song_lead_seconds: 0, sync_adjust_seconds: 0.05 },
+    });
   });
 
   it('overlay fit: every step in the stage store, the settled one saved once', () => {

@@ -161,3 +161,75 @@ test('nota de toma con dibujo: se guarda y se abre desde su marca', async ({ pag
     .toBe(true);
   guard.check();
 });
+
+/** The take's and the original's <video> (the take carries the sound; the original is the song's file). */
+const videos = (page: Page) =>
+  page.evaluate(() => {
+    const at = (name: string) =>
+      document.querySelector<HTMLVideoElement>(`[aria-label^="${name}: + para ampliar"] video`);
+    const take = at('Toma');
+    const original = at('Original');
+    return {
+      take: take ? take.currentTime : -1,
+      original: original ? original.currentTime : -1,
+      originalPaused: original ? original.paused : true,
+    };
+  });
+
+test('inicio de la canción: se marca en la toma, se guarda y el original espera hasta ese momento', async ({
+  page,
+  browser,
+}) => {
+  const guard = guardConsole(page);
+  await reviewRecordedTake(page, browser);
+  const time = page.getByRole('slider', { name: 'Tiempo de la toma' });
+  await time.focus();
+  await time.press('ArrowRight');
+  const settings = page.getByRole('button', { name: 'Ajustes del repaso' }).first();
+  if (await settings.isVisible()) await settings.click();
+  await page.getByRole('button', { name: /^Marcar aquí/ }).click();
+  await expect
+    .poll(async () => Number((await mine(page))['song_lead_seconds']), { timeout: 15_000 })
+    .toBeGreaterThan(0.5);
+  const lead = Number((await mine(page))['song_lead_seconds']);
+  await expect(page.getByRole('group', { name: 'Inicio de la canción en la toma' })).toContainText(
+    /0:0\d,\d\d/,
+  );
+
+  // From the take's start: the original waits paused at 0, then comes in when the take reaches the lead.
+  await time.focus();
+  await time.press('Home');
+  await page.getByRole('button', { name: 'Reproducir los dos (espacio)' }).first().click();
+  await page.waitForTimeout(250);
+  const before = await videos(page);
+  expect(before.take).toBeLessThan(lead);
+  expect(before.originalPaused).toBe(true);
+  expect(before.original).toBeLessThan(0.05);
+  await expect
+    .poll(
+      async () => {
+        const v = await videos(page);
+        return v.take > lead + 0.3 && !v.originalPaused && v.original > 0.05;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+
+  await page.getByRole('button', { name: 'La canción empieza al principio de la toma' }).click();
+  await expect.poll(async () => Number((await mine(page))['song_lead_seconds']), { timeout: 15_000 }).toBe(0);
+  guard.check();
+});
+
+test('solo toma: la toma sola y grande, y vuelta a comparar', async ({ page, browser }) => {
+  const guard = guardConsole(page);
+  await reviewRecordedTake(page, browser);
+  await page.getByRole('button', { name: 'Ver solo la toma, sin el original' }).first().click();
+  await expect(page.getByRole('group', { name: 'Original: + para ampliar' })).toBeHidden();
+  await expect(page.getByRole('separator', { name: 'Reparto entre el original y la toma' })).toBeHidden();
+  // The take is always the one heard: no «what's heard» switch.
+  await expect(page.getByRole('button', { name: /^Se oye la toma/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Comparar' }).first().click();
+  await expect(page.getByRole('group', { name: 'Original: + para ampliar' })).toBeVisible();
+  await expect(page.getByRole('separator', { name: 'Reparto entre el original y la toma' })).toBeVisible();
+  guard.check();
+});

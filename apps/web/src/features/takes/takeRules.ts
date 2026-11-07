@@ -1,4 +1,5 @@
 import type { Take, TablesInsert } from '@coverscape/shared';
+import { cleanLabel, takeOwnTitle } from './takeNames';
 
 /**
  * F3 / F4 · Pure rules of the «Tomas» tab: where a take is, who may delete it, filters, order (best first),
@@ -72,9 +73,15 @@ export function cleanupCandidates<T extends TakeItem>(takes: readonly T[], ctx: 
   return takes.filter((t) => !t.is_best && canDeleteTake(t, ctx).ok);
 }
 
-/** This device's takes without a name (F2: offered to whoever this device says it is). */
-export function unnamedHere<T extends Pick<Take, 'device_id' | 'member_id'>>(takes: readonly T[], deviceId: string): T[] {
-  return takes.filter((t) => t.member_id == null && t.device_id === deviceId);
+/**
+ * This device's takes without a name (F2: offered to whoever this device says it is). A take with its own name (a
+ * group run-through, «Grupo 1 · Primera versión») has one: it isn't offered.
+ */
+export function unnamedHere<T extends Pick<Take, 'device_id' | 'member_id' | 'label' | 'file_name'>>(
+  takes: readonly T[],
+  deviceId: string,
+): T[] {
+  return takes.filter((t) => t.member_id == null && t.device_id === deviceId && !takeOwnTitle(t));
 }
 
 // ───────────── Filters and order ─────────────
@@ -177,6 +184,22 @@ export function assignPatch(
   return clash ? { member_id: memberId, is_best: false } : { member_id: memberId };
 }
 
+/**
+ * «Editar» a take: its name (empty → none) and, if it changed, who dances it (null = the group / nobody). Like
+ * `assignPatch`, a starred take that would become the second best of its new person and section loses its star.
+ */
+export function renamePatch(
+  take: Take,
+  next: { label: string | null; memberId: string | null },
+  all: readonly Take[],
+): { label: string | null; member_id?: string | null; is_best?: boolean } {
+  const label = cleanLabel(next.label);
+  if ((take.member_id ?? null) === next.memberId) return { label };
+  const moved = { ...take, member_id: next.memberId };
+  const clash = take.is_best && all.some((t) => t.id !== take.id && t.is_best && sameTrio(t, moved));
+  return clash ? { label, member_id: next.memberId, is_best: false } : { label, member_id: next.memberId };
+}
+
 // ───────────── The row of a saved take ─────────────
 
 export interface SaveTakeInput {
@@ -194,6 +217,8 @@ export interface SaveTakeInput {
   height?: number | null;
   mimeType?: string | null;
   fileName?: string | null;
+  /** A name typed for it («Subir vídeo»): trimmed, at most 80 letters; empty → none. */
+  label?: string | null;
   /** ISO time it started recording (defaults to now). */
   recordedAt?: string | null;
 }
@@ -214,6 +239,7 @@ export function takeRow(input: SaveTakeInput, deviceId: string): TablesInsert<'t
   const speed = round(Math.min(2, Math.max(0.25, finite(input.speed) ? input.speed : 1)), 2);
   const duration = round(Math.min(7200, Math.max(0, finite(input.durationSeconds) ? input.durationSeconds : 0)), 3);
   const recordedAt = input.recordedAt && Number.isFinite(Date.parse(input.recordedAt)) ? input.recordedAt : undefined;
+  const label = cleanLabel(input.label);
   return {
     id: input.id,
     video_id: input.videoId,
@@ -230,6 +256,8 @@ export function takeRow(input: SaveTakeInput, deviceId: string): TablesInsert<'t
     file_name: input.fileName ? input.fileName.slice(0, 255) : null,
     device_id: isDeviceId(deviceId) ? deviceId : null,
     ...(recordedAt ? { recorded_at: recordedAt } : {}),
+    // Only when there is one: a take saved by the recorder writes the same row as before.
+    ...(label ? { label } : {}),
   };
 }
 

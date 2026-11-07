@@ -7,7 +7,9 @@ import { useTapAnyFinger } from './tapAnyFinger';
 /** «Se oye: la toma / el original»: one tap switches which of the two is heard. */
 export function SoundPill({ hasOriginal }: { hasOriginal: boolean }) {
   const audio = useReview((s) => s.audio);
-  if (!hasOriginal) return null;
+  const solo = useReview((s) => s.solo);
+  // «Solo toma»: the take is always the one heard.
+  if (!hasOriginal || solo) return null;
   const takeHeard = audio === 'take';
   return <SoundPillButton takeHeard={takeHeard} />;
 }

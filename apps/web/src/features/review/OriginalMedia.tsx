@@ -5,7 +5,7 @@ import {
   type PlayerEngine,
   releaseMediaAudio,
 } from '@/player/engine';
-import { reviewOriginalRate, useReview } from '@/player/store';
+import { originalWaitState, reviewOriginalRate, useReview } from '@/player/store';
 import { useEffect, useRef, useState } from 'react';
 import { mediaSlot, type OriginalProbe } from './reviewMediaSlot';
 import { blendLatency, seekAhead } from './reviewRules';
@@ -142,13 +142,18 @@ export function OriginalYouTube({
     // Heard and asked to play, YouTube must really start: if it doesn't (blocked, stuck loading), say so and pause.
     let stuckTimer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = useReview.subscribe((s, before) => {
-      if (s.playing === before.playing && s.audio === before.audio) return;
+      if (s.playing === before.playing && s.audio === before.audio && s.solo === before.solo) return;
       clearTimeout(stuckTimer);
-      if (!s.playing || s.audio !== 'original') return;
+      if (!s.playing || s.audio !== 'original' || s.solo) return;
       const startedAt = performance.now();
       const check = () => {
         const r = review();
-        if (disposed || !r.playing || r.audio !== 'original' || !player) return;
+        if (disposed || !r.playing || r.audio !== 'original' || r.solo || !player) return;
+        // Waiting for the take to reach the song's start: not stuck, asked again later.
+        if (originalWaitState.waiting) {
+          stuckTimer = setTimeout(check, YOUTUBE_STUCK_MS);
+          return;
+        }
         const state = player.getPlayerState();
         if (state === YTState.PLAYING) return;
         // Still loading on a slow connection: give it longer before saying it didn't start.

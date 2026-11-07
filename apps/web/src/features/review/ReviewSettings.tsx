@@ -1,18 +1,29 @@
 import { Button } from '@/components/ui/Button';
-import { ElasticToggle } from '@/components/ui/ElasticToggle';
 import { Segmented } from '@/components/ui/Segmented';
 import { CLIP_SWATCH } from '@/data/clips';
 import { cn } from '@/lib/cn';
 import { jelly } from '@/lib/motion';
 import { hasRange, useReview } from '@/player/store';
 import { isZoomed, NO_ZOOM, stepZoom, ZOOM_MAX, zoomLabel, zoomOfClip } from '@/player/zoom';
-import { clampAdjust, type Clip, formatSpeed, formatTime, SYNC_ADJUST_LIMIT } from '@coverscape/shared';
-import { ArrowLeftRight, BookmarkPlus, Crosshair, Scan, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { type Clip, formatSpeed, formatTime } from '@coverscape/shared';
+import {
+  ArrowLeftRight,
+  BookmarkPlus,
+  Crosshair,
+  FlipHorizontal2,
+  RectangleVertical,
+  Scan,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
-import type { ReactNode, Ref } from 'react';
-import { signed } from './reviewControlParts';
+import type { Ref } from 'react';
 import { type CompareMode, REVIEW_RATE_MAX, REVIEW_RATE_MIN, type ViewPrefs } from './reviewRules';
+import type { SaveStatus } from './reviewStageStore';
+import { ReviewSyncSettings } from './ReviewSyncSettings';
 import { FrameStep, IconButton } from './ReviewTransport';
+import { Chip, Group, Range, SaveNote } from './settingsParts';
 
 // ───────────── Settings ─────────────
 
@@ -22,8 +33,11 @@ function ZoomStepper({ label, which }: { label: string; which: 'take' | 'origina
   // Only the scale changes: the zoomed spot stays put.
   const set = (factor: number) => useReview.getState().setZoom(which, stepZoom(zoom, factor));
   return (
-    <div role="group" aria-label={`Zoom: ${label}`} className="flex min-h-11 items-center gap-1">
-      <span className="w-20 shrink-0 text-[13px] text-washi-muted">{label}</span>
+    <div role="group" aria-label={`Zoom: ${label}`} className="flex min-h-11 items-center gap-0.5">
+      <span className="w-[4.75rem] shrink-0 leading-tight">
+        <span className="block text-[11px] text-washi-subtle">Zoom</span>
+        <span className="text-[13px] text-washi-muted">{label}</span>
+      </span>
       <IconButton
         label={`Reducir el zoom (${label.toLowerCase()})`}
         onClick={() => set(1 / 1.5)}
@@ -52,68 +66,6 @@ function ZoomStepper({ label, which }: { label: string; which: 'take' | 'origina
   );
 }
 
-function Row({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
-  return (
-    <section className="space-y-2.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
-      <h3 className="font-display text-[15px] font-bold text-washi">{title}</h3>
-      {children}
-      {hint && <p className="text-[13px] leading-snug text-washi-subtle">{hint}</p>}
-    </section>
-  );
-}
-
-function Range({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  valueText,
-  onCommit,
-  onSlide,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  valueText: string;
-  /** The finger (or the key) let go. */
-  onCommit?: () => void;
-  /** A finger is on the slider (true) or has let go (false). */
-  onSlide?: (sliding: boolean) => void;
-}) {
-  const end = () => {
-    onCommit?.();
-    onSlide?.(false);
-  };
-  return (
-    <label className="flex min-h-11 items-center gap-3">
-      <span className="w-24 shrink-0 text-[13px] text-washi-muted">{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        aria-valuetext={valueText}
-        onChange={(e) => onChange(Number(e.target.value))}
-        // Let go however it ends: lifted, cancelled (the sheet took it as a scroll), lost, or left with the keys.
-        onPointerDown={() => onSlide?.(true)}
-        onPointerUp={end}
-        onPointerCancel={end}
-        onLostPointerCapture={end}
-        onKeyUp={() => onCommit?.()}
-        onBlur={end}
-        className="h-11 min-w-0 flex-1 accent-kin-400"
-      />
-      <span className="tabular w-16 shrink-0 text-right font-mono text-[12px] text-washi">{valueText}</span>
-    </label>
-  );
-}
-
 export interface ReviewSettingsProps {
   mode: CompareMode;
   prefs: ViewPrefs;
@@ -122,14 +74,17 @@ export interface ReviewSettingsProps {
   split: number | null;
   onAutoSplit: () => void;
   onResetFit: () => void;
-  fitStatus: 'idle' | 'saving' | 'saved' | 'error';
+  fitStatus: SaveStatus;
   adjust: number;
   /**
    * `settled` false while the slider is being dragged (the original is put in place once it is let go); 'soon' for
    * the ±0,01 taps (put in place once the taps stop).
    */
   onAdjust: (value: number, settled?: boolean | 'soon') => void;
-  adjustStatus: 'idle' | 'saving' | 'saved' | 'error';
+  /** «La canción empieza en…» (the take's second), saved with the take like the fine sync. */
+  onLead: (seconds: number) => void;
+  /** Status of the sync values' save (the song's start and the fine sync). */
+  adjustStatus: SaveStatus;
   hasOriginal: boolean;
   /** The original is YouTube: «Superpuesto» needs the file. */
   originalIsYouTube: boolean;
@@ -148,13 +103,6 @@ export interface ReviewSettingsProps {
   onSliding?: (sliding: boolean) => void;
 }
 
-const STATUS_TEXT = {
-  idle: '',
-  saving: 'Guardando…',
-  saved: 'Guardado en la toma',
-  error: 'No se pudo guardar',
-} as const;
-
 export function ReviewSettings({
   mode,
   prefs,
@@ -165,6 +113,7 @@ export function ReviewSettings({
   fitStatus,
   adjust,
   onAdjust,
+  onLead,
   adjustStatus,
   hasOriginal,
   originalIsYouTube,
@@ -182,14 +131,17 @@ export function ReviewSettings({
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
   const activeClipId = useReview((s) => s.activeClipId);
   const loop = useReview((s) => s.loop);
+  const solo = useReview((s) => s.solo);
   const reduce = useReducedMotion();
   const review = useReview.getState;
+  /** The original is on the stage (not «Solo toma»). */
+  const comparing = hasOriginal && !solo;
 
   return (
-    <div className="space-y-4 text-washi">
+    <div className="space-y-2 text-washi">
       {onClose && (
-        <div className="-mb-1 flex items-center justify-between">
-          <h2 ref={titleRef} tabIndex={-1} className="font-display text-[18px] font-bold outline-none">
+        <div className="-my-1 flex items-center justify-between">
+          <h2 ref={titleRef} tabIndex={-1} className="font-display text-[16px] font-bold outline-none">
             Ajustes del repaso
           </h2>
           <Button variant="ghost" size="icon" aria-label="Cerrar ajustes" onClick={onClose} className="-mr-2">
@@ -199,92 +151,46 @@ export function ReviewSettings({
       )}
 
       {hasOriginal && (
-        <Row
-          title="Ajuste fino"
-          hint="Adelanta o retrasa el original para compensar el retraso de cámara y sonido del móvil. Se guarda con la toma."
-        >
-          <Range
-            label="Sincronía"
-            value={adjust}
-            min={-SYNC_ADJUST_LIMIT}
-            max={SYNC_ADJUST_LIMIT}
-            step={0.01}
-            onChange={(v) => onAdjust(clampAdjust(v), false)}
-            onCommit={() => onAdjust(adjust, true)}
-            onSlide={onSliding}
-            valueText={signed(adjust)}
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-11"
-              aria-label="Retrasar el original 0,01 s"
-              onClick={() => onAdjust(clampAdjust(adjust - 0.01), 'soon')}
-            >
-              −0,01
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="min-h-11"
-              aria-label="Adelantar el original 0,01 s"
-              onClick={() => onAdjust(clampAdjust(adjust + 0.01), 'soon')}
-            >
-              +0,01
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="min-h-11"
-              onClick={() => onAdjust(0)}
-              disabled={adjust === 0}
-            >
-              Poner a 0
-            </Button>
-            <span
-              role="status"
-              className={cn('text-[12px]', adjustStatus === 'error' ? 'text-enji-300' : 'text-washi-subtle')}
-            >
-              {STATUS_TEXT[adjustStatus]}
-            </span>
-          </div>
-        </Row>
+        <ReviewSyncSettings
+          adjust={adjust}
+          onAdjust={onAdjust}
+          onLead={onLead}
+          status={adjustStatus}
+          onSliding={onSliding}
+        />
       )}
 
-      {compact && (
-        <Row title="Fotograma a fotograma">
-          <div className="flex items-center">
-            <FrameStep dir={-1} />
-            <FrameStep dir={1} />
-          </div>
-        </Row>
-      )}
-
-      <Row
+      <Group
         title="Vista"
-        hint={
-          originalIsYouTube
-            ? '«Superpuesto» necesita el archivo del vídeo: vincúlalo en el estudio. El vídeo de YouTube se ve entero y sin tapar.'
-            : undefined
-        }
+        aside={mode === 'overlay' && comparing ? <SaveNote status={fitStatus} /> : undefined}
+        hint={originalIsYouTube && !solo ? '«Superpuesto» necesita el archivo del vídeo.' : undefined}
       >
-        {mode === 'stacked' ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              className="min-h-11"
-              onClick={() =>
-                onPrefs({ order: prefs.order === 'original-first' ? 'take-first' : 'original-first' })
-              }
-            >
-              <ArrowLeftRight className="size-4" /> Cambiar el orden
-            </Button>
-            <Button variant="ghost" className="min-h-11" onClick={onAutoSplit} disabled={split == null}>
-              Reparto automático
-            </Button>
-          </div>
-        ) : (
+        <div className="flex flex-wrap items-center gap-1">
+          <Chip pressed={solo} onClick={() => review().setSolo(!solo)} label="Solo la toma, sin el original">
+            <RectangleVertical className="size-4" /> Solo toma
+          </Chip>
+          {comparing && mode === 'stacked' && (
+            <>
+              <Chip
+                label="Cambiar el orden"
+                onClick={() =>
+                  onPrefs({ order: prefs.order === 'original-first' ? 'take-first' : 'original-first' })
+                }
+              >
+                <ArrowLeftRight className="size-4" /> Orden
+              </Chip>
+              <Chip label="Reparto automático" onClick={onAutoSplit} disabled={split == null}>
+                Reparto auto
+              </Chip>
+            </>
+          )}
+          {comparing && mode === 'overlay' && (
+            <Chip label="Recolocar el original" onClick={onResetFit}>
+              <Crosshair className="size-4" /> Recolocar
+            </Chip>
+          )}
+        </div>
+        {comparing && mode === 'overlay' && (
           <>
             <Range
               label="Transparencia"
@@ -296,8 +202,8 @@ export function ReviewSettings({
               valueText={`${Math.round((1 - prefs.opacity) * 100)} %`}
               onSlide={onSliding}
             />
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[13px] text-washi-muted">Encima</span>
+            <div className="flex min-h-11 items-center gap-2">
+              <span className="w-[4.75rem] shrink-0 text-[13px] text-washi-muted">Encima</span>
               <Segmented
                 label="Qué va encima"
                 layoutId="review-on-top"
@@ -310,27 +216,33 @@ export function ReviewSettings({
                 ]}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" className="min-h-11" onClick={onResetFit}>
-                <Crosshair className="size-4" /> Recolocar
-              </Button>
-              <span
-                role="status"
-                className={cn('text-[12px]', fitStatus === 'error' ? 'text-enji-300' : 'text-washi-subtle')}
-              >
-                {STATUS_TEXT[fitStatus]}
-              </span>
-            </div>
           </>
         )}
-      </Row>
+        <div className="flex min-h-11 items-center gap-1">
+          <span className="w-[4.75rem] shrink-0 text-[13px] text-washi-muted">Espejo</span>
+          <Chip label="Toma en espejo" pressed={mirrorTake} onClick={() => review().toggleMirrorTake()}>
+            <FlipHorizontal2 className="size-4" /> Toma
+          </Chip>
+          {comparing && (
+            <Chip
+              label="Original en espejo"
+              pressed={mirrorOriginal}
+              onClick={() => review().toggleMirrorOriginal()}
+            >
+              <FlipHorizontal2 className="size-4" /> Original
+            </Chip>
+          )}
+        </div>
+        {practisedMirrored && (
+          <p className="text-[12px] leading-snug text-washi-subtle">
+            Ensayaste en espejo: por eso empiezan invertidos.
+          </p>
+        )}
+      </Group>
 
-      <Row
-        title="Velocidad fina"
-        hint="Las velocidades de siempre están en los accesos rápidos. La toma va a esta velocidad y el original, en proporción a la velocidad a la que se grabó."
-      >
+      <Group title="Reproducción">
         <Range
-          label="Fina"
+          label="Velocidad"
           value={rate}
           min={REVIEW_RATE_MIN}
           max={REVIEW_RATE_MAX}
@@ -339,42 +251,31 @@ export function ReviewSettings({
           valueText={formatSpeed(rate)}
           onSlide={onSliding}
         />
-      </Row>
+        {compact && (
+          <div className="flex min-h-11 items-center gap-0.5">
+            <span className="w-[4.75rem] shrink-0 text-[13px] text-washi-muted">Fotograma</span>
+            <FrameStep dir={-1} />
+            <FrameStep dir={1} />
+          </div>
+        )}
+        <ZoomStepper label={mode === 'overlay' && comparing ? 'Los dos' : 'Toma'} which="take" />
+        {comparing &&
+          mode === 'stacked' &&
+          (canZoomOriginal ? (
+            <ZoomStepper label="Original" which="original" />
+          ) : (
+            <p className="text-[12px] leading-snug text-washi-subtle">
+              Zoom del original: vincula el archivo del vídeo.
+            </p>
+          ))}
+      </Group>
 
-      <Row
-        title="Espejo"
-        hint={
-          practisedMirrored
-            ? 'Ensayaste con el original en espejo: por eso los dos empiezan invertidos. La toma se guarda sin espejo.'
-            : 'La toma se guarda sin espejo. Invierte una de las dos para que miren igual.'
-        }
-      >
-        <div className="flex flex-col gap-1">
-          <ElasticToggle
-            checked={mirrorTake}
-            onChange={() => review().toggleMirrorTake()}
-            label="Toma en espejo"
-          />
-          {hasOriginal && (
-            <ElasticToggle
-              checked={mirrorOriginal}
-              onChange={() => review().toggleMirrorOriginal()}
-              label="Original en espejo"
-            />
-          )}
-        </div>
-      </Row>
-
-      <Row
-        title="Tramos de la canción en esta toma"
-        hint={
-          clips.length
-            ? 'Elige uno para repetirlo en la toma y en el original a la vez.'
-            : 'Ningún clip de la canción cae dentro de esta toma.'
-        }
+      <Group
+        title="Tramos en esta toma"
+        hint={clips.length ? undefined : 'Ningún clip de la canción cae en esta toma.'}
       >
         {clips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {clips.map(({ clip, start, end }) => (
               <motion.button
                 key={clip.id}
@@ -408,38 +309,16 @@ export function ReviewSettings({
           </div>
         )}
         {hasRange(loop) && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             {!activeClipId && (
-              <Button variant="secondary" size="sm" className="min-h-11" onClick={onSaveRange}>
+              <Chip onClick={onSaveRange}>
                 <BookmarkPlus className="size-4" /> Guardar el tramo como clip
-              </Button>
+              </Chip>
             )}
-            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => review().clearLoop()}>
-              Quitar el tramo A–B
-            </Button>
+            <Chip onClick={() => review().clearLoop()}>Quitar el tramo A–B</Chip>
           </div>
         )}
-      </Row>
-
-      <Row
-        title="Zoom"
-        hint={
-          mode === 'overlay'
-            ? 'En «Superpuesto» los dedos amplían los dos a la vez; pulsa «Encajar» sobre el vídeo para mover y escalar el original. Doble toque para verlos enteros.'
-            : 'Pellizca sobre la toma o el original para ampliar una zona; arrastra para moverla y toca dos veces para verlo entero.'
-        }
-      >
-        <ZoomStepper label={mode === 'overlay' ? 'Los dos' : 'Toma'} which="take" />
-        {hasOriginal &&
-          mode === 'stacked' &&
-          (canZoomOriginal ? (
-            <ZoomStepper label="Original" which="original" />
-          ) : (
-            <p className="text-[13px] leading-snug text-washi-muted">
-              Original de YouTube: vincula el archivo del vídeo para ampliar.
-            </p>
-          ))}
-      </Row>
+      </Group>
     </div>
   );
 }
