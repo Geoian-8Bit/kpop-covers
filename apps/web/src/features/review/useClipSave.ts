@@ -6,10 +6,10 @@ import type { useToast } from '@/providers/ToastProvider';
 
 /**
  * F8 · A range marked on the take, saved as a clip of the song: it serves in every take and in practice. REQ-25 · The
- * fine sync and the song's start in the take are read live from `useReview.timing` (the screen doesn't hold them).
+ * sync point and the fine sync are read live from `useReview.timing` (the screen doesn't hold them).
  */
 export function useClipSave(
-  timing: { songStart: number; speed: number },
+  timing: { speed: number },
   mirrored: boolean,
   toast: ReturnType<typeof useToast>,
 ) {
@@ -22,7 +22,7 @@ export function useClipSave(
       return;
     }
     const song = takeRangeToSong(
-      { songStart: timing.songStart, speed: timing.speed, adjust: r.timing.adjust, lead: r.timing.lead },
+      { songStart: r.timing.songStart, speed: timing.speed, adjust: r.timing.adjust, lead: r.timing.lead },
       r.loop,
     );
     if (song.end - song.start < MIN_LOOP_LENGTH) {
@@ -33,6 +33,6 @@ export function useClipSave(
     // The take's speed and mirror: the range is practised as it was danced.
     setClipDraft({ start: song.start, end: song.end, speed: timing.speed, mirrored });
     setSavingClip(true);
-  }, [mirrored, timing.songStart, timing.speed, toast]);
+  }, [mirrored, timing.speed, toast]);
   return { savingClip, setSavingClip, clipDraft, openSaveRange };
 }

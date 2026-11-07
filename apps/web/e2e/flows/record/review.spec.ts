@@ -192,7 +192,7 @@ test('inicio de la canción: se marca en la toma, se guarda y el original espera
     .poll(async () => Number((await mine(page))['song_lead_seconds']), { timeout: 15_000 })
     .toBeGreaterThan(0.5);
   const lead = Number((await mine(page))['song_lead_seconds']);
-  await expect(page.getByRole('group', { name: 'Inicio de la canción en la toma' })).toContainText(
+  await expect(page.getByRole('group', { name: 'Punto de sincronía en la toma' })).toContainText(
     /0:0\d,\d\d/,
   );
 
@@ -215,7 +215,7 @@ test('inicio de la canción: se marca en la toma, se guarda y el original espera
     )
     .toBe(true);
 
-  await page.getByRole('button', { name: 'La canción empieza al principio de la toma' }).click();
+  await page.getByRole('button', { name: 'Punto de la toma al principio' }).click();
   await expect.poll(async () => Number((await mine(page))['song_lead_seconds']), { timeout: 15_000 }).toBe(0);
   guard.check();
 });
@@ -231,5 +231,48 @@ test('solo toma: la toma sola y grande, y vuelta a comparar', async ({ page, bro
   await page.getByRole('button', { name: 'Comparar' }).first().click();
   await expect(page.getByRole('group', { name: 'Original: + para ampliar' })).toBeVisible();
   await expect(page.getByRole('separator', { name: 'Reparto entre el original y la toma' })).toBeVisible();
+  guard.check();
+});
+
+test('punto de sincronía en la canción: se escribe, se guarda y el original arranca en ese segundo', async ({
+  page,
+  browser,
+}) => {
+  const guard = guardConsole(page);
+  await reviewRecordedTake(page, browser);
+  const time = page.getByRole('slider', { name: 'Tiempo de la toma' });
+  await time.focus();
+  await time.press('ArrowRight');
+  const settings = page.getByRole('button', { name: 'Ajustes del repaso' }).first();
+  if (await settings.isVisible()) await settings.click();
+  await page.getByRole('button', { name: /^Marcar aquí/ }).click();
+  const field = page.getByRole('textbox', { name: /^Segundo de la canción/ });
+  await field.fill('0:01,50');
+  await field.press('Enter');
+  await expect(field).toHaveValue('0:01,50');
+  await page.getByRole('button', { name: 'Punto de la canción 0,1 s antes' }).click();
+  await expect(field).toHaveValue('0:01,40');
+  await expect
+    .poll(async () => Number((await mine(page))['song_start_seconds']), { timeout: 15_000 })
+    .toBeCloseTo(1.4, 2);
+  const row = await mine(page);
+  const lead = Number(row['song_lead_seconds']);
+  expect(lead).toBeGreaterThan(0.5);
+  // The end in the song comes with it (the database asks end ≥ start).
+  expect(Number(row['song_end_seconds'])).toBeGreaterThanOrEqual(1.4);
+
+  // Before the take's point the original plays earlier in the song; past it, it is on the song's second.
+  await time.focus();
+  await time.press('Home');
+  await page.getByRole('button', { name: 'Reproducir los dos (espacio)' }).first().click();
+  await expect
+    .poll(
+      async () => {
+        const v = await videos(page);
+        return v.take > lead + 0.2 && Math.abs(v.original - (1.4 + v.take - lead)) < 0.35;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
   guard.check();
 });

@@ -98,3 +98,25 @@ describe('review store · «Solo toma»', () => {
     expect(useReview.getState().solo).toBe(false);
   });
 });
+
+describe('review store · a take of part of the song', () => {
+  beforeEach(() => {
+    useReview.getState().end();
+    originalWaitState.waiting = false;
+  });
+
+  it('places the original at the song second of the sync point, live', () => {
+    const { original } = openGalleryTake();
+    useReview.getState().setTiming({ songStart: 65.3 });
+    useReview.getState().seek(12.57);
+    expect(original.getCurrentTime()).toBeCloseTo(65.3);
+    useReview.getState().seek(20);
+    expect(original.getCurrentTime()).toBeCloseTo(72.73);
+    // Before the take's point the song is already playing (earlier in it): no wait.
+    useReview.getState().seek(0);
+    expect(original.getCurrentTime()).toBeCloseTo(52.73);
+    useReview.getState().play();
+    expect(original.play).toHaveBeenCalledTimes(1);
+    expect(originalWaitState.waiting).toBe(false);
+  });
+});

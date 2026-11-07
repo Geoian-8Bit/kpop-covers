@@ -6,7 +6,7 @@ import { useReview } from '@/player/store';
 import { NO_FIT, type Fit } from './reviewRules';
 import { createStageStore } from './reviewStageStore';
 import { useFitAndSplit } from './useFitAndSplit';
-import { useSongLead } from './useSongLead';
+import { useSyncPoint } from './useSyncPoint';
 import { useSyncAdjust } from './useSyncAdjust';
 import { useTakeSaver } from './useTakeSaver';
 
@@ -36,7 +36,7 @@ function setup() {
     );
     return {
       onAdjust: useSyncAdjust(0, adjustSaver.save),
-      onLead: useSongLead(adjustSaver.save),
+      ...useSyncPoint(adjustSaver.save),
       ...useFitAndSplit(stage, take, fitSaver.save),
     };
   });
@@ -102,6 +102,41 @@ describe('review saving (REQ-25)', () => {
       take,
       patch: { song_lead_seconds: 0, sync_adjust_seconds: 0.05 },
     });
+  });
+
+  it('song second of the sync point: clamped to the original, saved with its end in the song', () => {
+    const { result } = setup();
+    useReview.setState({
+      duration: 40,
+      originalEngine: { getDuration: () => 200 } as never,
+      timing: { songStart: 0, speed: 1, adjust: 0, lead: 0, offset: 2, onFile: true },
+    });
+    act(() => {
+      result.current.onLead(12.57);
+      result.current.onSongStart(65.3);
+    });
+    expect(useReview.getState().timing.songStart).toBe(65.3);
+    act(() => vi.advanceTimersByTime(300));
+    expect(align).toHaveBeenCalledTimes(1); // one jump of the original for both taps
+    act(() => vi.advanceTimersByTime(300));
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      take,
+      patch: { song_lead_seconds: 12.57, song_start_seconds: 65.3, song_end_seconds: 92.73 },
+    });
+
+    // Past the original (its file is 2 s ahead of the song: 198 s of song), and below 0.
+    act(() => result.current.onSongStart(500));
+    expect(useReview.getState().timing.songStart).toBe(198);
+    act(() => result.current.onSongStart(-3));
+    expect(useReview.getState().timing.songStart).toBe(0);
+    // Once the song second was set, a new lead brings its end along.
+    act(() => result.current.onLead(10));
+    act(() => vi.advanceTimersByTime(600));
+    expect(mutate.mock.calls[1]![0]).toEqual({
+      take,
+      patch: { song_start_seconds: 0, song_end_seconds: 30, song_lead_seconds: 10 },
+    });
+    useReview.setState({ originalEngine: null });
   });
 
   it('overlay fit: every step in the stage store, the settled one saved once', () => {

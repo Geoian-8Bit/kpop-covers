@@ -83,6 +83,8 @@ export interface ReviewSettingsProps {
   onAdjust: (value: number, settled?: boolean | 'soon') => void;
   /** «La canción empieza en…» (the take's second), saved with the take like the fine sync. */
   onLead: (seconds: number) => void;
+  /** The song's second that matches the take's point (a take of only part of the song). */
+  onSongStart: (seconds: number) => void;
   /** Status of the sync values' save (the song's start and the fine sync). */
   adjustStatus: SaveStatus;
   hasOriginal: boolean;
@@ -90,6 +92,8 @@ export interface ReviewSettingsProps {
   originalIsYouTube: boolean;
   practisedMirrored: boolean;
   clips: { clip: Clip; start: number; end: number }[];
+  /** The song's clips (by start), to put the sync point's song second at one. */
+  songClips: Clip[];
   /** F9 · The original can be zoomed (a file; YouTube's player is never altered). */
   canZoomOriginal: boolean;
   /** F8 · Save the take's A–B as a clip of the song. */
@@ -114,6 +118,8 @@ export function ReviewSettings({
   adjust,
   onAdjust,
   onLead,
+  onSongStart,
+  songClips,
   adjustStatus,
   hasOriginal,
   originalIsYouTube,
@@ -155,6 +161,8 @@ export function ReviewSettings({
           adjust={adjust}
           onAdjust={onAdjust}
           onLead={onLead}
+          onSongStart={onSongStart}
+          songClips={songClips}
           status={adjustStatus}
           onSliding={onSliding}
         />

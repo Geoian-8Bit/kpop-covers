@@ -104,6 +104,8 @@ export type TakePatch = Pick<
   | 'fit_y'
   | 'label'
   | 'song_lead_seconds'
+  | 'song_start_seconds'
+  | 'song_end_seconds'
 >;
 
 /** What the app may change on a note (granted columns; a note's take and moment are set when it's written). */
