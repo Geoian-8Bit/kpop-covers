@@ -110,36 +110,6 @@ test('una toma de otro móvil avisa de que no se puede ver ni descargar', async 
   guard.check();
 });
 
-test('reacciones: una toma compartida muestra la barra y se puede reaccionar', async ({ page }) => {
-  const guard = guardConsole(page);
-  await openSeededTakes(page, {
-    overrides: (db) => {
-      const first = db['takes']!.find((t) => t['video_id'] === FIXTURE.youtubeVideoId)!;
-      first['shared_path'] = 'demo/toma-01.webm';
-      first['shared_size'] = 1_000_000;
-    },
-  });
-  const bar = page.getByRole('group', { name: 'Reacciones' });
-  await expect(bar).toBeVisible();
-  const before = (await storedDb(page))['take_reactions']!.length;
-  const buttons = bar.getByRole('button');
-  const n = await buttons.count();
-  expect(n).toBeGreaterThan(0);
-  // Press the first reaction that this device's member (Hana) hasn't made yet.
-  let pressed = false;
-  for (let i = 0; i < n && !pressed; i++) {
-    const b = buttons.nth(i);
-    if ((await b.getAttribute('aria-pressed')) === 'false') {
-      await b.click();
-      await expect(b).toHaveAttribute('aria-pressed', 'true');
-      pressed = true;
-    }
-  }
-  expect(pressed).toBe(true);
-  await expect.poll(async () => (await storedDb(page))['take_reactions']!.length).toBe(before + 1);
-  guard.check();
-});
-
 test('descarga, comparte con el grupo y borra una toma grabada', async ({ page, browser }) => {
   const guard = guardConsole(page);
   await openRecorder(page, browser);
@@ -179,5 +149,138 @@ test('descarga, comparte con el grupo y borra una toma grabada', async ({ page, 
   await del.getByRole('button', { name: 'Borrar', exact: true }).click();
   await expect(page.getByText('Toma borrada')).toBeVisible();
   await expect(page.getByText('Aún no hay tomas')).toBeVisible();
+  guard.check();
+});
+
+/** A one-second silent WebM drawn on a canvas in the page (no camera, no sound). */
+async function makeVideo(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(async () => {
+    const canvas = Object.assign(document.createElement('canvas'), { width: 320, height: 240 });
+    const ctx = canvas.getContext('2d')!;
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    const done = new Promise((resolve) => (recorder.onstop = resolve));
+    recorder.start(100);
+    const started = performance.now();
+    await new Promise<void>((resolve) => {
+      const draw = () => {
+        const t = performance.now() - started;
+        ctx.fillStyle = `hsl(${(t / 4) % 360} 70% 50%)`;
+        ctx.fillRect(0, 0, 320, 240);
+        if (t < 1000) requestAnimationFrame(draw);
+        else resolve();
+      };
+      draw();
+    });
+    recorder.stop();
+    await done;
+    const bytes = new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer());
+    let text = '';
+    for (const b of bytes) text += String.fromCharCode(b);
+    return btoa(text);
+  });
+  return Buffer.from(base64, 'base64');
+}
+
+test('edita el nombre y quién baila de una toma', async ({ page }) => {
+  const guard = guardConsole(page);
+  await openSeededTakes(page);
+  // Tapping the name opens «Editar toma».
+  await page.getByRole('button', { name: 'Rei. Editar el nombre' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Editar toma' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Nombre').fill('  Grupo 1 · Primera versión  ');
+  await dialog.getByRole('radio', { name: 'Grupo / nadie' }).click();
+  await dialog.getByRole('button', { name: 'Guardar' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Grupo 1 · Primera versión. Editar el nombre' })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const t = (await storedDb(page))['takes']!.find((row) => row['label'] === 'Grupo 1 · Primera versión');
+      return t ? t['member_id'] : 'missing';
+    })
+    .toBeNull();
+  // Named but nobody's: the filter says so.
+  await expect(
+    page.getByRole('radiogroup', { name: 'Filtrar por persona' }).getByRole('radio', { name: 'Grupo / sin nombre' }),
+  ).toBeVisible();
+
+  // Its name with a person: the person shows as the second line.
+  await page.getByRole('button', { name: 'Grupo 1 · Primera versión. Editar el nombre' }).click();
+  await dialog.getByRole('radio', { name: 'Yuna' }).click();
+  await dialog.getByRole('button', { name: 'Guardar' }).click();
+  await expect(dialog).toBeHidden();
+  const row = page.getByRole('listitem').filter({
+    has: page.getByRole('button', { name: 'Grupo 1 · Primera versión. Editar el nombre' }),
+  });
+  await expect(row.getByText('Yuna', { exact: true })).toBeVisible();
+  guard.check();
+});
+
+test('una toma de grupo sin nombre muestra el nombre de su archivo', async ({ page }) => {
+  const guard = guardConsole(page);
+  await openSeededTakes(page, {
+    overrides: (db) => {
+      const first = db['takes']!.find((t) => t['video_id'] === FIXTURE.youtubeVideoId)!;
+      first['member_id'] = null;
+      first['file_name'] = 'Grupo 1 · Primera versión.mp4';
+    },
+  });
+  await expect(page.getByRole('button', { name: 'Grupo 1 · Primera versión. Editar el nombre' })).toBeVisible();
+  await expect(page.getByText('Sin nombre', { exact: true })).toHaveCount(0);
+  guard.check();
+});
+
+test('subir vídeo pide el nombre y quién baila antes de subir', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'MediaRecorder de canvas para generar el vídeo');
+  const guard = guardConsole(page);
+  // The demo has no cloud: the upload fails after writing the row. Keep every row written, to read its name.
+  await page.addInitScript(() => {
+    const written: unknown[] = [];
+    (window as unknown as { __takesWritten: unknown[] }).__takesWritten = written;
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key.includes('demo')) {
+        try {
+          for (const t of (JSON.parse(value) as { takes?: unknown[] }).takes ?? []) written.push(t);
+        } catch {
+          /* not JSON */
+        }
+      }
+      return set.call(this, key, value);
+    };
+  });
+  await openSeededTakes(page);
+  const video = await makeVideo(page);
+  const input = page.locator('input[data-take-upload]');
+  const dialog = page.getByRole('dialog', { name: 'Subir vídeo' });
+  const before = (await storedDb(page))['takes']!.length;
+
+  // «Cancelar»: nothing goes up.
+  await input.setInputFiles({ name: 'Ensayo grupo.webm', mimeType: 'video/webm', buffer: video });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Nombre')).toHaveValue('Ensayo grupo');
+  await expect(dialog.getByRole('radio', { name: 'Hana' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(dialog).toBeHidden();
+  expect((await storedDb(page))['takes']!.length).toBe(before);
+
+  // «Subir» with a name and the group: the row is written with both.
+  await input.setInputFiles({ name: 'Ensayo grupo.webm', mimeType: 'video/webm', buffer: video });
+  await dialog.getByLabel('Nombre').fill('Grupo 2 · Segunda versión');
+  await dialog.getByRole('radio', { name: 'Grupo / nadie' }).click();
+  await dialog.getByRole('button', { name: 'Subir' }).click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as unknown as { __takesWritten: { label?: string; member_id?: string | null }[] }).__takesWritten
+          .filter((t) => t.label === 'Grupo 2 · Segunda versión')
+          .map((t) => t.member_id),
+      ),
+    )
+    .toContain(null);
   guard.check();
 });

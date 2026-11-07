@@ -123,6 +123,18 @@ export function blendLatency(previous: number | null, sampleMs: number): number 
 
 export { needsAlignOnPlay };
 
+/**
+ * A take that starts before the song (`lead`, a video from the gallery): while the take is before the song's start
+ * the original's second for it (`target`, unclamped) is below 0, so the original waits, paused at 0 — it is never
+ * sent below 0 nor followed there. When the take gets to the song's start it comes in once ('start'); from then on
+ * it is followed as usual. `waiting`: it is parked now.
+ */
+export function originalWait(target: number, waiting: boolean): 'wait' | 'start' | 'follow' {
+  if (!Number.isFinite(target)) return waiting ? 'wait' : 'follow';
+  if (target < -0.0005) return 'wait';
+  return waiting ? 'start' : 'follow';
+}
+
 /** One frame of the follow: what to do with the original, and what to remember. */
 export function syncStep(input: SyncInput, memory: SyncMemory): { action: SyncAction; memory: SyncMemory } {
   const { kind, drift, now } = input;

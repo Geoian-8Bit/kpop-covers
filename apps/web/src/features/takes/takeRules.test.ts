@@ -58,6 +58,8 @@ function take(over: Partial<TakeItem> = {}): TakeItem {
     shared_path: null,
     shared_size: null,
     is_best: false,
+    label: null,
+    song_lead_seconds: 0,
     created_at: '2026-10-16T10:00:00.000Z',
     archived_at: null,
     where: 'elsewhere',

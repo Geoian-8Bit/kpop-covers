@@ -6,7 +6,7 @@ import type { useToast } from '@/providers/ToastProvider';
 
 /**
  * F8 · A range marked on the take, saved as a clip of the song: it serves in every take and in practice. REQ-25 · The
- * fine sync is read live from `useReview.timing` (the screen no longer holds it): the same value it held.
+ * fine sync and the song's start in the take are read live from `useReview.timing` (the screen doesn't hold them).
  */
 export function useClipSave(
   timing: { songStart: number; speed: number },
@@ -22,7 +22,7 @@ export function useClipSave(
       return;
     }
     const song = takeRangeToSong(
-      { songStart: timing.songStart, speed: timing.speed, adjust: r.timing.adjust },
+      { songStart: timing.songStart, speed: timing.speed, adjust: r.timing.adjust, lead: r.timing.lead },
       r.loop,
     );
     if (song.end - song.start < MIN_LOOP_LENGTH) {

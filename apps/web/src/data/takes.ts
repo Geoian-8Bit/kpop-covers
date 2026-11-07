@@ -305,7 +305,10 @@ export function useSetBestTake() {
 // ───────────── Review data (F5) ─────────────
 
 /** What the review saves on a take: the fine sync (±0.3 s) and how the original sits over it («Superpuesto»). */
-export type TakeReviewPatch = Pick<TakePatch, 'sync_adjust_seconds' | 'fit_scale' | 'fit_x' | 'fit_y'>;
+export type TakeReviewPatch = Pick<
+  TakePatch,
+  'sync_adjust_seconds' | 'fit_scale' | 'fit_x' | 'fit_y' | 'song_lead_seconds'
+>;
 
 /**
  * Saves the review's sync or fit (optimistic: the list shows it at once; on failure it goes back and the
@@ -362,6 +365,39 @@ export function useAssignTakes() {
       const videoId = takes[0]?.video_id;
       if (videoId) void queryClient.invalidateQueries({ queryKey: takeKeys.forVideo(videoId) });
     },
+  });
+}
+
+// ───────────── «Editar» a take: its name and who dances it ─────────────
+
+/**
+ * Saves a take's name (empty → none) and who dances it (null = the group / nobody). Optimistic like the review's
+ * patch: the row shows it at once; on failure it goes back and the caller says so.
+ */
+export function useRenameTake() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      take,
+      patch,
+    }: {
+      take: Pick<TakeItem, 'id' | 'video_id'>;
+      /** From `renamePatch` (it drops a star that would clash with the new person's best). */
+      patch: Pick<TakePatch, 'label' | 'member_id' | 'is_best'>;
+    }) => backend.updateTake(take.id, patch),
+    onMutate: async ({ take, patch }) => {
+      const key = takeKeys.forVideo(take.video_id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<TakeItem[]>(key);
+      patchCache(queryClient, take.video_id, (items) =>
+        items.map((t) => (t.id === take.id ? { ...t, ...patch } : t)),
+      );
+      return { before, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.before) queryClient.setQueryData(context.key, context.before);
+    },
+    onSuccess: (row) => patchCache(queryClient, row.video_id, (items) => merge(items, row)),
   });
 }
 

@@ -1348,6 +1348,8 @@ export type Database = {
           fit_x: number;
           fit_y: number;
           song_end_seconds: number | null;
+          label: string | null;
+          song_lead_seconds: number;
           song_start_seconds: number;
           speed: number;
           video_id: string;
@@ -1375,6 +1377,8 @@ export type Database = {
           fit_x?: number;
           fit_y?: number;
           song_end_seconds?: number | null;
+          label?: string | null;
+          song_lead_seconds?: number;
           song_start_seconds: number;
           speed?: number;
           video_id: string;
@@ -1402,6 +1406,8 @@ export type Database = {
           fit_x?: number;
           fit_y?: number;
           song_end_seconds?: number | null;
+          label?: string | null;
+          song_lead_seconds?: number;
           song_start_seconds?: number;
           speed?: number;
           video_id?: string;

@@ -6,6 +6,7 @@ import {
   containArea,
   FRESH_SYNC,
   needsAlignOnPlay,
+  originalWait,
   panelBoxes,
   seekAhead,
   splitBounds,
@@ -77,7 +78,9 @@ describe('the original follows the take (51)', () => {
     const behind = syncStep(input({ drift: -0.1, heard: 'original', takeRate: 0.75 }), FRESH_SYNC);
     if (behind.action.kind === 'takeRate') expect(behind.action.rate).toBeLessThan(0.75);
     else throw new Error('expected a take nudge');
-    expect(syncStep(input({ drift: 0.01, heard: 'original' }), ahead.memory).action).toEqual({ kind: 'base' });
+    expect(syncStep(input({ drift: 0.01, heard: 'original' }), ahead.memory).action).toEqual({
+      kind: 'base',
+    });
   });
 
   it('while the original is heard, big gaps move the take, never the heard sound', () => {
@@ -85,9 +88,15 @@ describe('the original follows the take (51)', () => {
     const file = syncStep(input({ drift: 1, heard: 'original', takeTime: 4, songSpeed: 0.5 }), FRESH_SYNC);
     expect(file.action).toEqual({ kind: 'takeSeek', to: 6 });
     // YouTube behind: the take goes back; never a hold or a jump of YouTube.
-    const yt = syncStep(input({ kind: 'youtube', drift: -0.3, heard: 'original', takeTime: 4, songSpeed: 1 }), FRESH_SYNC);
+    const yt = syncStep(
+      input({ kind: 'youtube', drift: -0.3, heard: 'original', takeTime: 4, songSpeed: 1 }),
+      FRESH_SYNC,
+    );
     expect(yt.action).toEqual({ kind: 'takeSeek', to: 3.7 });
-    const ahead = syncStep(input({ kind: 'youtube', drift: 0.12, heard: 'original', takeTime: 4 }), FRESH_SYNC);
+    const ahead = syncStep(
+      input({ kind: 'youtube', drift: 0.12, heard: 'original', takeTime: 4 }),
+      FRESH_SYNC,
+    );
     expect(ahead.action).toEqual({ kind: 'none' });
   });
 
@@ -109,7 +118,8 @@ describe('the original follows the take (51)', () => {
 
   it('starts the backoff again after a calm stretch', () => {
     let memory: SyncMemory = { ...FRESH_SYNC, streak: 4, lastFixAt: 0 };
-    for (let t = 1000; t <= 1000 + SYNC.calmMs + 32; t += 16) memory = syncStep(input({ drift: 0, now: t }), memory).memory;
+    for (let t = 1000; t <= 1000 + SYNC.calmMs + 32; t += 16)
+      memory = syncStep(input({ drift: 0, now: t }), memory).memory;
     expect(memory.streak).toBe(0);
   });
 
@@ -117,16 +127,23 @@ describe('the original follows the take (51)', () => {
     const ahead = syncStep(input({ kind: 'youtube', drift: 0.3, baseRate: 1 }), FRESH_SYNC);
     expect(ahead.action).toEqual({ kind: 'hold', ms: 300 });
     // The next judgement waits for the hold to end and settle.
-    expect(syncStep(input({ kind: 'youtube', drift: 0.3, now: 10_000 + 500 }), ahead.memory).action).toEqual({ kind: 'none' });
+    expect(syncStep(input({ kind: 'youtube', drift: 0.3, now: 10_000 + 500 }), ahead.memory).action).toEqual({
+      kind: 'none',
+    });
     const slow = syncStep(input({ kind: 'youtube', drift: 0.3, baseRate: 0.5 }), FRESH_SYNC);
     expect(slow.action).toEqual({ kind: 'hold', ms: 600 });
     // Shorter by half its restart delay; too short to be worth it, nothing.
     const measured = syncStep(input({ kind: 'youtube', drift: 0.3, seekLatencyMs: 200 }), FRESH_SYNC);
     expect(measured.action).toEqual({ kind: 'hold', ms: 200 });
-    expect(syncStep(input({ kind: 'youtube', drift: 0.12, seekLatencyMs: 200 }), FRESH_SYNC).action).toEqual({ kind: 'none' });
+    expect(syncStep(input({ kind: 'youtube', drift: 0.12, seekLatencyMs: 200 }), FRESH_SYNC).action).toEqual({
+      kind: 'none',
+    });
     const far = syncStep(input({ kind: 'youtube', drift: 4, target: 20 }), FRESH_SYNC);
     expect(far.action).toEqual({ kind: 'seek', to: 20 });
-    const behind = syncStep(input({ kind: 'youtube', drift: -0.5, target: 20, seekLatencyMs: 400 }), FRESH_SYNC);
+    const behind = syncStep(
+      input({ kind: 'youtube', drift: -0.5, target: 20, seekLatencyMs: 400 }),
+      FRESH_SYNC,
+    );
     expect(behind.action).toEqual({ kind: 'seek', to: 20.4 });
     // Small gaps are left alone (YouTube can't take fine speeds).
     expect(syncStep(input({ kind: 'youtube', drift: -0.15 }), FRESH_SYNC).action).toEqual({ kind: 'none' });
@@ -264,7 +281,9 @@ describe('two panels (51)', () => {
       expect(yt.width).toBeGreaterThanOrEqual(YOUTUBE_MIN_BOX.width);
       expect(yt.height).toBeGreaterThanOrEqual(YOUTUBE_MIN_BOX.height);
       // The portrait take gets about what it needs to show at full height, not a 30 % slab of black bands.
-      expect(containArea(take, 9 / 16)).toBeGreaterThan(0.8 * containArea({ width: 9999, height: frame.height }, 9 / 16));
+      expect(containArea(take, 9 / 16)).toBeGreaterThan(
+        0.8 * containArea({ width: 9999, height: frame.height }, 9 / 16),
+      );
     }
   });
 
@@ -293,7 +312,10 @@ describe('two panels (51)', () => {
   });
 
   it('a screen too small for YouTube gives it as much as it can', () => {
-    const layout = bestLayout({ width: 300, height: 150 }, YOUTUBE_ASPECT, 9 / 16, 10, [YOUTUBE_MIN_BOX, null]);
+    const layout = bestLayout({ width: 300, height: 150 }, YOUTUBE_ASPECT, 9 / 16, 10, [
+      YOUTUBE_MIN_BOX,
+      null,
+    ]);
     expect(layout.split).toBeGreaterThanOrEqual(0.8);
   });
 
@@ -333,5 +355,35 @@ describe('quick controls and the stage gestures', () => {
     expect(stageGesture({ ...base, zoomed: true })).toBe('zoom');
     expect(stageGesture({ ...base, overlay: false, fitting: true })).toBe('none');
     expect(stageGesture({ ...base, zoomable: false, fingers: 2 })).toBe('none');
+  });
+});
+
+describe('the original waits for the song to start in the take (lead)', () => {
+  it('waits while its second would be below 0, and is never sent there', () => {
+    expect(originalWait(-12.57, false)).toBe('wait');
+    expect(originalWait(-0.01, true)).toBe('wait');
+  });
+
+  it('comes in once when the take reaches the song, then is followed', () => {
+    expect(originalWait(0, true)).toBe('start');
+    expect(originalWait(0.02, true)).toBe('start');
+    expect(originalWait(0.02, false)).toBe('follow');
+    expect(originalWait(30, false)).toBe('follow');
+  });
+
+  it('a take sought back before the song waits again; past it, comes in', () => {
+    const frames = [5, -3, -2.98, 0.01, 0.03];
+    let waiting = false;
+    const seen = frames.map((t) => {
+      const step = originalWait(t, waiting);
+      waiting = step === 'wait';
+      return step;
+    });
+    expect(seen).toEqual(['follow', 'wait', 'wait', 'start', 'follow']);
+  });
+
+  it('treats a broken reading as «keep doing what it did»', () => {
+    expect(originalWait(Number.NaN, true)).toBe('wait');
+    expect(originalWait(Number.NaN, false)).toBe('follow');
   });
 });

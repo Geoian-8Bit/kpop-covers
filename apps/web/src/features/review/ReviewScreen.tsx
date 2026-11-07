@@ -1,9 +1,8 @@
-import { formatSpeed, hasLinkedFile, type Clip, type Video } from '@coverscape/shared';
+import { hasLinkedFile, type Clip, type Video } from '@coverscape/shared';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { FileVideo, TriangleAlert } from 'lucide-react';
+import { Columns2, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Spinner } from '@/components/ui/Spinner';
 import { useMe, useMembers } from '@/data/members';
 import type { TakeItem } from '@/data/takes';
 import { useFileSource } from '@/features/studio/fileSource';
@@ -17,7 +16,8 @@ import { useToast } from '@/providers/ToastProvider';
 import { QuickStrip } from './ReviewControls';
 import { ReviewBar, ReviewFooter } from './ReviewBar';
 import { OVERLAY_NEEDS_FILE, ReviewHeader } from './ReviewHeader';
-import { OriginalFile, OriginalYouTube, TakeVideo, useReviewClock } from './ReviewMedia';
+import { TakeVideo, useReviewClock } from './ReviewMedia';
+import { ReviewOriginal } from './ReviewOriginal';
 import { readPrefs, writePrefs } from './reviewPrefs';
 import {
   aspectOf,
@@ -45,6 +45,7 @@ import { useReviewKeys } from './useReviewKeys';
 import { useSize } from '@/lib/useSize';
 import { BAR_H, LOW_SCREEN, useInsets, useMatch, WIDE_SCREEN } from './useReviewLayout';
 import { useReviewNotes } from './useReviewNotes';
+import { useSongLead } from './useSongLead';
 import { useSyncAdjust } from './useSyncAdjust';
 import { useTakeSaver } from './useTakeSaver';
 
@@ -113,6 +114,7 @@ export function ReviewScreen({
         songStart: timing.songStart,
         speed: timing.speed,
         adjust: timing.adjust,
+        lead: timing.lead,
         offset: 0,
         onFile: false,
       },
@@ -138,6 +140,7 @@ export function ReviewScreen({
     stage.setState({ fitStatus }),
   );
   const onAdjust = useSyncAdjust(timing.adjust, adjustSaver.save);
+  const onLead = useSongLead(adjustSaver.save);
   const fitAndSplit = useFitAndSplit(stage, take, fitSaver.save);
 
   // ── Notes of this take ──
@@ -188,6 +191,8 @@ export function ReviewScreen({
   const reduceMotion = useReducedMotion();
   const mirrorTake = useReview((s) => s.mirrorTake);
   const mirrorOriginal = useReview((s) => s.mirrorOriginal);
+  /** «Solo toma»: the take alone and big (the original paused, out of sight). */
+  const solo = useReview((s) => s.solo);
   // F9 · The zooms are read by the stage (ReviewCompareStage) and the dialog: a gesture never repaints this screen.
 
   // ── F9 · Zoom: the take always (a file of this phone or the cloud); the original only as a file. ──
@@ -236,33 +241,14 @@ export function ReviewScreen({
     ? (members.data?.find((m) => m.id === take.member_id)?.name ?? 'Antiguo miembro')
     : 'Sin nombre';
 
-  const original =
-    source === 'file' && file.status === 'ready' ? (
-      <OriginalFile url={file.url} />
-    ) : source === 'youtube' ? (
-      <OriginalYouTube
-        videoId={video.youtube_id!}
-        onRateAdjusted={(actual) =>
-          toast(
-            `YouTube no admite esa velocidad en este vídeo: el original va a ${formatSpeed(actual)} y se recoloca de vez en cuando.`,
-            'info',
-          )
-        }
-        onStuck={() => toast('YouTube no ha arrancado: toca ▶ otra vez para seguir.', 'info')}
-      />
-    ) : source === 'loading' ? (
-      <div className="grid size-full place-items-center">
-        <Spinner className="size-7 text-washi-muted" />
-      </div>
-    ) : (
-      <div className="seigaiha grid size-full place-items-center p-4 text-center">
-        <p className="flex max-w-[16rem] flex-col items-center gap-2 text-[13px] text-washi-muted">
-          <FileVideo className="size-6 text-kin-300" />
-          El archivo del vídeo no está en este dispositivo ni en la nube. Vincúlalo en el estudio para
-          compararlo.
-        </p>
-      </div>
-    );
+  const original = (
+    <ReviewOriginal
+      source={source}
+      fileUrl={file.status === 'ready' ? file.url : null}
+      youtubeId={video.youtube_id ?? null}
+      toast={toast}
+    />
+  );
 
   // The drawing is a still of its moment: shown only while the take stands at that moment (review round 1).
   const sketch =
@@ -287,6 +273,7 @@ export function ReviewScreen({
     onAutoSplit: fitAndSplit.onAutoSplit,
     onResetFit: fitAndSplit.onResetFit,
     onAdjust,
+    onLead,
     hasOriginal,
     originalIsYouTube: source === 'youtube',
     practisedMirrored: take.mirrored,
@@ -300,7 +287,8 @@ export function ReviewScreen({
   // that wide and covered, YouTube keeps its own box (at least its minimum); on a very narrow screen the panel covers
   // the take whole. In portrait the settings go under the stage, as tall as the pictures allow, with the one-row bar
   // (▶ and the time) still under them.
-  const youtube = source === 'youtube';
+  // YouTube on the stage (never covered, kept at its minimum): not while the take is alone.
+  const youtube = source === 'youtube' && !solo;
   const takeAspect = aspectOf(take, 9 / 16);
   const lowStageWidth = Math.max(0, room.width - insets.left - insets.right);
   const coverOpen = low && (settingsOpen || openNote != null);
@@ -331,9 +319,11 @@ export function ReviewScreen({
     </AnimatePresence>
   );
 
-  /** Separate / overlaid; overlaid never starts hiding the take (or barely showing the original). */
-  const setMode = (m: CompareMode) =>
+  /** Separate / overlaid (back from «Solo toma»); overlaid never starts hiding the take (or barely showing the original). */
+  const setMode = (m: CompareMode) => {
+    useReview.getState().setSolo(false);
     setPrefs(m === 'overlay' ? { mode: m, opacity: overlayStartOpacity(prefs.opacity) } : { mode: m });
+  };
   const quickProps = {
     mode,
     canOverlay,
@@ -376,6 +366,7 @@ export function ReviewScreen({
           onFit={fitAndSplit.onFit}
           mirrorTake={mirrorTake}
           mirrorOriginal={mirrorOriginal}
+          solo={solo}
           take={
             <TakeVideo
               url={url}
@@ -384,7 +375,7 @@ export function ReviewScreen({
             />
           }
           original={original}
-          originalIsYouTube={youtube}
+          originalIsYouTube={source === 'youtube'}
           takeAspect={takeAspect}
           takeExtra={sketch}
           onTap={() => useReview.getState().togglePlay()}
@@ -398,6 +389,16 @@ export function ReviewScreen({
           onOverlayGesture={setOverlayGesture}
         />
         {/* Elsewhere, notes, their pop-ups and errors sit over the take, never over YouTube. */}
+        {solo && low && !coverOpen && (
+          // A phone on its side has no header: the way back to comparing sits on the stage.
+          <button
+            type="button"
+            onClick={() => useReview.getState().setSolo(false)}
+            className="absolute right-2 top-2 z-30 flex min-h-11 items-center gap-1.5 rounded-[10px] bg-sumi-950/85 px-3 text-[13px] font-bold text-washi"
+          >
+            <Columns2 className="size-4" /> Comparar
+          </button>
+        )}
         <NoteArea stage={stage} overTake={youtube && mode === 'stacked'} coverOpen={coverOpen}>
           {!coverOpen && noteCard}
           <AnimatePresence>
@@ -496,6 +497,7 @@ export function ReviewScreen({
         hasOriginal={hasOriginal}
         layoutId={`review-mode-${take.id}`}
         mode={mode}
+        solo={solo}
         onMode={setMode}
         canOverlay={canOverlay}
         onOverlayRefused={overlayRefused}

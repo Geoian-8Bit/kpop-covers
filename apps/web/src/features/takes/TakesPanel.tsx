@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/Button';
 import { SectionTitle } from '@/components/ui/SectionTitle';
-import { useMe, useMembers } from '@/data/members';
+import { currentMemberId, useMe, useMembers } from '@/data/members';
 import { useNotes } from '@/data/notes';
 import { deviceId, type TakeItem, useAssignTakes, useDeleteTake, useTakes } from '@/data/takes';
 import { MemberSeal } from '@/features/members/MembersUI';
@@ -15,8 +15,10 @@ import { AnimatePresence, motion } from 'motion/react';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { CloudNotice } from './CloudNotice';
 import { CleanupDialog, DeleteDialog } from './TakeDialogs';
+import { RenameTakeDialog, UploadNameDialog, type UploadChoice } from './TakeNameDialogs';
 import { Filters } from './TakeFilters';
 import { TakeRow } from './TakeRow';
+import { takeTitle } from './takeNames';
 import { useTakeActions } from './useTakeActions';
 import { useUploadTake } from './useUploadTake';
 import {
@@ -58,6 +60,9 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState<TakeItem | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [shareTarget, setShareTarget] = useState<TakeItem | null>(null);
+  const [renameTarget, setRenameTarget] = useState<TakeItem | null>(null);
+  /** A file chosen in «Subir vídeo», waiting for its name (nothing goes up until «Subir»). */
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const notes = useNotes(video.id);
   // 50 · Each take once, whatever the cache holds.
@@ -86,6 +91,7 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
   const { busy, rowActions } = useTakeActions(video, onPlay, {
     share: setShareTarget,
     remove: setConfirmDelete,
+    rename: setRenameTarget,
   });
 
   const offline = takes.fetchStatus === 'paused' || (takes.isError && !navigator.onLine);
@@ -104,8 +110,15 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
 
   const memberOf = (take: TakeItem): Member | null =>
     take.member_id ? (memberById.get(take.member_id) ?? null) : null;
-  const memberName = (take: TakeItem) =>
-    take.member_id ? (memberById.get(take.member_id)?.name ?? 'Antiguo miembro') : 'Sin nombre';
+  const personName = (take: TakeItem): string | null =>
+    take.member_id ? (memberById.get(take.member_id)?.name ?? 'Antiguo miembro') : null;
+
+  function startUpload(file: File, choice: UploadChoice) {
+    setPendingFile(null);
+    void uploader.upload(file, choice).then((result) =>
+      result.ok ? toast('Vídeo subido a «Tomas»', 'success') : toast(result.error, 'error'),
+    );
+  }
 
   return (
     <section aria-labelledby="takes-title" className="flex flex-col p-5 sm:p-6">
@@ -128,9 +141,11 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
           const file = e.currentTarget.files?.[0];
           e.currentTarget.value = '';
           if (!file) return;
-          void uploader.upload(file).then((result) =>
-            result.ok ? toast('Vídeo subido a «Tomas»', 'success') : toast(result.error, 'error'),
-          );
+          if (!file.type.startsWith('video/')) {
+            toast('Elige un archivo de vídeo.', 'error');
+            return;
+          }
+          setPendingFile(file);
         }}
       />
       <Button
@@ -236,26 +251,30 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
           ) : (
             <ul className="mt-3 space-y-2">
               <AnimatePresence initial={false}>
-                {visible.map((take) => (
+                {visible.map((take) => {
+                  const { title, person } = takeTitle(take, personName(take));
+                  return (
                   <TakeRow
                     key={take.id}
                     take={take}
                     featured={take.id === listing.featured?.id}
                     notes={noteCounts.get(take.id) ?? 0}
                     member={memberOf(take)}
-                    memberName={memberName(take)}
+                    title={title}
+                    person={person}
                     clip={take.clip_id ? (clipById.get(take.clip_id) ?? null) : null}
                     hasClipId={Boolean(take.clip_id)}
                     where={whereLabel(take, {
                       deviceId: device,
-                      ownerName: take.member_id ? memberName(take) : null,
+                      ownerName: personName(take),
                     })}
                     deleteVerdict={canDeleteTake(take, ctx)}
                     busy={busy?.id === take.id ? busy.action : null}
                     anyBusy={busy != null}
                     actions={rowActions}
                   />
-                ))}
+                  );
+                })}
               </AnimatePresence>
             </ul>
           )}
@@ -295,6 +314,21 @@ export function TakesPanel({ video, clips, onPlay }: TakesPanelProps) {
         candidates={cleanable}
         keptBack={visible.filter((t) => !t.is_best).length - cleanable.length}
         remove={(take) => remove.mutateAsync(take)}
+      />
+
+      <RenameTakeDialog
+        take={renameTarget}
+        all={all}
+        members={members.data ?? []}
+        onClose={() => setRenameTarget(null)}
+      />
+
+      <UploadNameDialog
+        file={pendingFile}
+        members={members.data ?? []}
+        defaultMemberId={currentMemberId(members.data)}
+        onCancel={() => setPendingFile(null)}
+        onUpload={startUpload}
       />
 
       <PerfProbe id="ShareDialog">

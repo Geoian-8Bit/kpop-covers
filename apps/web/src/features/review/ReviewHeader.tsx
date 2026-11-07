@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { Columns2, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
 import type { CompareMode } from './reviewRules';
@@ -18,6 +18,7 @@ export function ReviewHeader({
   hasOriginal,
   layoutId,
   mode,
+  solo,
   onMode,
   canOverlay,
   onOverlayRefused,
@@ -30,6 +31,8 @@ export function ReviewHeader({
   hasOriginal: boolean;
   layoutId: string;
   mode: CompareMode;
+  /** «Solo toma»: the take alone; the header offers the way back to comparing. */
+  solo: boolean;
   onMode: (mode: CompareMode) => void;
   canOverlay: boolean;
   onOverlayRefused: () => void;
@@ -58,24 +61,30 @@ export function ReviewHeader({
         </h2>
         <p className="truncate text-[12px] text-washi-muted">{subtitle}</p>
       </div>
-      {hasOriginal && (
-        <Segmented
-          label="Cómo comparar"
-          layoutId={layoutId}
-          size="sm"
-          value={mode}
-          onChange={onMode}
-          onDisabled={onOverlayRefused}
-          options={[
-            { value: 'stacked', label: 'Separados' },
-            {
-              value: 'overlay',
-              label: 'Superpuesto',
-              disabled: !canOverlay,
-              ariaLabel: canOverlay ? undefined : `Superpuesto, no disponible: ${OVERLAY_NEEDS_FILE}`,
-            },
-          ]}
-        />
+      {solo ? (
+        <Button variant="secondary" size="sm" className="min-h-11" onClick={() => onMode(mode)}>
+          <Columns2 className="size-4" /> Comparar
+        </Button>
+      ) : (
+        hasOriginal && (
+          <Segmented
+            label="Cómo comparar"
+            layoutId={layoutId}
+            size="sm"
+            value={mode}
+            onChange={onMode}
+            onDisabled={onOverlayRefused}
+            options={[
+              { value: 'stacked', label: 'Separados' },
+              {
+                value: 'overlay',
+                label: 'Superpuesto',
+                disabled: !canOverlay,
+                ariaLabel: canOverlay ? undefined : `Superpuesto, no disponible: ${OVERLAY_NEEDS_FILE}`,
+              },
+            ]}
+          />
+        )
       )}
     </header>
   );

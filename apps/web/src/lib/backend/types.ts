@@ -21,14 +21,12 @@ import type {
   PollOption,
   PollVote,
   Profile,
-  ReactionEmoji,
   RehearsalException,
   RehearsalRule,
   Tables,
   TablesInsert,
   TablesUpdate,
   Take,
-  TakeReaction,
   Track,
   TrackItem,
   Video,
@@ -104,6 +102,8 @@ export type TakePatch = Pick<
   | 'fit_scale'
   | 'fit_x'
   | 'fit_y'
+  | 'label'
+  | 'song_lead_seconds'
 >;
 
 /** What the app may change on a note (granted columns; a note's take and moment are set when it's written). */
@@ -358,12 +358,10 @@ export type EventSongView = EventSong & { video: EventSongVideo | null };
 /** The granted columns of an event: name, starts_at, place. */
 export type NewEvent = Pick<CrewEvent, 'name' | 'starts_at' | 'place'>;
 export type EventPatch = Partial<NewEvent>;
-type NewReaction = { take_id: string; member_id: string | null; emoji: ReactionEmoji };
 
 /**
- * F16 · events and their repertoire, F15 · reactions on shared takes. Shared by the group; deleting archives.
- * Only granted columns are written: events (name, starts_at, place), event_songs (position); reactions are only
- * added or removed. The database checks the rest (the song is in the library, the take is shared…).
+ * F16 · events and their repertoire. Shared by the group; deleting archives. Only granted columns are written:
+ * events (name, starts_at, place), event_songs (position). The database checks the rest (the song is in the library…).
  */
 export interface EventsBackend {
   listEvents(): Promise<EventWithCount[]>;
@@ -376,10 +374,6 @@ export interface EventsBackend {
   deleteEventSong(id: string): Promise<void>;
   /** REQ-20 · One atomic write: `ids` is the whole repertoire in its new order (position = index). */
   setEventSongPositions(eventId: string, ids: string[]): Promise<void>;
-  /** The reactions on the takes of one song, oldest first. */
-  listReactions(videoId: string): Promise<TakeReaction[]>;
-  addReaction(row: NewReaction): Promise<TakeReaction>;
-  removeReaction(id: string): Promise<void>;
 }
 
 /** One separation of a video's file: two tracks (voice, instrumental) in the `videos` bucket, shared by the group. */

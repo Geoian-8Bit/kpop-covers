@@ -1,7 +1,7 @@
 import { Spinner } from '@/components/ui/Spinner';
 import { perfMark } from '@/lib/perfProbe';
 import { createMediaEngine, type PlayerEngine, releaseMediaAudio } from '@/player/engine';
-import { hasRange, useReview } from '@/player/store';
+import { hasRange, originalWaitState, useReview } from '@/player/store';
 import { type Ref, useEffect, useRef, useState } from 'react';
 import { wrapLoop } from './reviewMediaSlot';
 
@@ -73,7 +73,9 @@ export function TakeVideo({
     const onPlaying = () => {
       setLoading(false);
       const s = review();
-      if (s.playing && s.audio !== 'original') s.originalEngine?.play();
+      // Not while the take is alone, nor while the original waits for the song's start in the take.
+      if (s.playing && s.audio !== 'original' && !s.solo && !originalWaitState.waiting)
+        s.originalEngine?.play();
     };
     let readyMarked = false;
     const onReady = () => {

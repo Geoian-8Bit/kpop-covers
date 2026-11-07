@@ -10,7 +10,7 @@ import { invalidateAfterArchive } from './afterArchive';
  * security: anyone can pick any name.
  */
 
-export const memberKeys = { all: ['members'] as const };
+const memberKeys = { all: ['members'] as const };
 
 /** Pigment swatches per member colour (static class strings so Tailwind sees them). */
 export const MEMBER_SWATCH: Record<MemberColor, { dot: string; ring: string; text: string; label: string }> = {
@@ -65,8 +65,8 @@ export function useDeleteMember() {
       if (useIdentity.getState().memberId === member.id) forgetMe();
       // People bags, «Me apunto» and vote counts stop counting them.
       invalidateAfterArchive(queryClient);
-      // Takes, notes, reactions and the calendar point at members: fetched again so none goes on showing them as before.
-      for (const queryKey of [['takes'], ['notes'], ['take-reactions'], ['calendar-members']]) {
+      // Takes, notes and the calendar point at members: fetched again so none goes on showing them as before.
+      for (const queryKey of [['takes'], ['notes'], ['calendar-members']]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     },

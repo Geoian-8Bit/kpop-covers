@@ -31,7 +31,11 @@ export function useUploadTake(video: Pick<Video, 'id'>) {
   const running = useRef(false);
 
   const upload = useCallback(
-    async (file: File): Promise<{ ok: true } | { ok: false; error: string }> => {
+    async (
+      file: File,
+      /** From the name dialog: its name and who dances it (null = the group). Without it, this phone's person. */
+      choice?: { label: string | null; memberId: string | null },
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
       if (running.current) return { ok: false, error: 'Ya se está subiendo un vídeo.' };
       if (!file.type.startsWith('video/')) return { ok: false, error: 'Elige un archivo de vídeo.' };
       running.current = true;
@@ -46,7 +50,8 @@ export function useUploadTake(video: Pick<Video, 'id'>) {
             {
               id: crypto.randomUUID(),
               videoId: video.id,
-              memberId: currentMemberId(members.data),
+              memberId: choice ? choice.memberId : currentMemberId(members.data),
+              label: choice?.label ?? null,
               songStart: 0,
               speed: 1,
               mirrored: false,

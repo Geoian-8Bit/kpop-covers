@@ -320,6 +320,8 @@ export const demoBackend: Backend = {
         file_name: null,
         height: null,
         is_best: false,
+        label: null,
+        song_lead_seconds: 0,
         member_id: null,
         mime_type: null,
         mirrored: false,

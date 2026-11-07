@@ -54,6 +54,8 @@ interface CompareStageProps {
   onFit: (fit: Fit, settled: boolean) => void;
   mirrorTake: boolean;
   mirrorOriginal: boolean;
+  /** «Solo toma»: the take fills the stage; the original stays mounted (no reload) but hidden. */
+  solo?: boolean;
   take: ReactNode;
   original: ReactNode;
   /** The original is YouTube's player: never covered by a label, never zoomed. */
@@ -102,6 +104,7 @@ export function CompareStage({
   onFit,
   mirrorTake,
   mirrorOriginal,
+  solo = false,
   take,
   original,
   originalIsYouTube,
@@ -122,7 +125,7 @@ export function CompareStage({
 }: CompareStageProps) {
   const reduce = useReducedMotion();
   const [frameRef, size] = useStageSize<HTMLDivElement>();
-  const overlay = mode === 'overlay';
+  const overlay = mode === 'overlay' && !solo;
 
   // ── F9 · What each zoom needs: its box and its video's own size. ──
   const takeBox = useMediaBox<HTMLDivElement>();
@@ -157,8 +160,8 @@ export function CompareStage({
     forced == null && chosen == null ? auto.split : Math.min(bounds.max, Math.max(bounds.min, wanted));
   const full: Rect = { left: 0, top: 0, width: size.width, height: size.height };
   const [firstRect, secondRect] = panelRects(size, row, split);
-  const originalRect = overlay ? full : originalFirst ? firstRect : secondRect;
-  const takeRect = overlay ? full : originalFirst ? secondRect : firstRect;
+  const originalRect = overlay || solo ? full : originalFirst ? firstRect : secondRect;
+  const takeRect = overlay || solo ? full : originalFirst ? secondRect : firstRect;
   const onTakeRectRef = useRef(onTakeRect);
   onTakeRectRef.current = onTakeRect;
   const rectKey =
@@ -174,6 +177,7 @@ export function CompareStage({
   const targetAt = (p: Pt): Target => {
     // «Superpuesto»: the original moves only while «Encajar» is on; otherwise fingers zoom both.
     if (overlay) return overlayGesture === 'fit' ? 'fit' : 'both';
+    if (solo) return 'take';
     const r = originalRect;
     return p.x >= r.left && p.x <= r.left + r.width && p.y >= r.top && p.y <= r.top + r.height
       ? 'original'
@@ -217,7 +221,7 @@ export function CompareStage({
    * view, − zooms out and 0 shows it whole. Other keys (and arrows on a whole picture) go on to the review.
    */
   const panelKeys = (target: 'take' | 'original', label: string) => {
-    if (overlay || !zoomTarget(target)) return {};
+    if (overlay || (solo && target === 'original') || !zoomTarget(target)) return {};
     return {
       tabIndex: 0,
       role: 'group',
@@ -301,7 +305,13 @@ export function CompareStage({
                 PANEL_FOCUS,
                 overlay ? 'rounded-none' : PANEL,
               )}
-              style={{ ...rectStyle(originalRect), opacity: originalOpacity, zIndex: originalOnTop ? 2 : 1 }}
+              style={{
+                ...rectStyle(originalRect),
+                opacity: originalOpacity,
+                zIndex: originalOnTop ? 2 : 1,
+                visibility: solo ? 'hidden' : undefined,
+              }}
+              aria-hidden={solo || undefined}
             >
               <div
                 className="absolute inset-0"
@@ -325,7 +335,7 @@ export function CompareStage({
                 {overlay && <OverlayFrame />}
               </div>
               {/* YouTube's player is never covered: its panel has no label (it shows its own name). */}
-              {!overlay && !originalIsYouTube && (
+              {!overlay && !solo && !originalIsYouTube && (
                 <PanelLabel>
                   Original{canZoomOriginal && isZoomed(zoomOriginal) ? ` · ${zoomLabel(zoomOriginal)}` : ''}
                 </PanelLabel>
@@ -359,7 +369,7 @@ export function CompareStage({
                   {takeExtra}
                 </ZoomLayer>
               </motion.div>
-              {!overlay && (
+              {!overlay && !solo && (
                 <PanelLabel tone="take">
                   Toma{isZoomed(zoomTake) ? ` · ${zoomLabel(zoomTake)}` : ''}
                 </PanelLabel>
@@ -367,7 +377,7 @@ export function CompareStage({
             </div>
           </ZoomLayer>
 
-          {!overlay && (
+          {!overlay && !solo && (
             <Hinge
               row={row}
               at={row ? firstRect.width : firstRect.height}
