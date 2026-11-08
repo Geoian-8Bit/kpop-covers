@@ -113,6 +113,7 @@ export function ReviewScreen({
       timing: {
         songStart: timing.songStart,
         speed: timing.speed,
+        takeSpeed: timing.takeSpeed,
         adjust: timing.adjust,
         lead: timing.lead,
         offset: 0,
@@ -140,7 +141,7 @@ export function ReviewScreen({
     stage.setState({ fitStatus }),
   );
   const onAdjust = useSyncAdjust(timing.adjust, adjustSaver.save);
-  const { onLead, onSongStart } = useSyncPoint(adjustSaver.save);
+  const sync = useSyncPoint(adjustSaver.save);
   const fitAndSplit = useFitAndSplit(stage, take, fitSaver.save);
 
   // ── Notes of this take ──
@@ -208,7 +209,7 @@ export function ReviewScreen({
   }, [toast]);
 
   // ── F8 · A range marked on the take, saved as a clip of the song: it serves in every take and in practice. ──
-  const { savingClip, setSavingClip, clipDraft, openSaveRange } = useClipSave(timing, take.mirrored, toast);
+  const { savingClip, setSavingClip, clipDraft, openSaveRange } = useClipSave(take.mirrored, toast);
 
   const close = useCallback(() => onClose(), [onClose]);
   // The X answers to any finger (a thumb may rest on the video while the phone is on its side).
@@ -273,8 +274,7 @@ export function ReviewScreen({
     onAutoSplit: fitAndSplit.onAutoSplit,
     onResetFit: fitAndSplit.onResetFit,
     onAdjust,
-    onLead,
-    onSongStart,
+    sync,
     hasOriginal,
     originalIsYouTube: source === 'youtube',
     practisedMirrored: take.mirrored,

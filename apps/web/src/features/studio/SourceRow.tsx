@@ -61,8 +61,9 @@ export function SourceRow({ video, copyLabel }: { video: Video; copyLabel: strin
           );
         })}
       </div>
+      {/* Never the file's name: a long one wrecks the row. Only the group's copy says so (short). */}
       <span className="min-w-0 flex-1 break-words text-[12px] text-washi-subtle">
-        {stage === 'file' ? (copyLabel ?? video.file_name ?? '') : 'Con el archivo: sin anuncios ni esperas'}
+        {stage === 'file' ? (copyLabel ?? '') : 'Con el archivo: sin anuncios ni esperas'}
       </span>
     </div>
   );

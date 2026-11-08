@@ -8,8 +8,9 @@ import { useTapAnyFinger } from './tapAnyFinger';
 export function SoundPill({ hasOriginal }: { hasOriginal: boolean }) {
   const audio = useReview((s) => s.audio);
   const solo = useReview((s) => s.solo);
-  // «Solo toma»: the take is always the one heard.
-  if (!hasOriginal || solo) return null;
+  const syncEdit = useReview((s) => s.syncEdit);
+  // One video alone («Solo toma», or placing one in «Sincronía»): that one is always the one heard.
+  if (!hasOriginal || solo || syncEdit) return null;
   const takeHeard = audio === 'take';
   return <SoundPillButton takeHeard={takeHeard} />;
 }

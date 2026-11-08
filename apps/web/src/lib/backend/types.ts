@@ -106,6 +106,8 @@ export type TakePatch = Pick<
   | 'song_lead_seconds'
   | 'song_start_seconds'
   | 'song_end_seconds'
+  | 'speed'
+  | 'take_speed'
 >;
 
 /** What the app may change on a note (granted columns; a note's take and moment are set when it's written). */

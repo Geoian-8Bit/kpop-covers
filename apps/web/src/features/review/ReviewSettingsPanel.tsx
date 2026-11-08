@@ -9,8 +9,8 @@ import type { StageStore } from './reviewStageStore';
 type Live = 'split' | 'adjust' | 'fitStatus' | 'adjustStatus' | 'clips' | 'songClips';
 
 /**
- * The review's settings with their live values. REQ-25 · The hinge's share, the fine sync and the song's start in the
- * take (in `useReview.timing`, where the controls write them) and the save statuses are read here, so moving them
+ * The review's settings with their live values. REQ-25 · The hinge's share, the fine sync, each video's start and speed
+ * (in `useReview.timing`, where the controls write them) and the save statuses are read here, so moving them
  * repaints the settings, not the whole review. The song's clips are placed in the take with the live sync.
  */
 export function ReviewSettingsPanel({
@@ -29,15 +29,24 @@ export function ReviewSettingsPanel({
   const adjust = useReview((s) => s.timing.adjust);
   const lead = useReview((s) => s.timing.lead);
   const songStart = useReview((s) => s.timing.songStart);
+  const speed = useReview((s) => s.timing.speed);
+  const takeSpeed = useReview((s) => s.timing.takeSpeed);
   const duration = useReview((s) => s.duration);
   const clips = useMemo(
     () =>
       clipsInTake(
         allClips,
-        { ...take, song_start_seconds: songStart, sync_adjust_seconds: adjust, song_lead_seconds: lead },
+        {
+          ...take,
+          song_start_seconds: songStart,
+          sync_adjust_seconds: adjust,
+          song_lead_seconds: lead,
+          speed,
+          take_speed: takeSpeed,
+        },
         duration,
       ),
-    [allClips, take, songStart, adjust, lead, duration],
+    [allClips, take, songStart, adjust, lead, speed, takeSpeed, duration],
   );
   // The song's clips, by start: one tap puts the sync point's song second at a clip's start.
   const songClips = useMemo(

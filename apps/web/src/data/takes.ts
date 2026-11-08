@@ -314,6 +314,8 @@ export type TakeReviewPatch = Pick<
   | 'song_lead_seconds'
   | 'song_start_seconds'
   | 'song_end_seconds'
+  | 'speed'
+  | 'take_speed'
 >;
 
 /**

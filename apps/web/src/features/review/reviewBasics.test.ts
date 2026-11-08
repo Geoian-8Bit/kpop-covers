@@ -6,7 +6,6 @@ import {
   clipsInTake,
   DEFAULT_PREFS,
   defaultReviewTake,
-  originalRate,
   parseViewPrefs,
   takeLength,
   takeTiming,
@@ -26,14 +25,6 @@ describe('layout limits', () => {
     expect(clampReviewRate(0.75)).toBe(0.75);
   });
 
-  it('plays the original at the take speed times the common speed', () => {
-    expect(originalRate(0.75, 1)).toBe(0.75);
-    expect(originalRate(0.75, 0.5)).toBe(0.375);
-    expect(originalRate(1, 1.25)).toBe(1.25);
-    expect(originalRate(null, 1)).toBe(1);
-    expect(originalRate(0.25, 0.5)).toBe(0.25);
-  });
-
   it('trusts the media length, else the saved one', () => {
     expect(takeLength(Number.POSITIVE_INFINITY, 42)).toBe(42);
     expect(takeLength(0, 42)).toBe(42);
@@ -43,7 +34,7 @@ describe('layout limits', () => {
 
   it('reads an old demo take without the review columns', () => {
     const timing = takeTiming({ song_start_seconds: 12, speed: 0.75, duration_seconds: 30 } as never);
-    expect(timing).toEqual({ songStart: 12, speed: 0.75, adjust: 0, lead: 0, duration: 30 });
+    expect(timing).toEqual({ songStart: 12, speed: 0.75, takeSpeed: 1, adjust: 0, lead: 0, duration: 30 });
   });
 });
 
@@ -104,6 +95,25 @@ describe('take timing', () => {
     expect(takeTiming({ ...row, song_lead_seconds: 12.57 }).lead).toBe(12.57);
     expect(takeTiming({ ...row, song_lead_seconds: -4 }).lead).toBe(0);
     expect(takeTiming({ ...row, song_lead_seconds: 9999 }).lead).toBe(600);
+  });
+
+  it('reads each video its own speed (old rows: the take at 1×)', () => {
+    const row = { song_start_seconds: 0, speed: 0.75, sync_adjust_seconds: 0, duration_seconds: 20 };
+    expect(takeTiming(row)).toMatchObject({ speed: 0.75, takeSpeed: 1 });
+    expect(takeTiming({ ...row, take_speed: 1.25 }).takeSpeed).toBe(1.25);
+    expect(takeTiming({ ...row, speed: 9, take_speed: 0 })).toMatchObject({ speed: 2, takeSpeed: 1 });
+  });
+
+  it('places the song clips with the ratio of both speeds', () => {
+    const clip = { id: 'a', start_seconds: 5, end_seconds: 10 } as Clip;
+    const row = {
+      song_start_seconds: 0,
+      speed: 1,
+      take_speed: 0.5,
+      sync_adjust_seconds: 0,
+      duration_seconds: 60,
+    };
+    expect(clipsInTake([clip], row)[0]).toMatchObject({ start: 2.5, end: 5 });
   });
 });
 

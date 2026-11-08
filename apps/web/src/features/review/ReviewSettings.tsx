@@ -24,6 +24,7 @@ import type { SaveStatus } from './reviewStageStore';
 import { ReviewSyncSettings } from './ReviewSyncSettings';
 import { FrameStep, IconButton } from './ReviewTransport';
 import { Chip, Group, Range, SaveNote } from './settingsParts';
+import type { SyncPointControls } from './useSyncPoint';
 
 // ───────────── Settings ─────────────
 
@@ -81,10 +82,8 @@ export interface ReviewSettingsProps {
    * the ±0,01 taps (put in place once the taps stop).
    */
   onAdjust: (value: number, settled?: boolean | 'soon') => void;
-  /** «La canción empieza en…» (the take's second), saved with the take like the fine sync. */
-  onLead: (seconds: number) => void;
-  /** The song's second that matches the take's point (a take of only part of the song). */
-  onSongStart: (seconds: number) => void;
+  /** Where each video starts and at what speed («Sincronía»), saved with the take like the fine sync. */
+  sync: SyncPointControls;
   /** Status of the sync values' save (the song's start and the fine sync). */
   adjustStatus: SaveStatus;
   hasOriginal: boolean;
@@ -117,8 +116,7 @@ export function ReviewSettings({
   fitStatus,
   adjust,
   onAdjust,
-  onLead,
-  onSongStart,
+  sync,
   songClips,
   adjustStatus,
   hasOriginal,
@@ -160,8 +158,7 @@ export function ReviewSettings({
         <ReviewSyncSettings
           adjust={adjust}
           onAdjust={onAdjust}
-          onLead={onLead}
-          onSongStart={onSongStart}
+          sync={sync}
           songClips={songClips}
           status={adjustStatus}
           onSliding={onSliding}

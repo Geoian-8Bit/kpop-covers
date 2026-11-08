@@ -109,7 +109,7 @@ describe('review saving (REQ-25)', () => {
     useReview.setState({
       duration: 40,
       originalEngine: { getDuration: () => 200 } as never,
-      timing: { songStart: 0, speed: 1, adjust: 0, lead: 0, offset: 2, onFile: true },
+      timing: { songStart: 0, speed: 1, takeSpeed: 1, adjust: 0, lead: 0, offset: 2, onFile: true },
     });
     act(() => {
       result.current.onLead(12.57);
@@ -137,6 +137,56 @@ describe('review saving (REQ-25)', () => {
       patch: { song_start_seconds: 0, song_end_seconds: 30, song_lead_seconds: 10 },
     });
     useReview.setState({ originalEngine: null });
+  });
+
+  it('each video its own speed: live in both engines, saved with the end in the song', () => {
+    const { result } = setup();
+    const setRate = vi.fn();
+    useReview.setState({
+      duration: 40,
+      rate: 1,
+      setRate,
+      timing: { songStart: 10, speed: 1, takeSpeed: 1, adjust: 0, lead: 0, offset: 0, onFile: false },
+    } as never);
+    act(() => result.current.onSpeed('original', 0.75));
+    expect(useReview.getState().timing.speed).toBe(0.75);
+    expect(setRate).toHaveBeenCalledWith(1);
+    act(() => result.current.onSpeed('take', 3)); // clamped to 2
+    expect(useReview.getState().timing.takeSpeed).toBe(2);
+    act(() => vi.advanceTimersByTime(600));
+    // 40 s of take at 0,75 ÷ 2 song seconds per take second: 15 s of song from 10.
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      take,
+      patch: { speed: 0.75, take_speed: 2, song_end_seconds: 25 },
+    });
+  });
+
+  it('a video alone shows where it starts: the take at its start, or parked so the song shows its start', () => {
+    const { result } = setup();
+    const seek = vi.fn();
+    const takeSeek = vi.fn();
+    useReview.setState({
+      duration: 60,
+      time: 0,
+      seek,
+      takeEngine: { seek: takeSeek } as never,
+      setSyncEdit: (syncEdit: 'take' | 'original' | null) => useReview.setState({ syncEdit }),
+      timing: { songStart: 30, speed: 1, takeSpeed: 1, adjust: 0, lead: 5, offset: 0, onFile: false },
+    } as never);
+    act(() => result.current.onEdit('take'));
+    expect(seek).toHaveBeenLastCalledWith(5);
+    act(() => result.current.onLead(7.5));
+    expect(seek).toHaveBeenLastCalledWith(7.5, { preview: true });
+    act(() => vi.advanceTimersByTime(300));
+    expect(seek).toHaveBeenLastCalledWith(7.5);
+
+    act(() => result.current.onEdit('original'));
+    expect(takeSeek).toHaveBeenLastCalledWith(7.5, undefined);
+    act(() => result.current.onSongStart(42));
+    // The take stays at the song's start in the take; the original goes to 42.
+    expect(takeSeek).toHaveBeenLastCalledWith(7.5, { preview: true });
+    expect(align).toHaveBeenCalled();
+    useReview.setState({ takeEngine: null, syncEdit: null });
   });
 
   it('overlay fit: every step in the stage store, the settled one saved once', () => {

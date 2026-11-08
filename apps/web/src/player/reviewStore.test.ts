@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerEngine } from './engine';
-import { originalWaitState, useReview } from './store';
+import { originalWaitState, reviewOriginalRate, reviewTakeRate, useReview } from './store';
 
 function fakeEngine(duration = 120) {
   let now = 0;
@@ -22,7 +22,7 @@ function openGalleryTake() {
   const take = fakeEngine(60);
   const original = fakeEngine(200);
   useReview.getState().begin({
-    timing: { songStart: 0, speed: 1, adjust: 0, lead: 12.57, offset: 0, onFile: true },
+    timing: { songStart: 0, speed: 1, takeSpeed: 1, adjust: 0, lead: 12.57, offset: 0, onFile: true },
     duration: 60,
     mirrored: false,
   });
@@ -118,5 +118,49 @@ describe('review store · a take of part of the song', () => {
     useReview.getState().play();
     expect(original.play).toHaveBeenCalledTimes(1);
     expect(originalWaitState.waiting).toBe(false);
+  });
+});
+
+describe('review store · each video at its own speed, placed alone', () => {
+  beforeEach(() => {
+    useReview.getState().end();
+    originalWaitState.waiting = false;
+  });
+
+  it('plays the take at its speed and the original at the song speed, both × the common one', () => {
+    expect(reviewTakeRate({ takeSpeed: 1.25 }, 0.5)).toBe(0.625);
+    expect(reviewOriginalRate({ speed: 0.75 }, 1)).toBe(0.75);
+    expect(reviewOriginalRate({ speed: 0.25 }, 0.5)).toBe(0.25);
+    const { take, original } = openGalleryTake();
+    useReview.getState().setTiming({ speed: 0.75, takeSpeed: 1 });
+    expect(original.setRate).toHaveBeenLastCalledWith(0.75);
+    expect(take.setRate).toHaveBeenLastCalledWith(1);
+    useReview.getState().setRate(0.5);
+    expect(original.setRate).toHaveBeenLastCalledWith(0.375);
+    expect(take.setRate).toHaveBeenLastCalledWith(0.5);
+    // 20 s of take past the lead at 0,75 song per take second.
+    expect(useReview.getState().originalTarget(32.57)).toBeCloseTo(15);
+  });
+
+  it('the song alone: paused, the original heard and on stage; back to both on leaving', () => {
+    const { take, original } = openGalleryTake();
+    useReview.getState().seek(30);
+    useReview.getState().play();
+    useReview.getState().setSyncEdit('original');
+    expect(useReview.getState().playing).toBe(false);
+    expect(useReview.getState().solo).toBe(false);
+    expect(original.setMuted).toHaveBeenLastCalledWith(false);
+    expect(take.setMuted).toHaveBeenLastCalledWith(true);
+
+    useReview.getState().setSyncEdit('take');
+    expect(useReview.getState()).toMatchObject({ syncEdit: 'take', solo: true });
+    expect(take.setMuted).toHaveBeenLastCalledWith(false);
+
+    useReview.getState().setSyncEdit(null);
+    expect(useReview.getState()).toMatchObject({ syncEdit: null, solo: false });
+    // «Comparar» from elsewhere ends placing a video too.
+    useReview.getState().setSyncEdit('take');
+    useReview.getState().setSolo(false);
+    expect(useReview.getState().syncEdit).toBeNull();
   });
 });

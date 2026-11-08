@@ -436,6 +436,7 @@ function buildTakes(videos, clips) {
       song_start_seconds: start,
       song_end_seconds: round(start + duration * speed, 2),
       speed,
+      take_speed: 1,
       sync_adjust_seconds: i === 1 ? 0.12 : 0,
       fit_scale: i === 2 ? 1.2 : 1,
       fit_x: i === 2 ? 0.05 : 0,

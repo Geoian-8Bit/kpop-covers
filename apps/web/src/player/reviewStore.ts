@@ -14,13 +14,16 @@ import { clampZoom, NO_ZOOM, type Zoom } from './zoom';
 
 // F5 · Review (take vs original). REQ-27 · Its own module (out of player/store.ts) so phase 6 can work on it alone.
 /**
- * How a take maps onto the original: the song second it started at, its recording speed, the fine adjustment
+ * How a take maps onto the original: the song second it started at, each video's own speed, the fine adjustment
  * (±0.3 s, saved with the take), the take's second where the song starts (`lead`) and where the original plays (the
  * linked or uploaded file is `offset` seconds ahead of the song; YouTube plays the song's own timeline).
  */
 export interface ReviewTiming {
   songStart: number;
+  /** The song's speed (the original plays at it × the common speed). */
   speed: number;
+  /** The take's own speed (it plays at it × the common speed). */
+  takeSpeed: number;
   adjust: number;
   /** The take's second where the song starts (0 for a take recorded here). Before it the original waits at 0. */
   lead: number;
@@ -46,7 +49,7 @@ interface ReviewState extends ReviewStatus {
   originalEngine: PlayerEngine | null;
   originalKind: 'file' | 'youtube' | null;
   timing: ReviewTiming;
-  /** Common speed (0.5–1.25×): the take plays at it, the original at take speed × it. */
+  /** Common speed (0.5–1.25×): the take plays at its own speed × it, the original at the song's speed × it. */
   rate: number;
   /** A–B on the take's time; the original follows the take, so it loops in both. */
   loop: LoopState;
@@ -57,6 +60,12 @@ interface ReviewState extends ReviewStatus {
   /** «Solo toma»: the take alone and big, with its own sound; the original stays paused and out of sight. */
   solo: boolean;
   setSolo(solo: boolean): void;
+  /**
+   * «Sincronía»: which video is being placed — the take alone or the original alone, big — or null for both. Playback
+   * pauses on the way in; the take alone is «Solo toma» underneath.
+   */
+  syncEdit: 'take' | 'original' | null;
+  setSyncEdit(edit: 'take' | 'original' | null): void;
   /**
    * F9 · Zoom over each one, in its picture's own fractions (player/zoom.ts). «Apilado»: each panel its own;
    * «Superpuesto»: the take's zoom takes in both (the original keeps its fit over the take).
@@ -106,7 +115,15 @@ interface ReviewState extends ReviewStatus {
 const REVIEW_FRAME = 1 / 30;
 const REVIEW_RATE_MIN = 0.5;
 const REVIEW_RATE_MAX = 1.25;
-const NO_TIMING: ReviewTiming = { songStart: 0, speed: 1, adjust: 0, lead: 0, offset: 0, onFile: false };
+const NO_TIMING: ReviewTiming = {
+  songStart: 0,
+  speed: 1,
+  takeSpeed: 1,
+  adjust: 0,
+  lead: 0,
+  offset: 0,
+  onFile: false,
+};
 const initialReview: ReviewStatus = {
   playing: false,
   time: 0,
@@ -136,9 +153,14 @@ export const originalWaitState = { waiting: false };
 /** A moment of the take this far before the song (its original second below 0) still waits. */
 const WAIT_EPSILON = 0.0005;
 
-/** The original's speed: the take's recording speed × the common speed. */
+/** The original's speed: the song's speed × the common speed. */
 export function reviewOriginalRate(timing: Pick<ReviewTiming, 'speed'>, rate: number): number {
   return Math.round(clamp((timing.speed || 1) * rate, 0.25, 2) * 1000) / 1000;
+}
+
+/** The take's speed: its own speed × the common speed. */
+export function reviewTakeRate(timing: Pick<ReviewTiming, 'takeSpeed'>, rate: number): number {
+  return Math.round(clamp((timing.takeSpeed || 1) * rate, 0.25, 2) * 1000) / 1000;
 }
 
 export const useReview = create<ReviewState>()((set, get) => ({
@@ -154,12 +176,14 @@ export const useReview = create<ReviewState>()((set, get) => ({
   mirrorTake: false,
   mirrorOriginal: false,
   solo: false,
+  syncEdit: null,
   zoomTake: NO_ZOOM,
   zoomOriginal: NO_ZOOM,
 
   setSolo(solo) {
     if (get().solo === solo) return;
-    set({ solo });
+    // «Solo toma» or «Comparar» from elsewhere ends placing a video.
+    set({ solo, syncEdit: null });
     get().setAudio(get().audio);
     const { originalEngine, playing } = get();
     if (!originalEngine) return;
@@ -172,6 +196,14 @@ export const useReview = create<ReviewState>()((set, get) => ({
     originalEngine.setRate(reviewOriginalRate(get().timing, get().rate));
     get().alignOriginal();
     if (playing) startOriginal(get());
+  },
+
+  setSyncEdit(edit) {
+    if (get().syncEdit === edit) return;
+    get().pause();
+    get().setSolo(edit === 'take');
+    set({ syncEdit: edit });
+    get().setAudio(get().audio);
   },
 
   setZoom(which, zoom) {
@@ -191,6 +223,7 @@ export const useReview = create<ReviewState>()((set, get) => ({
       mirrorTake: mirrored,
       mirrorOriginal: mirrored,
       solo: false,
+      syncEdit: null,
       zoomTake: NO_ZOOM,
       zoomOriginal: NO_ZOOM,
     });
@@ -207,11 +240,12 @@ export const useReview = create<ReviewState>()((set, get) => ({
       originalKind: null,
       loop: emptyLoop,
       activeClipId: null,
+      syncEdit: null,
     });
   },
 
   attachTake(engine) {
-    engine.setRate(get().rate);
+    engine.setRate(reviewTakeRate(get().timing, get().rate));
     engine.setMuted?.(!takeHeard(get()));
     const length = engine.getDuration();
     set({
@@ -244,6 +278,7 @@ export const useReview = create<ReviewState>()((set, get) => ({
 
   setTiming(patch) {
     set({ timing: { ...get().timing, ...patch } });
+    if (patch.speed != null || patch.takeSpeed != null) applyRates(get());
     get().alignOriginal();
   },
 
@@ -303,9 +338,8 @@ export const useReview = create<ReviewState>()((set, get) => ({
   setRate(rate) {
     const next =
       Math.round(clamp(Number.isFinite(rate) ? rate : 1, REVIEW_RATE_MIN, REVIEW_RATE_MAX) * 100) / 100;
-    get().takeEngine?.setRate(next);
-    get().originalEngine?.setRate(reviewOriginalRate(get().timing, next));
     set({ rate: next });
+    applyRates(get());
   },
 
   markStart(at) {
@@ -377,12 +411,18 @@ export const useReview = create<ReviewState>()((set, get) => ({
   },
 }));
 
-/** The take is heard when chosen, and always when alone («Solo toma»). */
-function takeHeard(s: Pick<ReviewState, 'audio' | 'solo'>): boolean {
-  return s.solo || s.audio === 'take';
+/** Each video at its own speed × the common one. */
+function applyRates(s: Pick<ReviewState, 'takeEngine' | 'originalEngine' | 'timing' | 'rate'>): void {
+  s.takeEngine?.setRate(reviewTakeRate(s.timing, s.rate));
+  s.originalEngine?.setRate(reviewOriginalRate(s.timing, s.rate));
 }
-function originalHeard(s: Pick<ReviewState, 'audio' | 'solo'>): boolean {
-  return !s.solo && s.audio === 'original';
+
+/** The take is heard when chosen, and always when alone («Solo toma»); the original when chosen or alone. */
+function takeHeard(s: Pick<ReviewState, 'audio' | 'solo' | 'syncEdit'>): boolean {
+  return s.syncEdit !== 'original' && (s.solo || s.audio === 'take');
+}
+function originalHeard(s: Pick<ReviewState, 'audio' | 'solo' | 'syncEdit'>): boolean {
+  return s.syncEdit === 'original' || (!s.solo && s.audio === 'original');
 }
 
 /**
