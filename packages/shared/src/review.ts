@@ -2,7 +2,10 @@
  * F5 · Review a take against the original, in sync. When a take is recorded the app knows the song's second it
  * started at and the speed it played at, so every moment of the take maps to an exact moment of the song:
  *
- *   song time = start + take time × speed + adjustment
+ *   song time = start + (take time − lead) × (speed ÷ take speed) + adjustment
+ *
+ * Each video keeps its own speed: `speed` is the song's (the original plays at it), `takeSpeed` the take's (1 for a
+ * take as recorded: a take danced to the song at 0,75× keeps 1 and the song gets 0,75×).
  *
  * The original may be the YouTube video (song time) or the linked file (song time + the file's offset, F1).
  * `adjustment` (±0.3 s) absorbs the phone's own camera/audio latency and is saved with the take.
@@ -13,8 +16,10 @@ export const SYNC_ADJUST_LIMIT = 0.3;
 export interface TakeTiming {
   /** Song second the take started at. */
   songStart: number;
-  /** Song speed while recording (1 = normal). */
+  /** Song speed while recording (1 = normal): the original plays at it. */
   speed: number;
+  /** The take's own speed (1 = as recorded). */
+  takeSpeed?: number | null;
   /** Fine adjustment saved with the take (seconds of song, ±0.3). */
   adjust?: number | null;
   /**
@@ -38,17 +43,33 @@ export function clampAdjust(value: number): number {
   return Math.round(Math.min(SYNC_ADJUST_LIMIT, Math.max(-SYNC_ADJUST_LIMIT, value)) * 1000) / 1000;
 }
 
+export const VIDEO_SPEED_MIN = 0.25;
+export const VIDEO_SPEED_MAX = 2;
+
+/** A video's own speed (the song's or the take's): 0,25–2, to the thousandth; 1 when unknown. */
+export function clampVideoSpeed(value: number | null | undefined): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.round(Math.min(VIDEO_SPEED_MAX, Math.max(VIDEO_SPEED_MIN, n)) * 1000) / 1000;
+}
+
+/** Seconds of song per second of take: the song's speed over the take's. */
+export function songPerTake(take: Pick<TakeTiming, 'speed' | 'takeSpeed'>): number {
+  const take1 = take.takeSpeed != null && take.takeSpeed > 0 ? take.takeSpeed : 1;
+  return (take.speed > 0 ? take.speed : 1) / take1;
+}
+
 /** The song's second shown at a moment of the take. */
 export function songTimeAt(take: TakeTiming, takeSeconds: number): number {
   return (
-    take.songStart + (takeSeconds - clampLead(take.lead)) * (take.speed || 1) + clampAdjust(take.adjust ?? 0)
+    take.songStart + (takeSeconds - clampLead(take.lead)) * songPerTake(take) + clampAdjust(take.adjust ?? 0)
   );
 }
 
 /** The take's moment for a second of the song (inverse of songTimeAt). */
 export function takeTimeAt(take: TakeTiming, songSeconds: number): number {
   return (
-    (songSeconds - take.songStart - clampAdjust(take.adjust ?? 0)) / (take.speed || 1) + clampLead(take.lead)
+    (songSeconds - take.songStart - clampAdjust(take.adjust ?? 0)) / songPerTake(take) + clampLead(take.lead)
   );
 }
 
@@ -144,17 +165,17 @@ export function clampSongStart(value: number, songLength?: number | null): numbe
 
 /**
  * Where the take ends in the song, saved with its start (the database asks end ≥ start): from the sync point to the
- * take's end at its speed. Null when the take's length isn't known.
+ * take's end, at the song's speed over the take's. Null when the take's length isn't known.
  */
 export function songEndFor(take: {
   songStart: number;
   lead?: number | null;
   speed: number;
+  takeSpeed?: number | null;
   duration: number | null | undefined;
 }): number | null {
   const duration = Number(take.duration);
   if (!Number.isFinite(duration) || duration <= 0) return null;
-  const end =
-    take.songStart + Math.max(0, duration - clampLead(take.lead)) * (take.speed > 0 ? take.speed : 1);
+  const end = take.songStart + Math.max(0, duration - clampLead(take.lead)) * songPerTake(take);
   return Math.round(end * 1000) / 1000;
 }

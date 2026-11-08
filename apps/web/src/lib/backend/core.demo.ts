@@ -328,6 +328,7 @@ export const demoBackend: Backend = {
         recorded_at: now(),
         song_end_seconds: null,
         speed: 1,
+        take_speed: 1,
         width: null,
         sync_adjust_seconds: 0,
         fit_scale: 1,

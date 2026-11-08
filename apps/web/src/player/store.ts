@@ -2,4 +2,10 @@
 // loopActions.ts. Importers keep using '@/player/store'.
 export { hasRange } from './loopActions';
 export { usePlayer } from './playerStore';
-export { msSinceReviewAlign, originalWaitState, reviewOriginalRate, useReview } from './reviewStore';
+export {
+  msSinceReviewAlign,
+  originalWaitState,
+  reviewOriginalRate,
+  reviewTakeRate,
+  useReview,
+} from './reviewStore';

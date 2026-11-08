@@ -47,6 +47,7 @@ function take(over: Partial<TakeItem> = {}): TakeItem {
     fit_x: 0,
     fit_y: 0,
     speed: 1,
+    take_speed: 1,
     mirrored: false,
     duration_seconds: 60,
     width: 1080,

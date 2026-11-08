@@ -1,5 +1,13 @@
 import type { TakeItem } from '@/features/takes/takeRules';
-import { clamp, clampAdjust, clampLead, type Clip, clipInTake, type Take } from '@coverscape/shared';
+import {
+  clamp,
+  clampAdjust,
+  clampLead,
+  clampVideoSpeed,
+  type Clip,
+  clipInTake,
+  type Take,
+} from '@coverscape/shared';
 
 // ───────────── Layout and transport ─────────────
 
@@ -101,15 +109,6 @@ export function parseViewPrefs(raw: string | null): ViewPrefs {
   };
 }
 
-/**
- * Speed of the original for a take recorded at `takeSpeed`, played at the common `rate`: a take recorded at
- * 0,75× follows a song at 0,75×, so watched at 1× the original goes at 0,75×.
- */
-export function originalRate(takeSpeed: number | null | undefined, rate: number): number {
-  const speed = Number(takeSpeed) > 0 ? Number(takeSpeed) : 1;
-  return Math.round(clamp(speed * rate, 0.25, 2) * 1000) / 1000;
-}
-
 /** The take's length: the media's own when it knows it (WebMs learn it late), else the saved one. */
 export function takeLength(mediaSeconds: number, savedSeconds: number | null | undefined): number {
   if (Number.isFinite(mediaSeconds) && mediaSeconds > 0) return mediaSeconds;
@@ -122,13 +121,14 @@ export type TakeTimingRow = Pick<
   Take,
   'song_start_seconds' | 'speed' | 'sync_adjust_seconds' | 'duration_seconds'
 > &
-  Partial<Pick<Take, 'song_lead_seconds'>>;
+  Partial<Pick<Take, 'song_lead_seconds' | 'take_speed'>>;
 
-/** Song timing of a take (old demo rows may lack the adjustment or the song's start in the take). */
+/** Song timing of a take (old rows may lack the adjustment, the song's start in the take or the take's speed). */
 export function takeTiming(take: TakeTimingRow) {
   return {
     songStart: Number(take.song_start_seconds) || 0,
-    speed: Number(take.speed) > 0 ? Number(take.speed) : 1,
+    speed: clampVideoSpeed(take.speed),
+    takeSpeed: clampVideoSpeed(take.take_speed),
     adjust: clampAdjust(Number(take.sync_adjust_seconds ?? 0)),
     lead: clampLead(take.song_lead_seconds),
     duration: Number(take.duration_seconds) || 0,

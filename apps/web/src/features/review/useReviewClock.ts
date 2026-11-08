@@ -3,8 +3,10 @@ import {
   msSinceReviewAlign,
   originalWaitState,
   reviewOriginalRate,
+  reviewTakeRate,
   useReview,
 } from '@/player/store';
+import { songPerTake } from '@coverscape/shared';
 import { useEffect } from 'react';
 import { mediaSlot, wrapLoop } from './reviewMediaSlot';
 import { FRESH_SYNC, originalWait, type SyncMemory, syncStep } from './reviewRules';
@@ -35,7 +37,7 @@ export function useReviewClock(active: boolean): void {
     /** Both back at their own speeds (a nudge must not outlive a pause or a change of what's heard). */
     const baseRates = (s: ReviewSnapshot) => {
       s.originalEngine?.setRate(reviewOriginalRate(s.timing, s.rate));
-      s.takeEngine?.setRate(s.rate);
+      s.takeEngine?.setRate(reviewTakeRate(s.timing, s.rate));
       memory = { ...memory, nudged: false };
     };
 
@@ -101,7 +103,7 @@ export function useReviewClock(active: boolean): void {
         // The take reached the song's start: the original comes in (from 0, or ahead if a frame came late).
         originalWaitState.waiting = false;
         original.setRate(base);
-        take.setRate(s.rate);
+        take.setRate(reviewTakeRate(s.timing, s.rate));
         // YouTube's own start jumps ahead by what starting takes it; a file is put on the spot first.
         const at = Math.max(0, raw);
         if (s.originalKind !== 'youtube' && Math.abs(original.getCurrentTime() - at) > 0.05)
@@ -137,9 +139,9 @@ export function useReviewClock(active: boolean): void {
           ready: p.ready(),
           seekLatencyMs: p.seekLatencyMs(),
           heard: s.audio,
-          takeRate: s.rate,
+          takeRate: reviewTakeRate(s.timing, s.rate),
           takeTime: t,
-          songSpeed: s.timing.speed,
+          songSpeed: songPerTake(s.timing),
         },
         memory,
       );
@@ -154,17 +156,17 @@ export function useReviewClock(active: boolean): void {
           break;
         case 'base':
           original.setRate(base);
-          take.setRate(s.rate);
+          take.setRate(reviewTakeRate(s.timing, s.rate));
           break;
         case 'seek':
           original.setRate(base);
-          take.setRate(s.rate);
+          take.setRate(reviewTakeRate(s.timing, s.rate));
           p.noteJump();
           p.rawSeek(action.to);
           break;
         case 'takeSeek':
           original.setRate(base);
-          take.setRate(s.rate);
+          take.setRate(reviewTakeRate(s.timing, s.rate));
           take.seek(action.to);
           useReview.setState({ time: action.to });
           break;

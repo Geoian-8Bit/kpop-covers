@@ -3,6 +3,7 @@ import {
   clampAdjust,
   clampLead,
   clampSongStart,
+  clampVideoSpeed,
   formatCents,
   clipInTake,
   followCorrection,
@@ -10,6 +11,7 @@ import {
   originalTime,
   parseCents,
   songEndFor,
+  songPerTake,
   SONG_LEAD_LIMIT,
   songTimeAt,
   takeRangeToSong,
@@ -156,5 +158,36 @@ describe('the sync point in the song (partial takes)', () => {
     expect(songTimeAt(partial, 12.57)).toBeCloseTo(65.3);
     expect(songTimeAt(partial, 0)).toBeCloseTo(52.73); // before the point the original just plays earlier
     expect(takeTimeAt(partial, 70)).toBeCloseTo(17.27);
+  });
+
+  it('maps with each video at its own speed (take 1×, song 0,75×; or the take sped up)', () => {
+    const t = { songStart: 20, speed: 0.75, takeSpeed: 1, lead: 2 };
+    expect(songPerTake(t)).toBe(0.75);
+    expect(songTimeAt(t, 6)).toBeCloseTo(23); // 20 + (6 − 2) × 0,75
+    const fast = { songStart: 0, speed: 1, takeSpeed: 1.25, lead: 0 };
+    expect(songTimeAt(fast, 10)).toBeCloseTo(8);
+    for (const s of [0, 3.3, 12]) expect(takeTimeAt(fast, songTimeAt(fast, s))).toBeCloseTo(s);
+    // Old rows: no take speed means 1.
+    expect(songPerTake({ speed: 0.5 })).toBe(0.5);
+    expect(songPerTake({ speed: 0.5, takeSpeed: 0 })).toBe(0.5);
+  });
+
+  it('recomputes the end with the ratio of both speeds', () => {
+    expect(songEndFor({ songStart: 10, lead: 0, speed: 1, takeSpeed: 2, duration: 20 })).toBe(20);
+    expect(songEndFor({ songStart: 10, lead: 0, speed: 0.75, takeSpeed: 0.75, duration: 20 })).toBe(30);
+    expect(
+      clipInTake({ songStart: 0, speed: 1, takeSpeed: 0.5, duration: 60 }, { start: 5, end: 10 }),
+    ).toEqual({
+      start: 2.5,
+      end: 5,
+    });
+  });
+
+  it('keeps a video speed between 0,25 and 2', () => {
+    expect(clampVideoSpeed(0.75)).toBe(0.75);
+    expect(clampVideoSpeed(0.1)).toBe(0.25);
+    expect(clampVideoSpeed(3)).toBe(2);
+    expect(clampVideoSpeed(Number.NaN)).toBe(1);
+    expect(clampVideoSpeed(null)).toBe(1);
   });
 });

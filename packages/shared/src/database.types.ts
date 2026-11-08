@@ -1352,6 +1352,7 @@ export type Database = {
           song_lead_seconds: number;
           song_start_seconds: number;
           speed: number;
+          take_speed: number;
           video_id: string;
           width: number | null;
         };
@@ -1381,6 +1382,7 @@ export type Database = {
           song_lead_seconds?: number;
           song_start_seconds: number;
           speed?: number;
+          take_speed?: number;
           video_id: string;
           width?: number | null;
         };
@@ -1410,6 +1412,7 @@ export type Database = {
           song_lead_seconds?: number;
           song_start_seconds?: number;
           speed?: number;
+          take_speed?: number;
           video_id?: string;
           width?: number | null;
         };

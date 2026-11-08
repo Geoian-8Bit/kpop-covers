@@ -12,15 +12,28 @@ import type { StageStore } from './reviewStageStore';
  */
 export function ReviewCompareStage({
   stage,
+  solo,
   ...props
-}: Omit<ComponentProps<typeof CompareStage>, 'zoomTake' | 'zoomOriginal' | 'fit' | 'split'> & {
+}: Omit<ComponentProps<typeof CompareStage>, 'zoomTake' | 'zoomOriginal' | 'fit' | 'split' | 'alone'> & {
   stage: StageStore;
+  /** «Solo toma». A video being placed in «Sincronía» shows alone too (read here: only the stage repaints). */
+  solo: boolean;
 }) {
+  const syncEdit = useReview((s) => s.syncEdit);
   const zoomTake = useReview((s) => s.zoomTake);
   const zoomOriginal = useReview((s) => s.zoomOriginal);
   const fit = useStore(stage, (s) => s.fit);
   const split = useStore(stage, (s) => s.split);
-  return <CompareStage {...props} fit={fit} split={split} zoomTake={zoomTake} zoomOriginal={zoomOriginal} />;
+  return (
+    <CompareStage
+      {...props}
+      alone={syncEdit ?? (solo ? 'take' : null)}
+      fit={fit}
+      split={split}
+      zoomTake={zoomTake}
+      zoomOriginal={zoomOriginal}
+    />
+  );
 }
 
 /**
